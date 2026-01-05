@@ -142,6 +142,196 @@ class MPSState:
     # Gate Operations
     # ========================================================================
 
+    # ========================================================================
+    # Core API Methods (local only, no canonical_form sweeps)
+    # ========================================================================
+
+    def apply_bond_op(
+        self,
+        i: int,
+        op: np.ndarray,
+        truncate: bool = True,
+    ) -> None:
+        """
+        Apply two-site operator (unitary or non-unitary) via local update.
+
+        Uses get_theta + set_svd_theta to avoid canonical_form() sweeps.
+        This is the primary method for applying any two-site gate.
+
+        Parameters
+        ----------
+        i : int
+            Left site index (applies to sites i and i+1)
+        op : np.ndarray
+            Operator matrix of shape (d1*d2, d1*d2) or (d1, d2, d1, d2)
+        truncate : bool
+            Whether to truncate bond dimension
+        """
+        d1, d2 = self.d[i], self.d[i + 1]
+
+        # Reshape to 4D: (d1, d2, d1, d2)
+        op = np.asarray(op)
+        if op.ndim == 2:
+            op = op.reshape(d1 * d2, d1 * d2)
+        op_4d = op.reshape(d1, d2, d1, d2)
+
+        # Create TeNPy Array with proper labels
+        op_arr = Array.from_ndarray_trivial(op_4d, labels=['p0', 'p1', 'p0*', 'p1*'])
+
+        # Apply via local update
+        self._apply_two_site_op_local(i, op_arr, truncate=truncate, normalize=False)
+
+    def apply_kraus_one_site(
+        self,
+        site: int,
+        kraus_ops: List[np.ndarray],
+        rng: Optional[np.random.Generator] = None,
+    ) -> int:
+        """
+        Apply single-site Kraus channel via quantum trajectory.
+
+        Samples one Kraus operator and applies it with normalization.
+
+        Parameters
+        ----------
+        site : int
+            Site index
+        kraus_ops : List[np.ndarray]
+            List of Kraus operators, each shape (d, d)
+        rng : np.random.Generator, optional
+            Random number generator
+
+        Returns
+        -------
+        int
+            Index of sampled Kraus operator
+        """
+        if rng is None:
+            rng = np.random.default_rng()
+
+        d = self.d[site]
+
+        # Get current site tensor
+        theta = self._mps.get_theta(site, n=1)  # Shape: (chiL, d, chiR)
+        theta_np = theta.to_ndarray()
+
+        # Compute probabilities for each Kraus operator
+        probs = []
+        thetas_mu = []
+
+        for K in kraus_ops:
+            K = np.asarray(K).reshape(d, d)
+            # Apply K: K @ theta (contract over physical index)
+            K_theta = np.einsum('ij,ajb->aib', K, theta_np)
+            p_mu = np.linalg.norm(K_theta) ** 2
+            probs.append(p_mu)
+            thetas_mu.append(K_theta)
+
+        # Normalize and sample
+        probs = np.array(probs)
+        p_total = np.sum(probs)
+
+        if p_total < 1e-15:
+            raise ValueError("Total probability is near zero - Kraus ops may be invalid")
+
+        probs = probs / p_total
+        mu = rng.choice(len(kraus_ops), p=probs)
+
+        # Create normalized theta from selected branch
+        theta_selected = thetas_mu[mu] / np.sqrt(probs[mu] * p_total)
+
+        # Convert to TeNPy Array and write back via SVD
+        theta_arr = Array.from_ndarray_trivial(theta_selected, labels=['vL', 'p0', 'vR'])
+
+        # For one-site, we need to combine vL.p0 or p0.vR for SVD
+        # Use combine_legs and then do SVD manually
+        theta_combined = theta_arr.combine_legs(
+            [['vL', 'p0'], ['vR']],
+            new_axes=[0, 1],
+            qconj=[+1, -1]
+        )
+
+        trunc_params = {'chi_max': self.max_bond, 'svd_min': 1e-13}
+        self._mps.set_svd_theta(site, theta_combined, trunc_par=trunc_params)
+        self._mps.norm = 1.0
+
+        return mu
+
+    def apply_kraus_two_site(
+        self,
+        i: int,
+        kraus_ops: List[np.ndarray],
+        rng: Optional[np.random.Generator] = None,
+    ) -> int:
+        """
+        Apply two-site Kraus channel via quantum trajectory.
+
+        Samples one Kraus operator and applies it with normalization.
+        Alias for apply_two_site_kraus() for consistency with API naming.
+
+        Parameters
+        ----------
+        i : int
+            Left site index (applies to sites i and i+1)
+        kraus_ops : List[np.ndarray]
+            List of Kraus operators, each shape (d1*d2, d1*d2) or (d1, d2, d1, d2)
+        rng : np.random.Generator, optional
+            Random number generator
+
+        Returns
+        -------
+        int
+            Index of sampled Kraus operator
+        """
+        return self.apply_two_site_kraus(i, kraus_ops, rng)
+
+    def finalize_bin_pair(self, i: int) -> None:
+        """
+        Freeze a measured bin pair to ensure linear complexity.
+
+        After measurement, bins should not be accessed again. This method
+        ensures the bond dimension to the right of the pair is 1, effectively
+        decoupling them from the rest of the chain.
+
+        Parameters
+        ----------
+        i : int
+            Left site index of the bin pair (i, i+1)
+        """
+        # Get current theta for the bond to the right of site i+1
+        # If i+1 is the last site, there's nothing to do
+        if i + 1 >= self.L - 1:
+            return
+
+        # Force SVD with chi_max=1 to truncate the bond
+        theta = self._mps.get_theta(i + 1, n=1)
+        theta_np = theta.to_ndarray()
+
+        # Reshape to matrix and do SVD with only 1 singular value
+        chiL, d, chiR = theta_np.shape
+        theta_mat = theta_np.reshape(chiL * d, chiR)
+
+        # SVD and keep only the largest singular value
+        U, s, Vh = np.linalg.svd(theta_mat, full_matrices=False)
+
+        # Reconstruct with only first singular value
+        theta_trunc = np.outer(U[:, 0] * s[0], Vh[0, :])
+        theta_trunc = theta_trunc.reshape(chiL, d, 1)
+
+        # Convert back and set
+        theta_arr = Array.from_ndarray_trivial(theta_trunc, labels=['vL', 'p0', 'vR'])
+        theta_combined = theta_arr.combine_legs(
+            [['vL', 'p0'], ['vR']],
+            new_axes=[0, 1],
+            qconj=[+1, -1]
+        )
+
+        self._mps.set_svd_theta(i + 1, theta_combined, trunc_par={'chi_max': 1, 'svd_min': 1e-13})
+
+    # ========================================================================
+    # Convenience Methods (backward compatibility)
+    # ========================================================================
+
     def apply_one_site_gate(self, site: int, gate: np.ndarray) -> None:
         """
         Apply single-site unitary gate.
@@ -153,7 +343,15 @@ class MPSState:
         gate : np.ndarray
             Unitary matrix of shape (d, d)
         """
-        self._mps.apply_local_op(site, gate, unitary=True)
+        d = self.d[site]
+        gate = np.asarray(gate).reshape(d, d)
+
+        # Create TeNPy Array with proper labels for single-site gate
+        # Labels: ['p', 'p*'] for the physical legs (output, input)
+        gate_arr = Array.from_ndarray_trivial(gate, labels=['p', 'p*'])
+
+        # Use TeNPy's apply_local_op with the Array object
+        self._mps.apply_local_op(site, gate_arr, unitary=True)
 
     def apply_two_site_gate(
         self,
