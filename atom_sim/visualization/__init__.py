@@ -14,6 +14,9 @@ from .wavepacket import (
     plot_intensity_envelope,
     plot_single_photon_prob,
     plot_mode_overlap,
+    extract_bin_state_probabilities,
+    plot_bin_state_heatmap,
+    plot_dual_arm_bin_state_heatmap,
 )
 from .state import (
     plot_density_matrix,
@@ -33,6 +36,9 @@ __all__ = [
     'plot_intensity_envelope',
     'plot_single_photon_prob',
     'plot_mode_overlap',
+    'extract_bin_state_probabilities',
+    'plot_bin_state_heatmap',
+    'plot_dual_arm_bin_state_heatmap',
     # state
     'plot_density_matrix',
     'plot_atomic_density',

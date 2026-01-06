@@ -46,3 +46,8 @@ Thumbs.db
 
 # Project specific
 *.log
+
+# Test outputs in root directory (but keep notebooks/*.png)
+/test_*.png
+/test_emission*.png
+/emission_*.png

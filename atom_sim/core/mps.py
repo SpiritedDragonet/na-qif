@@ -471,6 +471,9 @@ class MPSState:
         """
         Swap adjacent sites i and i+1.
 
+        This exchanges both the tensor indices AND the local dimensions
+        (self.d), so that subsequent apply_bond_op calls use correct dimensions.
+
         Parameters
         ----------
         i : int
@@ -478,6 +481,10 @@ class MPSState:
         """
         trunc_params = {'chi_max': self.max_bond, 'svd_min': 1e-13}
         self._mps.swap_sites(i, trunc_par=trunc_params)
+
+        # 关键修复：同时更新self.d数组，交换两个位置的局域维度
+        # 这是apply_bond_op正确计算维度所必需的
+        self.d[i], self.d[i + 1] = self.d[i + 1], self.d[i]
 
     # ========================================================================
     # State Extraction
