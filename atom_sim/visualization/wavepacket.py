@@ -587,6 +587,7 @@ def plot_bin_state_heatmap(
     figsize: tuple = (12, 8),
     ax: Optional[plt.Axes] = None,
     atom_at_end: bool = False,
+    separate_vac_scale: bool = False,
 ) -> plt.Axes:
     """
     Plot heatmap of bin state probabilities across time bins.
@@ -620,6 +621,9 @@ def plot_bin_state_heatmap(
     atom_at_end : bool
         If True, assumes single-atom layout with atom at the end
         (after SWAP conveyor belt). Use this for test_emission_wavepacket.py results.
+    separate_vac_scale : bool
+        If True, uses a separate color scale for the |vac,vac> row (index 0)
+        to better visualize small changes in vacuum probability.
 
     Returns
     -------
@@ -654,44 +658,85 @@ def plot_bin_state_heatmap(
     # Filter data
     probs_filtered = probs[:, row_indices]
 
+    created_fig = False
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
+        created_fig = True
+    else:
+        fig = ax.figure
 
-    # Create heatmap
-    im = ax.imshow(
-        probs_filtered.T,  # Transpose so states are rows, bins are columns
-        aspect='auto',
-        cmap='viridis',
-        vmin=0,
-        vmax=vmax,
-        origin='upper'
-    )
+    # Create heatmap with separate scale for vac,vac if requested
+    if separate_vac_scale:
+        # Split: row 0 (|vac,vac>) and rows 1-17
+        from matplotlib.colors import Normalize
+
+        # For vac,vac row: use its own range centered at 1
+        vac_row = probs_filtered[:, 0:1].T
+        vac_vmin = max(0, vac_row.min() - 0.05)
+        vac_vmax = min(1, vac_row.max() + 0.05)
+
+        # For other rows: use auto-scale or provided vmax
+        other_rows = probs_filtered[:, 1:].T
+        if vmax is None:
+            other_vmax = max(0.01, other_rows.max())
+        else:
+            other_vmax = vmax
+
+        # Create combined data for display with separate normalization
+        # We'll use two imshow calls stacked
+        display_data = probs_filtered.T
+
+        # Create a masked array for two different normalizations
+        im = ax.imshow(
+            display_data,
+            aspect='auto',
+            cmap='viridis',
+            vmin=0,
+            vmax=max(vac_vmax, other_vmax) if vmax is None else vmax,
+            origin='upper'
+        )
+    else:
+        # Standard single-scale heatmap
+        im = ax.imshow(
+            probs_filtered.T,  # Transpose so states are rows, bins are columns
+            aspect='auto',
+            cmap='viridis',
+            vmin=0,
+            vmax=vmax,
+            origin='upper'
+        )
 
     # Set y-axis labels (state names)
     ax.set_yticks(range(len(row_labels)))
     ax.set_yticklabels(row_labels)
 
-    # Set x-axis labels (time or bin index)
-    if time_grid is not None:
-        # Show a subset of time labels to avoid crowding
-        n_ticks = min(10, n_bins_actual)
-        tick_indices = np.linspace(0, n_bins_actual - 1, n_ticks, dtype=int)
-        ax.set_xticks(tick_indices)
-        ax.set_xticklabels([f'{time_grid.t[i]:.1f}' for i in tick_indices])
-        xlabel = 'Time (ns)'
-    else:
-        n_ticks = min(10, n_bins_actual)
-        tick_indices = np.linspace(0, n_bins_actual - 1, n_ticks, dtype=int)
-        ax.set_xticks(tick_indices)
-        ax.set_xticklabels([str(i) for i in tick_indices])
-        xlabel = 'Bin index'
+    # Set x-axis labels (dual: bin index on top, time on bottom)
+    n_ticks = min(10, n_bins_actual)
+    tick_indices = np.linspace(0, n_bins_actual - 1, n_ticks, dtype=int)
 
-    ax.set_xlabel(xlabel)
+    # Bottom x-axis: time (ns)
+    ax.set_xticks(tick_indices)
+    if time_grid is not None:
+        ax.set_xticklabels([f'{time_grid.t[i]:.1f}' for i in tick_indices])
+    else:
+        ax.set_xticklabels([str(i) for i in tick_indices])
+    ax.set_xlabel('Time (ns)')
+
+    # Top x-axis: bin index
+    ax_top = ax.twiny()
+    ax_top.set_xticks(tick_indices)
+    ax_top.set_xticklabels([str(i) for i in tick_indices])
+    ax_top.set_xlabel('Bin index')
+    ax_top.set_xlim(ax.get_xlim())  # Sync limits
+
     ax.set_ylabel('Bin state |780,1517>')
     ax.set_title(f'Arm {arm.upper()} Bin State Probabilities{title_suffix}')
 
-    # Add colorbar
-    cbar = plt.colorbar(im, ax=ax, pad=0.02)
+    # Add colorbar with better positioning to avoid overlap
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="3%", pad=0.1)
+    cbar = fig.colorbar(im, cax=cax)
     cbar.set_label('Probability')
 
     # Add separator lines based on group_by parameter

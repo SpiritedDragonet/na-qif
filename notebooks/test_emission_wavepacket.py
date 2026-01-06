@@ -300,7 +300,13 @@ def test_emission_wavepacket():
     import matplotlib as mpl
     mpl.rcParams['image.interpolation'] = 'nearest'  # 无抗锯齿
 
-    fig, ax = plt.subplots(figsize=(16, 10))
+    # 使用更大的figsize并调整subplot参数以容纳y轴标签和双x轴
+    fig, ax = plt.subplots(figsize=(18, 10))
+
+    # 计算合适的vmax：让发射态（H,V）的变化可见
+    # vac,vac态会接近饱和，但这是可以接受的
+    # 使用 per_bin_prob_max 的1.2倍作为vmax
+    vmax_scale = max(0.05, per_bin_prob_total.max() * 1.5)
 
     plot_bin_state_heatmap(
         mps,
@@ -308,17 +314,17 @@ def test_emission_wavepacket():
         n_bins=n_bins,
         time_grid=time_grid,
         group_by='780',  # 按780态分组 (vac/H/V)
-        vmax=None,
-        figsize=(16, 10),
+        vmax=vmax_scale,  # 设置合适的vmax以显示发射态的变化
+        figsize=(18, 10),
         ax=ax,
         atom_at_end=True,  # SWAP传送带后原子在末尾
     )
-    ax.set_title('Bin State Probabilities - 18 States (780(3D) × 1517(6D))', fontsize=12)
+    ax.set_title(f'Bin State Probabilities - 18 States (780(3D) x 1517(6D)) - vmax={vmax_scale:.3f}', fontsize=12)
 
-    # 调整样式：紧凑行距
-    plt.tight_layout(pad=0.2)  # 紧凑布局
+    # 调整布局：为左侧y轴标签、顶部x轴和右侧colorbar留出空间
+    plt.subplots_adjust(left=0.12, right=0.88, top=0.92, bottom=0.08)
 
-    plt.savefig('test_emission_heatmap.png', dpi=150)
+    plt.savefig('test_emission_heatmap.png', dpi=150, bbox_inches='tight')
     print("  Heatmap saved to: test_emission_heatmap.png")
 
     # ========================================================================
