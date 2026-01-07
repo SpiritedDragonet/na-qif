@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 
 from ..core.mps import MPSState
 from ..config import TimeGrid
+from ..simulation.trajectory import EmissionResult
 
 
 # ============================================================================
@@ -953,3 +954,246 @@ def plot_dual_arm_bin_state_heatmap(
     plt.tight_layout()
 
     return fig
+
+
+# ============================================================================
+# Emission Simulation Visualization (with Atomic State Evolution)
+# ============================================================================
+
+def plot_emission_with_atomic_evolution(
+    result: EmissionResult,
+    save_path: str = "dual_atom_emission.png",
+    vmax_scale_factor: float = 1.5,
+) -> None:
+    """
+    Visualize dual-atom emission results with atomic state evolution and bin heatmaps.
+
+    Each arm shows:
+    - Top 3 rows: Atomic state evolution (P(|0>), P(|1>), P(|e>))
+    - Bottom 18 rows: Bin state probabilities
+
+    This function is designed for emission results from run_emission_only()
+    which tracks atomic state evolution during the SWAP conveyor belt process.
+
+    Parameters
+    ----------
+    result : EmissionResult
+        Simulation result to visualize. Must contain atom_A_state_evolution
+        and atom_B_state_evolution attributes.
+    save_path : str
+        Path to save the figure
+    vmax_scale_factor : float
+        Factor for scaling vmax (relative to max emission probability)
+    """
+    import matplotlib as mpl
+    from matplotlib.colors import Normalize
+    from matplotlib.cm import ScalarMappable
+
+    mpl.rcParams['image.interpolation'] = 'nearest'
+
+    # Create figure with more spacing
+    fig, axes = plt.subplots(1, 2, figsize=(24, 13))
+    plt.subplots_adjust(left=0.04, right=0.85, top=0.80, bottom=0.06, wspace=0.50)
+
+    # Calculate vmax for both arms
+    vmax_A = max(0.05, result.per_bin_prob_A.max() * vmax_scale_factor)
+    vmax_B = max(0.05, result.per_bin_prob_B.max() * vmax_scale_factor)
+    vmax = max(vmax_A, vmax_B)
+
+    n_bins = result.get_n_bins()
+
+    # Get atomic state evolution
+    atom_A_evol = result.atom_A_state_evolution
+    atom_B_evol = result.atom_B_state_evolution
+
+    # For visualization, take every other column (after each full bin processing)
+    atom_A_for_bins = atom_A_evol[:, 1::2]
+    atom_B_for_bins = atom_B_evol[:, 1::2]
+
+    # If evolution has fewer columns than bins (old results), pad with final state
+    if atom_A_for_bins.shape[1] < n_bins:
+        padding = np.tile(atom_A_for_bins[:, -1:], (1, n_bins - atom_A_for_bins.shape[1]))
+        atom_A_for_bins = np.hstack([atom_A_for_bins, padding])
+    if atom_B_for_bins.shape[1] < n_bins:
+        padding = np.tile(atom_B_for_bins[:, -1:], (1, n_bins - atom_B_for_bins.shape[1]))
+        atom_B_for_bins = np.hstack([atom_B_for_bins, padding])
+
+    # Extract bin probabilities
+    probs_A = np.zeros((n_bins, 18))
+    probs_B = np.zeros((n_bins, 18))
+
+    for n in range(n_bins):
+        site_A, site_B = result.get_bin_indices(n)
+        rho_A = result.mps.get_reduced_density([site_A])
+        rho_B = result.mps.get_reduced_density([site_B])
+        if rho_A.shape[0] == 18:
+            probs_A[n, :] = np.diag(rho_A).real
+        if rho_B.shape[0] == 18:
+            probs_B[n, :] = np.diag(rho_B).real
+
+    # Get state labels
+    bin_state_labels = _get_bin18_state_labels()
+
+    # Combined display: 3 rows for atomic + 18 rows for bin = 21 rows total
+    atomic_labels = ['|e>', '|1>', '|0>']
+    combined_labels_A = atomic_labels + bin_state_labels
+    combined_labels_B = atomic_labels + bin_state_labels
+
+    # Create combined data matrices
+    combined_A = np.zeros((3 + 18, n_bins))
+    combined_A[0, :] = atom_A_for_bins[2, :]  # |e>
+    combined_A[1, :] = atom_A_for_bins[1, :]  # |1>
+    combined_A[2, :] = atom_A_for_bins[0, :]  # |0>
+    combined_A[3:, :] = probs_A.T
+
+    combined_B = np.zeros((3 + 18, n_bins))
+    combined_B[0, :] = atom_B_for_bins[2, :]  # |e>
+    combined_B[1, :] = atom_B_for_bins[1, :]  # |1>
+    combined_B[2, :] = atom_B_for_bins[0, :]  # |0>
+    combined_B[3:, :] = probs_B.T
+
+    # Scientific colormaps
+    # Atomic states: YlOrRd (Yellow-Orange-Red) - shows decay
+    # Bin states: plasma (purple-yellow) - commonly used scientific colormap
+    atom_cmap = plt.get_cmap('YlOrRd')
+    bin_cmap = plt.get_cmap('plasma')
+
+    # Mask to show only atomic states
+    mask = np.zeros((3 + 18, n_bins), dtype=bool)
+    mask[:3, :] = True
+
+    # Plot arm A
+    # First plot bin states (bottom 18 rows)
+    im_A = axes[0].imshow(
+        combined_A,
+        aspect='auto',
+        cmap=bin_cmap,
+        vmin=0,
+        vmax=vmax,
+        origin='upper'
+    )
+
+    # Then overlay atomic states with different colormap
+    im_A_atom = axes[0].imshow(
+        np.ma.masked_where(~mask, combined_A),
+        aspect='auto',
+        cmap=atom_cmap,
+        vmin=0,
+        vmax=1,
+        origin='upper',
+        interpolation='nearest'
+    )
+
+    axes[0].set_yticks(range(3 + 18))
+    axes[0].set_yticklabels(combined_labels_A, fontsize=8)
+    axes[0].set_ylabel('State', fontsize=10)
+    axes[0].set_title(f'Arm A - Atomic + Bin State Probabilities (vmax={vmax:.3f})', fontsize=11)
+    axes[0].axhline(2.5, color='black', linewidth=2)
+
+    # x-axis (dual: time and bin index)
+    n_ticks = min(10, n_bins)
+    tick_indices = np.linspace(0, n_bins - 1, n_ticks, dtype=int)
+    axes[0].set_xticks(tick_indices)
+    axes[0].set_xticklabels([f'{result.time_grid.t[i] * 1e9:.0f}' for i in tick_indices], fontsize=9)
+    axes[0].set_xlabel('Time (ns)', fontsize=10)
+    axes[0].top = axes[0].twiny()
+    axes[0].top.set_xticks(tick_indices)
+    axes[0].top.set_xticklabels([str(i) for i in tick_indices], fontsize=9)
+    axes[0].top.set_xlabel('Bin index', fontsize=10)
+    axes[0].top.set_xlim(axes[0].get_xlim())
+
+    # Plot arm B
+    im_B = axes[1].imshow(
+        combined_B,
+        aspect='auto',
+        cmap=bin_cmap,
+        vmin=0,
+        vmax=vmax,
+        origin='upper'
+    )
+
+    im_B_atom = axes[1].imshow(
+        np.ma.masked_where(~mask, combined_B),
+        aspect='auto',
+        cmap=atom_cmap,
+        vmin=0,
+        vmax=1,
+        origin='upper',
+        interpolation='nearest'
+    )
+
+    axes[1].set_yticks(range(3 + 18))
+    axes[1].set_yticklabels(combined_labels_B, fontsize=8)
+    axes[1].set_ylabel('State', fontsize=10)
+    axes[1].set_title(f'Arm B - Atomic + Bin State Probabilities (vmax={vmax:.3f})', fontsize=11)
+    axes[1].axhline(2.5, color='black', linewidth=2)
+
+    axes[1].set_xticks(tick_indices)
+    axes[1].set_xticklabels([f'{result.time_grid.t[i] * 1e9:.0f}' for i in tick_indices], fontsize=9)
+    axes[1].set_xlabel('Time (ns)', fontsize=10)
+    axes[1].top = axes[1].twiny()
+    axes[1].top.set_xticks(tick_indices)
+    axes[1].top.set_xticklabels([str(i) for i in tick_indices], fontsize=9)
+    axes[1].top.set_xlabel('Bin index', fontsize=10)
+    axes[1].top.set_xlim(axes[1].get_xlim())
+
+    # Add separator lines for bin states (group by 780 state)
+    for ax in axes:
+        for boundary in [5.5, 11.5]:
+            ax.axhline(boundary + 3, color='white', linewidth=1, alpha=0.5, linestyle='--')
+
+    # Add colorbars aligned with their respective sections
+    ax_pos_A = axes[0].get_position()
+    ax_pos_B = axes[1].get_position()
+    fig_height = ax_pos_A.y1 - ax_pos_A.y0
+
+    # Atomic colorbar for arm A
+    cax_A_atom = fig.add_axes([
+        ax_pos_A.x1 + 0.01,
+        ax_pos_A.y1 - fig_height * (3/21),
+        0.01,
+        fig_height * (3/21)
+    ])
+    cbar_A_atom = fig.colorbar(im_A_atom, cax=cax_A_atom)
+    cbar_A_atom.set_ticks([0, 0.5, 1])
+    cbar_A_atom.set_label('Atom', fontsize=9)
+
+    # Bin state colorbar for arm A
+    cax_A = fig.add_axes([
+        ax_pos_A.x1 + 0.01,
+        ax_pos_A.y0,
+        0.01,
+        fig_height * (18/21)
+    ])
+    cbar_A = fig.colorbar(im_A, cax=cax_A)
+    n_ticks_cb = 4
+    tick_vals = np.linspace(0, vmax, n_ticks_cb)
+    cbar_A.set_ticks(tick_vals)
+    cbar_A.set_label(f'Bin (max={vmax:.3f})', fontsize=9)
+
+    # Atomic colorbar for arm B
+    cax_B_atom = fig.add_axes([
+        ax_pos_B.x1 + 0.01,
+        ax_pos_B.y1 - fig_height * (3/21),
+        0.01,
+        fig_height * (3/21)
+    ])
+    cbar_B_atom = fig.colorbar(im_B_atom, cax=cax_B_atom)
+    cbar_B_atom.set_ticks([0, 0.5, 1])
+    cbar_B_atom.set_label('Atom', fontsize=9)
+
+    # Bin state colorbar for arm B
+    cax_B = fig.add_axes([
+        ax_pos_B.x1 + 0.01,
+        ax_pos_B.y0,
+        0.01,
+        fig_height * (18/21)
+    ])
+    cbar_B = fig.colorbar(im_B, cax=cax_B)
+    cbar_B.set_ticks(tick_vals)
+    cbar_B.set_label(f'Bin (max={vmax:.3f})', fontsize=9)
+
+    plt.suptitle('Dual-Atom Emission: Atomic State Decay + Bin State Evolution', fontsize=16, y=0.97)
+
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    print(f"  Saved dual-arm heatmaps to: {save_path}")

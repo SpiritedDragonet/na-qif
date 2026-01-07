@@ -11,12 +11,34 @@ import numpy as np
 
 from ..core.mps import MPSState, create_timebin_mps
 from ..config import TimeGrid, EmitParams, QFCParams, FiberParams, DetParams
+from ..hilbert.basis import BIN_SPACE, SUBSPACE_780, SUBSPACE_1517
 from ..physics.gates import (
     emission_gate, qfc_gate, bs_gate, jones_gate_from_array, swap_gate
 )
 from ..physics.channels import (
     loss_channel_1517, detection_channel_two_mode, dephasing_channel_from_rate
 )
+
+
+# Dimension constants for clarity
+DIM_ATOM = 3
+DIM_BIN = BIN_SPACE.dim  # 18
+DIM_780 = SUBSPACE_780.dim  # 3
+DIM_1517 = SUBSPACE_1517.dim  # 6
+
+# Bin subspace indices (780 x 1517 product space)
+# index = i_780 * DIM_1517 + i_1517
+IDX_780_VAC = 0  # |vac> in 780
+IDX_780_H = 1    # |H> in 780
+IDX_780_V = 2    # |V> in 780
+
+# 780H block in 18D bin space: indices DIM_1517 * 1 to DIM_1511 * 2 - 1
+IDX_BIN_780H_START = DIM_1517 * IDX_780_H  # 6
+IDX_BIN_780H_END = DIM_1517 * (IDX_780_H + 1)  # 12
+
+# 780V block in 18D bin space
+IDX_BIN_780V_START = DIM_1517 * IDX_780_V  # 12
+IDX_BIN_780V_END = DIM_1517 * (IDX_780_V + 1)  # 18
 
 
 @dataclass
@@ -42,6 +64,100 @@ class TrajectoryResult:
     outcome: Optional[Tuple[int, int, int, int]] = None
     success_bin: Optional[int] = None
     record: List[Tuple[int, int, int, int]] = field(default_factory=list)
+
+
+@dataclass
+class EmissionResult:
+    """
+    Result of dual-atom emission simulation (emission-only stage).
+
+    Chain layout after emission: A1, B1, A2, B2, ..., AN, BN, atomA, atomB
+    (bins at the front, atoms at the end)
+
+    Attributes
+    ----------
+    mps : MPSState
+        Final MPS state after emission.
+    time_grid : TimeGrid
+        Time grid used for simulation
+    per_bin_prob_A : np.ndarray
+        Emission probability for each bin in arm A (shape: n_bins)
+    per_bin_prob_B : np.ndarray
+        Emission probability for each bin in arm B (shape: n_bins)
+    atom_states : dict
+        Final atomic states {'A': rho_A, 'B': rho_B}
+    atom_A_state_evolution : np.ndarray
+        Atomic state evolution for atom A (shape: 3 x 2*n_bins)
+        Rows: P(|0>), P(|1>), P(|e>)
+        Columns: after each SWAP (odd: after A SWAP, even: after B SWAP)
+    atom_B_state_evolution : np.ndarray
+        Atomic state evolution for atom B (shape: 3 x 2*n_bins)
+        Rows: P(|0>), P(|1>), P(|e>)
+        Columns: after each SWAP (odd: after A SWAP, even: after B SWAP)
+    """
+    mps: MPSState
+    time_grid: TimeGrid
+    per_bin_prob_A: np.ndarray
+    per_bin_prob_B: np.ndarray
+    atom_states: dict
+    atom_A_state_evolution: np.ndarray = field(default_factory=lambda: np.zeros((3, 1)))
+    atom_B_state_evolution: np.ndarray = field(default_factory=lambda: np.zeros((3, 1)))
+
+    def get_bin_indices(self, n: int) -> Tuple[int, int]:
+        """
+        Get the MPS site indices for bin n in arms A and B.
+
+        After SWAP conveyor belt:
+        - A1, B1, A2, B2, ..., AN, BN, atomA, atomB
+        - A_n is at site 2*n, B_n is at site 2*n + 1
+
+        Parameters
+        ----------
+        n : int
+            Bin index (0-based)
+
+        Returns
+        -------
+        Tuple[int, int]
+            (site_A, site_B) - MPS site indices for A_n and B_n
+        """
+        n_bins = len(self.per_bin_prob_A)
+        # After SWAP: A1(0), B1(1), A2(2), B2(3), ..., AN, BN, atomA, atomB
+        # A_n is at site 2*n, B_n is at site 2*n + 1
+        return 2 * n, 2 * n + 1
+
+    def get_atom_site_indices(self) -> Tuple[int, int]:
+        """
+        Get the MPS site indices for atoms A and B.
+
+        After SWAP conveyor belt, atoms are at the end.
+
+        Returns
+        -------
+        Tuple[int, int]
+            (site_A, site_B) - MPS site indices for atomA and atomB
+        """
+        n_bins = len(self.per_bin_prob_A)
+        # Atoms are at sites 2*n_bins and 2*n_bins + 1
+        return 2 * n_bins, 2 * n_bins + 1
+
+    def get_n_bins(self) -> int:
+        """Get the number of time bins."""
+        return len(self.per_bin_prob_A)
+
+    def get_mps_for_next_stage(self) -> MPSState:
+        """
+        Get the MPS state ready for the next stage (e.g., QFC, BSM).
+
+        The current layout is: A1, B1, A2, B2, ..., AN, BN, atomA, atomB
+        where each A_n, B_n pair is adjacent for operations.
+
+        Returns
+        -------
+        MPSState
+            The MPS state ready for next processing stage
+        """
+        return self.mps
 
 
 class TrajectoryRunner:
@@ -167,7 +283,7 @@ class TrajectoryRunner:
         # (1) Emission: two-site unitary (atom, bin)
         U_emit_A = emission_gate(
             gamma=self.emit.get_gamma_A(t),
-            dt=self.time_grid.dt,
+            dt=self.time_grid.dt * 1e9,  # Convert seconds to nanoseconds
             Alpha=self.emit.Alpha_A,
             which_atom='A'
         )
@@ -177,7 +293,7 @@ class TrajectoryRunner:
 
         U_emit_B = emission_gate(
             gamma=self.emit.get_gamma_B(t),
-            dt=self.time_grid.dt,
+            dt=self.time_grid.dt * 1e9,  # Convert seconds to nanoseconds
             Alpha=self.emit.Alpha_B,
             which_atom='B'
         )
@@ -266,6 +382,199 @@ class TrajectoryRunner:
             record=record
         )
 
+    def run_emission(
+        self,
+        verbose: bool = True,
+    ) -> EmissionResult:
+        """
+        Run emission-only stage using SWAP conveyor belt protocol.
+
+        This implements the correct dual-atom emission where each bin couples
+        exactly once with its corresponding atom, preventing re-absorption.
+
+        Chain structure (initial): atomA, atomB, A1, B1, A2, B2, ..., AN, BN
+        Chain structure (final):   A1, B1, A2, B2, ..., AN, BN, atomA, atomB
+
+        Parameters
+        ----------
+        verbose : bool
+            Whether to print progress information
+
+        Returns
+        -------
+        EmissionResult
+            Container with emission simulation results
+        """
+        if verbose:
+            print("=" * 70)
+            print("Dual-Atom Emission Simulation")
+            print("=" * 70)
+            print(f"\nParameters:")
+            print(f"  n_bins = {self.time_grid.N}, dt = {self.time_grid.dt * 1e9:.1f} ns")
+
+        # Initialize MPS: atomA(3), atomB(3), A1(18), B1(18), ..., AN(18), BN(18)
+        local_dims = [DIM_ATOM, DIM_ATOM] + [DIM_BIN, DIM_BIN] * self.time_grid.N
+        # Initial state: atoms excited (index 2), bins vacuum (index 0)
+        init_state = [2, 2] + [0] * (2 * self.time_grid.N)
+        mps = MPSState(local_dims=local_dims, init_state=init_state, max_bond=self.chi_max)
+
+        per_bin_prob_A = np.zeros(self.time_grid.N)
+        per_bin_prob_B = np.zeros(self.time_grid.N)
+
+        # Record atomic state evolution after each SWAP
+        # Shape: (3, 2 * n_bins) where 3 rows are P(|0>), P(|1>), P(|e>)
+        # Columns: record after each atom SWAPs past a bin
+        #   - Even indices (0, 2, 4, ...): after atomA SWAP for bin n/2
+        #   - Odd indices (1, 3, 5, ...): after atomB SWAP for bin (n-1)/2
+        atom_A_state_evolution = np.zeros((3, 2 * self.time_grid.N))
+        atom_B_state_evolution = np.zeros((3, 2 * self.time_grid.N))
+
+        # Record initial atomic states
+        rho_A_init = mps.get_reduced_density([0])
+        rho_B_init = mps.get_reduced_density([1])
+        atom_A_state_evolution[0, 0] = rho_A_init[0, 0].real  # P(|0>)
+        atom_A_state_evolution[1, 0] = rho_A_init[1, 1].real  # P(|1>)
+        atom_A_state_evolution[2, 0] = rho_A_init[2, 2].real  # P(|e>)
+        atom_B_state_evolution[0, 0] = rho_B_init[0, 0].real
+        atom_B_state_evolution[1, 0] = rho_B_init[1, 1].real
+        atom_B_state_evolution[2, 0] = rho_B_init[2, 2].real
+
+        if verbose:
+            print(f"\nRunning SWAP conveyor belt...")
+            print(f"  Initial: [atomA, atomB, A1, B1, A2, B2, ...]")
+            print(f"  Target:  [A1, B1, A2, B2, ..., AN, BN, atomA, atomB]")
+
+        # Process bins one by one
+        for n in range(self.time_grid.N):
+            t = self.time_grid.t[n]
+
+            # === Atom A emission ===
+            atom_sites = mps.find_sites_by_dim(DIM_ATOM)
+            site_A = atom_sites[0]
+            target_A = 2 + 2 * n  # Original position of A_n
+
+            # Move atomA right until adjacent to target bin
+            while site_A + 1 < target_A:
+                mps.swap_sites(site_A)
+                site_A += 1
+
+            # Apply emission gate
+            gamma_A = self.emit.get_gamma_A(t)
+            if gamma_A >= 1e-6 and site_A + 1 < len(mps.d):
+                U_emit_A = emission_gate(
+                    gamma=gamma_A,
+                    dt=self.time_grid.dt * 1e9,  # Convert seconds to nanoseconds
+                    Alpha=self.emit.Alpha_A,
+                    which_atom='A'
+                )
+                mps.apply_bond_op(site_A, U_emit_A)
+
+                # Extract emission probability for this bin
+                rho_A_n = mps.get_reduced_density([site_A + 1])
+                p_A_H = rho_A_n[IDX_BIN_780H_START:IDX_BIN_780H_END,
+                               IDX_BIN_780H_START:IDX_BIN_780H_END].sum().real
+                p_A_V = rho_A_n[IDX_BIN_780V_START:IDX_BIN_780V_END,
+                               IDX_BIN_780V_START:IDX_BIN_780V_END].sum().real
+                per_bin_prob_A[n] = p_A_H + p_A_V
+
+            # SWAP atomA right (past the processed bin)
+            if site_A + 1 < len(mps.d) - 1:
+                mps.swap_sites(site_A)
+                site_A += 1
+
+            # Record atom A state after SWAP
+            atom_sites_after_A = mps.find_sites_by_dim(DIM_ATOM)
+            site_A_after = atom_sites_after_A[0]
+            rho_A_after = mps.get_reduced_density([site_A_after])
+            col_idx = 2 * n + 1  # After atomA SWAP for bin n
+            atom_A_state_evolution[0, col_idx] = rho_A_after[0, 0].real
+            atom_A_state_evolution[1, col_idx] = rho_A_after[1, 1].real
+            atom_A_state_evolution[2, col_idx] = rho_A_after[2, 2].real
+
+            # === Atom B emission ===
+            atom_sites = mps.find_sites_by_dim(DIM_ATOM)
+            site_B = atom_sites[1]
+            target_B = 3 + 2 * n  # Original position of B_n
+
+            # Move atomB right until adjacent to target bin
+            while site_B + 1 < target_B:
+                mps.swap_sites(site_B)
+                site_B += 1
+
+            # Apply emission gate
+            gamma_B = self.emit.get_gamma_B(t)
+            if gamma_B >= 1e-6 and site_B + 1 < len(mps.d):
+                U_emit_B = emission_gate(
+                    gamma=gamma_B,
+                    dt=self.time_grid.dt * 1e9,  # Convert seconds to nanoseconds
+                    Alpha=self.emit.Alpha_B,
+                    which_atom='B'
+                )
+                mps.apply_bond_op(site_B, U_emit_B)
+
+                # Extract emission probability for this bin
+                rho_B_n = mps.get_reduced_density([site_B + 1])
+                p_B_H = rho_B_n[IDX_BIN_780H_START:IDX_BIN_780H_END,
+                               IDX_BIN_780H_START:IDX_BIN_780H_END].sum().real
+                p_B_V = rho_B_n[IDX_BIN_780V_START:IDX_BIN_780V_END,
+                               IDX_BIN_780V_START:IDX_BIN_780V_END].sum().real
+                per_bin_prob_B[n] = p_B_H + p_B_V
+
+            # SWAP atomB right
+            if site_B + 1 < len(mps.d) - 1:
+                mps.swap_sites(site_B)
+                site_B += 1
+
+            # Record atom B state after SWAP
+            atom_sites_after_B = mps.find_sites_by_dim(DIM_ATOM)
+            site_B_after = atom_sites_after_B[1]
+            rho_B_after = mps.get_reduced_density([site_B_after])
+            col_idx = 2 * n + 1  # After atomB SWAP for bin n
+            atom_B_state_evolution[0, col_idx] = rho_B_after[0, 0].real
+            atom_B_state_evolution[1, col_idx] = rho_B_after[1, 1].real
+            atom_B_state_evolution[2, col_idx] = rho_B_after[2, 2].real
+
+            if verbose and (n + 1) % 50 == 0:
+                atom_sites_curr = mps.find_sites_by_dim(DIM_ATOM)
+                # Print current atomic states
+                print(f"  Processed {n + 1}/{self.time_grid.N} bins... "
+                      f"(atomA@{atom_sites_curr[0]}, atomB@{atom_sites_curr[1]})")
+                print(f"    Atom A: P(|0>)={atom_A_state_evolution[0, col_idx]:.3f}, "
+                      f"P(|1>)={atom_A_state_evolution[1, col_idx]:.3f}, "
+                      f"P(|e>)={atom_A_state_evolution[2, col_idx]:.3f}")
+                print(f"    Atom B: P(|0>)={atom_B_state_evolution[0, col_idx]:.3f}, "
+                      f"P(|1>)={atom_B_state_evolution[1, col_idx]:.3f}, "
+                      f"P(|e>)={atom_B_state_evolution[2, col_idx]:.3f}")
+
+        # Get final atom states
+        atom_sites_final = mps.find_sites_by_dim(DIM_ATOM)
+        rho_atom_A = mps.get_reduced_density([atom_sites_final[0]])
+        rho_atom_B = mps.get_reduced_density([atom_sites_final[1]])
+
+        atom_states = {'A': rho_atom_A, 'B': rho_atom_B}
+
+        if verbose:
+            print(f"  Complete!")
+            print(f"  Final: atomA@{atom_sites_final[0]}, atomB@{atom_sites_final[1]}")
+            print(f"  Final chi: {mps.get_bond_dimensions()}")
+            print(f"  Norm: {mps.norm():.6f}")
+            print(f"\nFinal atomic states:")
+            print(f"  Atom A: P(|e>)={rho_atom_A[2,2].real:.4f}")
+            print(f"  Atom B: P(|e>)={rho_atom_B[2,2].real:.4f}")
+            print(f"\nEmission statistics:")
+            print(f"  Arm A total: {per_bin_prob_A.sum():.4f}, peak: {per_bin_prob_A.max():.4f}")
+            print(f"  Arm B total: {per_bin_prob_B.sum():.4f}, peak: {per_bin_prob_B.max():.4f}")
+
+        return EmissionResult(
+            mps=mps,
+            time_grid=self.time_grid,
+            per_bin_prob_A=per_bin_prob_A,
+            per_bin_prob_B=per_bin_prob_B,
+            atom_states=atom_states,
+            atom_A_state_evolution=atom_A_state_evolution,
+            atom_B_state_evolution=atom_B_state_evolution,
+        )
+
     def extract_wave_packet(self, mps: MPSState) -> Tuple[np.ndarray, np.ndarray]:
         """
         Extract wave packet information from MPS.
@@ -338,3 +647,64 @@ def run_single_trajectory(
         seed=seed,
     )
     return runner.run()
+
+
+def run_emission_only(
+    time_grid: TimeGrid,
+    emit_params: EmitParams,
+    qfc_params: Optional[QFCParams] = None,
+    fiber_params: Optional[FiberParams] = None,
+    det_params: Optional[DetParams] = None,
+    chi_max: int = 100,
+    verbose: bool = True,
+) -> EmissionResult:
+    """
+    Run emission-only simulation using SWAP conveyor belt protocol.
+
+    This is a convenience function for the first stage of the total simulation:
+    - Two atoms (A and B) in excited state
+    - Emission to time bins (780nm only, no QFC yet)
+    - Final state ready for next gate (BSM at station)
+
+    Parameters
+    ----------
+    time_grid : TimeGrid
+        Time discretization
+    emit_params : EmitParams
+        Emission parameters (gamma_A, gamma_B, Alpha_A, Alpha_B)
+    qfc_params : QFCParams, optional
+        Not used in emission-only, but kept for interface consistency
+    fiber_params : FiberParams, optional
+        Not used in emission-only, but kept for interface consistency
+    det_params : DetParams, optional
+        Not used in emission-only, but kept for interface consistency
+    chi_max : int
+        Maximum bond dimension
+    verbose : bool
+        Whether to print progress information
+
+    Returns
+    -------
+    EmissionResult
+        Container with emission simulation results
+    """
+    # Create default params if not provided
+    if qfc_params is None:
+        from ..config import QFCParams as _QFCParams
+        qfc_params = _QFCParams()
+    if fiber_params is None:
+        from ..config import FiberParams as _FiberParams
+        fiber_params = _FiberParams()
+    if det_params is None:
+        from ..config import DetParams as _DetParams
+        det_params = _DetParams()
+
+    runner = TrajectoryRunner(
+        time_grid=time_grid,
+        emit_params=emit_params,
+        qfc_params=qfc_params,
+        fiber_params=fiber_params,
+        det_params=det_params,
+        chi_max=chi_max,
+    )
+    return runner.run_emission(verbose=verbose)

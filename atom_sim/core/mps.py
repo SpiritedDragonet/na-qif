@@ -486,6 +486,24 @@ class MPSState:
         # 这是apply_bond_op正确计算维度所必需的
         self.d[i], self.d[i + 1] = self.d[i + 1], self.d[i]
 
+    def find_sites_by_dim(self, target_dim: int) -> List[int]:
+        """
+        Find all sites with a specific local dimension.
+
+        Useful for dynamically locating atoms (3D) or bins (18D) after SWAPs.
+
+        Parameters
+        ----------
+        target_dim : int
+            The local dimension to search for
+
+        Returns
+        -------
+        List[int]
+            List of site indices with the target dimension
+        """
+        return [i for i, d in enumerate(self.d) if d == target_dim]
+
     # ========================================================================
     # State Extraction
     # ========================================================================
