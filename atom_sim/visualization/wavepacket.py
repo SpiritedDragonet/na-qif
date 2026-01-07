@@ -995,11 +995,6 @@ def plot_emission_with_atomic_evolution(
     fig, axes = plt.subplots(1, 2, figsize=(24, 13))
     plt.subplots_adjust(left=0.04, right=0.85, top=0.80, bottom=0.06, wspace=0.50)
 
-    # Calculate vmax for both arms
-    vmax_A = max(0.05, result.per_bin_prob_A.max() * vmax_scale_factor)
-    vmax_B = max(0.05, result.per_bin_prob_B.max() * vmax_scale_factor)
-    vmax = max(vmax_A, vmax_B)
-
     n_bins = result.get_n_bins()
 
     # Get atomic state evolution
@@ -1031,6 +1026,12 @@ def plot_emission_with_atomic_evolution(
         if rho_B.shape[0] == 18:
             probs_B[n, :] = np.diag(rho_B).real
 
+    # Calculate vmax EXCLUDING (vac,vac) row (index 0)
+    # This ensures other bin states are visible even when vac is near 1
+    vmax_A = max(0.01, probs_A[:, 1:].max() * vmax_scale_factor)
+    vmax_B = max(0.01, probs_B[:, 1:].max() * vmax_scale_factor)
+    vmax = max(vmax_A, vmax_B)
+
     # Get state labels
     bin_state_labels = _get_bin18_state_labels()
 
@@ -1054,16 +1055,25 @@ def plot_emission_with_atomic_evolution(
 
     # Scientific colormaps
     # Atomic states: YlOrRd (Yellow-Orange-Red) - shows decay
-    # Bin states: plasma (purple-yellow) - commonly used scientific colormap
+    # (vac,vac) state: Greys - separate colorbar for vacuum probability
+    # Other bin states: plasma (purple-yellow) - commonly used scientific colormap
     atom_cmap = plt.get_cmap('YlOrRd')
+    vac_cmap = plt.get_cmap('Greys')
     bin_cmap = plt.get_cmap('plasma')
 
-    # Mask to show only atomic states
-    mask = np.zeros((3 + 18, n_bins), dtype=bool)
-    mask[:3, :] = True
+    # Create three separate masks
+    # 1. Atomic states (rows 0-2)
+    mask_atom = np.zeros((3 + 18, n_bins), dtype=bool)
+    mask_atom[:3, :] = True
+    # 2. (vac,vac) row (row 3)
+    mask_vac = np.zeros((3 + 18, n_bins), dtype=bool)
+    mask_vac[3, :] = True
+    # 3. Other bin states (rows 4-20)
+    mask_bin = np.zeros((3 + 18, n_bins), dtype=bool)
+    mask_bin[4:, :] = True
 
     # Plot arm A
-    # First plot bin states (bottom 18 rows)
+    # First plot all bin states (bottom 18 rows) with plasma colormap
     im_A = axes[0].imshow(
         combined_A,
         aspect='auto',
@@ -1073,9 +1083,20 @@ def plot_emission_with_atomic_evolution(
         origin='upper'
     )
 
-    # Then overlay atomic states with different colormap
+    # Overlay (vac,vac) row with different colormap
+    im_A_vac = axes[0].imshow(
+        np.ma.masked_where(~mask_vac, combined_A),
+        aspect='auto',
+        cmap=vac_cmap,
+        vmin=0,
+        vmax=1,
+        origin='upper',
+        interpolation='nearest'
+    )
+
+    # Overlay atomic states with different colormap
     im_A_atom = axes[0].imshow(
-        np.ma.masked_where(~mask, combined_A),
+        np.ma.masked_where(~mask_atom, combined_A),
         aspect='auto',
         cmap=atom_cmap,
         vmin=0,
@@ -1112,8 +1133,19 @@ def plot_emission_with_atomic_evolution(
         origin='upper'
     )
 
+    # Overlay (vac,vac) row
+    im_B_vac = axes[1].imshow(
+        np.ma.masked_where(~mask_vac, combined_B),
+        aspect='auto',
+        cmap=vac_cmap,
+        vmin=0,
+        vmax=1,
+        origin='upper',
+        interpolation='nearest'
+    )
+
     im_B_atom = axes[1].imshow(
-        np.ma.masked_where(~mask, combined_B),
+        np.ma.masked_where(~mask_atom, combined_B),
         aspect='auto',
         cmap=atom_cmap,
         vmin=0,
@@ -1143,11 +1175,12 @@ def plot_emission_with_atomic_evolution(
             ax.axhline(boundary + 3, color='white', linewidth=1, alpha=0.5, linestyle='--')
 
     # Add colorbars aligned with their respective sections
+    # Three colorbars: Atom (3/21), Vac (1/21), Bin (17/21)
     ax_pos_A = axes[0].get_position()
     ax_pos_B = axes[1].get_position()
     fig_height = ax_pos_A.y1 - ax_pos_A.y0
 
-    # Atomic colorbar for arm A
+    # Atomic colorbar for arm A (rows 0-2, height = 3/21)
     cax_A_atom = fig.add_axes([
         ax_pos_A.x1 + 0.01,
         ax_pos_A.y1 - fig_height * (3/21),
@@ -1158,12 +1191,23 @@ def plot_emission_with_atomic_evolution(
     cbar_A_atom.set_ticks([0, 0.5, 1])
     cbar_A_atom.set_label('Atom', fontsize=9)
 
-    # Bin state colorbar for arm A
+    # (vac,vac) colorbar for arm A (row 3, height = 1/21)
+    cax_A_vac = fig.add_axes([
+        ax_pos_A.x1 + 0.01,
+        ax_pos_A.y1 - fig_height * (4/21),
+        0.01,
+        fig_height * (1/21)
+    ])
+    cbar_A_vac = fig.colorbar(im_A_vac, cax=cax_A_vac)
+    cbar_A_vac.set_ticks([0, 0.5, 1])
+    cbar_A_vac.set_label('Vac', fontsize=8)
+
+    # Bin state colorbar for arm A (rows 4-20, height = 17/21)
     cax_A = fig.add_axes([
         ax_pos_A.x1 + 0.01,
         ax_pos_A.y0,
         0.01,
-        fig_height * (18/21)
+        fig_height * (17/21)
     ])
     cbar_A = fig.colorbar(im_A, cax=cax_A)
     n_ticks_cb = 4
@@ -1182,12 +1226,23 @@ def plot_emission_with_atomic_evolution(
     cbar_B_atom.set_ticks([0, 0.5, 1])
     cbar_B_atom.set_label('Atom', fontsize=9)
 
+    # (vac,vac) colorbar for arm B
+    cax_B_vac = fig.add_axes([
+        ax_pos_B.x1 + 0.01,
+        ax_pos_B.y1 - fig_height * (4/21),
+        0.01,
+        fig_height * (1/21)
+    ])
+    cbar_B_vac = fig.colorbar(im_B_vac, cax=cax_B_vac)
+    cbar_B_vac.set_ticks([0, 0.5, 1])
+    cbar_B_vac.set_label('Vac', fontsize=8)
+
     # Bin state colorbar for arm B
     cax_B = fig.add_axes([
         ax_pos_B.x1 + 0.01,
         ax_pos_B.y0,
         0.01,
-        fig_height * (18/21)
+        fig_height * (17/21)
     ])
     cbar_B = fig.colorbar(im_B, cax=cax_B)
     cbar_B.set_ticks(tick_vals)

@@ -132,7 +132,7 @@ def main():
     # Run simulation with default parameters
     # Use n_bins=200 for production, n_bins=50 for quick testing
     result = run_dual_atom_emission(
-        n_bins=200,
+        n_bins=600,
         dt_ns=0.2,
         chi_max=50,
         gamma_peak_A=0.2,
