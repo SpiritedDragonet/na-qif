@@ -521,3 +521,181 @@ def dephasing_channel_from_rate(
     """
     p_phi = 1 - np.exp(-gamma_phi * tau)
     return dephasing_channel(p_phi, dim)
+
+
+# =============================================================================
+# Fiber Channel Parameters (for realistic fiber transmission simulation)
+# =============================================================================
+
+class FiberChannelParams:
+    """
+    Parameters for fiber channel transmission with random polarization drift.
+
+    This class models:
+    - Jones matrix polarization drift (SU(2) random matrices)
+    - Phase drift between arms
+    - Loss with small fluctuations
+    - PMD (polarization mode dispersion)
+
+    Each trajectory samples new random parameters from the distributions.
+
+    Parameters
+    ----------
+    U_mean_A : np.ndarray
+        Mean Jones matrix for arm A (2x2 unitary)
+    U_mean_B : np.ndarray
+        Mean Jones matrix for arm B (2x2 unitary)
+    polarization_model : str
+        "haar" - fully random SU(2) (uncompensated fiber)
+        "perturb" - small random rotation around mean (compensated fiber)
+        "euler" - random Euler angles (intermediate)
+    polarization_sigma : float
+        For "perturb" model: standard deviation of rotation angle (radians)
+    eta_mean : float
+        Mean transmissivity (0 to 1)
+    eta_std : float
+        Standard deviation of transmissivity
+    phase_drift_std : float
+        Standard deviation of phase drift between arms (radians)
+    pmd_enabled : bool
+        Whether to include PMD effect
+    pmd_delay_bins : int
+        PMD delay in number of bins (integer shift)
+
+    Examples
+    --------
+    >>> # Uncompensated long fiber
+    >>> params = FiberChannelParams(polarization_model="haar")
+    >>> # Compensated fiber with small drift
+    >>> params = FiberChannelParams(polarization_model="perturb", polarization_sigma=0.1)
+    >>> # Sample for one trajectory
+    >>> U_A, U_B, eta, phase = params.sample_all(rng)
+    """
+
+    def __init__(
+        self,
+        U_mean_A: np.ndarray = None,
+        U_mean_B: np.ndarray = None,
+        polarization_model: str = "perturb",
+        polarization_sigma: float = 0.1,
+        eta_mean: float = 0.6,
+        eta_std: float = 0.02,
+        phase_drift_std: float = 0.2,
+        pmd_enabled: bool = False,
+        pmd_delay_bins: int = 0,
+    ):
+        if U_mean_A is None:
+            U_mean_A = np.eye(2, dtype=complex)
+        if U_mean_B is None:
+            U_mean_B = np.eye(2, dtype=complex)
+
+        self.U_mean_A = np.asarray(U_mean_A, dtype=complex)
+        self.U_mean_B = np.asarray(U_mean_B, dtype=complex)
+        self.polarization_model = polarization_model
+        self.polarization_sigma = polarization_sigma
+        self.eta_mean = eta_mean
+        self.eta_std = eta_std
+        self.phase_drift_std = phase_drift_std
+        self.pmd_enabled = pmd_enabled
+        self.pmd_delay_bins = pmd_delay_bins
+
+    def sample_jones_A(self, rng: np.random.Generator) -> np.ndarray:
+        """Sample a Jones matrix for arm A."""
+        return self._sample_jones(self.U_mean_A, rng)
+
+    def sample_jones_B(self, rng: np.random.Generator) -> np.ndarray:
+        """Sample a Jones matrix for arm B."""
+        return self._sample_jones(self.U_mean_B, rng)
+
+    def _sample_jones(self, U_mean: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+        """Sample a Jones matrix given the mean matrix."""
+        model = self.polarization_model
+
+        if model == "haar":
+            # Fully random SU(2) from Haar measure
+            # Use quaternion parameterization
+            x = rng.standard_normal(4)
+            x = x / np.linalg.norm(x)
+            a, b, c, d = x
+            U = np.array([
+                [a + 1j*b, c + 1j*d],
+                [-c + 1j*d, a - 1j*b]
+            ], dtype=complex)
+
+        elif model == "perturb":
+            # Small random rotation around mean
+            # Generate random axis on Bloch sphere
+            axis = rng.standard_normal(3)
+            axis = axis / np.linalg.norm(axis)
+
+            # Random rotation angle
+            delta_theta = rng.normal(0, self.polarization_sigma)
+
+            # Build rotation: U = U_mean @ exp(i * delta_theta * (axis·sigma/2))
+            from scipy.linalg import expm
+            sigma = [
+                np.array([[0, 1], [1, 0]], dtype=complex),   # sigma_x
+                np.array([[0, -1j], [1j, 0]], dtype=complex), # sigma_y
+                np.array([[1, 0], [0, -1]], dtype=complex)   # sigma_z
+            ]
+            generator = sum(a * s for a, s in zip(axis, sigma)) / 2
+            delta_U = expm(1j * delta_theta * generator)
+            U = U_mean @ delta_U
+
+        elif model == "euler":
+            # Random Euler angles
+            # U = R_z(alpha) @ R_y(beta) @ R_z(gamma)
+            alpha = rng.uniform(0, 2*np.pi)
+            beta = rng.uniform(0, np.pi)
+            gamma = rng.uniform(0, 2*np.pi)
+
+            Rz_a = np.array([
+                [np.exp(-1j*alpha/2), 0],
+                [0, np.exp(1j*alpha/2)]
+            ], dtype=complex)
+            Ry_b = np.array([
+                [np.cos(beta/2), -np.sin(beta/2)],
+                [np.sin(beta/2), np.cos(beta/2)]
+            ], dtype=complex)
+            Rz_g = np.array([
+                [np.exp(-1j*gamma/2), 0],
+                [0, np.exp(1j*gamma/2)]
+            ], dtype=complex)
+            U = Rz_a @ Ry_b @ Rz_g
+
+        else:
+            raise ValueError(f"Unknown polarization_model: {model}")
+
+        return U
+
+    def sample_eta(self, rng: np.random.Generator) -> float:
+        """Sample transmissivity from truncated normal distribution."""
+        eta = rng.normal(self.eta_mean, self.eta_std)
+        return np.clip(eta, 0, 1)
+
+    def sample_phase_drift(self, rng: np.random.Generator) -> float:
+        """Sample phase drift between arms (in radians)."""
+        return rng.normal(0, self.phase_drift_std)
+
+    def sample_all(self, rng: np.random.Generator) -> tuple:
+        """
+        Sample all parameters for one trajectory.
+
+        Returns
+        -------
+        tuple
+            (U_A, U_B, eta, phase_drift) where:
+            - U_A: Jones matrix for arm A (2x2)
+            - U_B: Jones matrix for arm B (2x2, with possible phase drift)
+            - eta: transmissivity (0 to 1)
+            - phase_drift: relative phase between arms (radians)
+        """
+        U_A = self.sample_jones_A(rng)
+        U_B = self.sample_jones_B(rng)
+        eta = self.sample_eta(rng)
+        phase = self.sample_phase_drift(rng)
+
+        # Apply phase drift to arm B (global phase affects interference)
+        U_B = np.exp(1j * phase) * U_B
+
+        return U_A, U_B, eta, phase

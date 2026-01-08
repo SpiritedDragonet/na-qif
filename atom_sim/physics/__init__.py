@@ -19,6 +19,7 @@ from .channels import (
     detection_channel_two_mode,
     dephasing_channel,
     dephasing_channel_from_rate,
+    FiberChannelParams,
 )
 
 __all__ = [
@@ -36,4 +37,5 @@ __all__ = [
     'detection_channel_two_mode',
     'dephasing_channel',
     'dephasing_channel_from_rate',
+    'FiberChannelParams',
 ]

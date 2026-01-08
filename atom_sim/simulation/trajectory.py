@@ -1032,3 +1032,77 @@ def _print_footer(mps: MPSState, verbose: bool, stage: str = ""):
     if verbose:
         print(f"  Final chi: {mps.get_bond_dimensions()}")
         print(f"{stage} complete.")
+
+
+def apply_fiber_channel(
+    mps: MPSState,
+    n_bins: int,
+    fiber_params,
+    rng: np.random.Generator,
+    verbose: bool = True,
+) -> tuple:
+    """
+    Apply fiber channel effects: Jones rotation + loss (with random sampling).
+
+    This combines apply_jones and apply_loss_combined, but samples parameters
+    from FiberChannelParams for each trajectory (simulating fiber drift).
+
+    Parameters
+    ----------
+    mps : MPSState
+        MPS state (layout: A1, B1, A2, B2, ..., AN, BN, atomA, atomB)
+    n_bins : int
+        Number of time bins
+    fiber_params : FiberChannelParams
+        Fiber channel parameters (will sample new Jones matrices and eta)
+    rng : np.random.Generator
+        Random number generator
+    verbose : bool
+        Whether to print progress
+
+    Returns
+    -------
+    tuple
+        (mps, sampled_params) where sampled_params = (U_A, U_B, eta, phase)
+    """
+    from ..physics.channels import FiberChannelParams
+
+    _print_header("Fiber Channel", verbose)
+
+    # Sample parameters for this trajectory
+    U_A, U_B, eta, phase = fiber_params.sample_all(rng)
+
+    if verbose:
+        print(f"  Sampled Jones_A:\n{U_A}")
+        print(f"  Sampled Jones_B:\n{U_B}")
+        print(f"  Phase drift: {phase:.4f} rad")
+        print(f"  Sampled eta: {eta:.4f}")
+
+    # Apply Jones rotation
+    from ..physics.gates import jones_gate_from_array
+    U_J_A = jones_gate_from_array(U_A)
+    U_J_B = jones_gate_from_array(U_B)
+
+    for n in range(n_bins):
+        site_A = 2 * n
+        site_B = 2 * n + 1
+        mps.apply_one_site_gate(site_A, U_J_A)
+        mps.apply_one_site_gate(site_B, U_J_B)
+
+        _print_progress(n + 1, n_bins, verbose)
+
+    # Apply loss (780 filtered, 1517 with sampled eta)
+    from ..physics.channels import loss_channel_both_subspaces
+    K_list = loss_channel_both_subspaces(eta_780=0.0, eta_H_1517=eta, eta_V_1517=eta)
+
+    for n in range(n_bins):
+        site_A = 2 * n
+        site_B = 2 * n + 1
+        mps.apply_kraus_one_site(site_A, K_list, rng)
+        mps.apply_kraus_one_site(site_B, K_list, rng)
+
+        _print_progress(n + 1, n_bins, verbose)
+
+    _print_footer(mps, verbose, stage="Fiber Channel")
+
+    return mps, (U_A, U_B, eta, phase)

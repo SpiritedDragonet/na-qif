@@ -25,8 +25,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from atom_sim.config import TimeGrid, EmitParams
-from atom_sim.simulation import run_emission_only, EmissionResult, apply_qfc, apply_loss_combined
+from atom_sim.simulation import run_emission_only, EmissionResult, apply_qfc, apply_fiber_channel
 from atom_sim.visualization import plot_dual_arm_heatmap
+from atom_sim.physics import FiberChannelParams
 
 
 # Backward compatibility: alias for EmissionResult
@@ -126,8 +127,8 @@ def run_dual_atom_emission(
 
 
 def main():
-    """Main function for testing emission + QFC + loss."""
-    print("Running emission + QFC + loss simulation...")
+    """Main function for testing emission + QFC + fiber channel."""
+    print("Running emission + QFC + fiber channel simulation...")
 
     # Run emission
     result = run_dual_atom_emission(
@@ -164,33 +165,43 @@ def main():
         time_grid=result.time_grid,
     )
 
-    # Apply combined loss channel:
-    # - 780nm: 100% filtered (eta=0)
-    # - 1517nm: 57% transmission (coupling + waveguide loss)
-    eta_1517 = 0.57
-    print(f"\nApplying loss channel (780nm: 100% filter, 1517nm: eta={eta_1517})...")
+    # Setup fiber channel parameters with random drift
+    # This models realistic fiber transmission with:
+    # - Polarization drift (Jones matrices)
+    # - Phase drift between arms
+    # - Loss with small fluctuations
+    fiber_params = FiberChannelParams(
+        polarization_model="perturb",  # Small random rotations
+        polarization_sigma=0.1,          # 0.1 rad std (~5.7 degrees)
+        eta_mean=0.57,                    # Mean transmissivity
+        eta_std=0.02,                     # 2% fluctuation
+        phase_drift_std=0.2,              # Phase drift std (rad)
+    )
+
     rng = np.random.default_rng(seed=42)  # For reproducibility
-    apply_loss_combined(
+
+    # Apply fiber channel (Jones + loss) with sampled parameters
+    print(f"\nApplying fiber channel (Jones rotation + loss)...")
+    result.mps, sampled_params = apply_fiber_channel(
         mps=result.mps,
         n_bins=result.get_n_bins(),
-        eta_780=0.0,  # 100% loss (filtered)
-        eta_H_1517=eta_1517,
-        eta_V_1517=eta_1517,
+        fiber_params=fiber_params,
         rng=rng,
         verbose=True,
     )
 
-    # Save post-loss visualization
-    print("\nGenerating post-loss visualization...")
+    # Save post-fiber visualization
+    print("\nGenerating post-fiber visualization...")
+    U_A, U_B, eta, phase = sampled_params
     plot_dual_arm_heatmap(
         result.mps,
-        save_path="post_loss.png",
+        save_path="post_fiber.png",
         show_atomic=False,
-        stage_name=f"After Loss (780nm filtered, 1517nm eta={eta_1517})",
+        stage_name=f"After Fiber (eta={eta:.2f}, phase={phase:.2f}rad)",
         time_grid=result.time_grid,
     )
 
-    print("\nDone! Saved: pre_qfc.png, post_qfc.png, post_loss.png")
+    print("\nDone! Saved: pre_qfc.png, post_qfc.png, post_fiber.png")
 
 
 if __name__ == "__main__":
