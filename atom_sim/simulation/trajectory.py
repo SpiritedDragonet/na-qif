@@ -16,7 +16,7 @@ from ..physics.gates import (
     emission_gate, qfc_gate, bs_gate, jones_gate_from_array, swap_gate
 )
 from ..physics.channels import (
-    loss_channel_1517, detection_channel_two_mode, dephasing_channel_from_rate
+    loss_channel_1517, loss_channel_both_subspaces, detection_channel_two_mode, dephasing_channel_from_rate
 )
 
 
@@ -478,7 +478,12 @@ class TrajectoryRunner:
                 per_bin_prob_A[n] = p_A_H + p_A_V
 
             # SWAP atomA right (past the processed bin)
-            if site_A + 1 < len(mps.d) - 1:
+            # Allow moving all the way to the end of the chain
+            # After SWAP, atom should be at or beyond the original bin position
+            if site_A + 1 < len(mps.d):
+                # Check if we need to swap past the last bin (for n = N-1)
+                # The last bin A_N is at site 2*N, B_N at site 2*N+1
+                # We want to move atoms all the way past these bins
                 mps.swap_sites(site_A)
                 site_A += 1
 
@@ -521,7 +526,8 @@ class TrajectoryRunner:
                 per_bin_prob_B[n] = p_B_H + p_B_V
 
             # SWAP atomB right
-            if site_B + 1 < len(mps.d) - 1:
+            # Allow moving all the way to the end of the chain
+            if site_B + 1 < len(mps.d):
                 mps.swap_sites(site_B)
                 site_B += 1
 
@@ -545,6 +551,33 @@ class TrajectoryRunner:
                 print(f"    Atom B: P(|0>)={atom_B_state_evolution[0, col_idx]:.3f}, "
                       f"P(|1>)={atom_B_state_evolution[1, col_idx]:.3f}, "
                       f"P(|e>)={atom_B_state_evolution[2, col_idx]:.3f}")
+
+        # Final pass: move atoms all the way to the end of the chain
+        # This ensures bins occupy sites 0 to 2*N-1, atoms at 2*N and 2*N+1
+        if verbose:
+            print(f"\n  Final pass: moving atoms to end of chain...")
+
+        # Move atomA to site 2*N (second to last)
+        while True:
+            atom_sites = mps.find_sites_by_dim(DIM_ATOM)
+            site_A = atom_sites[0]
+            target_A = 2 * self.time_grid.N  # Site 2*N
+            if site_A >= target_A:
+                break
+            mps.swap_sites(site_A)
+
+        # Move atomB to site 2*N+1 (last)
+        while True:
+            atom_sites = mps.find_sites_by_dim(DIM_ATOM)
+            site_B = atom_sites[1]
+            target_B = 2 * self.time_grid.N + 1  # Site 2*N+1
+            if site_B >= target_B:
+                break
+            mps.swap_sites(site_B)
+
+        if verbose:
+            atom_sites_final = mps.find_sites_by_dim(DIM_ATOM)
+            print(f"  After final pass: atomA@{atom_sites_final[0]}, atomB@{atom_sites_final[1]}")
 
         # Get final atom states
         atom_sites_final = mps.find_sites_by_dim(DIM_ATOM)
@@ -708,3 +741,294 @@ def run_emission_only(
         chi_max=chi_max,
     )
     return runner.run_emission(verbose=verbose)
+
+
+# ============================================================================
+# Unified Processor Functions (apply_* pattern)
+# All functions follow the same interface:
+#   - Input: mps (MPSState), params, verbose (bool)
+#   - Output: mps (MPSState)
+#   - Print format: consistent across all functions
+# ============================================================================
+
+def apply_qfc(
+    mps: MPSState,
+    n_bins: int,
+    theta_H: float = np.pi/4,
+    theta_V: float = np.pi/4,
+    verbose: bool = True,
+) -> MPSState:
+    """
+    Apply QFC gate to all bins.
+
+    Parameters
+    ----------
+    mps : MPSState
+        MPS state (layout: A1, B1, A2, B2, ..., AN, BN, atomA, atomB)
+    n_bins : int
+        Number of time bins
+    theta_H : float
+        QFC angle for H polarization (sin² = conversion probability)
+    theta_V : float
+        QFC angle for V polarization
+    verbose : bool
+        Whether to print progress
+
+    Returns
+    -------
+    MPSState
+        MPS state with QFC applied (modified in-place)
+    """
+    from ..physics.gates import qfc_gate
+
+    _print_header("QFC", verbose)
+    if verbose:
+        print(f"  theta_H = {theta_H:.4f} (sin² = {np.sin(theta_H)**2:.3f})")
+        print(f"  theta_V = {theta_V:.4f} (sin² = {np.sin(theta_V)**2:.3f})")
+
+    # Get QFC gate (18x18, acts on single bin)
+    U_qfc = qfc_gate(theta_H=theta_H, theta_V=theta_V)
+
+    if verbose:
+        print(f"  U_qfc shape: {U_qfc.shape}")
+        print(f"  n_bins={n_bins}, MPS L={mps.L}")
+        print(f"  MPS d[:5]={mps.d[:5]}, d[-5:]={mps.d[-5:]}")
+
+    # Apply QFC to each bin
+    for n in range(n_bins):
+        site_A = 2 * n
+        site_B = 2 * n + 1
+
+        mps.apply_one_site_gate(site_A, U_qfc)
+        mps.apply_one_site_gate(site_B, U_qfc)
+
+        _print_progress(n + 1, n_bins, verbose)
+
+    _print_footer(mps, verbose, stage="QFC")
+    return mps
+
+
+def apply_jones(
+    mps: MPSState,
+    n_bins: int,
+    Jones_A: np.ndarray,
+    Jones_B: np.ndarray,
+    verbose: bool = True,
+) -> MPSState:
+    """
+    Apply Jones polarization rotation to all bins.
+
+    Parameters
+    ----------
+    mps : MPSState
+        MPS state (layout: A1, B1, A2, B2, ..., AN, BN, atomA, atomB)
+    n_bins : int
+        Number of time bins
+    Jones_A : np.ndarray
+        2x2 Jones matrix for arm A
+    Jones_B : np.ndarray
+        2x2 Jones matrix for arm B
+    verbose : bool
+        Whether to print progress
+
+    Returns
+    -------
+    MPSState
+        MPS state with Jones rotation applied (modified in-place)
+    """
+    from ..physics.gates import jones_gate_from_array
+
+    _print_header("Jones", verbose)
+    if verbose:
+        print(f"  Jones_A: {Jones_A}")
+        print(f"  Jones_B: {Jones_B}")
+
+    # Get Jones gates (18x18, embedded)
+    U_J_A = jones_gate_from_array(Jones_A)
+    U_J_B = jones_gate_from_array(Jones_B)
+
+    # Apply Jones to each bin
+    for n in range(n_bins):
+        site_A = 2 * n
+        site_B = 2 * n + 1
+        mps.apply_one_site_gate(site_A, U_J_A)
+        mps.apply_one_site_gate(site_B, U_J_B)
+
+        _print_progress(n + 1, n_bins, verbose)
+
+    _print_footer(mps, verbose, stage="Jones")
+    return mps
+
+
+def apply_loss(
+    mps: MPSState,
+    n_bins: int,
+    eta_H_A: float,
+    eta_V_A: float,
+    eta_H_B: float,
+    eta_V_B: float,
+    rng: np.random.Generator,
+    verbose: bool = True,
+) -> MPSState:
+    """
+    Apply loss channel to all bins.
+
+    Parameters
+    ----------
+    mps : MPSState
+        MPS state (layout: A1, B1, A2, B2, ..., AN, BN, atomA, atomB)
+    n_bins : int
+        Number of time bins
+    eta_H_A, eta_V_A : float
+        Transmissivity for arm A (H, V polarizations)
+    eta_H_B, eta_V_B : float
+        Transmissivity for arm B (H, V polarizations)
+    rng : np.random.Generator
+        Random number generator for Kraus sampling
+    verbose : bool
+        Whether to print progress
+
+    Returns
+    -------
+    MPSState
+        MPS state with loss applied (modified in-place)
+    """
+    _print_header("Loss", verbose)
+    if verbose:
+        print(f"  Arm A: eta_H={eta_H_A:.3f}, eta_V={eta_V_A:.3f}")
+        print(f"  Arm B: eta_H={eta_H_B:.3f}, eta_V={eta_V_B:.3f}")
+
+    # Get loss Kraus operators (18x18, embedded)
+    K_loss_A = loss_channel_1517(eta_H_A, eta_V_A)
+    K_loss_B = loss_channel_1517(eta_H_B, eta_V_B)
+
+    # Apply loss to each bin
+    for n in range(n_bins):
+        site_A = 2 * n
+        site_B = 2 * n + 1
+        mps.apply_kraus_one_site(site_A, K_loss_A, rng)
+        mps.apply_kraus_one_site(site_B, K_loss_B, rng)
+
+        _print_progress(n + 1, n_bins, verbose)
+
+    _print_footer(mps, verbose, stage="Loss")
+    return mps
+
+
+def apply_loss_combined(
+    mps: MPSState,
+    n_bins: int,
+    eta_780: float,
+    eta_H_1517: float,
+    eta_V_1517: float,
+    rng: np.random.Generator,
+    verbose: bool = True,
+) -> MPSState:
+    """
+    Apply combined loss channel to all bins (both 780 and 1517 subspaces).
+
+    For QFC applications: typically eta_780=0 (100% filtered),
+    eta_1517=0.5~0.8 (normal transmission loss).
+
+    Parameters
+    ----------
+    mps : MPSState
+        MPS state (layout: A1, B1, A2, B2, ..., AN, BN, atomA, atomB)
+    n_bins : int
+        Number of time bins
+    eta_780 : float
+        Transmissivity for 780nm subspace (0 = 100% loss/filtered)
+    eta_H_1517 : float
+        Transmissivity for 1517nm H polarization
+    eta_V_1517 : float
+        Transmissivity for 1517nm V polarization
+    rng : np.random.Generator
+        Random number generator for Kraus sampling
+    verbose : bool
+        Whether to print progress
+
+    Returns
+    -------
+    MPSState
+        MPS state with loss applied (modified in-place)
+    """
+    _print_header("Loss", verbose)
+    if verbose:
+        print(f"  780nm: eta={eta_780:.3f} ({'100% filtered' if eta_780==0 else 'partial loss'})")
+        print(f"  1517nm: eta_H={eta_H_1517:.3f}, eta_V={eta_V_1517:.3f}")
+
+    # Get combined Kraus operators (18x18, both subspaces)
+    K_list = loss_channel_both_subspaces(eta_780, eta_H_1517, eta_V_1517)
+
+    # Apply loss to each bin (same for both arms)
+    for n in range(n_bins):
+        site_A = 2 * n
+        site_B = 2 * n + 1
+        mps.apply_kraus_one_site(site_A, K_list, rng)
+        mps.apply_kraus_one_site(site_B, K_list, rng)
+
+        _print_progress(n + 1, n_bins, verbose)
+
+    _print_footer(mps, verbose, stage="Loss")
+    return mps
+
+
+def apply_bs(
+    mps: MPSState,
+    n_bins: int,
+    verbose: bool = True,
+) -> MPSState:
+    """
+    Apply beam splitter to each A_n, B_n pair.
+
+    Parameters
+    ----------
+    mps : MPSState
+        MPS state (layout: A1, B1, A2, B2, ..., AN, BN, atomA, atomB)
+    n_bins : int
+        Number of time bins
+    verbose : bool
+        Whether to print progress
+
+    Returns
+    -------
+    MPSState
+        MPS state with BS applied (modified in-place)
+    """
+    from ..physics.gates import bs_gate
+
+    _print_header("BS", verbose)
+
+    # Get BS gate (36x36, acts on 1517_A × 1517_B)
+    U_bs = bs_gate()
+
+    # Apply BS to each A_n, B_n pair
+    for n in range(n_bins):
+        site_A = 2 * n
+        site_B = 2 * n + 1
+        mps.apply_bond_op(site_A, U_bs)
+
+        _print_progress(n + 1, n_bins, verbose)
+
+    _print_footer(mps, verbose, stage="BS")
+    return mps
+
+
+# Helper functions for consistent printing
+def _print_header(stage: str, verbose: bool):
+    """Print stage header in consistent format."""
+    if verbose:
+        print(f"\n{'='*60}")
+        print(f"{stage:>56} <<<")
+        print(f"{'='*60}")
+
+def _print_progress(current: int, total: int, verbose: bool):
+    """Print progress in consistent format."""
+    if verbose and (current % 50 == 0 or current == total):
+        print(f"  Processed {current}/{total} bins...")
+
+def _print_footer(mps: MPSState, verbose: bool, stage: str = ""):
+    """Print stage footer in consistent format."""
+    if verbose:
+        print(f"  Final chi: {mps.get_bond_dimensions()}")
+        print(f"{stage} complete.")

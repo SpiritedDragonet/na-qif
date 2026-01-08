@@ -35,7 +35,7 @@ def qfc_gate(theta_H: float = 0.0, theta_V: float = 0.0) -> np.ndarray:
     Quantum Frequency Conversion gate U_qfc.
 
     Converts 780nm photons to 1517nm via beam-splitter-like coupling:
-        U_qfc = exp(-i * (theta_H * (b_H c_H^† + h.c.) + theta_V * (b_V c_V^† + h.c.)))
+        U_qfc = exp(theta_H * (b_H c_H^† - b_H^† c_H) + theta_V * (b_V c_V^† - b_V^† c_V))
 
     This is a one-site unitary on the 18D bin space (780 x 1517).
 
@@ -91,9 +91,10 @@ def qfc_gate(theta_H: float = 0.0, theta_V: float = 0.0) -> np.ndarray:
     bV_dag_full = np.kron(bV_dag, I_1517)
     cV_full = np.kron(I_780, cV)
 
-    # Generator: -i * theta * (b c^† - b^† c)
-    G_H = -1j * theta_H * (bH_full @ cH_dag_full - bH_dag_full @ cH_full)
-    G_V = -1j * theta_V * (bV_full @ cV_dag_full - bV_dag_full @ cV_full)
+    # Generator: theta * (b c^† - b^† c)
+    # This is anti-Hermitian, so exp(G) is unitary
+    G_H = theta_H * (bH_full @ cH_dag_full - bH_dag_full @ cH_full)
+    G_V = theta_V * (bV_full @ cV_dag_full - bV_dag_full @ cV_full)
 
     G = G_H + G_V
 
@@ -106,102 +107,74 @@ def qfc_gate(theta_H: float = 0.0, theta_V: float = 0.0) -> np.ndarray:
 @lru_cache(maxsize=4)
 def bs_gate() -> np.ndarray:
     """
-    50/50 Beam Splitter gate U_BS.
+    50/50 Beam Splitter gate U_BS using generator exponentiation.
 
-    Mixes telecom modes (1517nm) of two bins:
-        (d_1, d_2)^T = (1/sqrt(2)) * [[1, 1], [1, -1]] * (c_A, c_B)^T
+    Generator: G_BS = θ * Σ_p (c_A,p^† ⊗ c_B,p - c_A,p ⊗ c_B,p^†)
+    With θ = π/4 for 50:50 BS.
 
-    This is a two-site unitary acting on the 1517 subspace of both bins.
+    Mixes telecom modes (1517nm) of two bins.
+    Returns a 36x36 unitary acting on 1517_A × 1517_B.
 
     Returns
     -------
     np.ndarray
-        36x36 unitary matrix (6x6 per site, but only acts on telecom subspace)
-        Actually returns (36, 36) for full two-bin telecom space
+        36x36 unitary matrix for 1517_A × 1517_B space (6×6 per site)
 
     Examples
     --------
     >>> U = bs_gate()  # Can be applied to (A_n, B_n) pair
     """
-    # 50/50 beam splitter matrix
-    BS = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
+    from scipy.linalg import expm
+    from ..hilbert.operators import annihilation_op, creation_op
+    from ..hilbert.basis import SUBSPACE_1517
 
-    # We need to construct the BS operator on the 6D telecom space
-    # The telecom basis is: vac, H, V, 2H, 2V, HV
-    # BS only mixes H and V between the two input modes
+    def make_generator(mode_id: int) -> np.ndarray:
+        """
+        Construct BS generator for a single polarization mode.
 
-    # For each polarization, we have a BS transformation
-    # The full operator on two sites is constructed by:
-    # U_BS = exp(theta * (a_A^† a_B - a_A a_B^†)) with theta = pi/4
+        G = θ * (c_A^† ⊗ c_B - c_A ⊗ c_B^†)
+        where θ = π/4 for 50:50 BS.
 
-    # For simplicity, construct directly in the number basis
-    # The BS acts identically on H and V polarizations
+        Parameters
+        ----------
+        mode_id : int
+            0 for H polarization, 1 for V polarization
 
-    # Single-mode BS on one polarization:
-    # |0>|0> -> |0>|0>
-    # |1>|0> -> (|1>|0> + |0>|1>)/sqrt(2)
-    # |0>|1> -> (|1>|0> - |0>|1>)/sqrt(2)
-    # |1>|1> -> (|2>|0> - |0>|2>)/sqrt(2)  (bunching)
+        Returns
+        -------
+        np.ndarray
+            36x36 generator matrix acting on 1517_A × 1517_B
+        """
+        # Get annihilation and creation operators for 1517 subspace
+        c = annihilation_op(SUBSPACE_1517, mode_id)  # 6x6
+        c_dag = creation_op(SUBSPACE_1517, mode_id)  # 6x6
 
-    # We need to construct this on the 6D telecom space for each site
-    # Total dimension: 6 x 6 = 36
+        # Construct operators on the joint 1517_A × 1517_B space (36D)
+        # c_A ⊗ I_B (annihilate in mode A, identity in mode B)
+        c_A = np.kron(c, np.eye(6, dtype=complex))
+        # c_B ⊗ I_A (annihilate in mode B, identity in mode A)
+        c_B = np.kron(np.eye(6, dtype=complex), c)
+        # c_A^† ⊗ I_B
+        c_dag_A = np.kron(c_dag, np.eye(6, dtype=complex))
+        # c_B^† ⊗ I_A
+        c_dag_B = np.kron(np.eye(6, dtype=complex), c_dag)
 
-    I_780 = np.eye(3, dtype=complex)
+        # BS generator: G = θ * (c_A^† c_B - c_A c_B^†)
+        theta = np.pi / 4
+        G = theta * (c_dag_A @ c_B - c_A @ c_dag_B)
+        return G
 
-    # Build the BS operator on the 1517 telecom subspace
-    # We'll work in the joint Fock basis for the two modes
+    # Generate generators for H and V polarizations
+    G_H = make_generator(mode_id=0)  # H polarization
+    G_V = make_generator(mode_id=1)  # V polarization
 
-    # Basis for two modes with up to 2 photons total:
-    # (n1, n2) where n1, n2 in {0,1,2} and n1+n2 <= 2
-    basis_2mode = [
-        (0, 0),  # vac,vac
-        (1, 0),  # H,vac
-        (0, 1),  # vac,H
-        (2, 0),  # 2H,vac
-        (0, 2),  # vac,2H
-        (1, 1),  # H,H
-    ]
+    # Total generator (sum over both polarizations)
+    G_total = G_H + G_V
 
-    # BS transformation on this basis (for one polarization)
-    dim_2mode = len(basis_2mode)
-    BS_pol = np.zeros((dim_2mode, dim_2mode), dtype=complex)
+    # Exponentiate to get unitary
+    U_bs = expm(G_total)
 
-    for i, (n1, n2) in enumerate(basis_2mode):
-        # Apply BS: |n1, n2> -> sum_k binomial(n, k)^(1/2) * ... |n1-k, n2+k>
-        # Actually easier: BS is generated by G = theta (a^†_1 a_2 - a_1 a^†_2)
-        # For theta=pi/4, we have specific coefficients
-
-        if n1 == 0 and n2 == 0:
-            BS_pol[0, 0] = 1.0
-        elif n1 == 1 and n2 == 0:
-            BS_pol[0, 1] = 1.0 / np.sqrt(2)
-            BS_pol[1, 1] = 1.0 / np.sqrt(2)
-        elif n1 == 0 and n2 == 1:
-            BS_pol[0, 2] = 1.0 / np.sqrt(2)
-            BS_pol[1, 2] = -1.0 / np.sqrt(2)
-        elif n1 == 2 and n2 == 0:
-            BS_pol[3, 3] = 0.5  # |2,0> -> 0.5|2,0> + ...
-            BS_pol[5, 3] = np.sqrt(0.5)  # -> sqrt(0.5)|1,1> + ...
-        elif n1 == 0 and n2 == 2:
-            BS_pol[4, 4] = 0.5  # |0,2> -> ...
-            BS_pol[5, 4] = -np.sqrt(0.5)  # -> -sqrt(0.5)|1,1> + ...
-        elif n1 == 1 and n2 == 1:
-            BS_pol[3, 5] = 1.0 / np.sqrt(2)  # |1,1> -> sqrt(0.5)|2,0>
-            BS_pol[4, 5] = -1.0 / np.sqrt(2)  # -> -sqrt(0.5)|0,2>
-
-    # Now extend to two polarizations
-    # The full 36D operator is BS_pol_H ⊗ BS_pol_V on the appropriate tensor factors
-    # But we need to be careful about the tensor product structure
-
-    # Simpler approach: construct the full BS on 1517 x 1517
-    # by applying BS_pol to both H and V modes
-    U_telecom = np.kron(BS_pol, BS_pol)
-
-    # Now embed into full bin x bin space (18 x 18 = 324, but only acts on telecom)
-    # Actually we want a (36, 36) matrix acting on telecom_A x telecom_B
-    # where each telecom is 6D
-
-    return U_telecom
+    return U_bs
 
 
 @lru_cache(maxsize=16)
@@ -276,6 +249,7 @@ def jones_gate(U: Tuple[Tuple[complex, complex], Tuple[complex, complex]]) -> np
 def jones_gate_from_array(U_array: np.ndarray) -> np.ndarray:
     """
     Convenience wrapper to call jones_gate with numpy array.
+    Returns the gate embedded in the 18D bin space (I_780 ⊗ U_1517).
 
     Parameters
     ----------
@@ -285,13 +259,17 @@ def jones_gate_from_array(U_array: np.ndarray) -> np.ndarray:
     Returns
     -------
     np.ndarray
-        6x6 unitary matrix acting on 1517 subspace
+        18x18 unitary matrix acting on full bin space (780 × 1517)
     """
     U_tuple = (
         (complex(U_array[0, 0]), complex(U_array[0, 1])),
         (complex(U_array[1, 0]), complex(U_array[1, 1]))
     )
-    return jones_gate(U_tuple)
+    U_1517 = jones_gate(U_tuple)  # 6x6
+
+    # Embed into 18D bin space: I_780 ⊗ U_1517
+    I_780 = np.eye(3, dtype=complex)
+    return np.kron(I_780, U_1517)  # 18x18
 
 
 @lru_cache(maxsize=2)

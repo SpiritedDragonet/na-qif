@@ -240,20 +240,13 @@ class MPSState:
         # Create normalized theta from selected branch
         theta_selected = thetas_mu[mu] / np.sqrt(probs[mu] * p_total)
 
-        # Convert to TeNPy Array and write back via SVD
-        theta_arr = Array.from_ndarray_trivial(theta_selected, labels=['vL', 'p0', 'vR'])
+        # Convert to TeNPy Array and write back directly to the site tensor
+        # For single-site operation, we directly set the B tensor
+        theta_arr = Array.from_ndarray_trivial(theta_selected, labels=['vL', 'p', 'vR'])
 
-        # For one-site, we need to combine vL.p0 or p0.vR for SVD
-        # Use combine_legs and then do SVD manually
-        theta_combined = theta_arr.combine_legs(
-            [['vL', 'p0'], ['vR']],
-            new_axes=[0, 1],
-            qconj=[+1, -1]
-        )
-
-        trunc_params = {'chi_max': self.max_bond, 'svd_min': 1e-13}
-        self._mps.set_svd_theta(site, theta_combined, trunc_par=trunc_params)
-        self._mps.norm = 1.0
+        # Set the site tensor directly (no SVD needed for single site)
+        self._mps.set_B(site, theta_arr, form='Th')
+        self._mps.canonical_form_finite(renormalize=True)
 
         return mu
 

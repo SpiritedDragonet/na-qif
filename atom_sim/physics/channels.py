@@ -13,6 +13,186 @@ import numpy as np
 from ..hilbert.basis import SUBSPACE_1517, SUBSPACE_780, BIN_SPACE
 
 
+def loss_channel_780_100() -> np.ndarray:
+    """
+    100% loss channel for the 780nm subspace (complete filtering).
+
+    All 780nm photons are lost (mapped to vacuum). This is a single Kraus operator:
+        K = |vac><vac| + |vac><H| + |vac><V|
+
+    acting on the 780 subspace with basis {|vac>, |H>, |V>}.
+
+    Returns
+    -------
+    np.ndarray
+        Single Kraus operator (3x3) that maps all 780 states to vacuum
+    """
+    K = np.zeros((3, 3), dtype=complex)
+    K[0, 0] = 1.0  # |vac><vac| - vacuum stays vacuum
+    K[0, 1] = 1.0  # |vac><H| - H photon is lost
+    K[0, 2] = 1.0  # |vac><V| - V photon is lost
+    return K
+
+
+def loss_channel_both_subspaces(
+    eta_780: float,
+    eta_H_1517: float,
+    eta_V_1517: float
+) -> List[np.ndarray]:
+    """
+    Combined loss channel acting on both 780 and 1517 subspaces.
+
+    For QFC applications: 780nm channel typically has eta_780=0 (100% filtered),
+    while 1517nm channel has normal transmission loss.
+
+    The Kraus operators are tensor products: K_780^(k) ⊗ K_1517^(j)
+
+    Parameters
+    ----------
+    eta_780 : float
+        Transmissivity for 780nm subspace (0 = 100% loss/filtered)
+    eta_H_1517 : float
+        Transmissivity for 1517nm H polarization
+    eta_V_1517 : float
+        Transmissivity for 1517nm V polarization
+
+    Returns
+    -------
+    List[np.ndarray]
+        List of Kraus operators acting on 18D bin space
+    """
+    # Get Kraus operators for each subspace (NOT embedded)
+    K_780_list = loss_channel_780_general(eta_780)  # 3x3 matrices
+    K_1517_list = _loss_channel_1517_raw(eta_H_1517, eta_V_1517)  # 6x6 matrices
+
+    # Form all tensor product combinations
+    K_combined = []
+    for K_780 in K_780_list:
+        for K_1517 in K_1517_list:
+            # K_780 is (3,3), K_1517 is (6,6), result is (18,18)
+            K_combined.append(np.kron(K_780, K_1517))
+
+    return K_combined
+
+
+def _loss_channel_1517_raw(eta_H: float, eta_V: float) -> List[np.ndarray]:
+    """
+    Raw 1517nm loss channel (6x6 matrices, NOT embedded into 18D).
+
+    This is an internal function used by loss_channel_both_subspaces.
+
+    Parameters
+    ----------
+    eta_H : float
+        Transmissivity for H polarization
+    eta_V : float
+        Transmissivity for V polarization
+
+    Returns
+    -------
+    List[np.ndarray]
+        List of 6x6 Kraus operators acting on 1517 subspace only
+    """
+    K_list_1517 = []
+
+    basis = [
+        (0, 0),  # 0: vac
+        (1, 0),  # 1: H
+        (0, 1),  # 2: V
+        (2, 0),  # 3: 2H
+        (0, 2),  # 4: 2V
+        (1, 1),  # 5: HV
+    ]
+
+    for kH in range(3):
+        for kV in range(3):
+            K = np.zeros((6, 6), dtype=complex)
+
+            for i, (nH, nV) in enumerate(basis):
+                if nH < kH or nV < kV:
+                    continue
+
+                nH_new = nH - kH
+                nV_new = nV - kV
+
+                target = (nH_new, nV_new)
+                if target in basis:
+                    j = basis.index(target)
+
+                    from math import comb
+                    coeff_H = np.sqrt(comb(nH, kH)) * (eta_H ** ((nH - kH) / 2)) * ((1 - eta_H) ** (kH / 2))
+                    coeff_V = np.sqrt(comb(nV, kV)) * (eta_V ** ((nV - kV) / 2)) * ((1 - eta_V) ** (kV / 2))
+                    K[j, i] = coeff_H * coeff_V
+
+            K_list_1517.append(K)
+
+    # Remove all-zero operators
+    K_list_1517 = [K for K in K_list_1517 if np.any(K != 0)]
+    return K_list_1517
+
+
+def loss_channel_780_general(eta: float) -> List[np.ndarray]:
+    """
+    General loss channel for 780nm subspace (up to 1 photon per mode).
+
+    For eta=0: 100% loss (3 Kraus operators: |vac><vac|, |vac><H|, |vac><V|)
+    For eta=1: no loss (K_0 = I)
+
+    Parameters
+    ----------
+    eta : float
+        Transmissivity (0 <= eta <= 1)
+
+    Returns
+    -------
+    List[np.ndarray]
+        Kraus operators for 780 subspace (3x3 matrices)
+    """
+    # Basis: |vac>, |H>, |V>
+
+    K_list = []
+
+    if eta == 0.0:
+        # 100% loss: 3 Kraus operators
+        # K_0 = |vac><vac| (vacuum stays vacuum)
+        K0 = np.zeros((3, 3), dtype=complex)
+        K0[0, 0] = 1.0
+        K_list.append(K0)
+
+        # K_1 = |vac><H| (H photon lost -> vacuum)
+        K1 = np.zeros((3, 3), dtype=complex)
+        K1[0, 1] = 1.0
+        K_list.append(K1)
+
+        # K_2 = |vac><V| (V photon lost -> vacuum)
+        K2 = np.zeros((3, 3), dtype=complex)
+        K2[0, 2] = 1.0
+        K_list.append(K2)
+    elif eta == 1.0:
+        # No loss: identity
+        K_list.append(np.eye(3, dtype=complex))
+    else:
+        # Partial loss: K_0 (no loss) and K_H, K_V (loss per mode)
+        K0 = np.zeros((3, 3), dtype=complex)
+        K0[0, 0] = 1.0
+        K0[1, 1] = np.sqrt(eta)
+        K0[2, 2] = np.sqrt(eta)
+        K_list.append(K0)
+
+        # Loss operators for each mode
+        loss_amp = np.sqrt(1 - eta)
+
+        K_H = np.zeros((3, 3), dtype=complex)
+        K_H[0, 1] = loss_amp
+        K_list.append(K_H)
+
+        K_V = np.zeros((3, 3), dtype=complex)
+        K_V[0, 2] = loss_amp
+        K_list.append(K_V)
+
+    return K_list
+
+
 def loss_channel(
     eta: float,
     n_max: int = 2
@@ -68,7 +248,8 @@ def loss_channel(
 
 def loss_channel_1517(eta_H: float, eta_V: float) -> List[np.ndarray]:
     """
-    Amplitude damping for the 1517nm telecom subspace (6D).
+    Amplitude damping for the 1517nm telecom subspace (6D),
+    embedded in the 18D bin space (I_780 ⊗ K_1517).
 
     Handles two polarization modes independently with possibly different loss.
 
@@ -82,7 +263,7 @@ def loss_channel_1517(eta_H: float, eta_V: float) -> List[np.ndarray]:
     Returns
     -------
     List[np.ndarray]
-        List of Kraus operators acting on 6D 1517 subspace
+        List of Kraus operators acting on 18D bin space (780 × 1517)
     """
     # 1517 basis: vac, H, V, 2H, 2V, HV
     # Occupancy: (0,0), (1,0), (0,1), (2,0), (0,2), (1,1)
@@ -90,7 +271,7 @@ def loss_channel_1517(eta_H: float, eta_V: float) -> List[np.ndarray]:
     # We need to construct Kraus operators for all combinations of loss
     # on H and V modes. For small truncation, enumerate explicitly.
 
-    K_list = []
+    K_list_1517 = []
 
     # Basis with occupancy tuples
     basis = [
@@ -126,12 +307,16 @@ def loss_channel_1517(eta_H: float, eta_V: float) -> List[np.ndarray]:
                     coeff_V = np.sqrt(comb(nV, kV)) * (eta_V ** ((nV - kV) / 2)) * ((1 - eta_V) ** (kV / 2))
                     K[j, i] = coeff_H * coeff_V
 
-            K_list.append(K)
+            K_list_1517.append(K)
 
     # Remove all-zero operators
-    K_list = [K for K in K_list if np.any(K != 0)]
+    K_list_1517 = [K for K in K_list_1517 if np.any(K != 0)]
 
-    return K_list
+    # Embed each Kraus operator into 18D bin space: I_780 ⊗ K_1517
+    I_780 = np.eye(3, dtype=complex)
+    K_list_embedded = [np.kron(I_780, K) for K in K_list_1517]
+
+    return K_list_embedded
 
 
 def detection_channel(

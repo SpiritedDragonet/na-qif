@@ -5,7 +5,7 @@ This module provides functions to extract and visualize wave packets
 from MPS states, including intensity envelopes and single-photon probabilities.
 """
 
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Union
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -759,231 +759,50 @@ def plot_bin_state_heatmap(
     return ax
 
 
-def plot_dual_arm_bin_state_heatmap(
-    mps: MPSState,
-    n_bins: int = None,
+# ============================================================================
+# Dual-Arm Heatmap Visualization (General Purpose)
+# ============================================================================
+
+def plot_dual_arm_heatmap(
+    result: Union[EmissionResult, MPSState],
+    save_path: str = "dual_arm_heatmap.png",
+    show_atomic: bool = False,
+    stage_name: str = "",
     time_grid: Optional[TimeGrid] = None,
-    wavelength: str = 'both',
-    vmax: float = None,
-    figsize: tuple = (16, 10),
-    group_by: str = '780',
-    atom_at_end: bool = False,
-) -> plt.Figure:
-    """
-    Plot side-by-side heatmaps of bin state probabilities for both arms.
-
-    Creates a 2x2 grid of heatmaps:
-    - Top row: Arm A and Arm B for 780nm (or all states if wavelength='both')
-    - Bottom row: Arm A and Arm B for 1517nm (or combined if wavelength='both')
-
-    Parameters
-    ----------
-    mps : MPSState
-        MPS state
-    n_bins : int, optional
-        Number of time bins. If None, infers from chain length.
-    time_grid : TimeGrid, optional
-        Time grid for x-axis labels
-    wavelength : str
-        Which wavelength to show ('780', '1517', or 'both')
-        - '780': Show 780nm-related states (rows where 780 is H or V)
-        - '1517': Show 1517nm-related states (all 18 states)
-        - 'both': Show separate plots for 780 and 1517
-    vmax : float, optional
-        Maximum value for color scale. If None, auto-scales.
-    figsize : tuple
-        Figure size (width, height)
-    group_by : str
-        How to group separator lines ('780' or '1517')
-        - '780': Group by 780 state (vac/H/V) - lines at 5.5, 11.5
-        - '1517': Group by 1517 photon number - lines at 2.5, 5.5, etc.
-    atom_at_end : bool
-        If True, assumes single-atom layout with atom at the end
-        (after SWAP conveyor belt).
-
-    Returns
-    -------
-    plt.Figure
-        The figure object
-    """
-    if n_bins is None:
-        n_bins = (mps.L - 2) // 2
-
-    # Determine separator boundaries based on group_by parameter
-    if group_by == '780':
-        # Group by 780 state: |vac>, |H>, |V>
-        boundaries = [5.5, 11.5]
-    else:  # '1517'
-        # Group by 1517 photon number: 0/1/2 photons
-        boundaries = [2.5, 5.5, 8.5, 11.5, 14.5, 17.5]
-
-    if wavelength == 'both':
-        # Create 2x2 subplot: 780nm (top) and 1517nm (bottom)
-        fig, axes = plt.subplots(2, 2, figsize=figsize, sharex=True, sharey=True)
-
-        # Extract probabilities for both arms
-        probs_A = extract_bin_state_probabilities(mps, arm='A', n_bins=n_bins, atom_at_end=atom_at_end)
-        probs_B = extract_bin_state_probabilities(mps, arm='B', n_bins=n_bins, atom_at_end=atom_at_end)
-
-        # Get state labels
-        state_labels = _get_bin18_state_labels()
-
-        # Common parameters
-        if time_grid is not None:
-            n_ticks = min(10, n_bins)
-            tick_indices = np.linspace(0, n_bins - 1, n_ticks, dtype=int)
-            xtick_labels = [f'{time_grid.t[i]:.1f}' for i in tick_indices]
-            xlabel = 'Time (ns)'
-        else:
-            n_ticks = min(10, n_bins)
-            tick_indices = np.linspace(0, n_bins - 1, n_ticks, dtype=int)
-            xtick_labels = [str(i) for i in tick_indices]
-            xlabel = 'Bin index'
-
-        # Plot Arm A - 780nm (showing all 18 states)
-        im00 = axes[0, 0].imshow(
-            probs_A.T, aspect='auto', cmap='viridis', vmin=0, vmax=vmax, origin='upper'
-        )
-        axes[0, 0].set_yticks(range(18))
-        axes[0, 0].set_yticklabels(state_labels)
-        axes[0, 0].set_xticks(tick_indices)
-        axes[0, 0].set_xticklabels(xtick_labels)
-        axes[0, 0].set_ylabel('State |780,1517>')
-        axes[0, 0].set_title('Arm A (780nm emission)')
-        for boundary in boundaries:
-            axes[0, 0].axhline(boundary, color='white', linewidth=1, alpha=0.5, linestyle='--')
-        plt.colorbar(im00, ax=axes[0, 0], pad=0.02, label='Probability')
-
-        # Plot Arm B - 780nm
-        im01 = axes[0, 1].imshow(
-            probs_B.T, aspect='auto', cmap='viridis', vmin=0, vmax=vmax, origin='upper'
-        )
-        axes[0, 1].set_yticks(range(18))
-        axes[0, 1].set_yticklabels(state_labels)
-        axes[0, 1].set_xticks(tick_indices)
-        axes[0, 1].set_xticklabels(xtick_labels)
-        axes[0, 1].set_title('Arm B (780nm emission)')
-        for boundary in boundaries:
-            axes[0, 1].axhline(boundary, color='white', linewidth=1, alpha=0.5, linestyle='--')
-        plt.colorbar(im01, ax=axes[0, 1], pad=0.02, label='Probability')
-
-        # Plot Arm A - 1517nm focus
-        im10 = axes[1, 0].imshow(
-            probs_A.T, aspect='auto', cmap='plasma', vmin=0, vmax=vmax, origin='upper'
-        )
-        axes[1, 0].set_yticks(range(18))
-        axes[1, 0].set_yticklabels(state_labels)
-        axes[1, 0].set_xticks(tick_indices)
-        axes[1, 0].set_xticklabels(xtick_labels)
-        axes[1, 0].set_ylabel('State |780,1517>')
-        axes[1, 0].set_xlabel(xlabel)
-        axes[1, 0].set_title('Arm A (1517nm subspace)')
-        for boundary in boundaries:
-            axes[1, 0].axhline(boundary, color='white', linewidth=1, alpha=0.5, linestyle='--')
-        plt.colorbar(im10, ax=axes[1, 0], pad=0.02, label='Probability')
-
-        # Plot Arm B - 1517nm focus
-        im11 = axes[1, 1].imshow(
-            probs_B.T, aspect='auto', cmap='plasma', vmin=0, vmax=vmax, origin='upper'
-        )
-        axes[1, 1].set_yticks(range(18))
-        axes[1, 1].set_yticklabels(state_labels)
-        axes[1, 1].set_xticks(tick_indices)
-        axes[1, 1].set_xticklabels(xtick_labels)
-        axes[1, 1].set_xlabel(xlabel)
-        axes[1, 1].set_title('Arm B (1517nm subspace)')
-        for boundary in boundaries:
-            axes[1, 1].axhline(boundary, color='white', linewidth=1, alpha=0.5, linestyle='--')
-        plt.colorbar(im11, ax=axes[1, 1], pad=0.02, label='Probability')
-
-        fig.suptitle('Bin State Probabilities - Arms A & B (780nm and 1517nm)', fontsize=14, y=0.995)
-
-    else:
-        # Single wavelength view
-        fig, axes = plt.subplots(1, 2, figsize=figsize, sharex=True, sharey=True)
-
-        probs_A = extract_bin_state_probabilities(mps, arm='A', n_bins=n_bins, atom_at_end=atom_at_end)
-        probs_B = extract_bin_state_probabilities(mps, arm='B', n_bins=n_bins, atom_at_end=atom_at_end)
-        state_labels = _get_bin18_state_labels()
-
-        if time_grid is not None:
-            n_ticks = min(10, n_bins)
-            tick_indices = np.linspace(0, n_bins - 1, n_ticks, dtype=int)
-            xtick_labels = [f'{time_grid.t[i]:.1f}' for i in tick_indices]
-            xlabel = 'Time (ns)'
-        else:
-            n_ticks = min(10, n_bins)
-            tick_indices = np.linspace(0, n_bins - 1, n_ticks, dtype=int)
-            xtick_labels = [str(i) for i in tick_indices]
-            xlabel = 'Bin index'
-
-        # Determine colormap based on wavelength
-        cmap = 'viridis' if wavelength == '780' else 'plasma'
-
-        # Arm A
-        im0 = axes[0].imshow(
-            probs_A.T, aspect='auto', cmap=cmap, vmin=0, vmax=vmax, origin='upper'
-        )
-        axes[0].set_yticks(range(18))
-        axes[0].set_yticklabels(state_labels)
-        axes[0].set_xticks(tick_indices)
-        axes[0].set_xticklabels(xtick_labels)
-        axes[0].set_ylabel('State |780,1517>')
-        axes[0].set_xlabel(xlabel)
-        axes[0].set_title(f'Arm A - {wavelength}nm')
-        for boundary in boundaries:
-            axes[0].axhline(boundary, color='white', linewidth=1, alpha=0.5, linestyle='--')
-        plt.colorbar(im0, ax=axes[0], pad=0.02, label='Probability')
-
-        # Arm B
-        im1 = axes[1].imshow(
-            probs_B.T, aspect='auto', cmap=cmap, vmin=0, vmax=vmax, origin='upper'
-        )
-        axes[1].set_yticks(range(18))
-        axes[1].set_yticklabels(state_labels)
-        axes[1].set_xticks(tick_indices)
-        axes[1].set_xticklabels(xtick_labels)
-        axes[1].set_xlabel(xlabel)
-        axes[1].set_title(f'Arm B - {wavelength}nm')
-        for boundary in boundaries:
-            axes[1].axhline(boundary, color='white', linewidth=1, alpha=0.5, linestyle='--')
-        plt.colorbar(im1, ax=axes[1], pad=0.02, label='Probability')
-
-        fig.suptitle(f'Bin State Probabilities - Arms A & B ({wavelength}nm)', fontsize=14)
-
-    plt.tight_layout()
-
-    return fig
-
-
-# ============================================================================
-# Emission Simulation Visualization (with Atomic State Evolution)
-# ============================================================================
-
-def plot_emission_with_atomic_evolution(
-    result: EmissionResult,
-    save_path: str = "dual_atom_emission.png",
     vmax_scale_factor: float = 1.5,
 ) -> None:
     """
-    Visualize dual-atom emission results with atomic state evolution and bin heatmaps.
+    Visualize dual-arm bin state probabilities with optional atomic state display.
+
+    General-purpose heatmap function that works for any simulation stage:
+    - Emission: use show_atomic=True to show atomic state evolution
+    - QFC/Jones/Loss/BS: use show_atomic=False (atoms not involved)
 
     Each arm shows:
-    - Top 3 rows: Atomic state evolution (P(|0>), P(|1>), P(|e>))
-    - Bottom 18 rows: Bin state probabilities
+    - If show_atomic=True: Top 3 rows (atomic) + Bottom 18 rows (bin states)
+    - If show_atomic=False: 18 rows of bin states only
 
-    This function is designed for emission results from run_emission_only()
-    which tracks atomic state evolution during the SWAP conveyor belt process.
+    Three colormaps:
+    - Atomic states: YlOrRd (Yellow-Orange-Red)
+    - (vac,vac) state: Greys (separate colorbar)
+    - Other bin states: plasma
 
     Parameters
     ----------
-    result : EmissionResult
-        Simulation result to visualize. Must contain atom_A_state_evolution
-        and atom_B_state_evolution attributes.
+    result : Union[EmissionResult, MPSState]
+        Simulation result to visualize. If EmissionResult and show_atomic=True,
+        atomic state evolution is extracted from result.atom_X_state_evolution.
     save_path : str
         Path to save the figure
+    show_atomic : bool
+        Whether to display atomic state rows (default: False)
+    stage_name : str
+        Stage name for title (e.g., "Emission", "QFC", "BS")
+    time_grid : TimeGrid, optional
+        Time grid for x-axis labels. If None and result is EmissionResult,
+        uses result.time_grid.
     vmax_scale_factor : float
-        Factor for scaling vmax (relative to max emission probability)
+        Factor for scaling vmax (relative to max bin probability)
     """
     import matplotlib as mpl
     from matplotlib.colors import Normalize
@@ -991,43 +810,58 @@ def plot_emission_with_atomic_evolution(
 
     mpl.rcParams['image.interpolation'] = 'nearest'
 
+    # Extract MPS and time_grid from result
+    if isinstance(result, EmissionResult):
+        mps = result.mps
+        if time_grid is None:
+            time_grid = result.time_grid
+        n_bins = result.get_n_bins()
+        has_atom_evol = True
+    else:  # MPSState
+        mps = result
+        if time_grid is None:
+            time_grid = TimeGrid(dt=1.0, N=1)  # Dummy
+        n_bins = (mps.L - 2) // 2  # Infer from chain length
+        has_atom_evol = False
+
+    if show_atomic and not has_atom_evol:
+        raise ValueError("show_atomic=True requires EmissionResult with atomic state evolution")
+
     # Create figure with more spacing
     fig, axes = plt.subplots(1, 2, figsize=(24, 13))
     plt.subplots_adjust(left=0.04, right=0.85, top=0.80, bottom=0.06, wspace=0.50)
 
-    n_bins = result.get_n_bins()
-
-    # Get atomic state evolution
-    atom_A_evol = result.atom_A_state_evolution
-    atom_B_evol = result.atom_B_state_evolution
-
-    # For visualization, take every other column (after each full bin processing)
-    atom_A_for_bins = atom_A_evol[:, 1::2]
-    atom_B_for_bins = atom_B_evol[:, 1::2]
-
-    # If evolution has fewer columns than bins (old results), pad with final state
-    if atom_A_for_bins.shape[1] < n_bins:
-        padding = np.tile(atom_A_for_bins[:, -1:], (1, n_bins - atom_A_for_bins.shape[1]))
-        atom_A_for_bins = np.hstack([atom_A_for_bins, padding])
-    if atom_B_for_bins.shape[1] < n_bins:
-        padding = np.tile(atom_B_for_bins[:, -1:], (1, n_bins - atom_B_for_bins.shape[1]))
-        atom_B_for_bins = np.hstack([atom_B_for_bins, padding])
+    # Extract atomic state evolution if needed
+    if show_atomic and has_atom_evol:
+        atom_A_evol = result.atom_A_state_evolution
+        atom_B_evol = result.atom_B_state_evolution
+        # For visualization, take every other column (after each full bin processing)
+        atom_A_for_bins = atom_A_evol[:, 1::2]
+        atom_B_for_bins = atom_B_evol[:, 1::2]
+        # If evolution has fewer columns than bins, pad with final state
+        if atom_A_for_bins.shape[1] < n_bins:
+            padding = np.tile(atom_A_for_bins[:, -1:], (1, n_bins - atom_A_for_bins.shape[1]))
+            atom_A_for_bins = np.hstack([atom_A_for_bins, padding])
+        if atom_B_for_bins.shape[1] < n_bins:
+            padding = np.tile(atom_B_for_bins[:, -1:], (1, n_bins - atom_B_for_bins.shape[1]))
+            atom_B_for_bins = np.hstack([atom_B_for_bins, padding])
 
     # Extract bin probabilities
     probs_A = np.zeros((n_bins, 18))
     probs_B = np.zeros((n_bins, 18))
 
     for n in range(n_bins):
-        site_A, site_B = result.get_bin_indices(n)
-        rho_A = result.mps.get_reduced_density([site_A])
-        rho_B = result.mps.get_reduced_density([site_B])
+        # Chain layout: A1(0), B1(1), A2(2), B2(3), ..., AN, BN
+        site_A = 2 * n
+        site_B = 2 * n + 1
+        rho_A = mps.get_reduced_density([site_A])
+        rho_B = mps.get_reduced_density([site_B])
         if rho_A.shape[0] == 18:
             probs_A[n, :] = np.diag(rho_A).real
         if rho_B.shape[0] == 18:
             probs_B[n, :] = np.diag(rho_B).real
 
     # Calculate vmax EXCLUDING (vac,vac) row (index 0)
-    # This ensures other bin states are visible even when vac is near 1
     vmax_A = max(0.01, probs_A[:, 1:].max() * vmax_scale_factor)
     vmax_B = max(0.01, probs_B[:, 1:].max() * vmax_scale_factor)
     vmax = max(vmax_A, vmax_B)
@@ -1035,45 +869,61 @@ def plot_emission_with_atomic_evolution(
     # Get state labels
     bin_state_labels = _get_bin18_state_labels()
 
-    # Combined display: 3 rows for atomic + 18 rows for bin = 21 rows total
-    atomic_labels = ['|e>', '|1>', '|0>']
-    combined_labels_A = atomic_labels + bin_state_labels
-    combined_labels_B = atomic_labels + bin_state_labels
-
     # Create combined data matrices
-    combined_A = np.zeros((3 + 18, n_bins))
-    combined_A[0, :] = atom_A_for_bins[2, :]  # |e>
-    combined_A[1, :] = atom_A_for_bins[1, :]  # |1>
-    combined_A[2, :] = atom_A_for_bins[0, :]  # |0>
-    combined_A[3:, :] = probs_A.T
+    if show_atomic:
+        atomic_labels = ['|e>', '|1>', '|0>']
+        combined_labels_A = atomic_labels + bin_state_labels
+        combined_labels_B = atomic_labels + bin_state_labels
+        total_rows = 3 + 18
 
-    combined_B = np.zeros((3 + 18, n_bins))
-    combined_B[0, :] = atom_B_for_bins[2, :]  # |e>
-    combined_B[1, :] = atom_B_for_bins[1, :]  # |1>
-    combined_B[2, :] = atom_B_for_bins[0, :]  # |0>
-    combined_B[3:, :] = probs_B.T
+        combined_A = np.zeros((total_rows, n_bins))
+        combined_A[0, :] = atom_A_for_bins[2, :]  # |e>
+        combined_A[1, :] = atom_A_for_bins[1, :]  # |1>
+        combined_A[2, :] = atom_A_for_bins[0, :]  # |0>
+        combined_A[3:, :] = probs_A.T
+
+        combined_B = np.zeros((total_rows, n_bins))
+        combined_B[0, :] = atom_B_for_bins[2, :]  # |e>
+        combined_B[1, :] = atom_B_for_bins[1, :]  # |1>
+        combined_B[2, :] = atom_B_for_bins[0, :]  # |0>
+        combined_B[3:, :] = probs_B.T
+    else:
+        combined_labels_A = bin_state_labels
+        combined_labels_B = bin_state_labels
+        total_rows = 18
+
+        combined_A = probs_A.T
+        combined_B = probs_B.T
 
     # Scientific colormaps
-    # Atomic states: YlOrRd (Yellow-Orange-Red) - shows decay
+    # Atomic states: YlOrRd (Yellow-Orange-Red)
     # (vac,vac) state: Greys - separate colorbar for vacuum probability
-    # Other bin states: plasma (purple-yellow) - commonly used scientific colormap
+    # Other bin states: plasma (purple-yellow)
     atom_cmap = plt.get_cmap('YlOrRd')
     vac_cmap = plt.get_cmap('Greys')
     bin_cmap = plt.get_cmap('plasma')
 
-    # Create three separate masks
-    # 1. Atomic states (rows 0-2)
-    mask_atom = np.zeros((3 + 18, n_bins), dtype=bool)
-    mask_atom[:3, :] = True
-    # 2. (vac,vac) row (row 3)
-    mask_vac = np.zeros((3 + 18, n_bins), dtype=bool)
-    mask_vac[3, :] = True
-    # 3. Other bin states (rows 4-20)
-    mask_bin = np.zeros((3 + 18, n_bins), dtype=bool)
-    mask_bin[4:, :] = True
+    # Create masks for different sections
+    if show_atomic:
+        # Three sections: Atom (rows 0-2), Vac (row 3), Bin (rows 4-20)
+        mask_atom = np.zeros((total_rows, n_bins), dtype=bool)
+        mask_atom[:3, :] = True
+        mask_vac = np.zeros((total_rows, n_bins), dtype=bool)
+        mask_vac[3, :] = True
+        mask_bin = np.zeros((total_rows, n_bins), dtype=bool)
+        mask_bin[4:, :] = True
+        atom_row_offset = 3  # Offset for separator lines
+    else:
+        # Two sections: Vac (row 0), Bin (rows 1-17)
+        mask_atom = None
+        mask_vac = np.zeros((total_rows, n_bins), dtype=bool)
+        mask_vac[0, :] = True
+        mask_bin = np.zeros((total_rows, n_bins), dtype=bool)
+        mask_bin[1:, :] = True
+        atom_row_offset = 0
 
     # Plot arm A
-    # First plot all bin states (bottom 18 rows) with plasma colormap
+    # First plot all bin states with plasma colormap
     im_A = axes[0].imshow(
         combined_A,
         aspect='auto',
@@ -1094,28 +944,31 @@ def plot_emission_with_atomic_evolution(
         interpolation='nearest'
     )
 
-    # Overlay atomic states with different colormap
-    im_A_atom = axes[0].imshow(
-        np.ma.masked_where(~mask_atom, combined_A),
-        aspect='auto',
-        cmap=atom_cmap,
-        vmin=0,
-        vmax=1,
-        origin='upper',
-        interpolation='nearest'
-    )
+    # Overlay atomic states if needed
+    if show_atomic:
+        im_A_atom = axes[0].imshow(
+            np.ma.masked_where(~mask_atom, combined_A),
+            aspect='auto',
+            cmap=atom_cmap,
+            vmin=0,
+            vmax=1,
+            origin='upper',
+            interpolation='nearest'
+        )
 
-    axes[0].set_yticks(range(3 + 18))
+    axes[0].set_yticks(range(total_rows))
     axes[0].set_yticklabels(combined_labels_A, fontsize=8)
     axes[0].set_ylabel('State', fontsize=10)
-    axes[0].set_title(f'Arm A - Atomic + Bin State Probabilities (vmax={vmax:.3f})', fontsize=11)
-    axes[0].axhline(2.5, color='black', linewidth=2)
+    axes[0].set_title(f'Arm A - Bin State Probabilities (vmax={vmax:.3f})', fontsize=11)
+
+    if show_atomic:
+        axes[0].axhline(2.5, color='black', linewidth=2)
 
     # x-axis (dual: time and bin index)
     n_ticks = min(10, n_bins)
     tick_indices = np.linspace(0, n_bins - 1, n_ticks, dtype=int)
     axes[0].set_xticks(tick_indices)
-    axes[0].set_xticklabels([f'{result.time_grid.t[i] * 1e9:.0f}' for i in tick_indices], fontsize=9)
+    axes[0].set_xticklabels([f'{time_grid.t[i] * 1e9:.0f}' for i in tick_indices], fontsize=9)
     axes[0].set_xlabel('Time (ns)', fontsize=10)
     axes[0].top = axes[0].twiny()
     axes[0].top.set_xticks(tick_indices)
@@ -1133,7 +986,6 @@ def plot_emission_with_atomic_evolution(
         origin='upper'
     )
 
-    # Overlay (vac,vac) row
     im_B_vac = axes[1].imshow(
         np.ma.masked_where(~mask_vac, combined_B),
         aspect='auto',
@@ -1144,24 +996,27 @@ def plot_emission_with_atomic_evolution(
         interpolation='nearest'
     )
 
-    im_B_atom = axes[1].imshow(
-        np.ma.masked_where(~mask_atom, combined_B),
-        aspect='auto',
-        cmap=atom_cmap,
-        vmin=0,
-        vmax=1,
-        origin='upper',
-        interpolation='nearest'
-    )
+    if show_atomic:
+        im_B_atom = axes[1].imshow(
+            np.ma.masked_where(~mask_atom, combined_B),
+            aspect='auto',
+            cmap=atom_cmap,
+            vmin=0,
+            vmax=1,
+            origin='upper',
+            interpolation='nearest'
+        )
 
-    axes[1].set_yticks(range(3 + 18))
+    axes[1].set_yticks(range(total_rows))
     axes[1].set_yticklabels(combined_labels_B, fontsize=8)
     axes[1].set_ylabel('State', fontsize=10)
-    axes[1].set_title(f'Arm B - Atomic + Bin State Probabilities (vmax={vmax:.3f})', fontsize=11)
-    axes[1].axhline(2.5, color='black', linewidth=2)
+    axes[1].set_title(f'Arm B - Bin State Probabilities (vmax={vmax:.3f})', fontsize=11)
+
+    if show_atomic:
+        axes[1].axhline(2.5, color='black', linewidth=2)
 
     axes[1].set_xticks(tick_indices)
-    axes[1].set_xticklabels([f'{result.time_grid.t[i] * 1e9:.0f}' for i in tick_indices], fontsize=9)
+    axes[1].set_xticklabels([f'{time_grid.t[i] * 1e9:.0f}' for i in tick_indices], fontsize=9)
     axes[1].set_xlabel('Time (ns)', fontsize=10)
     axes[1].top = axes[1].twiny()
     axes[1].top.set_xticks(tick_indices)
@@ -1172,83 +1027,136 @@ def plot_emission_with_atomic_evolution(
     # Add separator lines for bin states (group by 780 state)
     for ax in axes:
         for boundary in [5.5, 11.5]:
-            ax.axhline(boundary + 3, color='white', linewidth=1, alpha=0.5, linestyle='--')
+            ax.axhline(boundary + atom_row_offset, color='white', linewidth=1, alpha=0.5, linestyle='--')
 
     # Add colorbars aligned with their respective sections
-    # Three colorbars: Atom (3/21), Vac (1/21), Bin (17/21)
     ax_pos_A = axes[0].get_position()
     ax_pos_B = axes[1].get_position()
     fig_height = ax_pos_A.y1 - ax_pos_A.y0
 
-    # Atomic colorbar for arm A (rows 0-2, height = 3/21)
-    cax_A_atom = fig.add_axes([
-        ax_pos_A.x1 + 0.01,
-        ax_pos_A.y1 - fig_height * (3/21),
-        0.01,
-        fig_height * (3/21)
-    ])
-    cbar_A_atom = fig.colorbar(im_A_atom, cax=cax_A_atom)
-    cbar_A_atom.set_ticks([0, 0.5, 1])
-    cbar_A_atom.set_label('Atom', fontsize=9)
+    if show_atomic:
+        # Three colorbars: Atom (3/21), Vac (1/21), Bin (17/21)
+        # Atomic colorbar for arm A
+        cax_A_atom = fig.add_axes([
+            ax_pos_A.x1 + 0.01,
+            ax_pos_A.y1 - fig_height * (3/total_rows),
+            0.01,
+            fig_height * (3/total_rows)
+        ])
+        cbar_A_atom = fig.colorbar(im_A_atom, cax=cax_A_atom)
+        cbar_A_atom.set_ticks([0, 0.5, 1])
+        cbar_A_atom.set_label('Atom', fontsize=9)
 
-    # (vac,vac) colorbar for arm A (row 3, height = 1/21)
-    cax_A_vac = fig.add_axes([
-        ax_pos_A.x1 + 0.01,
-        ax_pos_A.y1 - fig_height * (4/21),
-        0.01,
-        fig_height * (1/21)
-    ])
-    cbar_A_vac = fig.colorbar(im_A_vac, cax=cax_A_vac)
-    cbar_A_vac.set_ticks([0, 0.5, 1])
-    cbar_A_vac.set_label('Vac', fontsize=8)
+        # (vac,vac) colorbar for arm A
+        cax_A_vac = fig.add_axes([
+            ax_pos_A.x1 + 0.01,
+            ax_pos_A.y1 - fig_height * (4/total_rows),
+            0.01,
+            fig_height * (1/total_rows)
+        ])
+        cbar_A_vac = fig.colorbar(im_A_vac, cax=cax_A_vac)
+        cbar_A_vac.set_ticks([0, 0.5, 1])
+        cbar_A_vac.set_label('Vac', fontsize=8)
 
-    # Bin state colorbar for arm A (rows 4-20, height = 17/21)
-    cax_A = fig.add_axes([
-        ax_pos_A.x1 + 0.01,
-        ax_pos_A.y0,
-        0.01,
-        fig_height * (17/21)
-    ])
-    cbar_A = fig.colorbar(im_A, cax=cax_A)
-    n_ticks_cb = 4
-    tick_vals = np.linspace(0, vmax, n_ticks_cb)
-    cbar_A.set_ticks(tick_vals)
-    cbar_A.set_label(f'Bin (max={vmax:.3f})', fontsize=9)
+        # Bin colorbar for arm A
+        cax_A = fig.add_axes([
+            ax_pos_A.x1 + 0.01,
+            ax_pos_A.y0,
+            0.01,
+            fig_height * (17/total_rows)
+        ])
+        cbar_A = fig.colorbar(im_A, cax=cax_A)
+        n_ticks_cb = 4
+        tick_vals = np.linspace(0, vmax, n_ticks_cb)
+        cbar_A.set_ticks(tick_vals)
+        cbar_A.set_label(f'Bin (max={vmax:.3f})', fontsize=9)
 
-    # Atomic colorbar for arm B
-    cax_B_atom = fig.add_axes([
-        ax_pos_B.x1 + 0.01,
-        ax_pos_B.y1 - fig_height * (3/21),
-        0.01,
-        fig_height * (3/21)
-    ])
-    cbar_B_atom = fig.colorbar(im_B_atom, cax=cax_B_atom)
-    cbar_B_atom.set_ticks([0, 0.5, 1])
-    cbar_B_atom.set_label('Atom', fontsize=9)
+        # Atomic colorbar for arm B
+        cax_B_atom = fig.add_axes([
+            ax_pos_B.x1 + 0.01,
+            ax_pos_B.y1 - fig_height * (3/total_rows),
+            0.01,
+            fig_height * (3/total_rows)
+        ])
+        cbar_B_atom = fig.colorbar(im_B_atom, cax=cax_B_atom)
+        cbar_B_atom.set_ticks([0, 0.5, 1])
+        cbar_B_atom.set_label('Atom', fontsize=9)
 
-    # (vac,vac) colorbar for arm B
-    cax_B_vac = fig.add_axes([
-        ax_pos_B.x1 + 0.01,
-        ax_pos_B.y1 - fig_height * (4/21),
-        0.01,
-        fig_height * (1/21)
-    ])
-    cbar_B_vac = fig.colorbar(im_B_vac, cax=cax_B_vac)
-    cbar_B_vac.set_ticks([0, 0.5, 1])
-    cbar_B_vac.set_label('Vac', fontsize=8)
+        # (vac,vac) colorbar for arm B
+        cax_B_vac = fig.add_axes([
+            ax_pos_B.x1 + 0.01,
+            ax_pos_B.y1 - fig_height * (4/total_rows),
+            0.01,
+            fig_height * (1/total_rows)
+        ])
+        cbar_B_vac = fig.colorbar(im_B_vac, cax=cax_B_vac)
+        cbar_B_vac.set_ticks([0, 0.5, 1])
+        cbar_B_vac.set_label('Vac', fontsize=8)
 
-    # Bin state colorbar for arm B
-    cax_B = fig.add_axes([
-        ax_pos_B.x1 + 0.01,
-        ax_pos_B.y0,
-        0.01,
-        fig_height * (17/21)
-    ])
-    cbar_B = fig.colorbar(im_B, cax=cax_B)
-    cbar_B.set_ticks(tick_vals)
-    cbar_B.set_label(f'Bin (max={vmax:.3f})', fontsize=9)
+        # Bin colorbar for arm B
+        cax_B = fig.add_axes([
+            ax_pos_B.x1 + 0.01,
+            ax_pos_B.y0,
+            0.01,
+            fig_height * (17/total_rows)
+        ])
+        cbar_B = fig.colorbar(im_B, cax=cax_B)
+        cbar_B.set_ticks(tick_vals)
+        cbar_B.set_label(f'Bin (max={vmax:.3f})', fontsize=9)
+    else:
+        # Two colorbars: Vac (1/18), Bin (17/18)
+        # (vac,vac) colorbar for arm A
+        cax_A_vac = fig.add_axes([
+            ax_pos_A.x1 + 0.01,
+            ax_pos_A.y1 - fig_height * (1/total_rows),
+            0.01,
+            fig_height * (1/total_rows)
+        ])
+        cbar_A_vac = fig.colorbar(im_A_vac, cax=cax_A_vac)
+        cbar_A_vac.set_ticks([0, 0.5, 1])
+        cbar_A_vac.set_label('Vac', fontsize=8)
 
-    plt.suptitle('Dual-Atom Emission: Atomic State Decay + Bin State Evolution', fontsize=16, y=0.97)
+        # Bin colorbar for arm A
+        cax_A = fig.add_axes([
+            ax_pos_A.x1 + 0.01,
+            ax_pos_A.y0,
+            0.01,
+            fig_height * (17/total_rows)
+        ])
+        cbar_A = fig.colorbar(im_A, cax=cax_A)
+        n_ticks_cb = 4
+        tick_vals = np.linspace(0, vmax, n_ticks_cb)
+        cbar_A.set_ticks(tick_vals)
+        cbar_A.set_label(f'Bin (max={vmax:.3f})', fontsize=9)
+
+        # (vac,vac) colorbar for arm B
+        cax_B_vac = fig.add_axes([
+            ax_pos_B.x1 + 0.01,
+            ax_pos_B.y1 - fig_height * (1/total_rows),
+            0.01,
+            fig_height * (1/total_rows)
+        ])
+        cbar_B_vac = fig.colorbar(im_B_vac, cax=cax_B_vac)
+        cbar_B_vac.set_ticks([0, 0.5, 1])
+        cbar_B_vac.set_label('Vac', fontsize=8)
+
+        # Bin colorbar for arm B
+        cax_B = fig.add_axes([
+            ax_pos_B.x1 + 0.01,
+            ax_pos_B.y0,
+            0.01,
+            fig_height * (17/total_rows)
+        ])
+        cbar_B = fig.colorbar(im_B, cax=cax_B)
+        cbar_B.set_ticks(tick_vals)
+        cbar_B.set_label(f'Bin (max={vmax:.3f})', fontsize=9)
+
+    # Title
+    if stage_name:
+        title = f'Dual-Arm Heatmap: {stage_name}'
+    else:
+        title = 'Dual-Arm Heatmap: Bin State Probabilities'
+    plt.suptitle(title, fontsize=16, y=0.97)
 
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     print(f"  Saved dual-arm heatmaps to: {save_path}")
