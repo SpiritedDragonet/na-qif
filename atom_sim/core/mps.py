@@ -346,38 +346,6 @@ class MPSState:
         # Use TeNPy's apply_local_op with the Array object
         self._mps.apply_local_op(site, gate_arr, unitary=True)
 
-    def apply_two_site_gate(
-        self,
-        site_left: int,
-        gate: np.ndarray,
-        truncate: bool = True,
-    ) -> None:
-        """
-        Apply two-site unitary gate using local update.
-
-        Parameters
-        ----------
-        site_left : int
-            Left site index
-        gate : np.ndarray
-            Unitary matrix of shape (d1*d2, d1*d2) or (d1, d2, d1, d2)
-        truncate : bool
-            Whether to truncate bond dimension
-        """
-        d1, d2 = self.d[site_left], self.d[site_left + 1]
-
-        # Reshape gate to 4D: (d1, d2, d1, d2)
-        gate = np.asarray(gate)
-        if gate.ndim == 2:
-            gate = gate.reshape(d1 * d2, d1 * d2)
-        gate_4d = gate.reshape(d1, d2, d1, d2)
-
-        # Create TeNPy Array with proper labels
-        op_arr = Array.from_ndarray_trivial(gate_4d, labels=['p0', 'p1', 'p0*', 'p1*'])
-
-        # Apply via local update (avoids canonical_form sweep)
-        self._apply_two_site_op_local(site_left, op_arr, truncate=truncate, normalize=False)
-
     def apply_two_site_kraus(
         self,
         site_left: int,
@@ -548,8 +516,8 @@ class MPSState:
         return float(self._mps.norm)
 
     def get_bond_dimensions(self) -> List[int]:
-        """Get bond dimensions."""
-        return self._mps.chi.copy()
+        """Get bond dimensions (alias for chi property)."""
+        return self.chi
 
     def test_sanity(self) -> bool:
         """Run TeNPy's sanity check (verifies canonical form)."""
@@ -595,29 +563,3 @@ def create_timebin_mps(
     """
     local_dims = [system_dim] + [bin_dim] * (2 * n_bins)
     return MPSState(local_dims, max_bond=max_bond)
-
-
-def create_excited_atom_mps(
-    n_bins: int,
-    system_dim: int = 9,
-    bin_dim: int = 5,
-    max_bond: int = 100,
-) -> MPSState:
-    """
-    Create MPS with atoms in excited state.
-
-    Parameters
-    ----------
-    n_bins : int
-        Number of time bins
-    system_dim : int
-        System (atom) Hilbert space dimension
-    bin_dim : int
-        Bin (photon) Hilbert space dimension
-    max_bond : int
-        Maximum bond dimension
-    """
-    local_dims = [system_dim] + [bin_dim] * (2 * n_bins)
-    # Init with system in state |2> (excited), all bins in |0> (vacuum)
-    init_state = [2] + [0] * (2 * n_bins)
-    return MPSState(local_dims, init_state=init_state, max_bond=max_bond)

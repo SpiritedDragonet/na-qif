@@ -13,27 +13,6 @@ import numpy as np
 from ..hilbert.basis import SUBSPACE_1517, SUBSPACE_780, BIN_SPACE
 
 
-def loss_channel_780_100() -> np.ndarray:
-    """
-    100% loss channel for the 780nm subspace (complete filtering).
-
-    All 780nm photons are lost (mapped to vacuum). This is a single Kraus operator:
-        K = |vac><vac| + |vac><H| + |vac><V|
-
-    acting on the 780 subspace with basis {|vac>, |H>, |V>}.
-
-    Returns
-    -------
-    np.ndarray
-        Single Kraus operator (3x3) that maps all 780 states to vacuum
-    """
-    K = np.zeros((3, 3), dtype=complex)
-    K[0, 0] = 1.0  # |vac><vac| - vacuum stays vacuum
-    K[0, 1] = 1.0  # |vac><H| - H photon is lost
-    K[0, 2] = 1.0  # |vac><V| - V photon is lost
-    return K
-
-
 def loss_channel_both_subspaces(
     eta_780: float,
     eta_H_1517: float,
@@ -193,59 +172,6 @@ def loss_channel_780_general(eta: float) -> List[np.ndarray]:
     return K_list
 
 
-def loss_channel(
-    eta: float,
-    n_max: int = 2
-) -> List[np.ndarray]:
-    """
-    Amplitude damping (loss) channel for a single mode.
-
-    Models loss with transmissivity eta. Kraus operators:
-        K_k = sum_{n=k}^{n_max} sqrt(C(n,k)) * eta^{(n-k)/2} * (1-eta)^{k/2} * |n-k><n|
-
-    where k is the number of photons lost.
-
-    Parameters
-    ----------
-    eta : float
-        Transmissivity (0 <= eta <= 1)
-    n_max : int
-        Maximum photon number in the truncation (default: 2)
-
-    Returns
-    -------
-    List[np.ndarray]
-        List of Kraus operators K_k for k = 0, ..., n_max
-
-    Examples
-    --------
-    >>> K = loss_channel(eta=0.9, n_max=2)
-    >>> # K[0]: no loss, K[1]: lose 1 photon, K[2]: lose 2 photons
-    """
-    if not 0 <= eta <= 1:
-        raise ValueError(f"eta must be in [0, 1], got {eta}")
-
-    if n_max < 1:
-        raise ValueError(f"n_max must be >= 1, got {n_max}")
-
-    dim = n_max + 1  # |0>, |1>, ..., |n_max>
-
-    # Build Kraus operators
-    # K_k acts on |n> and gives amplitude for losing k photons
-    kraus_ops = []
-
-    for k in range(n_max + 1):
-        K = np.zeros((dim, dim), dtype=complex)
-        for n in range(k, n_max + 1):
-            # |n-k><n| with coefficient sqrt(C(n,k)) * eta^{(n-k)/2} * (1-eta)^{k/2}
-            from math import comb
-            coeff = np.sqrt(comb(n, k)) * (eta ** ((n - k) / 2)) * ((1 - eta) ** (k / 2))
-            K[n - k, n] = coeff
-        kraus_ops.append(K)
-
-    return kraus_ops
-
-
 def loss_channel_1517(eta_H: float, eta_V: float) -> List[np.ndarray]:
     """
     Amplitude damping for the 1517nm telecom subspace (6D),
@@ -394,58 +320,170 @@ def detection_channel(
     return [M0, M1], [0, 1]
 
 
-def detection_channel_two_mode(
+def detection_povm_single_site(
     eta_det: float = 1.0,
     p_dark: float = 0.0
 ) -> Tuple[List[np.ndarray], List[Tuple[int, int]]]:
     """
-    On/off detection POVM for two output modes (e.g., after beam splitter).
+    On/off detection POVM for a single bin site (H and V detectors).
 
-    Returns Kraus operators for all 4 detector combinations:
-    (D1_H, D1_V, D2_H, D2_V) where each is 0 or 1.
+    This acts on the 18D bin space (780 x 1517). Since 780nm is filtered,
+    detection only responds to 1517nm photons.
+
+    Each site has two detectors (H and V), giving 4 possible outcomes:
+        (0, 0): neither clicks
+        (1, 0): only H clicks
+        (0, 1): only V clicks
+        (1, 1): both click
 
     Parameters
     ----------
     eta_det : float
-        Detection efficiency
+        Detection efficiency (0 <= eta_det <= 1)
+    p_dark : float
+        Dark count probability per detector per bin
+
+    Returns
+    -------
+    Tuple[List[np.ndarray], List[Tuple[int, int]]]
+        (Kraus operators [4 x (18,18)], outcome labels [(d_H, d_V)])
+
+    Notes
+    -----
+    1517nm basis: vac, H, V, 2H, 2V, HV with photon numbers:
+        - vac: n_H=0, n_V=0
+        - H:   n_H=1, n_V=0
+        - V:   n_H=0, n_V=1
+        - 2H:  n_H=2, n_V=0
+        - 2V:  n_H=0, n_V=2
+        - HV:  n_H=1, n_V=1
+
+    For on/off detector with efficiency eta:
+        P(no click | n photons) = (1-eta)^n * (1-p_dark)  (ignoring dark counts for n>0)
+        P(click | n photons) = 1 - (1-eta)^n + small dark count correction
+    """
+    if not 0 <= eta_det <= 1:
+        raise ValueError(f"eta_det must be in [0, 1], got {eta_det}")
+    if not 0 <= p_dark <= 1:
+        raise ValueError(f"p_dark must be in [0, 1], got {p_dark}")
+
+    # 1517nm basis photon numbers (n_H, n_V)
+    photon_numbers = [
+        (0, 0),  # vac
+        (1, 0),  # H
+        (0, 1),  # V
+        (2, 0),  # 2H
+        (0, 2),  # 2V
+        (1, 1),  # HV
+    ]
+
+    # Build POVM elements for 1517nm subspace (6D)
+    # E_{d_H, d_V} = P(d_H | n_H) * P(d_V | n_V) for each basis state
+
+    E_list_1517 = []
+    outcomes = []
+
+    for d_H in range(2):  # 0 = no click, 1 = click
+        for d_V in range(2):
+            E = np.zeros((6, 6), dtype=complex)
+            for i, (n_H, n_V) in enumerate(photon_numbers):
+                # Probability of outcome (d_H, d_V) given (n_H, n_V) photons
+                if d_H == 0:  # H no click
+                    if n_H == 0:
+                        P_H = 1 - p_dark  # No photon, no dark count
+                    else:
+                        P_H = (1 - eta_det) ** n_H  # All photons missed
+                else:  # H click
+                    if n_H == 0:
+                        P_H = p_dark  # Dark count only
+                    else:
+                        P_H = 1 - (1 - eta_det) ** n_H  # At least one detected
+
+                if d_V == 0:  # V no click
+                    if n_V == 0:
+                        P_V = 1 - p_dark
+                    else:
+                        P_V = (1 - eta_det) ** n_V
+                else:  # V click
+                    if n_V == 0:
+                        P_V = p_dark
+                    else:
+                        P_V = 1 - (1 - eta_det) ** n_V
+
+                E[i, i] = P_H * P_V
+
+            E_list_1517.append(E)
+            outcomes.append((d_H, d_V))
+
+    # Kraus operators: M = sqrt(E) (diagonal, so element-wise sqrt)
+    M_list_1517 = []
+    for E in E_list_1517:
+        M = np.zeros_like(E)
+        for i in range(6):
+            M[i, i] = np.sqrt(max(0, E[i, i].real))
+        M_list_1517.append(M)
+
+    # Embed into 18D bin space: I_780 ⊗ M_1517
+    # After fiber filtering, 780nm is vacuum, so we just need identity on 780
+    I_780 = np.eye(3, dtype=complex)
+    M_list_embedded = [np.kron(I_780, M) for M in M_list_1517]
+
+    return M_list_embedded, outcomes
+
+
+def detection_channel_two_mode(
+    eta_det: float = 1.0,
+    p_dark: float = 0.0
+) -> Tuple[List[np.ndarray], List[Tuple[int, int, int, int]]]:
+    """
+    On/off detection POVM for two output ports (e.g., after beam splitter).
+
+    This returns Kraus operators for detecting photons at two sites (A and B),
+    each with H and V polarization detectors. Total 4 detectors, 16 outcomes.
+
+    The Kraus operators are tensor products: M_A ⊗ M_B
+    where M_A and M_B are single-site detection operators.
+
+    Parameters
+    ----------
+    eta_det : float
+        Detection efficiency (same for all detectors)
     p_dark : float
         Dark count probability per detector
 
     Returns
     -------
     Tuple[List[np.ndarray], List[Tuple[int, int, int, int]]]
-        (Kraus operators, outcome labels)
-        Each outcome is (d1_H, d1_V, d2_H, d2_V)
+        (Kraus operators [16 x (324,324)], outcome labels)
+        Each outcome is (dA_H, dA_V, dB_H, dB_V) where d=0 means no click, d=1 means click
+
+    Notes
+    -----
+    For BSM (Bell State Measurement), the relevant outcomes are:
+        - (1,0,0,1) or (0,1,1,0): Psi+ heralding
+        - (0,1,0,1) or (1,0,1,0): Psi- heralding
+        - Other patterns: no successful heralding
 
     Examples
     --------
     >>> K, outcomes = detection_channel_two_mode(eta_det=0.9)
-    >>> # Each outcome corresponds to a specific click pattern
+    >>> # K has 16 operators, one for each click pattern
+    >>> # outcomes[i] gives (dA_H, dA_V, dB_H, dB_V) for K[i]
     """
-    # For simplicity, treat each detector independently
-    # The total Kraus operators are products of individual detector Kraus operators
+    # Get single-site detection operators (4 operators for 4 outcomes)
+    M_single, outcomes_single = detection_povm_single_site(eta_det, p_dark)
+    # M_single[i] is 18x18, outcomes_single[i] is (d_H, d_V)
 
-    # This returns 16 operators (2^4 combinations)
-    K_single, _ = detection_channel(eta_det, p_dark)  # M0, M1 for single mode
-
-    # Build all combinations for 4 detectors
+    # Build tensor products for all 16 combinations
     K_list = []
     outcomes = []
 
-    for d1H in range(2):
-        for d1V in range(2):
-            for d2H in range(2):
-                for d2V in range(2):
-                    # Tensor product of 4 single-mode Kraus operators
-                    K = K_single[d1H]
-                    # For each detector, tensor the appropriate Kraus operator
-                    # This gives a (6^4, 6^4) = (1296, 1296) matrix
-                    # But we can be smarter: each detector acts on different modes
-
-                    # For now, return a simplified version
-                    # In practice, you'd want to construct this more carefully
-                    K_list.append(K)  # Placeholder
-                    outcomes.append((d1H, d1V, d2H, d2V))
+    for iA, (dA_H, dA_V) in enumerate(outcomes_single):
+        for iB, (dB_H, dB_V) in enumerate(outcomes_single):
+            # Tensor product: M_A ⊗ M_B (324 x 324)
+            K = np.kron(M_single[iA], M_single[iB])
+            K_list.append(K)
+            outcomes.append((dA_H, dA_V, dB_H, dB_V))
 
     return K_list, outcomes
 

@@ -9,14 +9,16 @@ from typing import Optional, Tuple, List, Dict
 from dataclasses import dataclass, field
 import numpy as np
 
-from ..core.mps import MPSState, create_timebin_mps
+from ..core.mps import MPSState
 from ..config import TimeGrid, EmitParams, QFCParams, FiberParams, DetParams
 from ..hilbert.basis import BIN_SPACE, SUBSPACE_780, SUBSPACE_1517
 from ..physics.gates import (
     emission_gate, qfc_gate, bs_gate, jones_gate_from_array, swap_gate
 )
 from ..physics.channels import (
-    loss_channel_1517, loss_channel_both_subspaces, detection_channel_two_mode, dephasing_channel_from_rate
+    loss_channel_1517, loss_channel_both_subspaces,
+    detection_channel_two_mode, detection_povm_single_site,
+    dephasing_channel_from_rate
 )
 
 
@@ -608,33 +610,6 @@ class TrajectoryRunner:
             atom_B_state_evolution=atom_B_state_evolution,
         )
 
-    def extract_wave_packet(self, mps: MPSState) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Extract wave packet information from MPS.
-
-        Returns intensity envelope p_n and complex amplitudes xi_n for each bin.
-
-        Parameters
-        ----------
-        mps : MPSState
-            Current MPS state
-
-        Returns
-        -------
-        Tuple[np.ndarray, np.ndarray]
-            (p_n, xi_n) where p_n is intensity and xi_n are complex amplitudes
-        """
-        p_n = np.zeros(self.time_grid.N)
-        xi_n_H = np.zeros(self.time_grid.N, dtype=complex)
-        xi_n_V = np.zeros(self.time_grid.N, dtype=complex)
-
-        # Number operators for 1517 telecom subspace
-        # Need to construct these operators
-        # For now, return zeros as placeholder
-        # TODO: Implement using operators.number_op() on 1517 subspace
-
-        return p_n, xi_n_H + xi_n_V
-
 
 def run_single_trajectory(
     time_grid: TimeGrid,
@@ -1106,3 +1081,127 @@ def apply_fiber_channel(
     _print_footer(mps, verbose, stage="Fiber Channel")
 
     return mps, (U_A, U_B, eta, phase)
+
+
+def apply_detection(
+    mps: MPSState,
+    n_bins: int,
+    eta_det: float = 1.0,
+    p_dark: float = 0.0,
+    rng: np.random.Generator = None,
+    verbose: bool = True,
+) -> Tuple[MPSState, List[Tuple[int, int, int, int]]]:
+    """
+    Apply detection POVM to all bin pairs after beam splitter.
+
+    This measures photons at each (A_n, B_n) pair and returns click patterns.
+    Each site has H and V detectors, giving 4 outcomes per pair (16 total combinations).
+
+    Parameters
+    ----------
+    mps : MPSState
+        MPS state (layout: A1, B1, A2, B2, ..., AN, BN, atomA, atomB)
+    n_bins : int
+        Number of time bins
+    eta_det : float
+        Detection efficiency (0 <= eta_det <= 1)
+    p_dark : float
+        Dark count probability per detector
+    rng : np.random.Generator
+        Random number generator for measurement sampling
+    verbose : bool
+        Whether to print progress
+
+    Returns
+    -------
+    Tuple[MPSState, List[Tuple[int, int, int, int]]]
+        (mps, outcomes) where outcomes[n] = (dA_H, dA_V, dB_H, dB_V)
+        for bin n, and d=0 means no click, d=1 means click.
+
+    Notes
+    -----
+    For BSM (Bell State Measurement), success patterns are:
+        - (1,0,0,1) or (0,1,1,0): Psi+ heralding (one H, one V in different ports)
+        - (0,1,0,1) or (1,0,1,0): Psi- heralding (same polarization in different ports)
+
+    The measurement is destructive: after detection, the photon state collapses.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    _print_header("Detection", verbose)
+    if verbose:
+        print(f"  eta_det = {eta_det:.3f}, p_dark = {p_dark:.6f}")
+
+    # Get single-site detection POVM (4 outcomes per site)
+    M_single, outcomes_single = detection_povm_single_site(eta_det, p_dark)
+    # M_single[i] is 18x18, outcomes_single[i] is (d_H, d_V)
+
+    all_outcomes = []
+
+    for n in range(n_bins):
+        site_A = 2 * n
+        site_B = 2 * n + 1
+
+        # Apply detection to site A, get outcome index
+        mu_A = mps.apply_kraus_one_site(site_A, M_single, rng)
+        dA_H, dA_V = outcomes_single[mu_A]
+
+        # Apply detection to site B, get outcome index
+        mu_B = mps.apply_kraus_one_site(site_B, M_single, rng)
+        dB_H, dB_V = outcomes_single[mu_B]
+
+        outcome = (dA_H, dA_V, dB_H, dB_V)
+        all_outcomes.append(outcome)
+
+        _print_progress(n + 1, n_bins, verbose)
+
+    if verbose:
+        # Count success patterns
+        psi_plus = [(1,0,0,1), (0,1,1,0)]  # H-V or V-H in different ports
+        psi_minus = [(0,1,0,1), (1,0,1,0)]  # Same pol in different ports (with sign)
+
+        n_psi_plus = sum(1 for o in all_outcomes if o in psi_plus)
+        n_psi_minus = sum(1 for o in all_outcomes if o in psi_minus)
+        n_double_click = sum(1 for o in all_outcomes if sum(o) >= 2)
+
+        print(f"  Results summary:")
+        print(f"    Psi+ heralding: {n_psi_plus} bins")
+        print(f"    Psi- heralding: {n_psi_minus} bins")
+        print(f"    Multi-click: {n_double_click} bins")
+
+    _print_footer(mps, verbose, stage="Detection")
+
+    return mps, all_outcomes
+
+
+def find_bsm_success(
+    outcomes: List[Tuple[int, int, int, int]]
+) -> Tuple[bool, int, str]:
+    """
+    Check if any bin has a BSM success pattern.
+
+    Parameters
+    ----------
+    outcomes : List[Tuple[int, int, int, int]]
+        Detection outcomes for all bins, each is (dA_H, dA_V, dB_H, dB_V)
+
+    Returns
+    -------
+    Tuple[bool, int, str]
+        (success, bin_index, bell_state) where:
+        - success: True if BSM heralding found
+        - bin_index: which bin (0-indexed), or -1 if no success
+        - bell_state: "Psi+" or "Psi-" or ""
+    """
+    # BSM success patterns (single photon in each arm, different detectors)
+    psi_plus_patterns = [(1,0,0,1), (0,1,1,0)]  # H_A V_B or V_A H_B
+    psi_minus_patterns = [(1,0,1,0), (0,1,0,1)]  # H_A H_B or V_A V_B (with phase)
+
+    for n, outcome in enumerate(outcomes):
+        if outcome in psi_plus_patterns:
+            return True, n, "Psi+"
+        if outcome in psi_minus_patterns:
+            return True, n, "Psi-"
+
+    return False, -1, ""

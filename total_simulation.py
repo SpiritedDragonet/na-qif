@@ -17,6 +17,7 @@ This allows A_n and B_n to be adjacent for BSM operations.
 
 import sys
 from pathlib import Path
+from datetime import datetime
 import numpy as np
 from typing import Optional, Tuple
 
@@ -128,6 +129,12 @@ def run_dual_atom_emission(
 
 def main():
     """Main function for testing emission + QFC + fiber channel."""
+    # Create output directory with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    output_dir = PROJECT_ROOT / "outputs" / timestamp
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Output directory: {output_dir}")
     print("Running emission + QFC + fiber channel simulation...")
 
     # Run emission
@@ -141,9 +148,14 @@ def main():
         verbose=True,
     )
 
-    # Save pre-QFC visualization
-    print("\nGenerating pre-QFC visualization...")
-    plot_dual_arm_heatmap(result, save_path="pre_qfc.png", show_atomic=True, stage_name="Emission (pre-QFC)")
+    # Save after-emission visualization
+    print("\nGenerating after-emission visualization...")
+    plot_dual_arm_heatmap(
+        result,
+        save_path=str(output_dir / "1_after_emission.png"),
+        show_atomic=True,
+        stage_name="After Emission"
+    )
 
     # Apply QFC
     print("\nApplying QFC...")
@@ -155,11 +167,11 @@ def main():
         verbose=True,
     )
 
-    # Save post-QFC visualization
-    print("\nGenerating post-QFC visualization...")
+    # Save after-QFC visualization
+    print("\nGenerating after-QFC visualization...")
     plot_dual_arm_heatmap(
         result.mps,
-        save_path="post_qfc.png",
+        save_path=str(output_dir / "2_after_qfc.png"),
         show_atomic=False,
         stage_name="After QFC (50% conversion)",
         time_grid=result.time_grid,
@@ -190,18 +202,18 @@ def main():
         verbose=True,
     )
 
-    # Save post-fiber visualization
-    print("\nGenerating post-fiber visualization...")
+    # Save after-fiber visualization
+    print("\nGenerating after-fiber visualization...")
     U_A, U_B, eta, phase = sampled_params
     plot_dual_arm_heatmap(
         result.mps,
-        save_path="post_fiber.png",
+        save_path=str(output_dir / "3_after_fiber.png"),
         show_atomic=False,
         stage_name=f"After Fiber (eta={eta:.2f}, phase={phase:.2f}rad)",
         time_grid=result.time_grid,
     )
 
-    print("\nDone! Saved: pre_qfc.png, post_qfc.png, post_fiber.png")
+    print(f"\nDone! Files saved to: {output_dir}/")
 
 
 if __name__ == "__main__":

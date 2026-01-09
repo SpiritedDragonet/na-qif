@@ -51,3 +51,6 @@ Thumbs.db
 /test_*.png
 /test_emission*.png
 /emission_*.png
+
+# Windows null device file
+nul
