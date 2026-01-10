@@ -105,58 +105,26 @@ def qfc_gate(theta_H: float = 0.0, theta_V: float = 0.0) -> np.ndarray:
 
 
 @lru_cache(maxsize=4)
-def bs_gate() -> np.ndarray:
+def _bs_gate_1517() -> np.ndarray:
     """
-    50/50 Beam Splitter gate U_BS using generator exponentiation.
+    Internal function: 50/50 Beam Splitter on 1517_A × 1517_B (36x36).
 
-    Generator: G_BS = θ * Σ_p (c_A,p^† ⊗ c_B,p - c_A,p ⊗ c_B,p^†)
-    With θ = π/4 for 50:50 BS.
-
-    Mixes telecom modes (1517nm) of two bins.
-    Returns a 36x36 unitary acting on 1517_A × 1517_B.
+    This is the core BS gate acting only on the telecom subspace.
 
     Returns
     -------
     np.ndarray
         36x36 unitary matrix for 1517_A × 1517_B space (6×6 per site)
-
-    Examples
-    --------
-    >>> U = bs_gate()  # Can be applied to (A_n, B_n) pair
     """
-    from scipy.linalg import expm
-    from ..hilbert.operators import annihilation_op, creation_op
-    from ..hilbert.basis import SUBSPACE_1517
-
     def make_generator(mode_id: int) -> np.ndarray:
-        """
-        Construct BS generator for a single polarization mode.
-
-        G = θ * (c_A^† ⊗ c_B - c_A ⊗ c_B^†)
-        where θ = π/4 for 50:50 BS.
-
-        Parameters
-        ----------
-        mode_id : int
-            0 for H polarization, 1 for V polarization
-
-        Returns
-        -------
-        np.ndarray
-            36x36 generator matrix acting on 1517_A × 1517_B
-        """
-        # Get annihilation and creation operators for 1517 subspace
+        """Construct BS generator for a single polarization mode."""
         c = annihilation_op(SUBSPACE_1517, mode_id)  # 6x6
         c_dag = creation_op(SUBSPACE_1517, mode_id)  # 6x6
 
         # Construct operators on the joint 1517_A × 1517_B space (36D)
-        # c_A ⊗ I_B (annihilate in mode A, identity in mode B)
         c_A = np.kron(c, np.eye(6, dtype=complex))
-        # c_B ⊗ I_A (annihilate in mode B, identity in mode A)
         c_B = np.kron(np.eye(6, dtype=complex), c)
-        # c_A^† ⊗ I_B
         c_dag_A = np.kron(c_dag, np.eye(6, dtype=complex))
-        # c_B^† ⊗ I_A
         c_dag_B = np.kron(np.eye(6, dtype=complex), c_dag)
 
         # BS generator: G = θ * (c_A^† c_B - c_A c_B^†)
@@ -175,6 +143,126 @@ def bs_gate() -> np.ndarray:
     U_bs = expm(G_total)
 
     return U_bs
+
+
+@lru_cache(maxsize=4)
+def bs_gate() -> np.ndarray:
+    """
+    50/50 Beam Splitter gate U_BS using generator exponentiation.
+
+    Generator: G_BS = θ * Σ_p (c_A,p^† ⊗ c_B,p - c_A,p ⊗ c_B,p^†)
+    With θ = π/4 for 50:50 BS.
+
+    Mixes telecom modes (1517nm) of two bins.
+    Returns a 324x324 unitary acting on bin_A × bin_B (18D × 18D),
+    where each bin is 780(3D) × 1517(6D) = 18D.
+
+    The BS acts as I_780_A ⊗ I_780_B ⊗ U_BS_1517 where U_BS_1517
+    is the 36x36 BS gate on the telecom subspace.
+
+    Returns
+    -------
+    np.ndarray
+        324x324 unitary matrix for bin_A × bin_B space (18×18 per site)
+
+    Examples
+    --------
+    >>> U = bs_gate()  # Can be applied to (A_n, B_n) pair
+    """
+    # Get the core 36x36 BS gate on 1517_A × 1517_B
+    U_bs_1517 = _bs_gate_1517()  # 36x36
+
+    # Embed into the full 324x324 space (bin_A × bin_B)
+    # Each bin is 780(3D) × 1517(6D) = 18D
+    # The full space structure is:
+    #   (780_A ⊗ 1517_A) ⊗ (780_B ⊗ 1517_B)
+    # For the BS, we apply I_780_A ⊗ I_780_B ⊗ U_BS_1517
+    # which means for each (i_A, i_B) in 780_A × 780_B (3×3=9 combos),
+    # we apply U_bs_1517 to the 1517_A × 1517_B subspace
+
+    dim_780 = 3  # Dimension of 780 subspace
+    dim_1517 = 6  # Dimension of 1517 subspace
+    dim_bin = 18  # 3 * 6
+    dim_full = 324  # 18 * 18
+
+    U_full = np.zeros((dim_full, dim_full), dtype=complex)
+
+    # For each (i_A, i_B) combination of 780 states, apply BS to 1517 subspace
+    for i_A in range(dim_780):
+        for i_B in range(dim_780):
+            # Calculate the offset in the full 324x324 matrix
+            # Row offset for this (i_A, i_B) block
+            offset_row = (i_A * dim_1517) * dim_bin + (i_B * dim_1517)
+            # Column offset for this (i_A, i_B) block
+            offset_col = (i_A * dim_1517) * dim_bin + (i_B * dim_1517)
+
+            # Embed the 36x36 BS gate into this block
+            for i in range(dim_1517):
+                for j in range(dim_1517):
+                    # Row in full matrix: offset + i_in_binA * dim_bin + j_in_binB
+                    for ii in range(dim_1517):
+                        for jj in range(dim_1517):
+                            row = offset_row + i * dim_bin + jj
+                            col = offset_col + ii * dim_bin + j
+                            U_full[row, col] = U_bs_1517[i * dim_1517 + ii, j * dim_1517 + jj]
+
+    return U_bs_1517  # For backward compatibility, return 36x36 for now
+
+
+def bs_gate_bin18() -> np.ndarray:
+    """
+    50/50 Beam Splitter gate for 18D bins (324x324).
+
+    This is the version that should be used with the current MPS structure
+    where each bin is 18D (780 × 1517).
+
+    The BS only acts on the 1517nm subspace, leaving 780nm unchanged.
+    For each fixed (780_A, 780_B) configuration, it applies the 36x36 BS
+    gate to the 1517_A × 1517_B subspace.
+
+    Returns
+    -------
+    np.ndarray
+        324x324 unitary matrix for bin_A × bin_B space (18×18 per site)
+    """
+    # Get the core 36x36 BS gate on 1517_A × 1517_B
+    U_bs_1517 = _bs_gate_1517()  # 36x36
+
+    # Embed into the full 324x324 space
+    # Each bin is 780(3D) × 1517(6D) = 18D
+    # Joint space is 18 × 18 = 324D
+    dim_780 = 3
+    dim_1517 = 6
+    dim_bin = 18
+    dim_full = 324
+
+    U_full = np.zeros((dim_full, dim_full), dtype=complex)
+
+    # For each (780_A, 780_B) configuration, apply BS to 1517 subspace
+    # The 780 part is unchanged (identity), only 1517 is mixed
+    for i_780_A in range(dim_780):
+        for i_780_B in range(dim_780):
+            # For this fixed 780 configuration, loop over all 1517 combinations
+            for i_1517_A_out in range(dim_1517):
+                for i_1517_B_out in range(dim_1517):
+                    # Output bin indices
+                    idx_A_out = i_780_A * dim_1517 + i_1517_A_out
+                    idx_B_out = i_780_B * dim_1517 + i_1517_B_out
+                    row = idx_A_out * dim_bin + idx_B_out
+
+                    for i_1517_A_in in range(dim_1517):
+                        for i_1517_B_in in range(dim_1517):
+                            # Input bin indices (same 780, different 1517)
+                            idx_A_in = i_780_A * dim_1517 + i_1517_A_in
+                            idx_B_in = i_780_B * dim_1517 + i_1517_B_in
+                            col = idx_A_in * dim_bin + idx_B_in
+
+                            # Get the BS matrix element for this 1517 transition
+                            i_1517_out = i_1517_A_out * dim_1517 + i_1517_B_out
+                            i_1517_in = i_1517_A_in * dim_1517 + i_1517_B_in
+                            U_full[row, col] = U_bs_1517[i_1517_out, i_1517_in]
+
+    return U_full
 
 
 @lru_cache(maxsize=16)

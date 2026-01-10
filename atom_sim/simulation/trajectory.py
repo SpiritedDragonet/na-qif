@@ -970,12 +970,15 @@ def apply_bs(
     MPSState
         MPS state with BS applied (modified in-place)
     """
-    from ..physics.gates import bs_gate
+    from ..physics.gates import bs_gate_bin18
 
     _print_header("BS", verbose)
 
-    # Get BS gate (36x36, acts on 1517_A × 1517_B)
-    U_bs = bs_gate()
+    # Get BS gate (324x324, acts on bin_A × bin_B = 18 × 18)
+    U_bs = bs_gate_bin18()
+
+    if verbose:
+        print(f"  U_bs shape: {U_bs.shape}")
 
     # Apply BS to each A_n, B_n pair
     for n in range(n_bins):
