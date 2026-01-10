@@ -27,7 +27,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from atom_sim.config import TimeGrid, EmitParams
 from atom_sim.simulation import run_emission_only, EmissionResult, apply_qfc, apply_fiber_channel
-from atom_sim.visualization import plot_dual_arm_heatmap
+from atom_sim.visualization import plot_dual_arm_heatmap, plot_dual_arm_heatmap_phase
 from atom_sim.physics import FiberChannelParams
 
 
@@ -139,7 +139,7 @@ def main():
 
     # Run emission
     result = run_dual_atom_emission(
-        n_bins=100,  # Smaller for testing
+        n_bins=200,  # Doubled for testing
         dt_ns=0.2,
         chi_max=30,
         gamma_peak_A=0.2,
@@ -157,6 +157,15 @@ def main():
         stage_name="After Emission"
     )
 
+    # Save phase-aware visualization (HSV domain coloring)
+    print("\nGenerating phase-aware visualization...")
+    plot_dual_arm_heatmap_phase(
+        result,
+        save_path=str(output_dir / "1_after_emission_phase.png"),
+        show_atomic=True,
+        stage_name="After Emission",
+    )
+
     # Apply QFC
     print("\nApplying QFC...")
     apply_qfc(
@@ -172,6 +181,16 @@ def main():
     plot_dual_arm_heatmap(
         result.mps,
         save_path=str(output_dir / "2_after_qfc.png"),
+        show_atomic=False,
+        stage_name="After QFC (50% conversion)",
+        time_grid=result.time_grid,
+    )
+
+    # Save phase-aware visualization after QFC
+    print("\nGenerating phase-aware visualization after QFC...")
+    plot_dual_arm_heatmap_phase(
+        result.mps,
+        save_path=str(output_dir / "2_after_qfc_phase.png"),
         show_atomic=False,
         stage_name="After QFC (50% conversion)",
         time_grid=result.time_grid,
@@ -208,6 +227,16 @@ def main():
     plot_dual_arm_heatmap(
         result.mps,
         save_path=str(output_dir / "3_after_fiber.png"),
+        show_atomic=False,
+        stage_name=f"After Fiber (eta={eta:.2f}, phase={phase:.2f}rad)",
+        time_grid=result.time_grid,
+    )
+
+    # Save phase-aware visualization after fiber
+    print("\nGenerating phase-aware visualization after fiber...")
+    plot_dual_arm_heatmap_phase(
+        result.mps,
+        save_path=str(output_dir / "3_after_fiber_phase.png"),
         show_atomic=False,
         stage_name=f"After Fiber (eta={eta:.2f}, phase={phase:.2f}rad)",
         time_grid=result.time_grid,
