@@ -11,6 +11,7 @@ from .trajectory import (
     run_single_trajectory,
     run_emission_only,
     apply_qfc,
+    apply_780_filter,
     apply_jones,
     apply_loss,
     apply_loss_combined,
@@ -33,6 +34,7 @@ __all__ = [
     'run_emission_only',
     # apply_* functions
     'apply_qfc',
+    'apply_780_filter',
     'apply_jones',
     'apply_loss',
     'apply_loss_combined',

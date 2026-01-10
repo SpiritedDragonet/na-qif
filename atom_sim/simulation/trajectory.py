@@ -446,19 +446,28 @@ class TrajectoryRunner:
             print(f"  Initial: [atomA, atomB, A1, B1, A2, B2, ...]")
             print(f"  Target:  [A1, B1, A2, B2, ..., AN, BN, atomA, atomB]")
 
+        # Track atom positions explicitly instead of using find_sites_by_dim
+        # Initially: atomA at site 0, atomB at site 1
+        site_A = 0
+        site_B = 1
+
         # Process bins one by one
         for n in range(self.time_grid.N):
             t = self.time_grid.t[n]
 
             # === Atom A emission ===
-            atom_sites = mps.find_sites_by_dim(DIM_ATOM)
-            site_A = atom_sites[0]
+            # Target: bin A_n is at site (2 + 2*n) in the ORIGINAL layout
+            # But we track current positions, so we move to be adjacent to A_n
             target_A = 2 + 2 * n  # Original position of A_n
 
             # Move atomA right until adjacent to target bin
+            # Note: atomA is always to the left of atomB, so we need to be careful
             while site_A + 1 < target_A:
                 mps.swap_sites(site_A)
                 site_A += 1
+                # If atomB was at site_A + 1, it also moved
+                if site_B == site_A:
+                    site_B = site_A - 1  # atomB is now one site to the left
 
             # Apply emission gate
             gamma_A = self.emit.get_gamma_A(t)
@@ -480,33 +489,31 @@ class TrajectoryRunner:
                 per_bin_prob_A[n] = p_A_H + p_A_V
 
             # SWAP atomA right (past the processed bin)
-            # Allow moving all the way to the end of the chain
-            # After SWAP, atom should be at or beyond the original bin position
             if site_A + 1 < len(mps.d):
-                # Check if we need to swap past the last bin (for n = N-1)
-                # The last bin A_N is at site 2*N, B_N at site 2*N+1
-                # We want to move atoms all the way past these bins
                 mps.swap_sites(site_A)
                 site_A += 1
+                # If atomB was at site_A, it got swapped left
+                if site_B == site_A:
+                    site_B = site_A - 1
 
             # Record atom A state after SWAP
-            atom_sites_after_A = mps.find_sites_by_dim(DIM_ATOM)
-            site_A_after = atom_sites_after_A[0]
-            rho_A_after = mps.get_reduced_density([site_A_after])
+            rho_A_after = mps.get_reduced_density([site_A])
             col_idx = 2 * n + 1  # After atomA SWAP for bin n
             atom_A_state_evolution[0, col_idx] = rho_A_after[0, 0].real
             atom_A_state_evolution[1, col_idx] = rho_A_after[1, 1].real
             atom_A_state_evolution[2, col_idx] = rho_A_after[2, 2].real
 
             # === Atom B emission ===
-            atom_sites = mps.find_sites_by_dim(DIM_ATOM)
-            site_B = atom_sites[1]
+            # Target: bin B_n is at site (3 + 2*n) in the ORIGINAL layout
             target_B = 3 + 2 * n  # Original position of B_n
 
             # Move atomB right until adjacent to target bin
             while site_B + 1 < target_B:
                 mps.swap_sites(site_B)
                 site_B += 1
+                # If atomA was at site_B + 1, it also moved
+                if site_A == site_B:
+                    site_A = site_B - 1
 
             # Apply emission gate
             gamma_B = self.emit.get_gamma_B(t)
@@ -528,15 +535,15 @@ class TrajectoryRunner:
                 per_bin_prob_B[n] = p_B_H + p_B_V
 
             # SWAP atomB right
-            # Allow moving all the way to the end of the chain
             if site_B + 1 < len(mps.d):
                 mps.swap_sites(site_B)
                 site_B += 1
+                # If atomA was at site_B, it got swapped left
+                if site_A == site_B:
+                    site_A = site_B - 1
 
             # Record atom B state after SWAP
-            atom_sites_after_B = mps.find_sites_by_dim(DIM_ATOM)
-            site_B_after = atom_sites_after_B[1]
-            rho_B_after = mps.get_reduced_density([site_B_after])
+            rho_B_after = mps.get_reduced_density([site_B])
             col_idx = 2 * n + 1  # After atomB SWAP for bin n
             atom_B_state_evolution[0, col_idx] = rho_B_after[0, 0].real
             atom_B_state_evolution[1, col_idx] = rho_B_after[1, 1].real
@@ -560,37 +567,36 @@ class TrajectoryRunner:
             print(f"\n  Final pass: moving atoms to end of chain...")
 
         # Move atomA to site 2*N (second to last)
-        while True:
-            atom_sites = mps.find_sites_by_dim(DIM_ATOM)
-            site_A = atom_sites[0]
-            target_A = 2 * self.time_grid.N  # Site 2*N
-            if site_A >= target_A:
-                break
+        # We already have site_A tracked from the main loop
+        target_A = 2 * self.time_grid.N  # Site 2*N
+        while site_A < target_A:
             mps.swap_sites(site_A)
+            site_A += 1
+            # If atomB was at site_A, it got swapped left
+            if site_B == site_A:
+                site_B = site_A - 1
 
         # Move atomB to site 2*N+1 (last)
-        while True:
-            atom_sites = mps.find_sites_by_dim(DIM_ATOM)
-            site_B = atom_sites[1]
-            target_B = 2 * self.time_grid.N + 1  # Site 2*N+1
-            if site_B >= target_B:
-                break
+        target_B = 2 * self.time_grid.N + 1  # Site 2*N+1
+        while site_B < target_B:
             mps.swap_sites(site_B)
+            site_B += 1
+            # If atomA was at site_B, it got swapped left
+            if site_A == site_B:
+                site_A = site_B - 1
 
         if verbose:
-            atom_sites_final = mps.find_sites_by_dim(DIM_ATOM)
-            print(f"  After final pass: atomA@{atom_sites_final[0]}, atomB@{atom_sites_final[1]}")
+            print(f"  After final pass: atomA@{site_A}, atomB@{site_B}")
 
         # Get final atom states
-        atom_sites_final = mps.find_sites_by_dim(DIM_ATOM)
-        rho_atom_A = mps.get_reduced_density([atom_sites_final[0]])
-        rho_atom_B = mps.get_reduced_density([atom_sites_final[1]])
+        rho_atom_A = mps.get_reduced_density([site_A])
+        rho_atom_B = mps.get_reduced_density([site_B])
 
         atom_states = {'A': rho_atom_A, 'B': rho_atom_B}
 
         if verbose:
             print(f"  Complete!")
-            print(f"  Final: atomA@{atom_sites_final[0]}, atomB@{atom_sites_final[1]}")
+            print(f"  Final: atomA@{site_A}, atomB@{site_B}")
             print(f"  Final chi: {mps.get_bond_dimensions()}")
             print(f"  Norm: {mps.norm():.6f}")
             print(f"\nFinal atomic states:")
@@ -780,6 +786,66 @@ def apply_qfc(
         _print_progress(n + 1, n_bins, verbose)
 
     _print_footer(mps, verbose, stage="QFC")
+    return mps
+
+
+def apply_780_filter(
+    mps: MPSState,
+    n_bins: int,
+    verbose: bool = True,
+) -> MPSState:
+    """
+    Apply 100% loss filter to remove 780nm photons from all bins.
+
+    After QFC, any remaining 780nm photons (|H,vac>, |V,vac>) cannot propagate
+    through the fiber and must be filtered out. This applies the projection:
+        P_filter = |vac><vac|_780 ⊗ I_1517
+
+    Parameters
+    ----------
+    mps : MPSState
+        MPS state (layout: A1, B1, A2, B2, ..., AN, BN, atomA, atomB)
+    n_bins : int
+        Number of time bins
+    verbose : bool
+        Whether to print progress
+
+    Returns
+    -------
+    MPSState
+        MPS state with 780nm photons removed (modified in-place)
+    """
+    from ..physics.gates import filter_780_gate
+    from tenpy.linalg.np_conserved import Array
+
+    _print_header("780nm Filter", verbose)
+
+    # Get the 780nm filter projection (18x18)
+    P_filter = filter_780_gate()
+
+    if verbose:
+        print(f"  P_filter shape: {P_filter.shape}")
+        print(f"  This projects 780nm photon states to vacuum")
+
+    # Convert to TeNPy Array with proper labels
+    P_arr = Array.from_ndarray_trivial(P_filter, labels=['p', 'p*'])
+
+    # Apply to all bins WITHOUT normalizing after each one
+    # (much faster - only normalize once at the end)
+    for n in range(n_bins):
+        site_A = 2 * n
+        site_B = 2 * n + 1
+
+        # Apply projection (non-unitary, no renormalization yet)
+        mps._mps.apply_local_op(site_A, P_arr, unitary=False, renormalize=False)
+        mps._mps.apply_local_op(site_B, P_arr, unitary=False, renormalize=False)
+
+        _print_progress(n + 1, n_bins, verbose)
+
+    # Single normalization at the end
+    mps._mps.canonical_form_finite(renormalize=True)
+
+    _print_footer(mps, verbose, stage="780nm Filter")
     return mps
 
 

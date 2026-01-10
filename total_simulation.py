@@ -27,8 +27,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from atom_sim.config import TimeGrid, EmitParams
 from atom_sim.simulation import (
-    run_emission_only, EmissionResult, apply_qfc, apply_fiber_channel, apply_bs,
-    apply_detection, find_bsm_success
+    run_emission_only, EmissionResult, apply_qfc, apply_780_filter, apply_fiber_channel,
+    apply_bs, apply_detection, find_bsm_success
 )
 from atom_sim.visualization import plot_dual_arm_heatmap, plot_dual_arm_heatmap_phase
 from atom_sim.physics import FiberChannelParams
@@ -267,13 +267,21 @@ def main():
         verbose=True,
     )
 
-    # Save after-QFC visualization
-    print("\nGenerating after-QFC visualization...")
+    # Apply 780nm filter (remove unconverted 780nm photons)
+    print("\nApplying 780nm filter...")
+    apply_780_filter(
+        mps=result.mps,
+        n_bins=result.get_n_bins(),
+        verbose=True,
+    )
+
+    # Save after-QFC visualization (now with 780nm filtered out)
+    print("\nGenerating after-QFC+filter visualization...")
     plot_dual_arm_heatmap(
         result.mps,
         save_path=str(output_dir / "2_after_qfc.png"),
         show_atomic=False,
-        stage_name="After QFC (50% conversion)",
+        stage_name="After QFC + 780nm Filter",
         time_grid=result.time_grid,
     )
 

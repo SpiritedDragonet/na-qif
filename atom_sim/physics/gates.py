@@ -104,6 +104,40 @@ def qfc_gate(theta_H: float = 0.0, theta_V: float = 0.0) -> np.ndarray:
     return U
 
 
+def filter_780_gate() -> np.ndarray:
+    """
+    780nm filter projector: removes all 780nm photons while keeping 1517nm intact.
+
+    This is a projection operator (non-unitary) that acts on the 18D bin space:
+        P_filter = |vac><vac|_780 ⊗ I_1517
+
+    It effectively projects any 780nm photon state to vacuum, keeping 1517nm states.
+    Since this is a projector, it does not preserve norm - the state must be
+    renormalized after application.
+
+    Returns
+    -------
+    np.ndarray
+        18x18 projection matrix
+    """
+    from ..hilbert.basis import SUBSPACE_780, SUBSPACE_1517
+
+    dim_780 = SUBSPACE_780.dim  # 3: vac, H, V
+    dim_1517 = SUBSPACE_1517.dim  # 6: vac, H, V, 2H, 2V, HV
+
+    # |vac><vac| in 780 subspace
+    P_vac_780 = np.zeros((dim_780, dim_780), dtype=complex)
+    P_vac_780[0, 0] = 1.0  # Only |vac><vac| survives
+
+    # Identity in 1517 subspace
+    I_1517 = np.eye(dim_1517, dtype=complex)
+
+    # Tensor product: |vac><vac|_780 ⊗ I_1517
+    P_filter = np.kron(P_vac_780, I_1517)
+
+    return P_filter
+
+
 @lru_cache(maxsize=4)
 def _bs_gate_1517() -> np.ndarray:
     """
