@@ -387,6 +387,7 @@ class TrajectoryRunner:
     def run_emission(
         self,
         verbose: bool = True,
+        delay_bins_B: int = 0,
     ) -> EmissionResult:
         """
         Run emission-only stage using SWAP conveyor belt protocol.
@@ -401,18 +402,33 @@ class TrajectoryRunner:
         ----------
         verbose : bool
             Whether to print progress information
+        delay_bins_B : int
+            Time offset between A and B wavepackets in bins.
+            - delay_bins_B > 0: B starts late (B delayed relative to A)
+            - delay_bins_B < 0: A starts late (A delayed relative to B)
+            - Range: typically -100 to +100
 
         Returns
         -------
         EmissionResult
             Container with emission simulation results
         """
+        # Calculate start bins for each atom based on delay
+        # delay_bins_B > 0: B delayed -> A starts at 0, B starts at delay_bins_B
+        # delay_bins_B < 0: A delayed -> A starts at |delay_bins_B|, B starts at 0
+        start_bin_A = max(0, -delay_bins_B)
+        start_bin_B = max(0, delay_bins_B)
+
         if verbose:
             print("=" * 70)
             print("Dual-Atom Emission Simulation")
             print("=" * 70)
             print(f"\nParameters:")
             print(f"  n_bins = {self.time_grid.N}, dt = {self.time_grid.dt * 1e9:.1f} ns")
+            if delay_bins_B != 0:
+                print(f"  delay_bins_B = {delay_bins_B}")
+                print(f"    -> Atom A starts at bin {start_bin_A}")
+                print(f"    -> Atom B starts at bin {start_bin_B}")
 
         # Initialize MPS: atomA(3), atomB(3), A1(18), B1(18), ..., AN(18), BN(18)
         local_dims = [DIM_ATOM, DIM_ATOM] + [DIM_BIN, DIM_BIN] * self.time_grid.N
@@ -469,9 +485,10 @@ class TrajectoryRunner:
                 if site_B == site_A:
                     site_B = site_A - 1  # atomB is now one site to the left
 
-            # Apply emission gate
+            # Apply emission gate (skip if n < start_bin_A for time offset)
             gamma_A = self.emit.get_gamma_A(t)
-            if gamma_A >= 1e-6 and site_A + 1 < len(mps.d):
+            should_emit_A = (n >= start_bin_A) and (gamma_A >= 1e-6) and (site_A + 1 < len(mps.d))
+            if should_emit_A:
                 U_emit_A = emission_gate(
                     gamma=gamma_A,
                     dt=self.time_grid.dt * 1e9,  # Convert seconds to nanoseconds
@@ -515,9 +532,10 @@ class TrajectoryRunner:
                 if site_A == site_B:
                     site_A = site_B - 1
 
-            # Apply emission gate
+            # Apply emission gate (skip if n < start_bin_B for time offset)
             gamma_B = self.emit.get_gamma_B(t)
-            if gamma_B >= 1e-6 and site_B + 1 < len(mps.d):
+            should_emit_B = (n >= start_bin_B) and (gamma_B >= 1e-6) and (site_B + 1 < len(mps.d))
+            if should_emit_B:
                 U_emit_B = emission_gate(
                     gamma=gamma_B,
                     dt=self.time_grid.dt * 1e9,  # Convert seconds to nanoseconds
@@ -671,6 +689,7 @@ def run_emission_only(
     det_params: Optional[DetParams] = None,
     chi_max: int = 100,
     verbose: bool = True,
+    delay_bins_B: int = 0,
 ) -> EmissionResult:
     """
     Run emission-only simulation using SWAP conveyor belt protocol.
@@ -696,6 +715,8 @@ def run_emission_only(
         Maximum bond dimension
     verbose : bool
         Whether to print progress information
+    delay_bins_B : int
+        Number of bins to delay atom B emission for time offset
 
     Returns
     -------
@@ -721,7 +742,7 @@ def run_emission_only(
         det_params=det_params,
         chi_max=chi_max,
     )
-    return runner.run_emission(verbose=verbose)
+    return runner.run_emission(verbose=verbose, delay_bins_B=delay_bins_B)
 
 
 # ============================================================================
