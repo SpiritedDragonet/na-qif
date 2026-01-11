@@ -28,7 +28,9 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from atom_sim.config import TimeGrid, EmitParams
 from atom_sim.simulation import (
     run_emission_only, EmissionResult, apply_qfc, apply_780_filter, apply_fiber_channel,
-    apply_bs, apply_detection, find_bsm_success
+    apply_bs, apply_detection, find_bsm_success,
+    # New quantum jump detection
+    run_two_photon_detection, compute_fidelity_with_bell, compute_photon_statistics,
 )
 from atom_sim.visualization import plot_dual_arm_heatmap, plot_dual_arm_heatmap_phase
 from atom_sim.physics import FiberChannelParams
@@ -120,11 +122,14 @@ def run_dual_atom_emission(
     )
 
     # Run simulation using the simulation layer
+    # delay_bins_B=0: no delay for testing BSM
+    # TODO: Later make this random from -100 to +100
     result = run_emission_only(
         time_grid=time_grid,
         emit_params=emit_params,
         chi_max=chi_max,
         verbose=verbose,
+        delay_bins_B=0,  # No delay for BSM testing
     )
 
     return result
@@ -136,7 +141,8 @@ def run_detection_and_bsm(
     p_dark: float = 1e-6,
     seed: int = 42,
     verbose: bool = True,
-) -> Tuple[list, bool, int, str]:
+    use_quantum_jump: bool = True,
+) -> Tuple:
     """
     Run detection and check for BSM success.
 
@@ -152,26 +158,40 @@ def run_detection_and_bsm(
         Random seed for reproducibility
     verbose : bool
         Whether to print progress
+    use_quantum_jump : bool
+        If True, use new quantum jump method (Path B).
+        If False, use old independent bin sampling (deprecated).
 
     Returns
     -------
-    Tuple[list, bool, int, str]
-        (detection_outcomes, success, success_bin, bell_state)
+    Tuple
+        If use_quantum_jump=True: (TwoPhotonDetectionResult,)
+        If use_quantum_jump=False: (detection_outcomes, success, success_bin, bell_state)
     """
     rng = np.random.default_rng(seed=seed)
 
-    result.mps, detection_outcomes = apply_detection(
-        mps=result.mps,
-        n_bins=result.get_n_bins(),
-        eta_det=eta_det,
-        p_dark=p_dark,
-        rng=rng,
-        verbose=verbose,
-    )
-
-    success, success_bin, bell_state = find_bsm_success(detection_outcomes)
-
-    return detection_outcomes, success, success_bin, bell_state
+    if use_quantum_jump:
+        # New quantum jump method (event-driven, physically correct)
+        det_result = run_two_photon_detection(
+            mps=result.mps,
+            n_bins=result.get_n_bins(),
+            eta_det=eta_det,
+            rng=rng,
+            verbose=verbose,
+        )
+        return det_result
+    else:
+        # Old method (independent bin sampling - deprecated)
+        result.mps, detection_outcomes = apply_detection(
+            mps=result.mps,
+            n_bins=result.get_n_bins(),
+            eta_det=eta_det,
+            p_dark=p_dark,
+            rng=rng,
+            verbose=verbose,
+        )
+        success, success_bin, bell_state = find_bsm_success(detection_outcomes)
+        return detection_outcomes, success, success_bin, bell_state
 
 
 def save_detection_summary(
@@ -229,8 +249,9 @@ def main():
     print("Running emission + QFC + fiber channel simulation...")
 
     # Run emission
+    # With delay_bins_B=-10, A starts at bin 10
     result = run_dual_atom_emission(
-        n_bins=100,  # For testing
+        n_bins=100,  # Back to 100 for testing
         dt_ns=0.2,
         chi_max=30,
         gamma_peak_A=0.2,
@@ -363,37 +384,79 @@ def main():
         time_grid=result.time_grid,
     )
 
+    # Compute photon statistics before normalization
+    print("\nComputing photon statistics after BS...")
+    photon_stats = compute_photon_statistics(
+        mps=result.mps,
+        n_bins=result.get_n_bins(),
+        verbose=True,
+    )
+
+    # Normalize MPS to condition on two-photon arrival
+    # This discards the "photon lost" probability and focuses on successful cases
+    print("\nNormalizing MPS to condition on two-photon arrival...")
+    result.mps._mps.canonical_form_finite(renormalize=True)
+    print(f"  MPS normalized.")
+
+    # Save after-normalization visualization
+    print("\nGenerating after-normalization visualization...")
+    plot_dual_arm_heatmap(
+        result.mps,
+        save_path=str(output_dir / "4_after_normalization.png"),
+        show_atomic=False,
+        stage_name="After Normalization (Two-Photon Branch)",
+        time_grid=result.time_grid,
+    )
+
+    # Verify photon statistics after normalization
+    photon_stats_norm = compute_photon_statistics(
+        mps=result.mps,
+        n_bins=result.get_n_bins(),
+        verbose=True,
+    )
+
     # Detection parameters
     eta_det = 0.85
     p_dark = 1e-6
 
-    # Run detection and BSM
-    print("\nRunning detection and BSM...")
-    detection_outcomes, success, success_bin, bell_state = run_detection_and_bsm(
+    # Run detection and BSM using quantum jump method
+    print("\nRunning detection and BSM (Quantum Jump Method)...")
+    det_result = run_detection_and_bsm(
         result=result,
         eta_det=eta_det,
         p_dark=p_dark,
         seed=42,
         verbose=True,
+        use_quantum_jump=True,  # Use new physically correct method
     )
 
-    # Save detection summary
-    save_detection_summary(
-        output_dir=output_dir,
-        detection_outcomes=detection_outcomes,
-        success=success,
-        success_bin=success_bin,
-        bell_state=bell_state,
-        eta_det=eta_det,
-        p_dark=p_dark,
-    )
+    # Print results
+    if det_result.success:
+        print(f"\n  BSM SUCCESS!")
+        print(f"  Bell state heralded: {det_result.bell_state}")
+        print(f"  Clicks: {[(c.detector, c.bin_index) for c in det_result.clicks]}")
 
-    if success:
-        print(f"\n  BSM SUCCESS at bin {success_bin}!")
-        print(f"  Herald state: {bell_state}")
-        print(f"  Outcome: {detection_outcomes[success_bin]}")
+        # Compute fidelity with expected Bell state
+        fidelity = compute_fidelity_with_bell(det_result.spin_state, det_result.bell_state)
+        print(f"  Fidelity with |{det_result.bell_state}>: {fidelity:.4f}")
+
+        # Also compute fidelity with all Bell states for reference
+        print(f"\n  Fidelity with all Bell states:")
+        for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
+            f = compute_fidelity_with_bell(det_result.spin_state, bell)
+            marker = " <-- heralded" if bell == det_result.bell_state else ""
+            print(f"    F(|{bell}>): {f:.4f}{marker}")
+
+        # Print spin state
+        print(f"\n  Spin density matrix (qubit subspace):")
+        rho = det_result.spin_state
+        print(f"    Tr(rho) = {np.trace(rho).real:.4f}")
+        print(f"    Purity = {np.trace(rho @ rho).real:.4f}")
     else:
-        print(f"\n  BSM FAILED - no success pattern found in any bin")
+        print(f"\n  BSM FAILED - no success pattern found")
+        print(f"  Number of clicks: {len(det_result.clicks)}")
+        if det_result.clicks:
+            print(f"  Clicks: {[(c.detector, c.bin_index) for c in det_result.clicks]}")
 
     print(f"\nDone! Files saved to: {output_dir}/")
 

@@ -1,0 +1,21 @@
+Detection Outcomes Summary
+===========================
+
+Total bins: 200
+Eta_det: 0.85
+P_dark: 1e-06
+
+Outcome Statistics:
+  No click: 199 bins
+  Single click: 1 bins
+  Multi-click: 0 bins
+  Psi+ heralding: 0 bins
+  Psi- heralding: 0 bins
+
+Detailed outcomes (non-zero only):
+  Bin  88: (0, 0, 1, 0)
+
+BSM Result:
+  Success: False
+  Success bin: -1
+  Bell state: 

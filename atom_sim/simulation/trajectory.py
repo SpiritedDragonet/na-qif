@@ -486,7 +486,10 @@ class TrajectoryRunner:
                     site_B = site_A - 1  # atomB is now one site to the left
 
             # Apply emission gate (skip if n < start_bin_A for time offset)
-            gamma_A = self.emit.get_gamma_A(t)
+            # Use RELATIVE time for gamma function: t_rel = (n - start_bin_A) * dt
+            # This ensures both atoms see the same gamma profile shape
+            t_rel_A = self.time_grid.t[n - start_bin_A] if n >= start_bin_A else 0.0
+            gamma_A = self.emit.get_gamma_A(t_rel_A) if n >= start_bin_A else 0.0
             should_emit_A = (n >= start_bin_A) and (gamma_A >= 1e-6) and (site_A + 1 < len(mps.d))
             if should_emit_A:
                 U_emit_A = emission_gate(
@@ -533,7 +536,10 @@ class TrajectoryRunner:
                     site_A = site_B - 1
 
             # Apply emission gate (skip if n < start_bin_B for time offset)
-            gamma_B = self.emit.get_gamma_B(t)
+            # Use RELATIVE time for gamma function: t_rel = (n - start_bin_B) * dt
+            # This ensures both atoms see the same gamma profile shape
+            t_rel_B = self.time_grid.t[n - start_bin_B] if n >= start_bin_B else 0.0
+            gamma_B = self.emit.get_gamma_B(t_rel_B) if n >= start_bin_B else 0.0
             should_emit_B = (n >= start_bin_B) and (gamma_B >= 1e-6) and (site_B + 1 < len(mps.d))
             if should_emit_B:
                 U_emit_B = emission_gate(

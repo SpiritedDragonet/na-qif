@@ -24,6 +24,16 @@ from .simulator import (
     SimulationResult,
     run_simulation,
 )
+from .detection import (
+    DetectionEvent,
+    TwoPhotonDetectionResult,
+    run_two_photon_detection,
+    extract_spin_state,
+    check_bsm_success as check_bsm_success_qjump,
+    compute_fidelity_with_bell,
+    compute_photon_statistics,
+    build_jump_operators_18d,
+)
 
 __all__ = [
     # trajectory
@@ -45,4 +55,13 @@ __all__ = [
     # simulator
     'SimulationResult',
     'run_simulation',
+    # detection (quantum jump method)
+    'DetectionEvent',
+    'TwoPhotonDetectionResult',
+    'run_two_photon_detection',
+    'extract_spin_state',
+    'check_bsm_success_qjump',
+    'compute_fidelity_with_bell',
+    'compute_photon_statistics',
+    'build_jump_operators_18d',
 ]
