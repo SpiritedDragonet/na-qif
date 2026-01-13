@@ -74,8 +74,8 @@ class EmissionResult:
     """
     双原子发射仿真的结果（仅发射阶段）。
 
-    发射后的链布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB
-    （仓在前，原子在后）
+    发射后的链布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN
+    （原子在前，仓在后）
 
     Attributes
     ----------
@@ -92,11 +92,11 @@ class EmissionResult:
     atom_A_state_evolution : np.ndarray
         原子A的状态演化（形状：3 x 2*n_bins）
         行：P(|0>), P(|1>), P(|e>)
-        列：每次SWAP后的记录（奇数：A的SWAP后，偶数：B的SWAP后）
+        列：每次SWAP后的记录
     atom_B_state_evolution : np.ndarray
         原子B的状态演化（形状：3 x 2*n_bins）
         行：P(|0>), P(|1>), P(|e>)
-        列：每次SWAP后的记录（奇数：A的SWAP后，偶数：B的SWAP后）
+        列：每次SWAP后的记录
     """
     mps: MPSState
     time_grid: TimeGrid
@@ -110,9 +110,9 @@ class EmissionResult:
         """
         获取仓n在A臂和B臂的MPS格点索引。
 
-        SWAP传送带后：
-        - A1, B1, A2, B2, ..., AN, BN, atomA, atomB
-        - A_n 位于格点 2*n，B_n 位于格点 2*n + 1
+        发射后的链布局：
+        - atomA, atomB, A1, B1, A2, B2, ..., AN, BN
+        - A_n 位于格点 2 + 2*n，B_n 位于格点 2 + 2*n + 1
 
         Parameters
         ----------
@@ -124,25 +124,22 @@ class EmissionResult:
         Tuple[int, int]
             (site_A, site_B) - A_n和 B_n的MPS格点索引
         """
-        n_bins = len(self.per_bin_prob_A)
-        # SWAP后：A1(0), B1(1), A2(2), B2(3), ..., AN, BN, atomA, atomB
-        # A_n 位于格点 2*n，B_n 位于格点 2*n + 1
-        return 2 * n, 2 * n + 1
+        # 原子在格点 0, 1
+        # 仓从格点 2 开始：A1(2), B1(3), A2(4), B2(5), ...
+        return 2 + 2 * n, 2 + 2 * n + 1
 
     def get_atom_site_indices(self) -> Tuple[int, int]:
         """
         获取原子A和B的MPS格点索引。
 
-        SWAP传送带后，原子位于链的末端。
+        发射后，原子位于链的最左端。
 
         Returns
         -------
         Tuple[int, int]
             (site_A, site_B) - atomA和atomB的MPS格点索引
         """
-        n_bins = len(self.per_bin_prob_A)
-        # 原子位于格点 2*n_bins 和 2*n_bins + 1
-        return 2 * n_bins, 2 * n_bins + 1
+        return 0, 1
 
     def get_n_bins(self) -> int:
         """获取时间仓的数量。"""
@@ -152,7 +149,7 @@ class EmissionResult:
         """
         获取准备进入下一阶段的MPS态（如QFC、BSM）。
 
-        当前布局为：A1, B1, A2, B2, ..., AN, BN, atomA, atomB
+        当前布局为：atomA, atomB, A1, B1, A2, B2, ..., AN, BN
         其中每对 A_n, B_n 相邻以便进行操作。
 
         Returns
@@ -226,23 +223,20 @@ class TrajectoryRunner:
         """
         初始化MPS，原子处于激发态，仓处于真空态。
 
-        链：A0(3D) - B0(3D) - A1(18D) - B1(18D) - ...
+        新架构链布局：A1(18D) - B1(18D) - ... - AN(18D) - BN(18D) - atomA(3D) - atomB(3D)
+        仓在前，原子在后。
 
         Returns
         -------
         MPSState
             初始化的MPS态
         """
-        # 系统：两个原子（各3维）
-        system_dim = 9  # atom_A ⊗ atom_B
+        # 链布局：仓在前，原子在后
+        local_dims = [DIM_BIN, DIM_BIN] * self.time_grid.N + [DIM_ATOM, DIM_ATOM]
 
-        # 或者使用分离的原子格点：
-        # 链布局：A0(3) - B0(3) - A1(18) - B1(18) - ...
-        local_dims = [3, 3] + [18] * (2 * self.time_grid.N)
-
-        # 初态：两原子激发，所有仓真空
+        # 初态：仓真空，原子激发
         # 原子基：|0>, |1>, |e>，|e> 在索引2
-        init_state = [2, 2] + [0] * (2 * self.time_grid.N)
+        init_state = [0] * (2 * self.time_grid.N) + [2, 2]
 
         mps = MPSState(local_dims, init_state=init_state, max_bond=self.chi_max)
         return mps
@@ -391,32 +385,14 @@ class TrajectoryRunner:
         delay_bins_B: int = 0,
     ) -> EmissionResult:
         """
-        使用SWAP传送带协议运行仅发射阶段。
+        运行仅发射阶段（原子向左移动版本）。
 
-        这实现了正确的双原子发射，每个仓与其对应的原子仅耦合一次，
-        防止再吸收。
+        链结构（初始）：A1, B1, ..., AN, BN, atomA, atomB
+        链结构（最终）：atomA, atomB, A1, B1, ..., AN, BN
 
-        链结构（初始）：atomA, atomB, A1, B1, A2, B2, ..., AN, BN
-        链结构（最终）：  A1, B1, A2, B2, ..., AN, BN, atomA, atomB
-
-        Parameters
-        ----------
-        verbose : bool
-            是否打印进度信息
-        delay_bins_B : int
-            A和B波包之间的时间偏移（单位为仓数）。
-            - delay_bins_B > 0：B延迟启动（B相对于A延迟）
-            - delay_bins_B < 0：A延迟启动（A相对于B延迟）
-            - 范围：通常在 -100 到 +100 之间
-
-        Returns
-        -------
-        EmissionResult
-            发射仿真结果的容器
+        原子从右向左移动，依次与每个仓对相互作用。
+        关键：发射前原子先 swap 到仓左侧，使门顺序为 (atom, bin)。
         """
-        # 根据延迟计算每个原子的起始仓
-        # delay_bins_B > 0：B延迟 -> A从0开始，B从delay_bins_B开始
-        # delay_bins_B < 0：A延迟 -> A从|delay_bins_B|开始，B从0开始
         start_bin_A = max(0, -delay_bins_B)
         start_bin_B = max(0, delay_bins_B)
 
@@ -431,197 +407,233 @@ class TrajectoryRunner:
                 print(f"    -> Atom A starts at bin {start_bin_A}")
                 print(f"    -> Atom B starts at bin {start_bin_B}")
 
-        # 初始化MPS：atomA(3), atomB(3), A1(18), B1(18), ..., AN(18), BN(18)
-        local_dims = [DIM_ATOM, DIM_ATOM] + [DIM_BIN, DIM_BIN] * self.time_grid.N
-        # 初态：原子激发（索引2），仓真空（索引0）
-        init_state = [2, 2] + [0] * (2 * self.time_grid.N)
+        # 初始化MPS：仓在前，原子在后
+        local_dims = [DIM_BIN, DIM_BIN] * self.time_grid.N + [DIM_ATOM, DIM_ATOM]
+        init_state = [0] * (2 * self.time_grid.N) + [2, 2]
         mps = MPSState(local_dims=local_dims, init_state=init_state, max_bond=self.chi_max)
 
         per_bin_prob_A = np.zeros(self.time_grid.N)
         per_bin_prob_B = np.zeros(self.time_grid.N)
-
-        # 记录每次SWAP后的原子态演化
-        # 形状：(3, 2 * n_bins)，3行为 P(|0>), P(|1>), P(|e>)
-        # 列：每次原子SWAP过某个仓后的记录
-        #   - 偶数索引 (0, 2, 4, ...)：原子A与仓n/2的SWAP后
-        #   - 奇数索引 (1, 3, 5, ...)：原子B与仓(n-1)/2的SWAP后
         atom_A_state_evolution = np.zeros((3, 2 * self.time_grid.N))
         atom_B_state_evolution = np.zeros((3, 2 * self.time_grid.N))
 
-        # 记录初始原子态
-        rho_A_init = mps.get_reduced_density([0])
-        rho_B_init = mps.get_reduced_density([1])
-        atom_A_state_evolution[0, 0] = rho_A_init[0, 0].real  # P(|0>)
-        atom_A_state_evolution[1, 0] = rho_A_init[1, 1].real  # P(|1>)
-        atom_A_state_evolution[2, 0] = rho_A_init[2, 2].real  # P(|e>)
+        # 记录初始原子态（原子在最后两个格点）
+        site_A = 2 * self.time_grid.N
+        site_B = 2 * self.time_grid.N + 1
+        rho_A_init = mps.get_reduced_density([site_A])
+        rho_B_init = mps.get_reduced_density([site_B])
+        atom_A_state_evolution[0, 0] = rho_A_init[0, 0].real
+        atom_A_state_evolution[1, 0] = rho_A_init[1, 1].real
+        atom_A_state_evolution[2, 0] = rho_A_init[2, 2].real
         atom_B_state_evolution[0, 0] = rho_B_init[0, 0].real
         atom_B_state_evolution[1, 0] = rho_B_init[1, 1].real
         atom_B_state_evolution[2, 0] = rho_B_init[2, 2].real
 
         if verbose:
-            print(f"\nRunning SWAP conveyor belt...")
-            print(f"  Initial: [atomA, atomB, A1, B1, A2, B2, ...]")
-            print(f"  Target:  [A1, B1, A2, B2, ..., AN, BN, atomA, atomB]")
+            print(f"\nRunning emission (atoms move left)...")
+            print(f"  Initial: [A1, B1, ..., AN, BN, atomA, atomB]")
+            print(f"  Target:  [atomA, atomB, A1, B1, ..., AN, BN]")
 
-        # 显式追踪原子位置，而不是使用 find_sites_by_dim
-        # 初始：atomA在格点0，atomB在格点1
-        site_A = 0
-        site_B = 1
-
-        # 逐个处理仓
-        for n in range(self.time_grid.N):
+        # 逐个处理仓（从最后一个仓开始，向左移动）
+        for n in reversed(range(self.time_grid.N)):
             t = self.time_grid.t[n]
 
-            # === 原子A发射 ===
-            # 目标：仓 A_n 在原始布局中位于格点 (2 + 2*n)
-            # 但我们追踪当前位置，所以移动到与 A_n 相邻
-            target_A = 2 + 2 * n  # A_n的原始位置
-
-            # 将atomA向右移动直到与目标仓相邻
-            # 注意：atomA总是在atomB左侧，需要小心处理
-            while site_A + 1 < target_A:
-                mps.swap_sites(site_A)
-                site_A += 1
-                # 如果atomB在site_A + 1，它也被移动了
-                if site_B == site_A:
-                    site_B = site_A - 1  # atomB现在在左侧一个格点
-
-            # 应用发射门（如果 n < start_bin_A 则跳过，用于时间偏移）
-            # 使用相对时间计算gamma函数：t_rel = (n - start_bin_A) * dt
-            # 这确保两个原子看到相同的gamma函数形状
-            t_rel_A = self.time_grid.t[n - start_bin_A] if n >= start_bin_A else 0.0
-            gamma_A = self.emit.get_gamma_A(t_rel_A) if n >= start_bin_A else 0.0
-            should_emit_A = (n >= start_bin_A) and (gamma_A >= 1e-6) and (site_A + 1 < len(mps.d))
-            if should_emit_A:
-                U_emit_A = emission_gate(
-                    gamma=gamma_A,
-                    dt=self.time_grid.dt * 1e9,  # 秒转换为纳秒
-                    Alpha=self.emit.Alpha_A,
-                    which_atom='A'
-                )
-                mps.apply_bond_op(site_A, U_emit_A)
-
-                # 提取该仓的发射概率
-                rho_A_n = mps.get_reduced_density([site_A + 1])
-                p_A_H = rho_A_n[IDX_BIN_780H_START:IDX_BIN_780H_END,
-                               IDX_BIN_780H_START:IDX_BIN_780H_END].sum().real
-                p_A_V = rho_A_n[IDX_BIN_780V_START:IDX_BIN_780V_END,
-                               IDX_BIN_780V_START:IDX_BIN_780V_END].sum().real
-                per_bin_prob_A[n] = p_A_H + p_A_V
-
-            # 将atomA向右SWAP（越过已处理的仓）
-            if site_A + 1 < len(mps.d):
-                mps.swap_sites(site_A)
-                site_A += 1
-                # 如果atomB在site_A，它被向左交换了
-                if site_B == site_A:
-                    site_B = site_A - 1
-
-            # 记录SWAP后的原子A状态
-            rho_A_after = mps.get_reduced_density([site_A])
-            col_idx = 2 * n + 1  # 原子A与仓n的SWAP后
-            atom_A_state_evolution[0, col_idx] = rho_A_after[0, 0].real
-            atom_A_state_evolution[1, col_idx] = rho_A_after[1, 1].real
-            atom_A_state_evolution[2, col_idx] = rho_A_after[2, 2].real
-
             # === 原子B发射 ===
-            # 目标：仓 B_n 在原始布局中位于格点 (3 + 2*n)
-            target_B = 3 + 2 * n  # B_n的原始位置
+            # 目标仓 B_n 在格点 2*n + 1
+            target_B = 2 * n + 1
 
-            # 将atomB向右移动直到与目标仓相邻
-            while site_B + 1 < target_B:
-                mps.swap_sites(site_B)
-                site_B += 1
-                # 如果atomA在site_B + 1，它也被移动了
-                if site_A == site_B:
-                    site_A = site_B - 1
+            # 策略：atomB 最终需要到达 site_B = target_B（在仓左侧）
+            # 但在此之前，需要确保 atomA 不阻挡
 
-            # 应用发射门（如果 n < start_bin_B 则跳过，用于时间偏移）
-            # 使用相对时间计算gamma函数：t_rel = (n - start_bin_B) * dt
-            # 这确保两个原子看到相同的gamma函数形状
+            # 步骤1：如果 atomA 阻挡在 target_B 或 target_B+1，先将其移到 target_B - 1
+            if site_A >= target_B:
+                # atomA 在 target_B 或更右边，需要向左移
+                while site_A > target_B - 1 and site_A > 0:
+                    if site_A - 1 == site_B:
+                        # atomB 在左边，先交换
+                        mps.swap_sites(site_A - 1)
+                        # swap 后 atomB 到 site_A，atomA 到 site_A-1
+                        old_site_B = site_B
+                        site_B = site_A  # atomB 新位置
+                        site_A = old_site_B  # atomA 新位置
+                    else:
+                        mps.swap_sites(site_A - 1)
+                        site_A -= 1
+
+            # 步骤2：现在 atomA 在 target_B - 1 或更左边，移动 atomB
+            while site_B > target_B + 1:
+                if site_B - 1 == site_A:
+                    # atomA 在左边，交换
+                    mps.swap_sites(site_B - 1)
+                    # swap 后 atomB 到 site_B-1，atomA 到 site_B
+                    site_A = site_B  # atomA 新位置
+                    site_B = site_B - 1  # atomB 新位置
+                else:
+                    mps.swap_sites(site_B - 1)
+                    site_B -= 1
+
+            # 步骤3：现在 site_B = target_B + 1，需要 swap 使 atomB 在仓左侧
+            if site_B - 1 == site_A:
+                # atomA 在 target_B 位置，这是特殊情况
+                # 交换 atomB 和 atomA
+                mps.swap_sites(site_B - 1)
+                temp = site_A
+                site_A = site_B
+                site_B = temp
+            else:
+                # 正常情况：swap atomB 和 bin
+                mps.swap_sites(site_B - 1)
+                site_B -= 1
+
+            # 应用发射门
             t_rel_B = self.time_grid.t[n - start_bin_B] if n >= start_bin_B else 0.0
             gamma_B = self.emit.get_gamma_B(t_rel_B) if n >= start_bin_B else 0.0
-            should_emit_B = (n >= start_bin_B) and (gamma_B >= 1e-6) and (site_B + 1 < len(mps.d))
+            should_emit_B = (n >= start_bin_B) and (gamma_B >= 1e-6)
             if should_emit_B:
                 U_emit_B = emission_gate(
                     gamma=gamma_B,
-                    dt=self.time_grid.dt * 1e9,  # 秒转换为纳秒
+                    dt=self.time_grid.dt * 1e9,
                     Alpha=self.emit.Alpha_B,
                     which_atom='B'
                 )
+                # 作用于 (仓 B_n, atomB)
                 mps.apply_bond_op(site_B, U_emit_B)
 
-                # 提取该仓的发射概率
-                rho_B_n = mps.get_reduced_density([site_B + 1])
+                # 提取发射概率
+                rho_B_n = mps.get_reduced_density([site_B])
                 p_B_H = rho_B_n[IDX_BIN_780H_START:IDX_BIN_780H_END,
                                IDX_BIN_780H_START:IDX_BIN_780H_END].sum().real
                 p_B_V = rho_B_n[IDX_BIN_780V_START:IDX_BIN_780V_END,
-                               IDX_BIN_780V_START:IDX_BIN_780V_END].sum().real
+                               IDX_BIN_780H_START:IDX_BIN_780V_END].sum().real
                 per_bin_prob_B[n] = p_B_H + p_B_V
 
-            # 将atomB向右SWAP
-            if site_B + 1 < len(mps.d):
-                mps.swap_sites(site_B)
-                site_B += 1
-                # 如果atomA在site_B，它被向左交换了
-                if site_A == site_B:
-                    site_A = site_B - 1
+            # 将atomB继续向左移（越过已处理的仓）
+            if site_B > 0:
+                if site_B - 1 == site_A:
+                    # atomA 在左边，交换
+                    mps.swap_sites(site_B - 1)
+                    # swap 后 atomB 到 site_B-1，atomA 到 site_B
+                    temp = site_A
+                    site_A = site_B
+                    site_B = temp
+                else:
+                    mps.swap_sites(site_B - 1)
+                    site_B -= 1
 
-            # 记录SWAP后的原子B状态
+            # 记录原子B状态
             rho_B_after = mps.get_reduced_density([site_B])
-            col_idx = 2 * n + 1  # 原子B与仓n的SWAP后
-            atom_B_state_evolution[0, col_idx] = rho_B_after[0, 0].real
-            atom_B_state_evolution[1, col_idx] = rho_B_after[1, 1].real
-            atom_B_state_evolution[2, col_idx] = rho_B_after[2, 2].real
+            col_idx_B = 2 * n
+            atom_B_state_evolution[0, col_idx_B] = rho_B_after[0, 0].real
+            atom_B_state_evolution[1, col_idx_B] = rho_B_after[1, 1].real
+            atom_B_state_evolution[2, col_idx_B] = rho_B_after[2, 2].real
 
-            if verbose and (n + 1) % 50 == 0:
-                atom_sites_curr = mps.find_sites_by_dim(DIM_ATOM)
-                # 打印当前原子态
-                print(f"  Processed {n + 1}/{self.time_grid.N} bins... "
-                      f"(atomA@{atom_sites_curr[0]}, atomB@{atom_sites_curr[1]})")
-                print(f"    Atom A: P(|0>)={atom_A_state_evolution[0, col_idx]:.3f}, "
-                      f"P(|1>)={atom_A_state_evolution[1, col_idx]:.3f}, "
-                      f"P(|e>)={atom_A_state_evolution[2, col_idx]:.3f}")
-                print(f"    Atom B: P(|0>)={atom_B_state_evolution[0, col_idx]:.3f}, "
-                      f"P(|1>)={atom_B_state_evolution[1, col_idx]:.3f}, "
-                      f"P(|e>)={atom_B_state_evolution[2, col_idx]:.3f}")
+            # === 原子A发射 ===
+            # 目标仓 A_n 在格点 2*n
+            target_A = 2 * n
 
-        # 最后一遍：将原子移动到链的最末端
-        # 这确保仓占据格点0到2*N-1，原子在2*N和2*N+1
-        if verbose:
-            print(f"\n  Final pass: moving atoms to end of chain...")
+            # 策略：atomA 最终需要到达 site_A = target_A（在仓左侧）
+            # 但在此之前，需要确保 atomB 不在 target_A 或 target_A + 1
 
-        # 将atomA移动到格点2*N（倒数第二个）
-        # 我们已经从主循环中追踪了site_A
-        target_A = 2 * self.time_grid.N  # 格点2*N
-        while site_A < target_A:
-            mps.swap_sites(site_A)
-            site_A += 1
-            # 如果atomB在site_A，它被向左交换了
-            if site_B == site_A:
-                site_B = site_A - 1
+            # 步骤1：如果 atomB 阻挡在 target_A 或 target_A+1，先将其移到 target_A - 1
+            if site_B >= target_A:
+                # atomB 在 target_A 或更右边，需要向左移
+                while site_B > target_A - 1 and site_B > 0:
+                    # 将 atomB 向左移动
+                    if site_B - 1 == site_A:
+                        # atomA 在左边，先交换
+                        mps.swap_sites(site_B - 1)
+                        # swap 后 atomA 到 site_B，atomB 到 site_B-1
+                        site_B = site_B - 1  # atomB 新位置
+                        # site_A 不变（实际上 atomA 移到了 site_B，但我们会更新）
+                        # 实际上 atomA 移到了原 site_B，所以 site_A = site_B + 1
+                        old_site_A = site_A
+                        site_A = site_B + 1
+                        # 现在 site_B = old_site_A - 1, site_A = old_site_A
+                    else:
+                        mps.swap_sites(site_B - 1)
+                        site_B -= 1
 
-        # 将atomB移动到格点2*N+1（最后一个）
-        target_B = 2 * self.time_grid.N + 1  # 格点2*N+1
-        while site_B < target_B:
-            mps.swap_sites(site_B)
-            site_B += 1
-            # 如果atomA在site_B，它被向左交换了
-            if site_A == site_B:
-                site_A = site_B - 1
+            # 步骤2：现在 atomB 在 target_A - 1 或更左边，移动 atomA
+            while site_A > target_A + 1:
+                if site_A - 1 == site_B:
+                    # atomB 在左边，交换
+                    mps.swap_sites(site_A - 1)
+                    # swap 后 atomA 到 site_A-1，atomB 到 site_A
+                    site_B = site_A  # atomB 新位置
+                    site_A = site_A - 1  # atomA 新位置
+                else:
+                    mps.swap_sites(site_A - 1)
+                    site_A -= 1
 
-        if verbose:
-            print(f"  After final pass: atomA@{site_A}, atomB@{site_B}")
+            # 步骤3：现在 site_A = target_A + 1，需要 swap 使 atomA 在仓左侧
+            if site_A - 1 == site_B:
+                # atomB 在 target_A 位置，这是特殊情况
+                # 交换 atomA 和 atomB
+                mps.swap_sites(site_A - 1)
+                temp = site_A
+                site_A = site_B
+                site_B = temp
+            else:
+                # 正常情况：swap atomA 和 bin
+                mps.swap_sites(site_A - 1)
+                site_A -= 1
+
+            # 应用发射门
+            t_rel_A = self.time_grid.t[n - start_bin_A] if n >= start_bin_A else 0.0
+            gamma_A = self.emit.get_gamma_A(t_rel_A) if n >= start_bin_A else 0.0
+            should_emit_A = (n >= start_bin_A) and (gamma_A >= 1e-6)
+            if should_emit_A:
+                U_emit_A = emission_gate(
+                    gamma=gamma_A,
+                    dt=self.time_grid.dt * 1e9,
+                    Alpha=self.emit.Alpha_A,
+                    which_atom='A'
+                )
+                # 作用于 (仓 A_n, atomA)
+                mps.apply_bond_op(site_A, U_emit_A)
+
+                # 提取发射概率
+                rho_A_n = mps.get_reduced_density([site_A])
+                p_A_H = rho_A_n[IDX_BIN_780H_START:IDX_BIN_780H_END,
+                               IDX_BIN_780H_START:IDX_BIN_780H_END].sum().real
+                p_A_V = rho_A_n[IDX_BIN_780V_START:IDX_BIN_780V_END,
+                               IDX_BIN_780H_START:IDX_BIN_780V_END].sum().real
+                per_bin_prob_A[n] = p_A_H + p_A_V
+
+            # 将atomA继续向左移（越过已处理的仓）
+            if site_A > 0:
+                if site_A - 1 == site_B:
+                    # atomB 在左边，交换
+                    mps.swap_sites(site_A - 1)
+                    # swap 后 atomA 到 site_A-1，atomB 到 site_A
+                    temp = site_B
+                    site_B = site_A
+                    site_A = temp
+                else:
+                    mps.swap_sites(site_A - 1)
+                    site_A -= 1
+
+            # 记录原子A状态
+            rho_A_after = mps.get_reduced_density([site_A])
+            col_idx_A = 2 * n + 1
+            atom_A_state_evolution[0, col_idx_A] = rho_A_after[0, 0].real
+            atom_A_state_evolution[1, col_idx_A] = rho_A_after[1, 1].real
+            atom_A_state_evolution[2, col_idx_A] = rho_A_after[2, 2].real
+
+            if verbose and (self.time_grid.N - n) % 50 == 0:
+                processed = self.time_grid.N - n
+                print(f"  Processed {processed}/{self.time_grid.N} bins... "
+                      f"(atomA@{site_A}, atomB@{site_B})")
 
         # 获取最终原子态
-        rho_atom_A = mps.get_reduced_density([site_A])
-        rho_atom_B = mps.get_reduced_density([site_B])
+        rho_atom_A = mps.get_reduced_density([0])
+        rho_atom_B = mps.get_reduced_density([1])
 
         atom_states = {'A': rho_atom_A, 'B': rho_atom_B}
 
         if verbose:
-            print(f"  Complete!")
-            print(f"  Final: atomA@{site_A}, atomB@{site_B}")
+            print(f"\n  Complete!")
+            print(f"  Final: atomA@0, atomB@1")
             print(f"  Final chi: {mps.get_bond_dimensions()}")
             print(f"  Norm: {mps.norm():.6f}")
             print(f"\nFinal atomic states:")
@@ -804,9 +816,10 @@ def apply_qfc(
         print(f"  MPS d[:5]={mps.d[:5]}, d[-5:]={mps.d[-5:]}")
 
     # 对每个仓应用QFC
+    # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
     for n in range(n_bins):
-        site_A = 2 * n
-        site_B = 2 * n + 1
+        site_A = 2 + 2 * n
+        site_B = 2 + 2 * n + 1
 
         mps.apply_one_site_gate(site_A, U_qfc)
         mps.apply_one_site_gate(site_B, U_qfc)
@@ -832,7 +845,7 @@ def apply_780_filter(
     Parameters
     ----------
     mps : MPSState
-        MPS态（布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB）
+        MPS态（布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN）
     n_bins : int
         时间仓数量
     verbose : bool
@@ -859,12 +872,12 @@ def apply_780_filter(
     P_arr = Array.from_ndarray_trivial(P_filter, labels=['p', 'p*'])
 
     # 应用到所有仓，每个之后不归一化
-    # （更快 - 仅在最后归一化一次）
+    # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
     for n in range(n_bins):
-        site_A = 2 * n
-        site_B = 2 * n + 1
+        site_A = 2 + 2 * n
+        site_B = 2 + 2 * n + 1
 
-        # 应用投影（非酉，暂不重新归一化）
+        # 应用���影（非酉，暂不重新归一化）
         mps._mps.apply_local_op(site_A, P_arr, unitary=False, renormalize=False)
         mps._mps.apply_local_op(site_B, P_arr, unitary=False, renormalize=False)
 
@@ -890,7 +903,7 @@ def apply_jones(
     Parameters
     ----------
     mps : MPSState
-        MPS态（布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB）
+        MPS态（布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN）
     n_bins : int
         时间仓数量
     Jones_A : np.ndarray
@@ -916,10 +929,10 @@ def apply_jones(
     U_J_A = jones_gate_from_array(Jones_A)
     U_J_B = jones_gate_from_array(Jones_B)
 
-    # 对每个仓应用琼斯旋转
+    # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
     for n in range(n_bins):
-        site_A = 2 * n
-        site_B = 2 * n + 1
+        site_A = 2 + 2 * n
+        site_B = 2 + 2 * n + 1
         mps.apply_one_site_gate(site_A, U_J_A)
         mps.apply_one_site_gate(site_B, U_J_B)
 
@@ -945,7 +958,7 @@ def apply_loss(
     Parameters
     ----------
     mps : MPSState
-        MPS态（布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB）
+        MPS态（布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN）
     n_bins : int
         时间仓数量
     eta_H_A, eta_V_A : float
@@ -971,10 +984,10 @@ def apply_loss(
     K_loss_A = loss_channel_1517(eta_H_A, eta_V_A)
     K_loss_B = loss_channel_1517(eta_H_B, eta_V_B)
 
-    # 对每个仓应用损耗
+    # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
     for n in range(n_bins):
-        site_A = 2 * n
-        site_B = 2 * n + 1
+        site_A = 2 + 2 * n
+        site_B = 2 + 2 * n + 1
         mps.apply_kraus_one_site(site_A, K_loss_A, rng)
         mps.apply_kraus_one_site(site_B, K_loss_B, rng)
 
@@ -1002,7 +1015,7 @@ def apply_loss_combined(
     Parameters
     ----------
     mps : MPSState
-        MPS态（布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB）
+        MPS态（布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN）
     n_bins : int
         时间仓数量
     eta_780 : float
@@ -1029,10 +1042,10 @@ def apply_loss_combined(
     # 获取组合Kraus算符（18x18，两个子空间）
     K_list = loss_channel_both_subspaces(eta_780, eta_H_1517, eta_V_1517)
 
-    # 对每个仓应用损耗（两臂相同）
+    # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
     for n in range(n_bins):
-        site_A = 2 * n
-        site_B = 2 * n + 1
+        site_A = 2 + 2 * n
+        site_B = 2 + 2 * n + 1
         mps.apply_kraus_one_site(site_A, K_list, rng)
         mps.apply_kraus_one_site(site_B, K_list, rng)
 
@@ -1053,7 +1066,7 @@ def apply_bs(
     Parameters
     ----------
     mps : MPSState
-        MPS态（布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB）
+        MPS态（布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN）
     n_bins : int
         时间仓数量
     verbose : bool
@@ -1075,9 +1088,10 @@ def apply_bs(
         print(f"  U_bs shape: {U_bs.shape}")
 
     # 对每个 A_n, B_n 对应用BS
+    # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
     for n in range(n_bins):
-        site_A = 2 * n
-        site_B = 2 * n + 1
+        site_A = 2 + 2 * n
+        site_B = 2 + 2 * n + 1
         mps.apply_bond_op(site_A, U_bs)
 
         _print_progress(n + 1, n_bins, verbose)

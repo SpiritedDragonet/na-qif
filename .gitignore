@@ -56,3 +56,5 @@ outputs/
 
 # Windows null device file
 nul
+# Claude
+CLAUDE.md

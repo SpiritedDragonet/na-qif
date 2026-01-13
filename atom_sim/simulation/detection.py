@@ -521,7 +521,7 @@ def run_two_photon_detection(
     Parameters
     ----------
     mps : MPSState
-        BS后的MPS态（布局：A1, B1, A2, B2, ..., atomA, atomB）
+        BS后的MPS态（布局：atomA, atomB, A1, B1, A2, B2, ...）
     n_bins : int
         时间仓数量
     eta_det : float
@@ -659,8 +659,9 @@ def extract_spin_state(mps: MPSState, n_bins: int) -> np.ndarray:
         计算基|00>, |01>, |10>, |11>中的4x4密度矩阵
         其中0 = |down>（3D原子中的索引0），1 = |up>（3D原子中的索引1）
     """
-    site_A = 2 * n_bins
-    site_B = 2 * n_bins + 1
+    # New layout: atoms are at sites 0 and 1
+    site_A = 0
+    site_B = 1
 
     # 获取完整的9x9双原子密度矩阵
     rho_full = mps.get_reduced_density([site_A, site_B])
@@ -881,7 +882,7 @@ def compute_photon_statistics(
     Parameters
     ----------
     mps : MPSState
-        BS后的MPS态（布局：A1, B1, A2, B2, ..., atomA, atomB）
+        BS后的MPS态（布局：atomA, atomB, A1, B1, A2, B2, ...）
     n_bins : int
         时间仓数量
     verbose : bool
@@ -909,8 +910,8 @@ def compute_photon_statistics(
     n_V_total = 0.0
 
     for n in range(n_bins):
-        # 端口1（格点2n）和端口2（格点2n+1）
-        for site in [2 * n, 2 * n + 1]:
+        # 端口1（格点2+2n）和端口2（格点2+2n+1）- 跳过原子（格点0,1）
+        for site in [2 + 2 * n, 2 + 2 * n + 1]:
             rho = mps.get_reduced_density([site])
 
             # n_H = Tr(J_H^dagger J_H rho)
