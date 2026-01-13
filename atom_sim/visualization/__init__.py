@@ -1,8 +1,9 @@
+# -*- coding: utf-8 -*-
 """
-Visualization Module
+可视化模块
 
-Provides functions for visualizing wave packets, density matrices,
-and other quantum states from the MPS simulation.
+提供用于可视化波包、密度矩阵
+和MPS仿真中其他量子态的函数。
 """
 
 from .wavepacket import (
@@ -13,20 +14,12 @@ from .wavepacket import (
     plot_wavepacket,
     plot_intensity_envelope,
     plot_single_photon_prob,
-    plot_mode_overlap,
     extract_bin_state_probabilities,
     plot_bin_state_heatmap,
     plot_dual_arm_heatmap,
     extract_bin_state_coherences,
     plot_dual_arm_heatmap_phase,
     extract_first_order_coherence,
-)
-from .state import (
-    plot_density_matrix,
-    plot_atomic_density,
-    plot_fidelity_comparison,
-    plot_bloch_vector,
-    plot_concurrence,
 )
 
 __all__ = [
@@ -38,17 +31,10 @@ __all__ = [
     'plot_wavepacket',
     'plot_intensity_envelope',
     'plot_single_photon_prob',
-    'plot_mode_overlap',
     'extract_bin_state_probabilities',
     'plot_bin_state_heatmap',
     'plot_dual_arm_heatmap',
     'extract_bin_state_coherences',
     'plot_dual_arm_heatmap_phase',
     'extract_first_order_coherence',
-    # state
-    'plot_density_matrix',
-    'plot_atomic_density',
-    'plot_fidelity_comparison',
-    'plot_bloch_vector',
-    'plot_concurrence',
 ]

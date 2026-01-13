@@ -1,8 +1,8 @@
+# -*- coding: utf-8 -*-
 """
-Multi-Trajectory Statistics
+多轨迹统计模块
 
-This module provides functions to run multiple trajectories
-and compute statistical estimates of success probability, fidelity, etc.
+本模块提供运行多条轨迹并计算成功概率、保真度等统计估计的函数。
 """
 
 from typing import List, Tuple, Optional
@@ -17,24 +17,24 @@ from ..config import TimeGrid, EmitParams, QFCParams, FiberParams, DetParams
 @dataclass
 class SimulationResult:
     """
-    Result of running multiple trajectories.
+    运行多条轨迹的结果。
 
     Attributes
     ----------
     p_succ : float
-        Estimated success probability
+        估计的成功概率
     p_succ_stderr : float
-        Standard error of success probability
+        成功概率的标准误差
     rho_cond : np.ndarray
-        Conditional atomic density matrix (averaged over successful trajectories)
+        条件原子密度矩阵（在成功轨迹上平均）
     F_cond : float
-        Conditional fidelity with target Bell state
+        与目标贝尔态的条件保真度
     F_cond_stderr : float
-        Standard error of fidelity estimate
+        保真度估计的标准误差
     n_succ : int
-        Number of successful trajectories
+        成功轨迹的数量
     n_traj : int
-        Total number of trajectories run
+        运行的轨迹总数
     """
     p_succ: float
     p_succ_stderr: float
@@ -57,57 +57,57 @@ def run_simulation(
     target_bell: Optional[np.ndarray] = None,
 ) -> SimulationResult:
     """
-    Run multiple trajectories and compute statistics.
+    运行多条轨迹并计算统计数据。
 
     Parameters
     ----------
     time_grid : TimeGrid
-        Time discretization
+        时间离散化
     emit_params : EmitParams
-        Emission parameters
+        发射参数
     qfc_params : QFCParams
-        QFC parameters
+        QFC参数
     fiber_params : FiberParams
-        Fiber/Jones/PMD parameters
+        光纤/琼斯/PMD参数
     det_params : DetParams
-        Detection parameters
+        探测参数
     n_traj : int
-        Number of trajectories to run
+        要运行的轨迹数量
     chi_max : int
-        Maximum bond dimension for MPS
+        MPS的最大键维度
     seed : int, optional
-        Random seed for reproducibility
+        用于可重复性的随机种子
     target_bell : np.ndarray, optional
-        Target Bell state for fidelity calculation (9x9 matrix).
-        If None, uses |Phi+> = (|00> + |11>) / sqrt(2)
+        用于保真度计算的目标贝尔态（9x9矩阵）。
+        若为None，使用 |Phi+> = (|00> + |11>) / sqrt(2)
 
     Returns
     -------
     SimulationResult
-        Statistical results including p_succ ± stderr, F_cond ± stderr
+        统计结果，包括 p_succ ± stderr, F_cond ± stderr
     """
-    # Set default target Bell state: |Phi+> = (|00> + |11>) / sqrt(2)
-    # In the |0>, |1>, |e> basis for each atom:
-    # |00> means atom A in |0>, atom B in |0>
-    # |11> means atom A in |1>, atom B in |1>
+    # 设置默认目标贝尔态：|Phi+> = (|00> + |11>) / sqrt(2)
+    # 在每个原子的 |0>, |1>, |e> 基下：
+    # |00> 表示原子A处于 |0>，原子B处于 |0>
+    # |11> 表���原子A处于 |1>，原子B处于 |1>
     if target_bell is None:
         target_bell = np.zeros((9, 9), dtype=complex)
-        # Basis order: |0_A0_B>, |0_A1_B>, |0_Ae_B>, |1_A0_B>, ...
-        # |00> is at index 0*3 + 0 = 0
-        # |11> is at index 1*3 + 1 = 4
+        # 基顺序：|0_A0_B>, |0_A1_B>, |0_Ae_B>, |1_A0_B>, ...
+        # |00> 位于索引 0*3 + 0 = 0
+        # |11> 位于索引 1*3 + 1 = 4
         target_bell[0, 0] = 0.5
         target_bell[4, 4] = 0.5
         target_bell[0, 4] = 0.5
         target_bell[4, 0] = 0.5
 
-    # Track results
+    # 追踪结果
     success_count = 0
     rho_success_list = []
     fidelity_list = []
 
-    # Run trajectories
+    # 运行轨迹
     for i in range(n_traj):
-        # Use different seed for each trajectory
+        # 为每条轨迹使用不同的种子
         traj_seed = None if seed is None else seed + i
 
         result = run_single_trajectory(
@@ -124,12 +124,12 @@ def run_simulation(
             success_count += 1
             rho_success_list.append(result.rho_atom)
 
-            # Compute fidelity
+            # 计算保真度
             fidelity = np.real(np.vdot(target_bell.flatten(),
                                        result.rho_atom @ target_bell.flatten()))
             fidelity_list.append(fidelity)
 
-    # Compute statistics
+    # 计算统计数据
     p_succ = success_count / n_traj
     p_succ_stderr = np.sqrt(p_succ * (1 - p_succ) / n_traj)
 

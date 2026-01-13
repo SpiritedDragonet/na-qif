@@ -1,8 +1,9 @@
+# -*- coding: utf-8 -*-
 """
-Single Trajectory Execution
+单轨迹执行模块
 
-This module implements the "conveyor belt" main loop for time-bin simulation.
-Each time-bin is processed sequentially: emission, QFC, loss, Jones, BS, detection.
+本模块实现时间仓仿真的"传送带"主循环。
+每个时间仓按顺序处理：发射、QFC、损耗、琼斯旋转、分束器、探测。
 """
 
 from typing import Optional, Tuple, List, Dict
@@ -13,7 +14,7 @@ from ..core.mps import MPSState
 from ..config import TimeGrid, EmitParams, QFCParams, FiberParams, DetParams
 from ..hilbert.basis import BIN_SPACE, SUBSPACE_780, SUBSPACE_1517
 from ..physics.gates import (
-    emission_gate, qfc_gate, bs_gate, jones_gate_from_array, swap_gate
+    emission_gate, qfc_gate, bs_gate_bin18, jones_gate_from_array, swap_gate
 )
 from ..physics.channels import (
     loss_channel_1517, loss_channel_both_subspaces,
@@ -22,23 +23,23 @@ from ..physics.channels import (
 )
 
 
-# Dimension constants for clarity
+# 维度常量，便于代码阅读
 DIM_ATOM = 3
 DIM_BIN = BIN_SPACE.dim  # 18
 DIM_780 = SUBSPACE_780.dim  # 3
 DIM_1517 = SUBSPACE_1517.dim  # 6
 
-# Bin subspace indices (780 x 1517 product space)
+# 仓子空间索引（780 x 1517 积空间）
 # index = i_780 * DIM_1517 + i_1517
-IDX_780_VAC = 0  # |vac> in 780
-IDX_780_H = 1    # |H> in 780
-IDX_780_V = 2    # |V> in 780
+IDX_780_VAC = 0  # 780子空间中的 |vac>
+IDX_780_H = 1    # 780子空间中的 |H>
+IDX_780_V = 2    # 780子空间中的 |V>
 
-# 780H block in 18D bin space: indices DIM_1517 * 1 to DIM_1511 * 2 - 1
+# 18维仓空间中的780H块：索引范围 DIM_1517 * 1 到 DIM_1511 * 2 - 1
 IDX_BIN_780H_START = DIM_1517 * IDX_780_H  # 6
 IDX_BIN_780H_END = DIM_1517 * (IDX_780_H + 1)  # 12
 
-# 780V block in 18D bin space
+# 18维仓空间中的780V块
 IDX_BIN_780V_START = DIM_1517 * IDX_780_V  # 12
 IDX_BIN_780V_END = DIM_1517 * (IDX_780_V + 1)  # 18
 
@@ -46,20 +47,20 @@ IDX_BIN_780V_END = DIM_1517 * (IDX_780_V + 1)  # 18
 @dataclass
 class TrajectoryResult:
     """
-    Result of a single trajectory run.
+    单次轨迹运行的结果。
 
     Attributes
     ----------
     success : bool
-        Whether the trajectory resulted in a success pattern
+        轨迹是否产生成功模式
     rho_atom : np.ndarray
-        Atomic density matrix at the end (9x9 for two atoms)
+        末态原子密度矩阵（两原子为9x9矩阵）
     outcome : Optional[Tuple[int, int, int, int]]
-        Detector click pattern (d1_H, d1_V, d2_H, d2_V)
+        探测器点击模式 (d1_H, d1_V, d2_H, d2_V)
     success_bin : Optional[int]
-        Which bin produced the success (None if no success)
+        产生成功的仓索引（无成功则为None）
     record : List[Tuple[int, int, int, int]]
-        Full record of detector outcomes for all bins
+        所有仓的探测器结果完整记录
     """
     success: bool
     rho_atom: np.ndarray
@@ -71,31 +72,31 @@ class TrajectoryResult:
 @dataclass
 class EmissionResult:
     """
-    Result of dual-atom emission simulation (emission-only stage).
+    双原子发射仿真的结果（仅发射阶段）。
 
-    Chain layout after emission: A1, B1, A2, B2, ..., AN, BN, atomA, atomB
-    (bins at the front, atoms at the end)
+    发射后的链布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB
+    （仓在前，原子在后）
 
     Attributes
     ----------
     mps : MPSState
-        Final MPS state after emission.
+        发射后的最终MPS态
     time_grid : TimeGrid
-        Time grid used for simulation
+        仿真使用的时间网格
     per_bin_prob_A : np.ndarray
-        Emission probability for each bin in arm A (shape: n_bins)
+        A臂每个仓的发射概率（形状：n_bins）
     per_bin_prob_B : np.ndarray
-        Emission probability for each bin in arm B (shape: n_bins)
+        B臂每个仓的发射概率（形状：n_bins）
     atom_states : dict
-        Final atomic states {'A': rho_A, 'B': rho_B}
+        最终原子状态 {'A': rho_A, 'B': rho_B}
     atom_A_state_evolution : np.ndarray
-        Atomic state evolution for atom A (shape: 3 x 2*n_bins)
-        Rows: P(|0>), P(|1>), P(|e>)
-        Columns: after each SWAP (odd: after A SWAP, even: after B SWAP)
+        原子A的状态演化（形状：3 x 2*n_bins）
+        行：P(|0>), P(|1>), P(|e>)
+        列：每次SWAP后的记录（奇数：A的SWAP后，偶数：B的SWAP后）
     atom_B_state_evolution : np.ndarray
-        Atomic state evolution for atom B (shape: 3 x 2*n_bins)
-        Rows: P(|0>), P(|1>), P(|e>)
-        Columns: after each SWAP (odd: after A SWAP, even: after B SWAP)
+        原子B的状态演化（形状：3 x 2*n_bins）
+        行：P(|0>), P(|1>), P(|e>)
+        列：每次SWAP后的记录（奇数：A的SWAP后，偶数：B的SWAP后）
     """
     mps: MPSState
     time_grid: TimeGrid
@@ -107,75 +108,75 @@ class EmissionResult:
 
     def get_bin_indices(self, n: int) -> Tuple[int, int]:
         """
-        Get the MPS site indices for bin n in arms A and B.
+        获取仓n在A臂和B臂的MPS格点索引。
 
-        After SWAP conveyor belt:
+        SWAP传送带后：
         - A1, B1, A2, B2, ..., AN, BN, atomA, atomB
-        - A_n is at site 2*n, B_n is at site 2*n + 1
+        - A_n 位于格点 2*n，B_n 位于格点 2*n + 1
 
         Parameters
         ----------
         n : int
-            Bin index (0-based)
+            仓索引（从0开始）
 
         Returns
         -------
         Tuple[int, int]
-            (site_A, site_B) - MPS site indices for A_n and B_n
+            (site_A, site_B) - A_n和 B_n的MPS格点索引
         """
         n_bins = len(self.per_bin_prob_A)
-        # After SWAP: A1(0), B1(1), A2(2), B2(3), ..., AN, BN, atomA, atomB
-        # A_n is at site 2*n, B_n is at site 2*n + 1
+        # SWAP后：A1(0), B1(1), A2(2), B2(3), ..., AN, BN, atomA, atomB
+        # A_n 位于格点 2*n，B_n 位于格点 2*n + 1
         return 2 * n, 2 * n + 1
 
     def get_atom_site_indices(self) -> Tuple[int, int]:
         """
-        Get the MPS site indices for atoms A and B.
+        获取原子A和B的MPS格点索引。
 
-        After SWAP conveyor belt, atoms are at the end.
+        SWAP传送带后，原子位于链的末端。
 
         Returns
         -------
         Tuple[int, int]
-            (site_A, site_B) - MPS site indices for atomA and atomB
+            (site_A, site_B) - atomA和atomB的MPS格点索引
         """
         n_bins = len(self.per_bin_prob_A)
-        # Atoms are at sites 2*n_bins and 2*n_bins + 1
+        # 原子位于格点 2*n_bins 和 2*n_bins + 1
         return 2 * n_bins, 2 * n_bins + 1
 
     def get_n_bins(self) -> int:
-        """Get the number of time bins."""
+        """获取时间仓的数量。"""
         return len(self.per_bin_prob_A)
 
     def get_mps_for_next_stage(self) -> MPSState:
         """
-        Get the MPS state ready for the next stage (e.g., QFC, BSM).
+        获取准备进入下一阶段的MPS态（如QFC、BSM）。
 
-        The current layout is: A1, B1, A2, B2, ..., AN, BN, atomA, atomB
-        where each A_n, B_n pair is adjacent for operations.
+        当前布局为：A1, B1, A2, B2, ..., AN, BN, atomA, atomB
+        其中每对 A_n, B_n 相邻以便进行操作。
 
         Returns
         -------
         MPSState
-            The MPS state ready for next processing stage
+            准备好进行下一处理的MPS态
         """
         return self.mps
 
 
 class TrajectoryRunner:
     """
-    Executes a single trajectory of the time-bin protocol.
+    执行时间仓协议的单次轨迹。
 
-    Implements the "conveyor belt" algorithm where each bin is processed:
-    1. Emission (atom -> photon)
-    2. QFC (780 -> 1517 conversion)
-    3. Jones rotation (polarization)
-    4. Loss channel
-    5. Beam splitter (A_n with B_n)
-    6. Detection
+    实现"传送带"算法，每个仓按以下方式处理：
+    1. 发射（原子 -> 光子）
+    2. QFC（780 -> 1517 频率转换）
+    3. 琼斯旋转（偏振）
+    4. 损耗通道
+    5. 分束器（A_n 与 B_n）
+    6. 探测
 
-    Chain layout: A0 - B0 - A1 - B1 - A2 - B2 - ...
-    where A0, B0 are atoms and A_n, B_n are time-bins.
+    链布局：A0 - B0 - A1 - B1 - A2 - B2 - ...
+    其中 A0, B0 是原子，A_n, B_n 是时间仓。
     """
 
     def __init__(
@@ -189,24 +190,24 @@ class TrajectoryRunner:
         seed: Optional[int] = None,
     ):
         """
-        Initialize trajectory runner.
+        初始化轨迹运行器。
 
         Parameters
         ----------
         time_grid : TimeGrid
-            Time discretization
+            时间离散化
         emit_params : EmitParams
-            Emission parameters
+            发射参数
         qfc_params : QFCParams
-            QFC parameters
+            QFC参数
         fiber_params : FiberParams
-            Fiber/Jones/PMD parameters
+            光纤/琼斯/PMD参数
         det_params : DetParams
-            Detection parameters
+            探测参数
         chi_max : int
-            Maximum bond dimension
+            最大键维度
         seed : int, optional
-            Random seed for reproducibility
+            用于可重复性的随机种子
         """
         self.time_grid = time_grid
         self.emit = emit_params
@@ -215,32 +216,32 @@ class TrajectoryRunner:
         self.det = det_params
         self.chi_max = chi_max
 
-        # Random number generator
+        # 随机数生成器
         self.rng = np.random.default_rng(seed)
 
-        # Cached gates (computed once)
+        # 缓存的门（仅计算一次）
         self._cached_gates: Dict[str, np.ndarray] = {}
 
     def initialize_mps(self) -> MPSState:
         """
-        Initialize MPS with atoms in excited state, bins in vacuum.
+        初始化MPS，原子处于激发态，仓处于真空态。
 
-        Chain: A0(3D) - B0(3D) - A1(18D) - B1(18D) - ...
+        链：A0(3D) - B0(3D) - A1(18D) - B1(18D) - ...
 
         Returns
         -------
         MPSState
-            Initialized MPS state
+            初始化的MPS态
         """
-        # System: two atoms (3D each)
+        # 系统：两个原子（各3维）
         system_dim = 9  # atom_A ⊗ atom_B
 
-        # Or use separate atom sites:
-        # Chain layout: A0(3) - B0(3) - A1(18) - B1(18) - ...
+        # 或者使用分离的原子格点：
+        # 链布局：A0(3) - B0(3) - A1(18) - B1(18) - ...
         local_dims = [3, 3] + [18] * (2 * self.time_grid.N)
 
-        # Initial state: both atoms excited, all bins vacuum
-        # Atom basis: |0>, |1>, |e> with |e> at index 2
+        # 初态：两原子激发，所有仓真空
+        # 原子基：|0>, |1>, |e>，|e> 在索引2
         init_state = [2, 2] + [0] * (2 * self.time_grid.N)
 
         mps = MPSState(local_dims, init_state=init_state, max_bond=self.chi_max)
@@ -252,70 +253,70 @@ class TrajectoryRunner:
         n: int,
     ) -> Tuple[MPSState, Tuple[int, int, int, int]]:
         """
-        Process a single time-bin n.
+        处理单个时间仓n。
 
-        Steps:
-        1. Emission on A0-An and B0-Bn
-        2. QFC on An and Bn
-        3. Jones on An and Bn
-        4. Loss on An and Bn
-        5. BS on An-Bn
-        6. Detection on An-Bn
-        7. Finalize An-Bn
+        步骤：
+        1. A0-An 和 B0-Bn 上的发射
+        2. An 和 Bn 上的QFC
+        3. An 和 Bn 上的琼斯旋转
+        4. An 和 Bn 上的损耗
+        5. An-Bn 上的分束器
+        6. An-Bn 上的探测
+        7. 完成 An-Bn
 
         Parameters
         ----------
         mps : MPSState
-            Current MPS state
+            当前MPS态
         n : int
-            Bin index (1-indexed, so n=1 corresponds to sites 2,3 in chain)
+            仓索引（从1开始，n=1对应链中格点2,3）
 
         Returns
         -------
         Tuple[MPSState, Tuple[int, int, int, int]]
-            Updated MPS and detector outcome (d1_H, d1_V, d2_H, d2_V)
+            更新后的MPS和探测器结果 (d1_H, d1_V, d2_H, d2_V)
         """
-        # Site indices: A0=0, B0=1, A1=2, B1=3, A2=4, B2=4, ...
-        # For bin n (1-indexed), sites are at indices 2n and 2n+1
+        # 格点索引：A0=0, B0=1, A1=2, B1=3, A2=4, B2=4, ...
+        # 对于仓n（从1开始），格点位于索引 2n 和 2n+1
         site_A = 2 * n
         site_B = 2 * n + 1
 
-        t = self.time_grid.t[n-1]  # n is 1-indexed
+        t = self.time_grid.t[n-1]  # n从1开始
 
-        # (1) Emission: two-site unitary (atom, bin)
+        # (1) 发射：两格点酉门（原子，仓）
         U_emit_A = emission_gate(
             gamma=self.emit.get_gamma_A(t),
-            dt=self.time_grid.dt * 1e9,  # Convert seconds to nanoseconds
+            dt=self.time_grid.dt * 1e9,  # 秒转换为纳秒
             Alpha=self.emit.Alpha_A,
             which_atom='A'
         )
-        # Emission gate acts on atom(3D) ⊗ 780(3D), need to embed to full 18D bin
-        # For now, use a simplified version
-        mps.apply_bond_op(0, U_emit_A)  # A0-An emission (simplified)
+        # 发射门作用于 atom(3D) ⊗ 780(3D)，需要嵌入到完整的18维仓空间
+        # 暂时使用简化版本
+        mps.apply_bond_op(0, U_emit_A)  # A0-An发射（简化）
 
         U_emit_B = emission_gate(
             gamma=self.emit.get_gamma_B(t),
-            dt=self.time_grid.dt * 1e9,  # Convert seconds to nanoseconds
+            dt=self.time_grid.dt * 1e9,  # 秒转换为纳秒
             Alpha=self.emit.Alpha_B,
             which_atom='B'
         )
-        mps.apply_bond_op(1, U_emit_B)  # B0-Bn emission (simplified)
+        mps.apply_bond_op(1, U_emit_B)  # B0-Bn发射（简化）
 
-        # (2) QFC: one-site unitary on An, Bn
+        # (2) QFC：An, Bn上的单格点酉门
         U_qfc = qfc_gate(theta_H=self.qfc.theta_H, theta_V=self.qfc.theta_V)
         mps.apply_one_site_gate(site_A, U_qfc)
         mps.apply_one_site_gate(site_B, U_qfc)
 
-        # (3) Jones rotation: one-site unitary
+        # (3) 琼斯旋转：单格点酉门
         U_pol_A = jones_gate_from_array(self.fiber.Jones_A)
         U_pol_B = jones_gate_from_array(self.fiber.Jones_B)
 
-        # Embed into 18D bin space (only acts on 1517 subspace)
-        # For now, apply directly (assumes proper embedding)
+        # 嵌入到18维仓空间（仅作用于1517子空间）
+        # 暂时直接应用（假设已正确嵌入）
         mps.apply_one_site_gate(site_A, U_pol_A)
         mps.apply_one_site_gate(site_B, U_pol_B)
 
-        # (4) Loss: one-site Kraus
+        # (4) 损耗：单格点Kraus算符
         K_loss_A = loss_channel_1517(
             eta_H=self.fiber.eta_fiber_A * self.qfc.eta_ins_H,
             eta_V=self.fiber.eta_fiber_A * self.qfc.eta_ins_V
@@ -328,11 +329,11 @@ class TrajectoryRunner:
         )
         mps.apply_kraus_one_site(site_B, K_loss_B, self.rng)
 
-        # (5) Beam splitter: two-site unitary
-        U_bs = bs_gate()
+        # (5) 分束器：两格点酉门
+        U_bs = bs_gate_bin18()
         mps.apply_bond_op(site_A, U_bs)
 
-        # (6) Detection: two-site measurement Kraus
+        # (6) 探测：两格点测量Kraus算符
         K_det, outcomes = detection_channel_two_mode(
             eta_det=self.det.eta_det,
             p_dark=self.det.p_dark
@@ -340,19 +341,19 @@ class TrajectoryRunner:
         mu = mps.apply_kraus_two_site(site_A, K_det, self.rng)
         outcome = outcomes[mu]
 
-        # (7) Finalize measured bins
+        # (7) 完成已测量的仓对
         mps.finalize_bin_pair(site_A)
 
         return mps, outcome
 
     def run(self) -> TrajectoryResult:
         """
-        Run a complete trajectory over all time bins.
+        在所有时间仓上运行完整轨迹。
 
         Returns
         -------
         TrajectoryResult
-            Result of the trajectory
+            轨迹的结果
         """
         mps = self.initialize_mps()
         record = []
@@ -361,9 +362,9 @@ class TrajectoryRunner:
             mps, outcome = self.run_bin(mps, n)
             record.append(outcome)
 
-            # Check for success
+            # 检查是否成功
             if self.det.is_success(outcome):
-                # Extract atomic state
+                # 提取原子态
                 rho_atom = mps.get_reduced_density([0, 1])  # A0, B0
 
                 return TrajectoryResult(
@@ -374,7 +375,7 @@ class TrajectoryRunner:
                     record=record
                 )
 
-        # No success in any bin
+        # 没有任何仓成功
         rho_atom = mps.get_reduced_density([0, 1])
         return TrajectoryResult(
             success=False,
@@ -390,32 +391,32 @@ class TrajectoryRunner:
         delay_bins_B: int = 0,
     ) -> EmissionResult:
         """
-        Run emission-only stage using SWAP conveyor belt protocol.
+        使用SWAP传送带协议运行仅发射阶段。
 
-        This implements the correct dual-atom emission where each bin couples
-        exactly once with its corresponding atom, preventing re-absorption.
+        这实现了正确的双原子发射，每个仓与其对应的原子仅耦合一次，
+        防止再吸收。
 
-        Chain structure (initial): atomA, atomB, A1, B1, A2, B2, ..., AN, BN
-        Chain structure (final):   A1, B1, A2, B2, ..., AN, BN, atomA, atomB
+        链结构（初始）：atomA, atomB, A1, B1, A2, B2, ..., AN, BN
+        链结构（最终）：  A1, B1, A2, B2, ..., AN, BN, atomA, atomB
 
         Parameters
         ----------
         verbose : bool
-            Whether to print progress information
+            是否打印进度信息
         delay_bins_B : int
-            Time offset between A and B wavepackets in bins.
-            - delay_bins_B > 0: B starts late (B delayed relative to A)
-            - delay_bins_B < 0: A starts late (A delayed relative to B)
-            - Range: typically -100 to +100
+            A和B波包之间的时间偏移（单位为仓数）。
+            - delay_bins_B > 0：B延迟启动（B相对于A延迟）
+            - delay_bins_B < 0：A延迟启动（A相对于B延迟）
+            - 范围：通常在 -100 到 +100 之间
 
         Returns
         -------
         EmissionResult
-            Container with emission simulation results
+            发射仿真结果的容器
         """
-        # Calculate start bins for each atom based on delay
-        # delay_bins_B > 0: B delayed -> A starts at 0, B starts at delay_bins_B
-        # delay_bins_B < 0: A delayed -> A starts at |delay_bins_B|, B starts at 0
+        # 根据延迟计算每个原子的起始仓
+        # delay_bins_B > 0：B延迟 -> A从0开始，B从delay_bins_B开始
+        # delay_bins_B < 0：A延迟 -> A从|delay_bins_B|开始，B从0开始
         start_bin_A = max(0, -delay_bins_B)
         start_bin_B = max(0, delay_bins_B)
 
@@ -430,24 +431,24 @@ class TrajectoryRunner:
                 print(f"    -> Atom A starts at bin {start_bin_A}")
                 print(f"    -> Atom B starts at bin {start_bin_B}")
 
-        # Initialize MPS: atomA(3), atomB(3), A1(18), B1(18), ..., AN(18), BN(18)
+        # 初始化MPS：atomA(3), atomB(3), A1(18), B1(18), ..., AN(18), BN(18)
         local_dims = [DIM_ATOM, DIM_ATOM] + [DIM_BIN, DIM_BIN] * self.time_grid.N
-        # Initial state: atoms excited (index 2), bins vacuum (index 0)
+        # 初态：原子激发（索引2），仓真空（索引0）
         init_state = [2, 2] + [0] * (2 * self.time_grid.N)
         mps = MPSState(local_dims=local_dims, init_state=init_state, max_bond=self.chi_max)
 
         per_bin_prob_A = np.zeros(self.time_grid.N)
         per_bin_prob_B = np.zeros(self.time_grid.N)
 
-        # Record atomic state evolution after each SWAP
-        # Shape: (3, 2 * n_bins) where 3 rows are P(|0>), P(|1>), P(|e>)
-        # Columns: record after each atom SWAPs past a bin
-        #   - Even indices (0, 2, 4, ...): after atomA SWAP for bin n/2
-        #   - Odd indices (1, 3, 5, ...): after atomB SWAP for bin (n-1)/2
+        # 记录每次SWAP后的原子态演化
+        # 形状：(3, 2 * n_bins)，3行为 P(|0>), P(|1>), P(|e>)
+        # 列：每次原子SWAP过某个仓后的记录
+        #   - 偶数索引 (0, 2, 4, ...)：原子A与仓n/2的SWAP后
+        #   - 奇数索引 (1, 3, 5, ...)：原子B与仓(n-1)/2的SWAP后
         atom_A_state_evolution = np.zeros((3, 2 * self.time_grid.N))
         atom_B_state_evolution = np.zeros((3, 2 * self.time_grid.N))
 
-        # Record initial atomic states
+        # 记录初始原子态
         rho_A_init = mps.get_reduced_density([0])
         rho_B_init = mps.get_reduced_density([1])
         atom_A_state_evolution[0, 0] = rho_A_init[0, 0].real  # P(|0>)
@@ -462,45 +463,45 @@ class TrajectoryRunner:
             print(f"  Initial: [atomA, atomB, A1, B1, A2, B2, ...]")
             print(f"  Target:  [A1, B1, A2, B2, ..., AN, BN, atomA, atomB]")
 
-        # Track atom positions explicitly instead of using find_sites_by_dim
-        # Initially: atomA at site 0, atomB at site 1
+        # 显式追踪原子位置，而不是使用 find_sites_by_dim
+        # 初始：atomA在格点0，atomB在格点1
         site_A = 0
         site_B = 1
 
-        # Process bins one by one
+        # 逐个处理仓
         for n in range(self.time_grid.N):
             t = self.time_grid.t[n]
 
-            # === Atom A emission ===
-            # Target: bin A_n is at site (2 + 2*n) in the ORIGINAL layout
-            # But we track current positions, so we move to be adjacent to A_n
-            target_A = 2 + 2 * n  # Original position of A_n
+            # === 原子A发射 ===
+            # 目标：仓 A_n 在原始布局中位于格点 (2 + 2*n)
+            # 但我们追踪当前位置，所以移动到与 A_n 相邻
+            target_A = 2 + 2 * n  # A_n的原始位置
 
-            # Move atomA right until adjacent to target bin
-            # Note: atomA is always to the left of atomB, so we need to be careful
+            # 将atomA向右移动直到与目标仓相邻
+            # 注意：atomA总是在atomB左侧，需要小心处理
             while site_A + 1 < target_A:
                 mps.swap_sites(site_A)
                 site_A += 1
-                # If atomB was at site_A + 1, it also moved
+                # 如果atomB在site_A + 1，它也被移动了
                 if site_B == site_A:
-                    site_B = site_A - 1  # atomB is now one site to the left
+                    site_B = site_A - 1  # atomB现在在左侧一个格点
 
-            # Apply emission gate (skip if n < start_bin_A for time offset)
-            # Use RELATIVE time for gamma function: t_rel = (n - start_bin_A) * dt
-            # This ensures both atoms see the same gamma profile shape
+            # 应用发射门（如果 n < start_bin_A 则跳过，用于时间偏移）
+            # 使用相对时间计算gamma函数：t_rel = (n - start_bin_A) * dt
+            # 这确保两个原子看到相同的gamma函数形状
             t_rel_A = self.time_grid.t[n - start_bin_A] if n >= start_bin_A else 0.0
             gamma_A = self.emit.get_gamma_A(t_rel_A) if n >= start_bin_A else 0.0
             should_emit_A = (n >= start_bin_A) and (gamma_A >= 1e-6) and (site_A + 1 < len(mps.d))
             if should_emit_A:
                 U_emit_A = emission_gate(
                     gamma=gamma_A,
-                    dt=self.time_grid.dt * 1e9,  # Convert seconds to nanoseconds
+                    dt=self.time_grid.dt * 1e9,  # 秒转换为纳秒
                     Alpha=self.emit.Alpha_A,
                     which_atom='A'
                 )
                 mps.apply_bond_op(site_A, U_emit_A)
 
-                # Extract emission probability for this bin
+                # 提取该仓的发射概率
                 rho_A_n = mps.get_reduced_density([site_A + 1])
                 p_A_H = rho_A_n[IDX_BIN_780H_START:IDX_BIN_780H_END,
                                IDX_BIN_780H_START:IDX_BIN_780H_END].sum().real
@@ -508,49 +509,49 @@ class TrajectoryRunner:
                                IDX_BIN_780V_START:IDX_BIN_780V_END].sum().real
                 per_bin_prob_A[n] = p_A_H + p_A_V
 
-            # SWAP atomA right (past the processed bin)
+            # 将atomA向右SWAP（越过已处理的仓）
             if site_A + 1 < len(mps.d):
                 mps.swap_sites(site_A)
                 site_A += 1
-                # If atomB was at site_A, it got swapped left
+                # 如果atomB在site_A，它被向左交换了
                 if site_B == site_A:
                     site_B = site_A - 1
 
-            # Record atom A state after SWAP
+            # 记录SWAP后的原子A状态
             rho_A_after = mps.get_reduced_density([site_A])
-            col_idx = 2 * n + 1  # After atomA SWAP for bin n
+            col_idx = 2 * n + 1  # 原子A与仓n的SWAP后
             atom_A_state_evolution[0, col_idx] = rho_A_after[0, 0].real
             atom_A_state_evolution[1, col_idx] = rho_A_after[1, 1].real
             atom_A_state_evolution[2, col_idx] = rho_A_after[2, 2].real
 
-            # === Atom B emission ===
-            # Target: bin B_n is at site (3 + 2*n) in the ORIGINAL layout
-            target_B = 3 + 2 * n  # Original position of B_n
+            # === 原子B发射 ===
+            # 目标：仓 B_n 在原始布局中位于格点 (3 + 2*n)
+            target_B = 3 + 2 * n  # B_n的原始位置
 
-            # Move atomB right until adjacent to target bin
+            # 将atomB向右移动直到与目标仓相邻
             while site_B + 1 < target_B:
                 mps.swap_sites(site_B)
                 site_B += 1
-                # If atomA was at site_B + 1, it also moved
+                # 如果atomA在site_B + 1，它也被移动了
                 if site_A == site_B:
                     site_A = site_B - 1
 
-            # Apply emission gate (skip if n < start_bin_B for time offset)
-            # Use RELATIVE time for gamma function: t_rel = (n - start_bin_B) * dt
-            # This ensures both atoms see the same gamma profile shape
+            # 应用发射门（如果 n < start_bin_B 则跳过，用于时间偏移）
+            # 使用相对时间计算gamma函数：t_rel = (n - start_bin_B) * dt
+            # 这确保两个原子看到相同的gamma函数形状
             t_rel_B = self.time_grid.t[n - start_bin_B] if n >= start_bin_B else 0.0
             gamma_B = self.emit.get_gamma_B(t_rel_B) if n >= start_bin_B else 0.0
             should_emit_B = (n >= start_bin_B) and (gamma_B >= 1e-6) and (site_B + 1 < len(mps.d))
             if should_emit_B:
                 U_emit_B = emission_gate(
                     gamma=gamma_B,
-                    dt=self.time_grid.dt * 1e9,  # Convert seconds to nanoseconds
+                    dt=self.time_grid.dt * 1e9,  # 秒转换为纳秒
                     Alpha=self.emit.Alpha_B,
                     which_atom='B'
                 )
                 mps.apply_bond_op(site_B, U_emit_B)
 
-                # Extract emission probability for this bin
+                # 提取该仓的发射概率
                 rho_B_n = mps.get_reduced_density([site_B + 1])
                 p_B_H = rho_B_n[IDX_BIN_780H_START:IDX_BIN_780H_END,
                                IDX_BIN_780H_START:IDX_BIN_780H_END].sum().real
@@ -558,24 +559,24 @@ class TrajectoryRunner:
                                IDX_BIN_780V_START:IDX_BIN_780V_END].sum().real
                 per_bin_prob_B[n] = p_B_H + p_B_V
 
-            # SWAP atomB right
+            # 将atomB向右SWAP
             if site_B + 1 < len(mps.d):
                 mps.swap_sites(site_B)
                 site_B += 1
-                # If atomA was at site_B, it got swapped left
+                # 如果atomA在site_B，它被向左交换了
                 if site_A == site_B:
                     site_A = site_B - 1
 
-            # Record atom B state after SWAP
+            # 记录SWAP后的原子B状态
             rho_B_after = mps.get_reduced_density([site_B])
-            col_idx = 2 * n + 1  # After atomB SWAP for bin n
+            col_idx = 2 * n + 1  # 原子B与仓n的SWAP后
             atom_B_state_evolution[0, col_idx] = rho_B_after[0, 0].real
             atom_B_state_evolution[1, col_idx] = rho_B_after[1, 1].real
             atom_B_state_evolution[2, col_idx] = rho_B_after[2, 2].real
 
             if verbose and (n + 1) % 50 == 0:
                 atom_sites_curr = mps.find_sites_by_dim(DIM_ATOM)
-                # Print current atomic states
+                # 打印当前原子态
                 print(f"  Processed {n + 1}/{self.time_grid.N} bins... "
                       f"(atomA@{atom_sites_curr[0]}, atomB@{atom_sites_curr[1]})")
                 print(f"    Atom A: P(|0>)={atom_A_state_evolution[0, col_idx]:.3f}, "
@@ -585,34 +586,34 @@ class TrajectoryRunner:
                       f"P(|1>)={atom_B_state_evolution[1, col_idx]:.3f}, "
                       f"P(|e>)={atom_B_state_evolution[2, col_idx]:.3f}")
 
-        # Final pass: move atoms all the way to the end of the chain
-        # This ensures bins occupy sites 0 to 2*N-1, atoms at 2*N and 2*N+1
+        # 最后一遍：将原子移动到链的最末端
+        # 这确保仓占据格点0到2*N-1，原子在2*N和2*N+1
         if verbose:
             print(f"\n  Final pass: moving atoms to end of chain...")
 
-        # Move atomA to site 2*N (second to last)
-        # We already have site_A tracked from the main loop
-        target_A = 2 * self.time_grid.N  # Site 2*N
+        # 将atomA移动到格点2*N（倒数第二个）
+        # 我们已经从主循环中追踪了site_A
+        target_A = 2 * self.time_grid.N  # 格点2*N
         while site_A < target_A:
             mps.swap_sites(site_A)
             site_A += 1
-            # If atomB was at site_A, it got swapped left
+            # 如果atomB在site_A，它被向左交换了
             if site_B == site_A:
                 site_B = site_A - 1
 
-        # Move atomB to site 2*N+1 (last)
-        target_B = 2 * self.time_grid.N + 1  # Site 2*N+1
+        # 将atomB移动到格点2*N+1（最后一个）
+        target_B = 2 * self.time_grid.N + 1  # 格点2*N+1
         while site_B < target_B:
             mps.swap_sites(site_B)
             site_B += 1
-            # If atomA was at site_B, it got swapped left
+            # 如果atomA在site_B，它被向左交换了
             if site_A == site_B:
                 site_A = site_B - 1
 
         if verbose:
             print(f"  After final pass: atomA@{site_A}, atomB@{site_B}")
 
-        # Get final atom states
+        # 获取最终原子态
         rho_atom_A = mps.get_reduced_density([site_A])
         rho_atom_B = mps.get_reduced_density([site_B])
 
@@ -651,29 +652,29 @@ def run_single_trajectory(
     seed: Optional[int] = None,
 ) -> TrajectoryResult:
     """
-    Convenience function to run a single trajectory.
+    运行单次轨迹的便捷函数。
 
     Parameters
     ----------
     time_grid : TimeGrid
-        Time discretization
+        时间离散化
     emit_params : EmitParams
-        Emission parameters
+        发射参数
     qfc_params : QFCParams
-        QFC parameters
+        QFC参数
     fiber_params : FiberParams
-        Fiber/Jones/PMD parameters
+        光纤/琼斯/PMD参数
     det_params : DetParams
-        Detection parameters
+        探测参数
     chi_max : int
-        Maximum bond dimension
+        最大键维度
     seed : int, optional
-        Random seed
+        随机种子
 
     Returns
     -------
     TrajectoryResult
-        Result of the trajectory
+        轨迹的结果
     """
     runner = TrajectoryRunner(
         time_grid=time_grid,
@@ -698,38 +699,38 @@ def run_emission_only(
     delay_bins_B: int = 0,
 ) -> EmissionResult:
     """
-    Run emission-only simulation using SWAP conveyor belt protocol.
+    使用SWAP传送带协议运行仅发射仿真。
 
-    This is a convenience function for the first stage of the total simulation:
-    - Two atoms (A and B) in excited state
-    - Emission to time bins (780nm only, no QFC yet)
-    - Final state ready for next gate (BSM at station)
+    这是总仿真第一阶段的便捷函数：
+    - 两个原子（A和B）处于激发态
+    - 发射到时间仓（仅780nm，暂无QFC）
+    - 最终态准备好进入下一门（基站BSM）
 
     Parameters
     ----------
     time_grid : TimeGrid
-        Time discretization
+        时间离散化
     emit_params : EmitParams
-        Emission parameters (gamma_A, gamma_B, Alpha_A, Alpha_B)
+        发射参数（gamma_A, gamma_B, Alpha_A, Alpha_B）
     qfc_params : QFCParams, optional
-        Not used in emission-only, but kept for interface consistency
+        仅发射阶段不使用，但保留以保持接口一致
     fiber_params : FiberParams, optional
-        Not used in emission-only, but kept for interface consistency
+        仅发射阶段不使用，但保留以保持接口一致
     det_params : DetParams, optional
-        Not used in emission-only, but kept for interface consistency
+        仅发射阶段不使用，但保留以保持接口一致
     chi_max : int
-        Maximum bond dimension
+        最大键维度
     verbose : bool
-        Whether to print progress information
+        是否打印进度信息
     delay_bins_B : int
-        Number of bins to delay atom B emission for time offset
+        原子B发射延迟的仓数（用于时间偏移）
 
     Returns
     -------
     EmissionResult
-        Container with emission simulation results
+        发射仿真结果的容器
     """
-    # Create default params if not provided
+    # 如果未提供则创建默认参数
     if qfc_params is None:
         from ..config import QFCParams as _QFCParams
         qfc_params = _QFCParams()
@@ -752,11 +753,11 @@ def run_emission_only(
 
 
 # ============================================================================
-# Unified Processor Functions (apply_* pattern)
-# All functions follow the same interface:
-#   - Input: mps (MPSState), params, verbose (bool)
-#   - Output: mps (MPSState)
-#   - Print format: consistent across all functions
+# 统一处理函数（apply_* 模式）
+# 所有函数遵循相同接口：
+#   - 输入：mps (MPSState), params, verbose (bool)
+#   - 输出：mps (MPSState)
+#   - 打印格式：所有函数保持一致
 # ============================================================================
 
 def apply_qfc(
@@ -767,25 +768,25 @@ def apply_qfc(
     verbose: bool = True,
 ) -> MPSState:
     """
-    Apply QFC gate to all bins.
+    对所有仓应用QFC门。
 
     Parameters
     ----------
     mps : MPSState
-        MPS state (layout: A1, B1, A2, B2, ..., AN, BN, atomA, atomB)
+        MPS态（布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB）
     n_bins : int
-        Number of time bins
+        时间仓数量
     theta_H : float
-        QFC angle for H polarization (sin² = conversion probability)
+        H偏振的QFC角度（sin² = 转换概率）
     theta_V : float
-        QFC angle for V polarization
+        V偏振的QFC角度
     verbose : bool
-        Whether to print progress
+        是否打印进度
 
     Returns
     -------
     MPSState
-        MPS state with QFC applied (modified in-place)
+        应用了QFC的MPS态（原地修改）
     """
     from ..physics.gates import qfc_gate
 
@@ -794,7 +795,7 @@ def apply_qfc(
         print(f"  theta_H = {theta_H:.4f} (sin² = {np.sin(theta_H)**2:.3f})")
         print(f"  theta_V = {theta_V:.4f} (sin² = {np.sin(theta_V)**2:.3f})")
 
-    # Get QFC gate (18x18, acts on single bin)
+    # 获取QFC门（18x18，作用于单个仓）
     U_qfc = qfc_gate(theta_H=theta_H, theta_V=theta_V)
 
     if verbose:
@@ -802,7 +803,7 @@ def apply_qfc(
         print(f"  n_bins={n_bins}, MPS L={mps.L}")
         print(f"  MPS d[:5]={mps.d[:5]}, d[-5:]={mps.d[-5:]}")
 
-    # Apply QFC to each bin
+    # 对每个仓应用QFC
     for n in range(n_bins):
         site_A = 2 * n
         site_B = 2 * n + 1
@@ -822,54 +823,54 @@ def apply_780_filter(
     verbose: bool = True,
 ) -> MPSState:
     """
-    Apply 100% loss filter to remove 780nm photons from all bins.
+    应用100%损耗滤波器从所有仓中移除780nm光子。
 
-    After QFC, any remaining 780nm photons (|H,vac>, |V,vac>) cannot propagate
-    through the fiber and must be filtered out. This applies the projection:
+    QFC之后，任何剩余的780nm光子（|H,vac>, |V,vac>）无法在光纤中
+    传播，必须被滤除。这应用投影：
         P_filter = |vac><vac|_780 ⊗ I_1517
 
     Parameters
     ----------
     mps : MPSState
-        MPS state (layout: A1, B1, A2, B2, ..., AN, BN, atomA, atomB)
+        MPS态（布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB）
     n_bins : int
-        Number of time bins
+        时间仓数量
     verbose : bool
-        Whether to print progress
+        是否打印进度
 
     Returns
     -------
     MPSState
-        MPS state with 780nm photons removed (modified in-place)
+        移除了780nm光子的MPS态（原地修改）
     """
     from ..physics.gates import filter_780_gate
     from tenpy.linalg.np_conserved import Array
 
     _print_header("780nm Filter", verbose)
 
-    # Get the 780nm filter projection (18x18)
+    # 获取780nm滤波器投影（18x18）
     P_filter = filter_780_gate()
 
     if verbose:
         print(f"  P_filter shape: {P_filter.shape}")
         print(f"  This projects 780nm photon states to vacuum")
 
-    # Convert to TeNPy Array with proper labels
+    # 转换为带适当标签的TeNPy Array
     P_arr = Array.from_ndarray_trivial(P_filter, labels=['p', 'p*'])
 
-    # Apply to all bins WITHOUT normalizing after each one
-    # (much faster - only normalize once at the end)
+    # 应用到所有仓，每个之后不归一化
+    # （更快 - 仅在最后归一化一次）
     for n in range(n_bins):
         site_A = 2 * n
         site_B = 2 * n + 1
 
-        # Apply projection (non-unitary, no renormalization yet)
+        # 应用投影（非酉，暂不重新归一化）
         mps._mps.apply_local_op(site_A, P_arr, unitary=False, renormalize=False)
         mps._mps.apply_local_op(site_B, P_arr, unitary=False, renormalize=False)
 
         _print_progress(n + 1, n_bins, verbose)
 
-    # Single normalization at the end
+    # 最后的单一归一化
     mps._mps.canonical_form_finite(renormalize=True)
 
     _print_footer(mps, verbose, stage="780nm Filter")
@@ -884,25 +885,25 @@ def apply_jones(
     verbose: bool = True,
 ) -> MPSState:
     """
-    Apply Jones polarization rotation to all bins.
+    对所有仓应用琼斯偏振旋转。
 
     Parameters
     ----------
     mps : MPSState
-        MPS state (layout: A1, B1, A2, B2, ..., AN, BN, atomA, atomB)
+        MPS态（布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB）
     n_bins : int
-        Number of time bins
+        时间仓数量
     Jones_A : np.ndarray
-        2x2 Jones matrix for arm A
+        A臂的2x2琼斯矩阵
     Jones_B : np.ndarray
-        2x2 Jones matrix for arm B
+        B臂的2x2琼斯矩阵
     verbose : bool
-        Whether to print progress
+        是否打印进度
 
     Returns
     -------
     MPSState
-        MPS state with Jones rotation applied (modified in-place)
+        应用了琼斯旋转的MPS态（原地修改）
     """
     from ..physics.gates import jones_gate_from_array
 
@@ -911,11 +912,11 @@ def apply_jones(
         print(f"  Jones_A: {Jones_A}")
         print(f"  Jones_B: {Jones_B}")
 
-    # Get Jones gates (18x18, embedded)
+    # 获取琼斯门（18x18，已嵌入）
     U_J_A = jones_gate_from_array(Jones_A)
     U_J_B = jones_gate_from_array(Jones_B)
 
-    # Apply Jones to each bin
+    # 对每个仓应用琼斯旋转
     for n in range(n_bins):
         site_A = 2 * n
         site_B = 2 * n + 1
@@ -939,38 +940,38 @@ def apply_loss(
     verbose: bool = True,
 ) -> MPSState:
     """
-    Apply loss channel to all bins.
+    对所有仓应用损耗通道。
 
     Parameters
     ----------
     mps : MPSState
-        MPS state (layout: A1, B1, A2, B2, ..., AN, BN, atomA, atomB)
+        MPS态（布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB）
     n_bins : int
-        Number of time bins
+        时间仓数量
     eta_H_A, eta_V_A : float
-        Transmissivity for arm A (H, V polarizations)
+        A臂的透过率（H, V偏振）
     eta_H_B, eta_V_B : float
-        Transmissivity for arm B (H, V polarizations)
+        B臂的透过率（H, V偏振）
     rng : np.random.Generator
-        Random number generator for Kraus sampling
+        用于Kraus采样的随机数生成器
     verbose : bool
-        Whether to print progress
+        是否打印进度
 
     Returns
     -------
     MPSState
-        MPS state with loss applied (modified in-place)
+        应用了损耗的MPS态（原地修改）
     """
     _print_header("Loss", verbose)
     if verbose:
         print(f"  Arm A: eta_H={eta_H_A:.3f}, eta_V={eta_V_A:.3f}")
         print(f"  Arm B: eta_H={eta_H_B:.3f}, eta_V={eta_V_B:.3f}")
 
-    # Get loss Kraus operators (18x18, embedded)
+    # 获取损耗Kraus算符（18x18，已嵌入）
     K_loss_A = loss_channel_1517(eta_H_A, eta_V_A)
     K_loss_B = loss_channel_1517(eta_H_B, eta_V_B)
 
-    # Apply loss to each bin
+    # 对每个仓应用损耗
     for n in range(n_bins):
         site_A = 2 * n
         site_B = 2 * n + 1
@@ -993,42 +994,42 @@ def apply_loss_combined(
     verbose: bool = True,
 ) -> MPSState:
     """
-    Apply combined loss channel to all bins (both 780 and 1517 subspaces).
+    对所有仓应用组合损耗通道（780和1517子空间）。
 
-    For QFC applications: typically eta_780=0 (100% filtered),
-    eta_1517=0.5~0.8 (normal transmission loss).
+    对于QFC应用：通常 eta_780=0（100%滤波），
+    eta_1517=0.5~0.8（正常传输损耗）。
 
     Parameters
     ----------
     mps : MPSState
-        MPS state (layout: A1, B1, A2, B2, ..., AN, BN, atomA, atomB)
+        MPS态（布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB）
     n_bins : int
-        Number of time bins
+        时间仓数量
     eta_780 : float
-        Transmissivity for 780nm subspace (0 = 100% loss/filtered)
+        780nm子空间的透过率（0 = 100%损耗/滤波）
     eta_H_1517 : float
-        Transmissivity for 1517nm H polarization
+        1517nm H偏振的透过率
     eta_V_1517 : float
-        Transmissivity for 1517nm V polarization
+        1517nm V偏振的透过率
     rng : np.random.Generator
-        Random number generator for Kraus sampling
+        用于Kraus采样的随机数生成器
     verbose : bool
-        Whether to print progress
+        是否打印进度
 
     Returns
     -------
     MPSState
-        MPS state with loss applied (modified in-place)
+        应用了损耗的MPS态（原地修改）
     """
     _print_header("Loss", verbose)
     if verbose:
         print(f"  780nm: eta={eta_780:.3f} ({'100% filtered' if eta_780==0 else 'partial loss'})")
         print(f"  1517nm: eta_H={eta_H_1517:.3f}, eta_V={eta_V_1517:.3f}")
 
-    # Get combined Kraus operators (18x18, both subspaces)
+    # 获取组合Kraus算符（18x18，两个子空间）
     K_list = loss_channel_both_subspaces(eta_780, eta_H_1517, eta_V_1517)
 
-    # Apply loss to each bin (same for both arms)
+    # 对每个仓应用损耗（两臂相同）
     for n in range(n_bins):
         site_A = 2 * n
         site_B = 2 * n + 1
@@ -1047,33 +1048,33 @@ def apply_bs(
     verbose: bool = True,
 ) -> MPSState:
     """
-    Apply beam splitter to each A_n, B_n pair.
+    对每个 A_n, B_n 对应用分束器。
 
     Parameters
     ----------
     mps : MPSState
-        MPS state (layout: A1, B1, A2, B2, ..., AN, BN, atomA, atomB)
+        MPS态（布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB）
     n_bins : int
-        Number of time bins
+        时间仓数量
     verbose : bool
-        Whether to print progress
+        是否打印进度
 
     Returns
     -------
     MPSState
-        MPS state with BS applied (modified in-place)
+        应用了BS的MPS态（原地修改）
     """
     from ..physics.gates import bs_gate_bin18
 
     _print_header("BS", verbose)
 
-    # Get BS gate (324x324, acts on bin_A × bin_B = 18 × 18)
+    # 获取BS门（324x324，作用于 bin_A × bin_B = 18 × 18）
     U_bs = bs_gate_bin18()
 
     if verbose:
         print(f"  U_bs shape: {U_bs.shape}")
 
-    # Apply BS to each A_n, B_n pair
+    # 对每个 A_n, B_n 对应用BS
     for n in range(n_bins):
         site_A = 2 * n
         site_B = 2 * n + 1
@@ -1085,21 +1086,21 @@ def apply_bs(
     return mps
 
 
-# Helper functions for consistent printing
+# 一致打印格式的辅助函数
 def _print_header(stage: str, verbose: bool):
-    """Print stage header in consistent format."""
+    """以一致格式打印阶段标题。"""
     if verbose:
         print(f"\n{'='*60}")
         print(f"{stage:>56} <<<")
         print(f"{'='*60}")
 
 def _print_progress(current: int, total: int, verbose: bool):
-    """Print progress in consistent format."""
+    """以一致格式打印进度。"""
     if verbose and (current % 50 == 0 or current == total):
         print(f"  Processed {current}/{total} bins...")
 
 def _print_footer(mps: MPSState, verbose: bool, stage: str = ""):
-    """Print stage footer in consistent format."""
+    """以一致格式打印阶段尾部。"""
     if verbose:
         print(f"  Final chi: {mps.get_bond_dimensions()}")
         print(f"{stage} complete.")
@@ -1113,34 +1114,34 @@ def apply_fiber_channel(
     verbose: bool = True,
 ) -> tuple:
     """
-    Apply fiber channel effects: Jones rotation + loss (with random sampling).
+    应用光纤信道效应：琼斯旋转 + 损耗（含随机采样）。
 
-    This combines apply_jones and apply_loss_combined, but samples parameters
-    from FiberChannelParams for each trajectory (simulating fiber drift).
+    这结合了 apply_jones 和 apply_loss_combined，但从
+    FiberChannelParams 为每次轨迹采样参数（模拟光纤漂移）。
 
     Parameters
     ----------
     mps : MPSState
-        MPS state (layout: A1, B1, A2, B2, ..., AN, BN, atomA, atomB)
+        MPS态（布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB）
     n_bins : int
-        Number of time bins
+        时间仓数量
     fiber_params : FiberChannelParams
-        Fiber channel parameters (will sample new Jones matrices and eta)
+        光纤信道参数（将采样新的琼斯矩阵和eta）
     rng : np.random.Generator
-        Random number generator
+        随机数生成器
     verbose : bool
-        Whether to print progress
+        是否打印进度
 
     Returns
     -------
     tuple
-        (mps, sampled_params) where sampled_params = (U_A, U_B, eta, phase)
+        (mps, sampled_params) 其中 sampled_params = (U_A, U_B, eta, phase)
     """
     from ..physics.channels import FiberChannelParams
 
     _print_header("Fiber Channel", verbose)
 
-    # Sample parameters for this trajectory
+    # 为本次轨迹采样参数
     U_A, U_B, eta, phase = fiber_params.sample_all(rng)
 
     if verbose:
@@ -1149,7 +1150,7 @@ def apply_fiber_channel(
         print(f"  Phase drift: {phase:.4f} rad")
         print(f"  Sampled eta: {eta:.4f}")
 
-    # Apply Jones rotation
+    # 应用琼斯旋转
     from ..physics.gates import jones_gate_from_array
     U_J_A = jones_gate_from_array(U_A)
     U_J_B = jones_gate_from_array(U_B)
@@ -1162,7 +1163,7 @@ def apply_fiber_channel(
 
         _print_progress(n + 1, n_bins, verbose)
 
-    # Apply loss (780 filtered, 1517 with sampled eta)
+    # 应用损耗（780滤波，1517使用采样的eta）
     from ..physics.channels import loss_channel_both_subspaces
     K_list = loss_channel_both_subspaces(eta_780=0.0, eta_H_1517=eta, eta_V_1517=eta)
 
@@ -1188,39 +1189,39 @@ def apply_detection(
     verbose: bool = True,
 ) -> Tuple[MPSState, List[Tuple[int, int, int, int]]]:
     """
-    Apply detection POVM to all bin pairs after beam splitter.
+    对分束器后的所有仓对应用探测POVM。
 
-    This measures photons at each (A_n, B_n) pair and returns click patterns.
-    Each site has H and V detectors, giving 4 outcomes per pair (16 total combinations).
+    这测量每个 (A_n, B_n) 对的光子并返回点击模式。
+    每个格点有H和V探测器，每对4个结果（共16种组合）。
 
     Parameters
     ----------
     mps : MPSState
-        MPS state (layout: A1, B1, A2, B2, ..., AN, BN, atomA, atomB)
+        MPS态（布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB）
     n_bins : int
-        Number of time bins
+        时间仓数量
     eta_det : float
-        Detection efficiency (0 <= eta_det <= 1)
+        探测效率（0 <= eta_det <= 1）
     p_dark : float
-        Dark count probability per detector
+        每个探测器的暗计数概率
     rng : np.random.Generator
-        Random number generator for measurement sampling
+        用于测量采样的随机数生成器
     verbose : bool
-        Whether to print progress
+        是否打印进度
 
     Returns
     -------
     Tuple[MPSState, List[Tuple[int, int, int, int]]]
-        (mps, outcomes) where outcomes[n] = (dA_H, dA_V, dB_H, dB_V)
-        for bin n, and d=0 means no click, d=1 means click.
+        (mps, outcomes) 其中 outcomes[n] = (dA_H, dA_V, dB_H, dB_V)
+        对于仓n，d=0表示无点击，d=1表示有点击。
 
     Notes
     -----
-    For BSM (Bell State Measurement), success patterns are:
-        - (1,0,0,1) or (0,1,1,0): Psi+ heralding (one H, one V in different ports)
-        - (0,1,0,1) or (1,0,1,0): Psi- heralding (same polarization in different ports)
+    对于BSM（贝尔态测量），成功模式为：
+        - (1,0,0,1) 或 (0,1,1,0)：Psi+ 通告（不同端口各有一个H和一个V）
+        - (0,1,0,1) 或 (1,0,1,0)：Psi- 通告（不同端口相同偏振）
 
-    The measurement is destructive: after detection, the photon state collapses.
+    测量是破坏性的：探测后，光子态塌缩。
     """
     if rng is None:
         rng = np.random.default_rng()
@@ -1229,9 +1230,9 @@ def apply_detection(
     if verbose:
         print(f"  eta_det = {eta_det:.3f}, p_dark = {p_dark:.6f}")
 
-    # Get single-site detection POVM (4 outcomes per site)
+    # 获取单格点探测POVM（每个格点4个结果）
     M_single, outcomes_single = detection_povm_single_site(eta_det, p_dark)
-    # M_single[i] is 18x18, outcomes_single[i] is (d_H, d_V)
+    # M_single[i] 是18x18，outcomes_single[i] 是 (d_H, d_V)
 
     all_outcomes = []
 
@@ -1239,11 +1240,11 @@ def apply_detection(
         site_A = 2 * n
         site_B = 2 * n + 1
 
-        # Apply detection to site A, get outcome index
+        # 对格点A应用探测，获取结果索引
         mu_A = mps.apply_kraus_one_site(site_A, M_single, rng)
         dA_H, dA_V = outcomes_single[mu_A]
 
-        # Apply detection to site B, get outcome index
+        # 对格点B应用探测，获取结果索引
         mu_B = mps.apply_kraus_one_site(site_B, M_single, rng)
         dB_H, dB_V = outcomes_single[mu_B]
 
@@ -1253,9 +1254,9 @@ def apply_detection(
         _print_progress(n + 1, n_bins, verbose)
 
     if verbose:
-        # Count success patterns
-        psi_plus = [(1,0,0,1), (0,1,1,0)]  # H-V or V-H in different ports
-        psi_minus = [(0,1,0,1), (1,0,1,0)]  # Same pol in different ports (with sign)
+        # 统计成功模式
+        psi_plus = [(1,0,0,1), (0,1,1,0)]  # 不同端口H-V或V-H
+        psi_minus = [(0,1,0,1), (1,0,1,0)]  # 不同端口相同偏振（带相位）
 
         n_psi_plus = sum(1 for o in all_outcomes if o in psi_plus)
         n_psi_minus = sum(1 for o in all_outcomes if o in psi_minus)
@@ -1275,24 +1276,24 @@ def find_bsm_success(
     outcomes: List[Tuple[int, int, int, int]]
 ) -> Tuple[bool, int, str]:
     """
-    Check if any bin has a BSM success pattern.
+    检查是否有任何仓具有BSM成功模式。
 
     Parameters
     ----------
     outcomes : List[Tuple[int, int, int, int]]
-        Detection outcomes for all bins, each is (dA_H, dA_V, dB_H, dB_V)
+        所有仓的探测结果，每个是 (dA_H, dA_V, dB_H, dB_V)
 
     Returns
     -------
     Tuple[bool, int, str]
-        (success, bin_index, bell_state) where:
-        - success: True if BSM heralding found
-        - bin_index: which bin (0-indexed), or -1 if no success
-        - bell_state: "Psi+" or "Psi-" or ""
+        (success, bin_index, bell_state) 其中：
+        - success：如果找到BSM通告则为True
+        - bin_index：哪个仓（从0开始索引），无成功则为-1
+        - bell_state："Psi+" 或 "Psi-" 或 ""
     """
-    # BSM success patterns (single photon in each arm, different detectors)
-    psi_plus_patterns = [(1,0,0,1), (0,1,1,0)]  # H_A V_B or V_A H_B
-    psi_minus_patterns = [(1,0,1,0), (0,1,0,1)]  # H_A H_B or V_A V_B (with phase)
+    # BSM成功模式（每臂单个光子，不同探测器）
+    psi_plus_patterns = [(1,0,0,1), (0,1,1,0)]  # H_A V_B 或 V_A H_B
+    psi_minus_patterns = [(1,0,1,0), (0,1,0,1)]  # H_A H_B 或 V_A V_B（带相位）
 
     for n, outcome in enumerate(outcomes):
         if outcome in psi_plus_patterns:

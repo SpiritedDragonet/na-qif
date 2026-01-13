@@ -1,13 +1,14 @@
+# -*- coding: utf-8 -*-
 """
-Physics Module
+物理模块
 
-Provides gate factories and Kraus channels for the time-bin simulation.
+提供时间仓仿真的门工厂和Kraus通道。
 """
 
 from .gates import (
     emission_gate,
     qfc_gate,
-    bs_gate,
+    bs_gate_bin18,
     jones_gate,
     jones_gate_from_array,
     swap_gate,
@@ -27,7 +28,7 @@ __all__ = [
     # gates
     'emission_gate',
     'qfc_gate',
-    'bs_gate',
+    'bs_gate_bin18',
     'jones_gate',
     'jones_gate_from_array',
     'swap_gate',

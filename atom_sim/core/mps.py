@@ -1,20 +1,21 @@
+# -*- coding: utf-8 -*-
 """
-MPS State Container (TeNPy Backend)
+MPS态容器（TeNPy后端）
 
 ================================================================================
-Wrapper around TeNPy's MPS for time-bin quantum simulation.
+TeNPy的MPS封装，用于时间仓量子仿真。
 
-Key Design:
+核心设计：
 -----------
-- Two-site operations use get_theta + set_svd_theta for local updates
-- Kraus operations are fully localized (no canonical_form() sweeps)
-- Reduced density matrices use get_rho_segment() for correctness
+- 两格点操作使用 get_theta + set_svd_theta 进行局域更新
+- Kraus操作完全局域化（不需要 canonical_form() 扫描）
+- 约化密度矩阵使用 get_rho_segment() 确保正确性
 
-Requirements:
+依赖：
 -------------
 pip install physics-tenpy
 
-References:
+参考文献：
 -----------
 [1] TeNPy MPS: https://tenpy.readthedocs.io/en/stable/reference/tenpy.networks.mps.MPS.html
 [2] TeNPy Array: https://tenpy.readthedocs.io/en/stable/reference/tenpy.linalg.np_conserved.html
@@ -32,18 +33,18 @@ from tenpy.linalg.np_conserved import Array
 
 class MPSState:
     """
-    Matrix Product State using TeNPy.
+    使用TeNPy的矩阵积态。
 
     Parameters
     ----------
     local_dims : List[int]
-        Local Hilbert space dimensions
+        局域希尔伯特空间维度
     init_state : Optional[Union[List[int], np.ndarray]]
-        - None: vacuum |0>...|0>
-        - List[int]: product state
-        - np.ndarray: full wavefunction (uses MPS.from_full)
+        - None: 真空态 |0>...|0>
+        - List[int]: 直积态
+        - np.ndarray: 完整波函数（使用 MPS.from_full）
     max_bond : int
-        Maximum bond dimension for truncation
+        截断的最大键维度
     """
 
     def __init__(
@@ -56,30 +57,30 @@ class MPSState:
         self.d = local_dims
         self.max_bond = max_bond
 
-        # Create TeNPy sites (bosonic, no charge conservation)
+        # 创建TeNPy格点（玻色型，无电荷守恒）
         sites = [BosonSite(dim - 1, None) for dim in self.d]
 
-        # Initialize MPS based on init_state type
+        # 根据init_state类型初始化MPS
         if init_state is None:
-            # Vacuum state |0>...|0>
+            # 真空态 |0>...|0>
             init_labels = ['0'] * self.L
             self._mps = TeNPy_MPS.from_product_state(sites, init_labels, bc='finite', form='B')
         elif isinstance(init_state, list):
-            # Product state from basis indices
+            # 从基指标的直积态
             init_labels = [str(s) for s in init_state]
             self._mps = TeNPy_MPS.from_product_state(sites, init_labels, bc='finite', form='B')
         elif isinstance(init_state, np.ndarray):
-            # Full wavefunction - use TeNPy's from_full
+            # 完整波函数 - 使用TeNPy的from_full
             psi_reshaped = init_state.reshape(self.d + [1] * (self.L - len(self.d)))
             psi_array = Array.from_ndarray_trivial(psi_reshaped, labels=[f'p{i}' for i in range(self.L)])
-            self._mps = TeNPy_MPS.from_full(psi_array, sites, bc='finite', form='B')
+            self._mps = TeNPy.from_full(psi_array, sites, bc='finite', form='B')
         else:
             raise ValueError(f"Invalid init_state: {type(init_state)}")
 
         self._mps.chi_max = self.max_bond
 
     # ========================================================================
-    # Low-level Local Update (avoid canonical_form sweeps)
+    # 底层局域更新（避免 canonical_form 扫描）
     # ========================================================================
 
     def _apply_two_site_op_local(
@@ -90,60 +91,60 @@ class MPSState:
         normalize: bool = False,
     ) -> None:
         """
-        Apply two-site operator using local update (get_theta + set_svd_theta).
+        使用局域更新应用两格点算符（get_theta + set_svd_theta）。
 
-        Avoids canonical_form() sweeps by only updating the local bond.
+        通过只更新局域键来避免 canonical_form() 扫描。
 
         Parameters
         ----------
         i : int
-            Left site index
+            左格点索引
         op : Array
-            TeNPy Array with labels ['p0', 'p1', 'p0*', 'p1*']
+            带有标签 ['p0', 'p1', 'p0*', 'p1*'] 的TeNPy Array
         truncate : bool
-            Whether to truncate bond dimension
+            是否截断键维度
         normalize : bool
-            If True, normalize after application (for Kraus results)
+            若为True，应用后归一化（用于Kraus结果）
         """
-        # Get theta for two sites: legs are (vL, p0, p1, vR)
+        # 获取两格点的theta：腿为 (vL, p0, p1, vR)
         theta = self._mps.get_theta(i, n=2)
 
-        # Convert to numpy for contraction (avoid LegCharge issues)
+        # 转换为numpy进行收缩（避免LegCharge问题）
         theta_np = theta.to_ndarray()  # Shape: (chiL, d0, d1, chiR)
         op_np = op.to_ndarray()  # Shape: (d0, d1, d0, d1)
 
-        # Contract: op @ theta where op[i,j,k,l] acts on theta's physical legs
-        # Result: theta_new[a, i, j, b] = sum_{k,l} op[i, j, k, l] * theta[a, k, l, b]
+        # 收缩: op @ theta，其中 op[i,j,k,l] 作用于theta的物理腿
+        # 结果: theta_new[a, i, j, b] = sum_{k,l} op[i, j, k, l] * theta[a, k, l, b]
         theta_new_np = np.einsum('ijkl,aklb->aijb', op_np, theta_np)
 
-        # Convert back to TeNPy Array
+        # 转换回TeNPy Array
         theta_new = Array.from_ndarray_trivial(theta_new_np, labels=['vL', 'p0', 'p1', 'vR'])
 
-        # Combine legs for SVD: (vL.p0) and (p1.vR)
+        # 合并腿以进行SVD: (vL.p0) 和 (p1.vR)
         theta_combined = theta_new.combine_legs(
             [['vL', 'p0'], ['p1', 'vR']],
             new_axes=[0, 1],
             qconj=[+1, -1]
         )
 
-        # Set truncation parameters
+        # 设置截断参数
         trunc_params = None
         if truncate:
             trunc_params = {'chi_max': self.max_bond, 'svd_min': 1e-13}
 
-        # Write back via SVD
+        # 通过SVD写回
         self._mps.set_svd_theta(i, theta_combined, trunc_par=trunc_params)
 
-        # Normalize if requested (for Kraus branch results)
+        # 若需要则归一化（用于Kraus分支结果）
         if normalize:
             self._mps.norm = 1.0
 
     # ========================================================================
-    # Gate Operations
+    # 门操作
     # ========================================================================
 
     # ========================================================================
-    # Core API Methods (local only, no canonical_form sweeps)
+    # 核心API方法（仅局域，无 canonical_form 扫描）
     # ========================================================================
 
     def apply_bond_op(
@@ -153,32 +154,32 @@ class MPSState:
         truncate: bool = True,
     ) -> None:
         """
-        Apply two-site operator (unitary or non-unitary) via local update.
+        通过局域更新应用两格点算符（幺正或非幺正）。
 
-        Uses get_theta + set_svd_theta to avoid canonical_form() sweeps.
-        This is the primary method for applying any two-site gate.
+        使用 get_theta + set_svd_theta 来避免 canonical_form() 扫描。
+        这是应用任何两格点门的主要方法。
 
         Parameters
         ----------
         i : int
-            Left site index (applies to sites i and i+1)
+            左格点索引（作用于格点i和i+1）
         op : np.ndarray
-            Operator matrix of shape (d1*d2, d1*d2) or (d1, d2, d1, d2)
+            算符矩阵，形状为 (d1*d2, d1*d2) 或 (d1, d2, d1, d2)
         truncate : bool
-            Whether to truncate bond dimension
+            是否截断键维度
         """
         d1, d2 = self.d[i], self.d[i + 1]
 
-        # Reshape to 4D: (d1, d2, d1, d2)
+        # 重塑为4D: (d1, d2, d1, d2)
         op = np.asarray(op)
         if op.ndim == 2:
             op = op.reshape(d1 * d2, d1 * d2)
         op_4d = op.reshape(d1, d2, d1, d2)
 
-        # Create TeNPy Array with proper labels
+        # 创建带正确标签的TeNPy Array
         op_arr = Array.from_ndarray_trivial(op_4d, labels=['p0', 'p1', 'p0*', 'p1*'])
 
-        # Apply via local update
+        # 通过局域更新应用
         self._apply_two_site_op_local(i, op_arr, truncate=truncate, normalize=False)
 
     def apply_kraus_one_site(
@@ -188,63 +189,63 @@ class MPSState:
         rng: Optional[np.random.Generator] = None,
     ) -> int:
         """
-        Apply single-site Kraus channel via quantum trajectory.
+        通过量子轨迹应用单格点Kraus信道。
 
-        Samples one Kraus operator and applies it with normalization.
+        采样一个Kraus算符并归一化后应用。
 
         Parameters
         ----------
         site : int
-            Site index
+            格点索引
         kraus_ops : List[np.ndarray]
-            List of Kraus operators, each shape (d, d)
+            Kraus算符列表，每个形状为 (d, d)
         rng : np.random.Generator, optional
-            Random number generator
+            随机数生成器
 
         Returns
         -------
         int
-            Index of sampled Kraus operator
+            采样的Kraus算符索引
         """
         if rng is None:
             rng = np.random.default_rng()
 
         d = self.d[site]
 
-        # Get current site tensor
+        # 获取当前格点张量
         theta = self._mps.get_theta(site, n=1)  # Shape: (chiL, d, chiR)
         theta_np = theta.to_ndarray()
 
-        # Compute probabilities for each Kraus operator
+        # 计算每个Kraus算符的概率
         probs = []
         thetas_mu = []
 
         for K in kraus_ops:
             K = np.asarray(K).reshape(d, d)
-            # Apply K: K @ theta (contract over physical index)
+            # 应用K: K @ theta（在物理指标上收缩）
             K_theta = np.einsum('ij,ajb->aib', K, theta_np)
             p_mu = np.linalg.norm(K_theta) ** 2
             probs.append(p_mu)
             thetas_mu.append(K_theta)
 
-        # Normalize and sample
+        # 归一化并采样
         probs = np.array(probs)
         p_total = np.sum(probs)
 
         if p_total < 1e-15:
-            raise ValueError("Total probability is near zero - Kraus ops may be invalid")
+            raise ValueError("总概率接近零 - Kraus算符可能无效")
 
         probs = probs / p_total
         mu = rng.choice(len(kraus_ops), p=probs)
 
-        # Create normalized theta from selected branch
+        # 从选中分支创建归一化的theta
         theta_selected = thetas_mu[mu] / np.sqrt(probs[mu] * p_total)
 
-        # Convert to TeNPy Array and write back directly to the site tensor
-        # For single-site operation, we directly set the B tensor
+        # 转换为TeNPy Array并直接写回格点张量
+        # 对于单格点操作，直接设置B张量
         theta_arr = Array.from_ndarray_trivial(theta_selected, labels=['vL', 'p', 'vR'])
 
-        # Set the site tensor directly (no SVD needed for single site)
+        # 直接设置格点张量（单格点不需要SVD）
         self._mps.set_B(site, theta_arr, form='Th')
         self._mps.canonical_form_finite(renormalize=True)
 
@@ -257,61 +258,60 @@ class MPSState:
         rng: Optional[np.random.Generator] = None,
     ) -> int:
         """
-        Apply two-site Kraus channel via quantum trajectory.
+        通过量子轨迹应用两格点Kraus信道。
 
-        Samples one Kraus operator and applies it with normalization.
-        Alias for apply_two_site_kraus() for consistency with API naming.
+        采样一个Kraus算符并归一化后应用。
+        apply_two_site_kraus() 的别名，保持API命名一致性。
 
         Parameters
         ----------
         i : int
-            Left site index (applies to sites i and i+1)
+            左格点索引（作用于格点i和i+1）
         kraus_ops : List[np.ndarray]
-            List of Kraus operators, each shape (d1*d2, d1*d2) or (d1, d2, d1, d2)
+            Kraus算符列表，每个形状为 (d1*d2, d1*d2) 或 (d1, d2, d1, d2)
         rng : np.random.Generator, optional
-            Random number generator
+            随机数生成器
 
         Returns
         -------
         int
-            Index of sampled Kraus operator
+            采样的Kraus算符索引
         """
         return self.apply_two_site_kraus(i, kraus_ops, rng)
 
     def finalize_bin_pair(self, i: int) -> None:
         """
-        Freeze a measured bin pair to ensure linear complexity.
+        冻结已测量的bin对以确保线性复杂度。
 
-        After measurement, bins should not be accessed again. This method
-        ensures the bond dimension to the right of the pair is 1, effectively
-        decoupling them from the rest of the chain.
+        测量后，bin不应再被访问。此方法确保该对右侧的键维度为1，
+        从而有效地将它们与链的其余部分解耦。
 
         Parameters
         ----------
         i : int
-            Left site index of the bin pair (i, i+1)
+            bin对的左格点索引（i, i+1）
         """
-        # Get current theta for the bond to the right of site i+1
-        # If i+1 is the last site, there's nothing to do
+        # 获取格点i+1右侧键的当前theta
+        # 若i+1是最后一个格点，无需操作
         if i + 1 >= self.L - 1:
             return
 
-        # Force SVD with chi_max=1 to truncate the bond
+        # 强制SVD且chi_max=1以截断该键
         theta = self._mps.get_theta(i + 1, n=1)
         theta_np = theta.to_ndarray()
 
-        # Reshape to matrix and do SVD with only 1 singular value
+        # 重塑为矩阵并只保留1个奇异值的SVD
         chiL, d, chiR = theta_np.shape
         theta_mat = theta_np.reshape(chiL * d, chiR)
 
-        # SVD and keep only the largest singular value
+        # SVD并只保留最大奇异值
         U, s, Vh = np.linalg.svd(theta_mat, full_matrices=False)
 
-        # Reconstruct with only first singular value
+        # 仅用第一个奇异值重构
         theta_trunc = np.outer(U[:, 0] * s[0], Vh[0, :])
         theta_trunc = theta_trunc.reshape(chiL, d, 1)
 
-        # Convert back and set
+        # 转换回并设置
         theta_arr = Array.from_ndarray_trivial(theta_trunc, labels=['vL', 'p0', 'vR'])
         theta_combined = theta_arr.combine_legs(
             [['vL', 'p0'], ['vR']],
@@ -322,28 +322,28 @@ class MPSState:
         self._mps.set_svd_theta(i + 1, theta_combined, trunc_par={'chi_max': 1, 'svd_min': 1e-13})
 
     # ========================================================================
-    # Convenience Methods (backward compatibility)
+    # 便捷方法（向后兼容）
     # ========================================================================
 
     def apply_one_site_gate(self, site: int, gate: np.ndarray) -> None:
         """
-        Apply single-site unitary gate.
+        应用单格点幺正门。
 
         Parameters
         ----------
         site : int
-            Site index
+            格点索引
         gate : np.ndarray
-            Unitary matrix of shape (d, d)
+            幺正矩阵，形状为 (d, d)
         """
         d = self.d[site]
         gate = np.asarray(gate).reshape(d, d)
 
-        # Create TeNPy Array with proper labels for single-site gate
-        # Labels: ['p', 'p*'] for the physical legs (output, input)
+        # 创建带正确标签的TeNPy Array用于单格点门
+        # 标签: ['p', 'p*'] 用于物理腿（输出，输入）
         gate_arr = Array.from_ndarray_trivial(gate, labels=['p', 'p*'])
 
-        # Use TeNPy's apply_local_op with the Array object
+        # 使用TeNPy的apply_local_op与Array对象
         self._mps.apply_local_op(site, gate_arr, unitary=True)
 
     def apply_two_site_kraus(
@@ -353,39 +353,39 @@ class MPSState:
         rng: Optional[np.random.Generator] = None,
     ) -> int:
         """
-        Apply Kraus channel via quantum trajectory (Monte Carlo sampling).
+        通过量子轨迹（蒙特卡洛采样）应用Kraus信道。
 
-        For each Kraus operator K_mu:
-        1. Compute p_mu = ||K_mu @ theta||^2
-        2. Sample mu according to probabilities {p_mu}
-        3. Apply K_mu and normalize by sqrt(p_mu)
+        对每个Kraus算符 K_mu：
+        1. 计算 p_mu = ||K_mu @ theta||^2
+        2. 根据概率 {p_mu} 采样 mu
+        3. 应用 K_mu 并除以 sqrt(p_mu) 归一化
 
-        This is fully local and does not trigger canonical_form().
+        这是完全局域的，不会触发 canonical_form()。
 
         Parameters
         ----------
         site_left : int
-            Left site index
+            左格点索引
         kraus_ops : List[np.ndarray]
-            List of Kraus operators, each shape (d1*d2, d1*d2) or (d1, d2, d1, d2)
+            Kraus算符列表，每个形状为 (d1*d2, d1*d2) 或 (d1, d2, d1, d2)
         rng : np.random.Generator, optional
-            Random number generator
+            随机数生成器
 
         Returns
         -------
         int
-            Index of sampled Kraus operator
+            采样的Kraus算符索引
         """
         if rng is None:
             rng = np.random.default_rng()
 
         d1, d2 = self.d[site_left], self.d[site_left + 1]
 
-        # Get current theta
+        # 获取当前theta
         theta = self._mps.get_theta(site_left, n=2)
         theta_np = theta.to_ndarray()  # Shape: (chiL, d1, d2, chiR)
 
-        # Compute probabilities and resulting states for each Kraus operator
+        # 计算每个Kraus算符的概率和结果态
         probs = []
         thetas_mu = []
 
@@ -395,26 +395,26 @@ class MPSState:
                 K = K.reshape(d1 * d2, d1 * d2)
             K_4d = K.reshape(d1, d2, d1, d2)
 
-            # Apply K: contract K's input legs with theta's physical legs
+            # 应用K: 将K的输入腿与theta的物理腿收缩
             K_theta = np.einsum('ijkl,aklb->aijb', K_4d, theta_np)
             p_mu = np.linalg.norm(K_theta) ** 2
             probs.append(p_mu)
             thetas_mu.append(K_theta)
 
-        # Normalize and sample
+        # 归一化并采样
         probs = np.array(probs)
         p_total = np.sum(probs)
 
         if p_total < 1e-15:
-            raise ValueError("Total probability is near zero - Kraus ops may be invalid")
+            raise ValueError("总概率接近零 - Kraus算符可能无效")
 
         probs = probs / p_total
         mu = rng.choice(len(kraus_ops), p=probs)
 
-        # Create normalized theta from selected branch
+        # 从选中分支创建归一化的theta
         theta_selected = thetas_mu[mu] / np.sqrt(probs[mu] * p_total)
 
-        # Convert to TeNPy Array and write back
+        # 转换为TeNPy Array并写回
         theta_arr = Array.from_ndarray_trivial(theta_selected, labels=['vL', 'p0', 'p1', 'vR'])
         theta_combined = theta_arr.combine_legs(
             [['vL', 'p0'], ['p1', 'vR']],
@@ -430,15 +430,15 @@ class MPSState:
 
     def swap_sites(self, i: int) -> None:
         """
-        Swap adjacent sites i and i+1.
+        交换相邻格点i和i+1。
 
-        This exchanges both the tensor indices AND the local dimensions
-        (self.d), so that subsequent apply_bond_op calls use correct dimensions.
+        这会同时交换张量索引和局域维度（self.d），
+        使得后续的 apply_bond_op 调用使用正确的维度。
 
         Parameters
         ----------
         i : int
-            Left site index (swaps i and i+1)
+            左格点索引（交换i和i+1）
         """
         trunc_params = {'chi_max': self.max_bond, 'svd_min': 1e-13}
         self._mps.swap_sites(i, trunc_par=trunc_params)
@@ -449,94 +449,94 @@ class MPSState:
 
     def find_sites_by_dim(self, target_dim: int) -> List[int]:
         """
-        Find all sites with a specific local dimension.
+        查找具有特定局域维度的所有格点。
 
-        Useful for dynamically locating atoms (3D) or bins (18D) after SWAPs.
+        用于在SWAP后动态定位原子（3D）或bin（18D）。
 
         Parameters
         ----------
         target_dim : int
-            The local dimension to search for
+            要搜索的局域维度
 
         Returns
         -------
         List[int]
-            List of site indices with the target dimension
+            具有目标维度的格点索引列表
         """
         return [i for i, d in enumerate(self.d) if d == target_dim]
 
     # ========================================================================
-    # State Extraction
+    # 态提取
     # ========================================================================
 
     def get_reduced_density(self, sites: List[int]) -> np.ndarray:
         """
-        Get reduced density matrix for specified sites.
+        获取指定格点的约化密度矩阵。
 
-        Uses TeNPy's get_rho_segment() which correctly handles
-        Schmidt weights and gauge conditions.
+        使用TeNPy的get_rho_segment()，它能正确处理
+        施密特权重和规范条件。
         """
         rho_array = self._mps.get_rho_segment(sites)
         return rho_array.to_ndarray()
 
     def get_atom_state(self, system_site: int = 0) -> np.ndarray:
-        """Get atomic density matrix from system site."""
+        """从系统格点获取原子密度矩阵。"""
         return self.get_reduced_density([system_site])
 
     def expectation_value(self, observable: np.ndarray, site: int) -> float:
         """
-        Compute expectation value of an observable on a site.
+        计算某格点上可观测量期望值。
 
         Parameters
         ----------
         observable : np.ndarray
-            Observable matrix (d, d)
+            可观测量矩阵 (d, d)
         site : int
-            Site index
+            格点索引
 
         Returns
         -------
         float
-            Expectation value <O>
+            期望值 <O>
         """
         rho = self.get_reduced_density([site])
         return float(np.real(np.trace(observable @ rho)))
 
     # ========================================================================
-    # Properties and Utility Methods
+    # 属性和工具方法
     # ========================================================================
 
     @property
     def chi(self) -> List[int]:
-        """Bond dimensions."""
+        """键维度。"""
         return self._mps.chi.copy()
 
     def norm(self) -> float:
-        """Get state norm."""
+        """获取态的模长。"""
         return float(self._mps.norm)
 
     def get_bond_dimensions(self) -> List[int]:
-        """Get bond dimensions (alias for chi property)."""
+        """获取键维度（chi属性的别名）。"""
         return self.chi
 
     def test_sanity(self) -> bool:
-        """Run TeNPy's sanity check (verifies canonical form)."""
+        """运行TeNPy的健全性检查（验证规范形式）。"""
         return self._mps.test_sanity()
 
     def copy(self) -> 'MPSState':
-        """Create a deep copy."""
+        """创建深拷贝。"""
         new_state = MPSState(self.d.copy(), max_bond=self.max_bond)
         new_state._mps = self._mps.copy()
         return new_state
 
     def __repr__(self) -> str:
-        """String representation."""
+        """字符串表示。"""
         chi_str = str(self.get_bond_dimensions())
         return f"MPSState(L={self.L}, d={self.d}, chi={chi_str})"
 
 
 # ========================================================================
-# Factory Functions
+# 工厂函数
 # ========================================================================
 
 def create_timebin_mps(
@@ -546,20 +546,20 @@ def create_timebin_mps(
     max_bond: int = 100,
 ) -> MPSState:
     """
-    Create MPS for time-bin simulation.
+    创建时间仓仿真的MPS。
 
-    Structure: S - A1 - B1 - A2 - B2 - ... (system, then atom-photon bins)
+    结构：S - A1 - B1 - A2 - B2 - ... （系统，然后是原子-光子bin）
 
     Parameters
     ----------
     n_bins : int
-        Number of time bins
+        时间仓的数量
     system_dim : int
-        System (atom) Hilbert space dimension
+        系统（原子）希尔伯特空间维度
     bin_dim : int
-        Bin (photon) Hilbert space dimension
+        Bin（光子）希尔伯特空间维度
     max_bond : int
-        Maximum bond dimension
+        最大键维度
     """
     local_dims = [system_dim] + [bin_dim] * (2 * n_bins)
     return MPSState(local_dims, max_bond=max_bond)

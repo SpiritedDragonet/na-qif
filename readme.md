@@ -40,7 +40,7 @@ atom_sim/
 │   ├── gates.py                  # All unitary gate factories
 │   │   ├── emission_gate()       # U_emit: atom-photon coupling (54x54)
 │   │   ├── qfc_gate()            # U_qfc: 780→1517 conversion (18x18)
-│   │   ├── bs_gate()             # U_BS: 50/50 beam splitter (324x324)
+│   │   ├── bs_gate_bin18()       # U_BS: 50/50 beam splitter (324x324)
 │   │   ├── jones_gate()          # U_pol: Jones rotation (18x18)
 │   │   ├── jones_gate_from_array() # U_pol from 2x2 Jones matrix
 │   │   └── swap_gate()           # W_swap: SWAP gate

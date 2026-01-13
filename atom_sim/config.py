@@ -1,8 +1,8 @@
+# -*- coding: utf-8 -*-
 """
-Parameter Configuration Classes
+参数配置类
 
-This module provides dataclasses for all physical parameters
-used in the time-bin MPS simulation.
+本模块提供时间仓MPS仿真中使用的所有物理参数的数据类。
 """
 
 from dataclasses import dataclass, field
@@ -13,49 +13,49 @@ import numpy as np
 @dataclass
 class TimeGrid:
     """
-    Time discretization parameters.
+    时间离散化参数。
 
     Attributes
     ----------
     dt : float
-        Time bin width (seconds)
+        时间仓宽度（秒）
     N : int
-        Number of time bins
+        时间仓的数量
     """
     dt: float
     N: int
 
     @property
     def t(self) -> np.ndarray:
-        """Array of time bin centers: t[n] = n * dt."""
+        """时间仓中心点数组：t[n] = n * dt"""
         return np.arange(self.N) * self.dt
 
     @property
     def total_time(self) -> float:
-        """Total time duration: N * dt."""
+        """总时间长度：N * dt"""
         return self.N * self.dt
 
 
 @dataclass
 class EmitParams:
     """
-    Emission gate parameters.
+    发射门参数。
 
     Attributes
     ----------
     gamma_A : float or Callable
-        Emission rate for atom A (constant or function of time)
+        原子A的发射率（常数或时间函数）
     gamma_B : float or Callable
-        Emission rate for atom B (constant or function of time)
+        原子B的发射率（常数或时间函数）
     Alpha_A : np.ndarray
-        2x2 polarization mapping matrix for atom A
+        原子A的2x2偏振映射矩阵
         [[alpha_H+, alpha_H-], [alpha_V+, alpha_V-]]
     Alpha_B : np.ndarray
-        2x2 polarization mapping matrix for atom B
+        原子B的2x2偏振映射矩阵
     phi_A : float
-        Overall phase for atom A emission
+        原子A发射的整体相位
     phi_B : float
-        Overall phase for atom B emission
+        原子B发射的整体相位
     """
     gamma_A: float = 0.1
     gamma_B: float = 0.1
@@ -65,13 +65,13 @@ class EmitParams:
     phi_B: float = 0.0
 
     def get_gamma_A(self, t: float) -> float:
-        """Get emission rate for atom A at time t."""
+        """获取时刻t时原子A的发射率"""
         if callable(self.gamma_A):
             return self.gamma_A(t)
         return float(self.gamma_A)
 
     def get_gamma_B(self, t: float) -> float:
-        """Get emission rate for atom B at time t."""
+        """获取时刻t时原子B的发射率"""
         if callable(self.gamma_B):
             return self.gamma_B(t)
         return float(self.gamma_B)
@@ -80,18 +80,18 @@ class EmitParams:
 @dataclass
 class QFCParams:
     """
-    Quantum Frequency Conversion parameters.
+    量子频率转换参数。
 
     Attributes
     ----------
     theta_H : float
-        Conversion angle for H polarization (sin²(theta) = conversion prob)
+        H偏振的转换角（sin²(theta) = 转换概率）
     theta_V : float
-        Conversion angle for V polarization
+        V偏振的转换角
     eta_ins_H : float
-        Insertion loss for H polarization
+        H偏振的插入损耗
     eta_ins_V : float
-        Insertion loss for V polarization
+        V偏振的插入损耗
     """
     theta_H: float = 0.0
     theta_V: float = 0.0
@@ -102,32 +102,32 @@ class QFCParams:
 @dataclass
 class FiberParams:
     """
-    Fiber/optical channel parameters.
+    光纤/光学信道参数。
 
     Attributes
     ----------
     eta_fiber_A : float
-        Fiber transmissivity for arm A
+        A臂的光纤透过率
     eta_fiber_B : float
-        Fiber transmissivity for arm B
+        B臂的光纤透过率
     Jones_A : np.ndarray
-        2x2 Jones matrix for arm A
+        A臂的2x2琼斯矩阵
     Jones_B : np.ndarray
-        2x2 Jones matrix for arm B
+        B臂的2x2琼斯矩阵
     PMD_A : float
-        PMD delay for arm A (seconds)
+        A臂的PMD延迟（秒）
     PMD_B : float
-        PMD delay for arm B (seconds)
+        B臂的PMD延迟（秒）
     Rin_A : np.ndarray
-        PSP input rotation for arm A
+        A臂的PSP输入旋转矩阵
     Rout_A : np.ndarray
-        PSP output rotation for arm A
+        A臂的PSP输出旋转矩阵
     Rin_B : np.ndarray
-        PSP input rotation for arm B
+        B臂的PSP输入旋转矩阵
     Rout_B : np.ndarray
-        PSP output rotation for arm B
+        B臂的PSP输出旋转矩阵
     delta_bins : int
-        Relative bin delay between arms (B relative to A)
+        两臂之间的相对仓延迟（B相对于A）
     """
     eta_fiber_A: float = 1.0
     eta_fiber_B: float = 1.0
@@ -145,27 +145,27 @@ class FiberParams:
 @dataclass
 class DetParams:
     """
-    Detection parameters.
+    探测参数。
 
     Attributes
     ----------
     eta_det : float
-        Detection efficiency
+        探测效率
     p_dark : float
-        Dark count probability per detector per bin
+        每个探测器每个仓的暗计数概率
     success_patterns : List[Tuple[int, int, int, int]]
-        List of detector click patterns that count as success.
-        Each tuple is (d1_H, d1_V, d2_H, d2_V).
+        计为成功的探测器点击模式列表。
+        每个元组为 (d1_H, d1_V, d2_H, d2_V)
     pattern_to_bell : Dict[Tuple[int, int, int, int], str]
-        Maps each success pattern to the Bell state it projects onto.
-        Values: 'phi_plus', 'phi_minus', 'psi_plus', 'psi_minus'
+        将每个成功模式映射到其投影的贝尔态。
+        值：'phi_plus', 'phi_minus', 'psi_plus', 'psi_minus'
     pattern_to_correction : Dict[Tuple[int, int, int, int], str]
-        Maps each success pattern to the required Pauli correction.
-        Values: 'I', 'X', 'Y', 'Z'
+        将每个成功模式映射到所需的泡利校正。
+        值：'I', 'X', 'Y', 'Z'
 
     Examples
     --------
-    >>> # Partial BSM: success on (1H,2V) or (1V,2H) clicks
+    >>> # 部分BSM：在(1H,2V)或(1V,2H)点击时成功
     >>> params = DetParams(
     ...     success_patterns=[(1,0,0,1), (0,1,1,0)],
     ...     pattern_to_bell={(1,0,0,1): 'psi_minus', (0,1,1,0): 'psi_plus'},
@@ -179,33 +179,33 @@ class DetParams:
     pattern_to_correction: Dict[Tuple[int, int, int, int], str] = field(default_factory=dict)
 
     def is_success(self, pattern: Tuple[int, int, int, int]) -> bool:
-        """Check if a detector pattern is a success."""
+        """检查探测器模式是否为成功模式"""
         return pattern in self.success_patterns
 
     def get_bell_state(self, pattern: Tuple[int, int, int, int]) -> Optional[str]:
-        """Get the Bell state for a success pattern."""
+        """获取成功模式对应的贝尔态"""
         return self.pattern_to_bell.get(pattern)
 
     def get_correction(self, pattern: Tuple[int, int, int, int]) -> Optional[str]:
-        """Get the Pauli correction for a success pattern."""
+        """获取成功模式所需的泡利校正"""
         return self.pattern_to_correction.get(pattern)
 
 
 @dataclass
 class SimParams:
     """
-    Overall simulation parameters.
+    整体仿真参数。
 
     Attributes
     ----------
     n_traj : int
-        Number of trajectories to run
+        运行的轨迹数量
     chi_max : int
-        Maximum bond dimension for MPS
+        MPS的最大键维度
     svd_min : float
-        SVD cutoff threshold
+        SVD截断阈值
     seed : Optional[int]
-        Random seed for reproducibility
+        用于可重复性的随机种子
     """
     n_traj: int = 1000
     chi_max: int = 100

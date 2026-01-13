@@ -1,7 +1,8 @@
+# -*- coding: utf-8 -*-
 """
-Simulation Module
+仿真模块
 
-Provides trajectory execution and multi-trial statistics.
+提供轨迹执行和多试验统计。
 """
 
 from .trajectory import (

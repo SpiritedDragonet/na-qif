@@ -1,15 +1,15 @@
+# -*- coding: utf-8 -*-
 """
-Test: Atom Emission → Time-Bin Wave Packet (NO QFC, just atomic emission)
+测试：原子发射 → 时间仓波包（无 QFC，仅原子发射）
 
-Debug test to verify emission only creates photons in 780nm subspace.
+调试测试，验证发射仅在 780nm 子空间产生光子。
 """
 
 import sys
 from pathlib import Path
 import numpy as np
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# 将父目录添加到路径
 
 from atom_sim.core.mps import MPSState
 from atom_sim.config import TimeGrid, EmitParams, QFCParams
@@ -19,13 +19,13 @@ from atom_sim.visualization import telecom_ops_bin18, plot_bin_state_heatmap
 
 def test_emission_wavepacket():
     """
-    Test emission WITHOUT QFC to verify physics is correct.
+    不使用 QFC 的发射测试，以验证物理过程正确。
 
-    The emission should ONLY create photons in 780nm subspace,
-    with ZERO leakage to 1517nm subspace (no fiber yet!).
+    发射应仅在 780nm 子空间产生光子，
+    对 1517nm 子空间的泄漏应为零（还没有光纤！）。
     """
     print("=" * 70)
-    print("Test: Atom Emission → 780nm Wave Packet (NO QFC)")
+    print("测试：原子发射 → 780nm 波包（无 QFC）")
     print("=" * 70)
 
     # Parameters
@@ -33,62 +33,62 @@ def test_emission_wavepacket():
     dt_ns = 0.2  # High time resolution (0.2ns per bin)
     chi_max = 50  # Higher bond dimension for more accurate simulation
 
-    print(f"\nParameters:")
+    print(f"\n参数:")
     print(f"  n_bins = {n_bins}")
-    print(f"  dt = {dt_ns} ns (high resolution)")
-    print(f"  Total time = {n_bins * dt_ns:.1f} ns")
+    print(f"  dt = {dt_ns} ns（高分辨率）")
+    print(f"  总时间 = {n_bins * dt_ns:.1f} ns")
     print(f"  chi_max = {chi_max}")
 
-    # Time grid (in nanoseconds)
+    # 时间网格（纳秒）
     time_grid = TimeGrid(dt=dt_ns, N=n_bins)
-    t = time_grid.t  # Time in ns
+    t = time_grid.t  # 时间（ns）
 
-    # Gaussian emission rate profile (width ~28ns FWHM)
-    t0 = n_bins * dt_ns / 2  # Peak at center (20ns)
-    sigma = 12.0  # Width parameter: FWHM ≈ 2.35*sigma ≈ 28ns
-    gamma_peak = 0.2  # Peak emission rate (single-step prob ≈ 4%)
+    # 高斯发射率分布（宽度 ~28ns FWHM）
+    t0 = n_bins * dt_ns / 2  # 中心峰值（20ns）
+    sigma = 12.0  # 宽度参数: FWHM ≈ 2.35*sigma ≈ 28ns
+    gamma_peak = 0.2  # 峰值发射率（单步概率 ≈ 4%）
 
-    # Create time-dependent emission rate
+    # 创建时间相关的发射率
     gamma_values = gamma_peak * np.exp(-0.5 * ((t - t0) / sigma) ** 2)
 
-    print(f"\nEmission parameters:")
-    print(f"  Gaussian pulse: t0={t0:.1f}ns, sigma={sigma:.1f}ns")
-    print(f"  Peak gamma = {gamma_peak} (single-step prob ≈ {gamma_peak * dt_ns:.3f})")
-    print(f"  Expected FWHM ≈ {2.35 * sigma:.1f} ns")
+    print(f"\n发射参数:")
+    print(f"  高斯脉冲: t0={t0:.1f}ns, sigma={sigma:.1f}ns")
+    print(f"  峰值 gamma = {gamma_peak}（单步概率 ≈ {gamma_peak * dt_ns:.3f}）")
+    print(f"  预期 FWHM ≈ {2.35 * sigma:.1f} ns")
 
-    # Print gamma values at some bins for verification
+    # 打印某些仓的 gamma 值以供验证
     peak_idx = np.argmin(np.abs(t - t0))
-    print(f"  Gamma at peak (t={t[peak_idx]:.1f}ns): {gamma_values[peak_idx]:.3f}")
+    print(f"  峰值处 Gamma（t={t[peak_idx]:.1f}ns）: {gamma_values[peak_idx]:.3f}")
 
-    # Simple H/V mapping (no entanglement for debugging)
+    # 简单的 H/V 映射（调试时不产生纠缠）
     Alpha = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=complex)
-    print(f"  Alpha = simple (sigma+ -> H, sigma- -> V)")
+    print(f"  Alpha = 简单（sigma+ -> H, sigma- -> V）")
 
-    print(f"\nNOTE: NOT applying QFC - only testing atomic emission to 780nm")
+    print(f"\n注意：不应用 QFC - 仅测试到 780nm 的原子发射")
 
     # ========================================================================
-    # Initialize MPS
+    # 初始化 MPS
     # ========================================================================
 
-    print(f"\nInitializing MPS...")
-    local_dims = [3] + [18] * n_bins  # atom + n_bins
-    init_state = [2] + [0] * n_bins  # |e> + vacuum
+    print(f"\n初始化 MPS...")
+    local_dims = [3] + [18] * n_bins  # 原子 + n_bins
+    init_state = [2] + [0] * n_bins  # |e> + 真空
 
     mps = MPSState(local_dims=local_dims, init_state=init_state, max_bond=chi_max)
 
     print(f"  MPS: L={mps.L}, d={mps.d[:3]}... chi={mps.get_bond_dimensions()[:3]}...")
 
     # ========================================================================
-    # Bin space structure explanation
+    # 仓空间结构说明
     # ========================================================================
 
-    print(f"\nBin space structure (18D = 780(3D) x 1517(6D)):")
-    print(f"  780 basis: |vac>, |H>, |V>")
-    print(f"  1517 basis: |vac>, |H>, |V>, |2H>, |2V>, |HV>")
-    print(f"  Index formula: index = i_780 * 6 + i_1517")
-    print(f"    780=vac (i_780=0): indices 0-5")
-    print(f"    780=H   (i_780=1): indices 6-11")
-    print(f"    780=V   (i_780=2): indices 12-17")
+    print(f"\n仓空间结构（18D = 780(3D) x 1517(6D）:")
+    print(f"  780 基矢: |vac>, |H>, |V>")
+    print(f"  1517 基矢: |vac>, |H>, |V>, |2H>, |2V>, |HV>")
+    print(f"  索引公式: index = i_780 * 6 + i_1517")
+    print(f"    780=vac (i_780=0): 索引 0-5")
+    print(f"    780=H   (i_780=1): 索引 6-11")
+    print(f"    780=V   (i_780=2): 索引 12-17")
 
     # ========================================================================
     # SWAP传送带: 正确的time-bin发射模型
@@ -112,8 +112,8 @@ def test_emission_wavepacket():
     #
     # ========================================================================
 
-    print(f"\nProcessing {n_bins} bins with SWAP conveyor belt...")
-    print(f"(Each bin is coupled exactly once, no re-absorption)")
+    print(f"\n使用 SWAP 传送带处理 {n_bins} 个仓...")
+    print(f"（每个仓只耦合一次，无再吸收）")
 
     # 存储每个bin的发射概率
     # per_bin_prob[n] = 第n个bin的780nm光子占据概率
@@ -169,16 +169,16 @@ def test_emission_wavepacket():
             mps.swap_sites(atom_position)  # 交换atom_position和atom_position+1
             atom_position += 1  # 原子现在移动到了下一个位置
 
-    print(f"  Complete!")
-    print(f"  Final atom position: {atom_position}")
-    print(f"  Final chi: {mps.get_bond_dimensions()}")
-    print(f"  Norm: {mps.norm():.6f}")
+    print(f"  完成！")
+    print(f"  最终原子位置: {atom_position}")
+    print(f"  最终 chi: {mps.get_bond_dimensions()}")
+    print(f"  归一化: {mps.norm():.6f}")
 
     # ========================================================================
     # 1517子空间泄漏检查
     # ========================================================================
     # 由于每个bin只被作用一次，没有"再吸收"，因此可以直接检查所有bins
-    print(f"\n1517 subspace leakage check:")
+    print(f"\n1517 子空间泄漏检查:")
 
     # 检查所有bins的1517占据（应该全为零）
     # 注意：经过SWAP传送带后，原子移到了最后，所以bins在sites 0 到 n_bins-1
@@ -201,11 +201,11 @@ def test_emission_wavepacket():
             p_1517_V = rho_bin[2, 2].real + rho_bin[8, 8].real + rho_bin[14, 14].real
             total_1517_prob += p_1517_H + p_1517_V
 
-    print(f"  Total 1517 probability across all bins: {total_1517_prob:.6e}")
+    print(f"  所有仓的总 1517 概率: {total_1517_prob:.6e}")
     if total_1517_prob > 1e-10:
-        print(f"  ERROR: Non-zero 1517 probability detected!")
+        print(f"  错误：检测到非零 1517 概率！")
     else:
-        print(f"  OK: No leakage to 1517 subspace (as expected)")
+        print(f"  OK：无 1517 子空间泄漏（符合预期）")
 
     # ========================================================================
     # Wave Packet Analysis (780nm subspace)
@@ -220,7 +220,7 @@ def test_emission_wavepacket():
     # ========================================================================
 
     print("\n" + "=" * 70)
-    print("Wave Packet Analysis (780nm subspace)")
+    print("波包分析（780nm 子空间）")
     print("=" * 70)
 
     # 计算累积概率（前n个bins的总发射概率）
@@ -231,29 +231,29 @@ def test_emission_wavepacket():
     peak_time = t[peak_idx]
     peak_prob = per_bin_prob_total[peak_idx]
 
-    print(f"\n780nm single-photon probability:")
-    print(f"  Total emission: {total_prob:.6f}")
-    print(f"  Peak per-bin probability: {peak_prob:.6f} at bin {peak_idx + 1} (t={peak_time:.1f}ns)")
+    print(f"\n780nm 单光子概率:")
+    print(f"  总发射: {total_prob:.6f}")
+    print(f"  峰值单仓概率: {peak_prob:.6f} 位于仓 {peak_idx + 1}（t={peak_time:.1f}ns）")
 
     # 打印gamma峰值附近的值
     gamma_peak_idx = np.argmax(gamma_values)
-    print(f"\n  Around gamma peak (bin {gamma_peak_idx + 1}, t={t[gamma_peak_idx]:.1f}ns):")
+    print(f"\n  Gamma 峰值附近（仓 {gamma_peak_idx + 1}, t={t[gamma_peak_idx]:.1f}ns）:")
     for i in range(max(0, gamma_peak_idx - 2), min(n_bins, gamma_peak_idx + 3)):
-        print(f"    Bin {i + 1} (t={t[i]:.1f}ns): gamma={gamma_values[i]:.3f}, "
+        print(f"    仓 {i + 1}（t={t[i]:.1f}ns）: gamma={gamma_values[i]:.3f}, "
               f"per_bin={per_bin_prob_total[i]:.6f}")
 
     # 打印18-25ns区间的详细值
-    print(f"\n  Detailed values (t=18ns to 25ns):")
+    print(f"\n  详细值（t=18ns 到 25ns）:")
     for i in range(n_bins):
         if 18 <= t[i] <= 25:
-            print(f"    Bin {i + 1} (t={t[i]:.1f}ns): gamma={gamma_values[i]:.6f}, "
+            print(f"    仓 {i + 1}（t={t[i]:.1f}ns）: gamma={gamma_values[i]:.6f}, "
                   f"per_bin={per_bin_prob_total[i]:.6f}, H={per_bin_prob_H[i]:.6f}, V={per_bin_prob_V[i]:.6f}")
 
     # ========================================================================
     # 可视化
     # ========================================================================
 
-    print("\nPlotting results...")
+    print("\n绘制结果...")
 
     import matplotlib.pyplot as plt
 
@@ -262,40 +262,40 @@ def test_emission_wavepacket():
     # 左图: 每个bin的发射概率（柱状图）
     # 这才是正确的"time-bin波包"表示！
     ax = axes[0]
-    ax.bar(t - dt_ns/2, per_bin_prob_total, width=dt_ns, alpha=0.7, label='Total', color='purple')
-    ax.bar(t - dt_ns/2, per_bin_prob_H, width=dt_ns, alpha=0.5, label='H pol', color='blue')
-    ax.bar(t - dt_ns/2, per_bin_prob_V, width=dt_ns, alpha=0.5, label='V pol', color='red', bottom=per_bin_prob_H)
+    ax.bar(t - dt_ns/2, per_bin_prob_total, width=dt_ns, alpha=0.7, label='总计', color='purple')
+    ax.bar(t - dt_ns/2, per_bin_prob_H, width=dt_ns, alpha=0.5, label='H 偏振', color='blue')
+    ax.bar(t - dt_ns/2, per_bin_prob_V, width=dt_ns, alpha=0.5, label='V 偏振', color='red', bottom=per_bin_prob_H)
     # 叠加gamma轮廓用于对比
     ax2 = ax.twinx()
-    ax2.plot(t, gamma_values, ':', color='gray', alpha=0.5, label='Gamma profile')
-    ax2.set_ylabel('Gamma (emission rate)')
-    ax.set_xlabel('Time (ns)')
-    ax.set_ylabel('Probability per bin')
-    ax.set_title('780nm Emission per Time Bin (SWAP Conveyor Belt)')
+    ax2.plot(t, gamma_values, ':', color='gray', alpha=0.5, label='Gamma 轮廓')
+    ax2.set_ylabel('Gamma（发射率）')
+    ax.set_xlabel('时间')
+    ax.set_ylabel('每仓概率')
+    ax.set_title('780nm 每时间仓发射（SWAP 传送带）')
     ax.legend(loc='upper left')
     ax.grid(True, alpha=0.3)
 
     # 右图: 累积发射概率
     ax = axes[1]
-    ax.plot(t, cumulative_prob, '-', linewidth=2, label='Cumulative', color='purple')
-    ax.set_xlabel('Time (ns)')
-    ax.set_ylabel('Cumulative probability')
-    ax.set_title('Cumulative Emission Probability')
+    ax.plot(t, cumulative_prob, '-', linewidth=2, label='累积', color='purple')
+    ax.set_xlabel('时间')
+    ax.set_ylabel('累积概率')
+    ax.set_title('累积发射概率')
     ax.grid(True, alpha=0.3)
     ax.legend()
 
     plt.tight_layout()
     plt.savefig('test_emission_wavepacket.png', dpi=100)
-    print("  Saved to: test_emission_wavepacket.png")
+    print("  已保存到: test_emission_wavepacket.png")
 
     # ========================================================================
-    # Bin State Heatmap: 18个直积态 (780 × 1517)
+    # 仓状态热图：18 个直积态 (780 × 1517)
     # ========================================================================
     # 780(3D) × 1517(6D) = 18D
     # 780态: |vac>, |H>, |V> (单光子)
     # 1517态: |vac>, |H>, |V>, |2H>, |2V>, |HV> (最多双光子)
 
-    print("  Generating bin state heatmap...")
+    print("  生成仓状态热图...")
 
     import matplotlib as mpl
     mpl.rcParams['image.interpolation'] = 'nearest'  # 无抗锯齿
@@ -313,66 +313,66 @@ def test_emission_wavepacket():
         arm='A',
         n_bins=n_bins,
         time_grid=time_grid,
-        group_by='780',  # 按780态分组 (vac/H/V)
+        group_by='780',  # 按780态分组
         vmax=vmax_scale,  # 设置合适的vmax以显示发射态的变化
         figsize=(18, 10),
         ax=ax,
         atom_at_end=True,  # SWAP传送带后原子在末尾
     )
-    ax.set_title(f'Bin State Probabilities - 18 States (780(3D) x 1517(6D)) - vmax={vmax_scale:.3f}', fontsize=12)
+    ax.set_title(f'仓状态概率 - 18 个态（780(3D) x 1517(6D））- vmax={vmax_scale:.3f}', fontsize=12)
 
     # 调整布局：为左侧y轴标签、顶部x轴和右侧colorbar留出空间
     plt.subplots_adjust(left=0.12, right=0.88, top=0.92, bottom=0.08)
 
     plt.savefig('test_emission_heatmap.png', dpi=150, bbox_inches='tight')
-    print("  Heatmap saved to: test_emission_heatmap.png")
+    print("  热图已保存到: test_emission_heatmap.png")
 
     # ========================================================================
-    # Consistency checks
+    # 一致性检查
     # ========================================================================
 
     print("\n" + "=" * 70)
-    print("Consistency Checks")
+    print("一致性检查")
     print("=" * 70)
 
-    # Check atom state
+    # 检查原子状态
     # 注意：经过SWAP传送带后，原子从site 0移到了site 199
     rho_atom = mps.get_reduced_density([atom_position])
     p_excited = rho_atom[2, 2].real
     p_g0 = rho_atom[0, 0].real
     p_g1 = rho_atom[1, 1].real
 
-    print(f"\nAtomic state (at site {atom_position}):")
+    print(f"\n原子状态（位于 site {atom_position}）:")
     print(f"  P(|e>) = {p_excited:.6f}")
     print(f"  P(|0>) = {p_g0:.6f}")
     print(f"  P(|1>) = {p_g1:.6f}")
-    print(f"  Total: {p_excited + p_g0 + p_g1:.6f}")
+    print(f"  总计: {p_excited + p_g0 + p_g1:.6f}")
 
-    # Expected total emission probability (sum over all bins)
-    # For small angles: p_emit ~ gamma * dt, but this is only approximation
-    # Since atom decays, actual probability saturates at 1
-    print(f"\nWave packet statistics:")
-    print(f"  Total emission probability: {total_prob:.3f}")
-    print(f"  Peak bin: {peak_idx + 1} (t={t[peak_idx]:.1f}ns)")
-    print(f"  Peak value: {peak_prob:.3f}")
+    # 预期总发射概率（所有仓求和）
+    # 对于小角度：p_emit ~ gamma * dt，但这只是近似
+    # 由于原子衰减，实际概率饱和于 1
+    print(f"\n波包统计:")
+    print(f"  总发射概率: {total_prob:.3f}")
+    print(f"  峰值仓: {peak_idx + 1}（t={t[peak_idx]:.1f}ns）")
+    print(f"  峰值: {peak_prob:.3f}")
 
-    # Check if we have mainly single-photon or multi-photon
+    # 检查主要是单光子还是多光子
     if total_prob > 1.1:
         multi_photon = total_prob - 1.0
-        print(f"  Multi-photon probability: ~{multi_photon:.3f}")
+        print(f"  多光子概率: ~{multi_photon:.3f}")
     elif total_prob < 0.9:
-        print(f"  Warning: Emission probability is low")
+        print(f"  警告：发射概率较低")
 
-    # Wave packet width (FWHM approximation)
+    # 波包宽度（FWHM 近似）
     # 对per_bin概率计算FWHM
     threshold = peak_prob / 2
     above_threshold = per_bin_prob_total > threshold
     if np.any(above_threshold):
         fwhm = above_threshold.sum() * dt_ns
-        print(f"  Wave packet FWHM: ~{fwhm:.1f} ns")
+        print(f"  波包 FWHM: ~{fwhm:.1f} ns")
 
     print("\n" + "=" * 70)
-    print("Test Complete!")
+    print("测试完成！")
     print("=" * 70)
 
     plt.show()

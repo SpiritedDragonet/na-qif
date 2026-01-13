@@ -1,10 +1,11 @@
+# -*- coding: utf-8 -*-
 """
-Kraus Channels for Non-Unitary Evolution
+非幺正演化的Kraus信道
 
-This module provides Kraus operator sets for various quantum channels:
-- Amplitude damping (fiber loss)
-- Detection POVM (on/off measurement)
-- Atomic dephasing
+本模块提供各种量子信道的Kraus算符集：
+- 振幅阻尼（光纤损耗）
+- 探测POVM（开/关测量）
+- 原子退相干
 """
 
 from typing import List, Tuple
@@ -19,36 +20,36 @@ def loss_channel_both_subspaces(
     eta_V_1517: float
 ) -> List[np.ndarray]:
     """
-    Combined loss channel acting on both 780 and 1517 subspaces.
+    作用于780和1517两个子空间的组合损耗信道。
 
-    For QFC applications: 780nm channel typically has eta_780=0 (100% filtered),
-    while 1517nm channel has normal transmission loss.
+    用于QFC应用：780nm通道通常 eta_780=0（100%过滤），
+    而1517nm通道具有正常的传输损耗。
 
-    The Kraus operators are tensor products: K_780^(k) ⊗ K_1517^(j)
+    Kraus算符是张量积：K_780^(k) ⊗ K_1517^(j)
 
     Parameters
     ----------
     eta_780 : float
-        Transmissivity for 780nm subspace (0 = 100% loss/filtered)
+        780nm子空间的透过率（0 = 100%损耗/过滤）
     eta_H_1517 : float
-        Transmissivity for 1517nm H polarization
+        1517nm H偏振的透过率
     eta_V_1517 : float
-        Transmissivity for 1517nm V polarization
+        1517nm V偏振的透过率
 
     Returns
     -------
     List[np.ndarray]
-        List of Kraus operators acting on 18D bin space
+        作用于18D bin空间的Kraus算符列表
     """
-    # Get Kraus operators for each subspace (NOT embedded)
-    K_780_list = loss_channel_780_general(eta_780)  # 3x3 matrices
-    K_1517_list = _loss_channel_1517_raw(eta_H_1517, eta_V_1517)  # 6x6 matrices
+    # 获取每个子空间的Kraus算符（未嵌入）
+    K_780_list = loss_channel_780_general(eta_780)  # 3x3 矩阵
+    K_1517_list = _loss_channel_1517_raw(eta_H_1517, eta_V_1517)  # 6x6 矩阵
 
-    # Form all tensor product combinations
+    # 构成所有张量积组合
     K_combined = []
     for K_780 in K_780_list:
         for K_1517 in K_1517_list:
-            # K_780 is (3,3), K_1517 is (6,6), result is (18,18)
+            # K_780 是 (3,3), K_1517 是 (6,6), 结果是 (18,18)
             K_combined.append(np.kron(K_780, K_1517))
 
     return K_combined
@@ -56,21 +57,21 @@ def loss_channel_both_subspaces(
 
 def _loss_channel_1517_raw(eta_H: float, eta_V: float) -> List[np.ndarray]:
     """
-    Raw 1517nm loss channel (6x6 matrices, NOT embedded into 18D).
+    原始1517nm损耗信道（6x6矩阵，未嵌入18D）。
 
-    This is an internal function used by loss_channel_both_subspaces.
+    这是loss_channel_both_subspaces使用的内部函数。
 
     Parameters
     ----------
     eta_H : float
-        Transmissivity for H polarization
+        H偏振的透过率
     eta_V : float
-        Transmissivity for V polarization
+        V偏振的透过率
 
     Returns
     -------
     List[np.ndarray]
-        List of 6x6 Kraus operators acting on 1517 subspace only
+        仅作用于1517子空间的6x6 Kraus算符列表
     """
     K_list_1517 = []
 
@@ -105,60 +106,60 @@ def _loss_channel_1517_raw(eta_H: float, eta_V: float) -> List[np.ndarray]:
 
             K_list_1517.append(K)
 
-    # Remove all-zero operators
+    # 移除全零算符
     K_list_1517 = [K for K in K_list_1517 if np.any(K != 0)]
     return K_list_1517
 
 
 def loss_channel_780_general(eta: float) -> List[np.ndarray]:
     """
-    General loss channel for 780nm subspace (up to 1 photon per mode).
+    780nm子空间的通用损耗信道（每个模式最多1个光子）。
 
-    For eta=0: 100% loss (3 Kraus operators: |vac><vac|, |vac><H|, |vac><V|)
-    For eta=1: no loss (K_0 = I)
+    对于eta=0：100%损耗（3个Kraus算符：|vac><vac|, |vac><H|, |vac><V|）
+    对于eta=1：无损耗（K_0 = I）
 
     Parameters
     ----------
     eta : float
-        Transmissivity (0 <= eta <= 1)
+        透过率 (0 <= eta <= 1)
 
     Returns
     -------
     List[np.ndarray]
-        Kraus operators for 780 subspace (3x3 matrices)
+        780子空间的Kraus算符（3x3矩阵）
     """
-    # Basis: |vac>, |H>, |V>
+    # 基：|vac>, |H>, |V>
 
     K_list = []
 
     if eta == 0.0:
-        # 100% loss: 3 Kraus operators
-        # K_0 = |vac><vac| (vacuum stays vacuum)
+        # 100%损耗：3个Kraus算符
+        # K_0 = |vac><vac| （真空保持真空）
         K0 = np.zeros((3, 3), dtype=complex)
         K0[0, 0] = 1.0
         K_list.append(K0)
 
-        # K_1 = |vac><H| (H photon lost -> vacuum)
+        # K_1 = |vac><H| （H光子损耗 -> 真空）
         K1 = np.zeros((3, 3), dtype=complex)
         K1[0, 1] = 1.0
         K_list.append(K1)
 
-        # K_2 = |vac><V| (V photon lost -> vacuum)
+        # K_2 = |vac><V| （V光子损耗 -> 真空）
         K2 = np.zeros((3, 3), dtype=complex)
         K2[0, 2] = 1.0
         K_list.append(K2)
     elif eta == 1.0:
-        # No loss: identity
+        # 无损耗：单位矩阵
         K_list.append(np.eye(3, dtype=complex))
     else:
-        # Partial loss: K_0 (no loss) and K_H, K_V (loss per mode)
+        # 部分损耗：K_0（无损耗）和K_H、K_V（每个模式的损耗）
         K0 = np.zeros((3, 3), dtype=complex)
         K0[0, 0] = 1.0
         K0[1, 1] = np.sqrt(eta)
         K0[2, 2] = np.sqrt(eta)
         K_list.append(K0)
 
-        # Loss operators for each mode
+        # 每个模式的损耗算符
         loss_amp = np.sqrt(1 - eta)
 
         K_H = np.zeros((3, 3), dtype=complex)
@@ -174,32 +175,32 @@ def loss_channel_780_general(eta: float) -> List[np.ndarray]:
 
 def loss_channel_1517(eta_H: float, eta_V: float) -> List[np.ndarray]:
     """
-    Amplitude damping for the 1517nm telecom subspace (6D),
-    embedded in the 18D bin space (I_780 ⊗ K_1517).
+    1517nm通信子空间（6D）的振幅阻尼，
+    嵌入在18D bin空间中（I_780 ⊗ K_1517）。
 
-    Handles two polarization modes independently with possibly different loss.
+    独立处理两个偏振模式，可能有不同的损耗。
 
     Parameters
     ----------
     eta_H : float
-        Transmissivity for H polarization
+        H偏振的透过率
     eta_V : float
-        Transmissivity for V polarization
+        V偏振的透过率
 
     Returns
     -------
     List[np.ndarray]
-        List of Kraus operators acting on 18D bin space (780 × 1517)
+        作用于18D bin空间（780 × 1517）的Kraus算符列表
     """
-    # 1517 basis: vac, H, V, 2H, 2V, HV
-    # Occupancy: (0,0), (1,0), (0,1), (2,0), (0,2), (1,1)
+    # 1517基：vac, H, V, 2H, 2V, HV
+    # 占有数：(0,0), (1,0), (0,1), (2,0), (0,2), (1,1)
 
-    # We need to construct Kraus operators for all combinations of loss
-    # on H and V modes. For small truncation, enumerate explicitly.
+    # 需要为H和V模式上所有可能的损耗组合构造Kraus算符
+    # 对于小截断，显式枚举
 
     K_list_1517 = []
 
-    # Basis with occupancy tuples
+    # 带有占有数元组的基
     basis = [
         (0, 0),  # 0: vac
         (1, 0),  # 1: H
@@ -209,25 +210,25 @@ def loss_channel_1517(eta_H: float, eta_V: float) -> List[np.ndarray]:
         (1, 1),  # 5: HV
     ]
 
-    # For each possible loss outcome (kH photons lost from H, kV from V)
-    for kH in range(3):  # Can lose 0, 1, or 2 H photons
+    # 对于每个可能的损耗结果（从H损耗kH个光子，从V损耗kV个）
+    for kH in range(3):  # 可损耗0、1或2个H光子
         for kV in range(3):
             K = np.zeros((6, 6), dtype=complex)
 
             for i, (nH, nV) in enumerate(basis):
                 if nH < kH or nV < kV:
-                    continue  # Can't lose more than we have
+                    continue  # 不能损耗超过已有的光子
 
                 nH_new = nH - kH
                 nV_new = nV - kV
 
-                # Find target index
+                # 找到目标索引
                 target = (nH_new, nV_new)
                 if target in basis:
                     j = basis.index(target)
 
-                    # Compute coefficient
-                    # Product of independent H and V loss
+                    # 计算系数
+                    # 独立H和V损耗的乘积
                     from math import comb
                     coeff_H = np.sqrt(comb(nH, kH)) * (eta_H ** ((nH - kH) / 2)) * ((1 - eta_H) ** (kH / 2))
                     coeff_V = np.sqrt(comb(nV, kV)) * (eta_V ** ((nV - kV) / 2)) * ((1 - eta_V) ** (kV / 2))
@@ -235,10 +236,10 @@ def loss_channel_1517(eta_H: float, eta_V: float) -> List[np.ndarray]:
 
             K_list_1517.append(K)
 
-    # Remove all-zero operators
+    # 移除全零算符
     K_list_1517 = [K for K in K_list_1517 if np.any(K != 0)]
 
-    # Embed each Kraus operator into 18D bin space: I_780 ⊗ K_1517
+    # 将每个Kraus算符嵌入18D bin空间：I_780 ⊗ K_1517
     I_780 = np.eye(3, dtype=complex)
     K_list_embedded = [np.kron(I_780, K) for K in K_list_1517]
 
@@ -250,69 +251,69 @@ def detection_channel(
     p_dark: float = 0.0
 ) -> Tuple[List[np.ndarray], List[int]]:
     """
-    On/off detection POVM for photon number measurement.
+    光子数测量的开/关探测POVM。
 
-    Models single-photon detector with:
-    - Efficiency eta_det
-    - Dark count probability p_dark per bin
+    模拟单光子探测器，具有：
+    - 效率 eta_det
+    - 每仓暗计数概率 p_dark
 
-    POVM elements:
-        E_0 = (1-p_dark) * sum_n (1-eta_det)^n |n><n|  (no click)
-        E_1 = I - E_0  (click)
+    POVM元素：
+        E_0 = (1-p_dark) * sum_n (1-eta_det)^n |n><n|  （无点击）
+        E_1 = I - E_0  （有点击）
 
-    Kraus operators are M_r = sqrt(E_r).
+    Kraus算符为 M_r = sqrt(E_r)。
 
     Parameters
     ----------
     eta_det : float
-        Detection efficiency (0 <= eta_det <= 1)
+        探测效率 (0 <= eta_det <= 1)
     p_dark : float
-        Dark count probability (0 <= p_dark <= 1)
+        暗计数概率 (0 <= p_dark <= 1)
 
     Returns
     -------
     Tuple[List[np.ndarray], List[int]]
-        (Kraus operators, outcome labels)
-        Outcome 0 = no click, Outcome 1 = click
+        (Kraus算符，结果标签)
+        结果0 = 无点击，结果1 = 有点击
 
     Examples
     --------
     >>> K, outcomes = detection_channel(eta_det=0.9, p_dark=0.001)
-    >>> # K[0] = no-click Kraus, K[1] = click Kraus
+    >>> # K[0] = 无点击Kraus算符，K[1] = 有点击Kraus算符
     """
     if not 0 <= eta_det <= 1:
-        raise ValueError(f"eta_det must be in [0, 1], got {eta_det}")
+        raise ValueError(f"eta_det必须在[0, 1]内，得到 {eta_det}")
     if not 0 <= p_dark <= 1:
-        raise ValueError(f"p_dark must be in [0, 1], got {p_dark}")
+        raise ValueError(f"p_dark必须在[0, 1]内，得到 {p_dark}")
 
-    # For the 6D 1517 subspace (n_max = 2)
+    # 对于6D 1517子空间（n_max = 2）
     dim = 6
 
-    # No-click POVM element
+    # 无点击POVM元素
     # E_0 = (1-p_dark) * [(1-eta)^0*|0><0| + (1-eta)^1*|1><1| + (1-eta)^2*|2><2|]
-    # But we have multiple single-photon states and multi-photon states
+    # 但我们有多个单光子态和多光子态
 
-    # Basis: vac, H, V, 2H, 2V, HV
-    # Need photon number for each basis state
-    n_per_state = np.array([0, 1, 1, 2, 2, 2])  # Total photon number
+    # 基：vac, H, V, 2H, 2V, HV
+    # 需要每个基态的光子数
+    n_per_state = np.array([0, 1, 1, 2, 2, 2])  # 总光子数
 
-    # No-click operator (diagonal)
+    # 无点击算符（对角）
     E0 = np.zeros((dim, dim), dtype=complex)
     for i, n in enumerate(n_per_state):
         prob_no_click = (1 - p_dark) * ((1 - eta_det) ** n)
         E0[i, i] = prob_no_click
 
-    # Click operator
+    # 点击算符
     I = np.eye(dim, dtype=complex)
     E1 = I - E0
 
-    # Kraus operators are matrix square roots
-    # For diagonal operators, this is just sqrt of diagonal elements
+    # Kraus算符是矩阵平方根
+    # 对于对角算符，就是对角元素的平方根
     M0 = np.zeros((dim, dim), dtype=complex)
     for i in range(dim):
         M0[i, i] = np.sqrt(E0[i, i]) if E0[i, i] > 0 else 0
 
-    # E1 may not be diagonal (due to I - E0), but since E0 is diagonal, E1 is also diagonal
+    # E1可能非对角（由于I - E0），但由于E0是对角的，E1也是对角的
     M1 = np.zeros((dim, dim), dtype=complex)
     for i in range(dim):
         M1[i, i] = np.sqrt(E1[i, i]) if E1[i, i] > 0 else 0
@@ -325,32 +326,32 @@ def detection_povm_single_site(
     p_dark: float = 0.0
 ) -> Tuple[List[np.ndarray], List[Tuple[int, int]]]:
     """
-    On/off detection POVM for a single bin site (H and V detectors).
+    单个bin站点的开/关探测POVM（H和V探测器）。
 
-    This acts on the 18D bin space (780 x 1517). Since 780nm is filtered,
-    detection only responds to 1517nm photons.
+    作用于18D bin空间（780 x 1517）。由于780nm被过滤，
+    探测只响应1517nm光子。
 
-    Each site has two detectors (H and V), giving 4 possible outcomes:
-        (0, 0): neither clicks
-        (1, 0): only H clicks
-        (0, 1): only V clicks
-        (1, 1): both click
+    每个站点有两个探测器（H和V），给出4种可能的结果：
+        (0, 0): 都不点击
+        (1, 0): 只有H点击
+        (0, 1): 只有V点击
+        (1, 1): 两个都点击
 
     Parameters
     ----------
     eta_det : float
-        Detection efficiency (0 <= eta_det <= 1)
+        探测效率 (0 <= eta_det <= 1)
     p_dark : float
-        Dark count probability per detector per bin
+        每个探测器每个仓的暗计数概率
 
     Returns
     -------
     Tuple[List[np.ndarray], List[Tuple[int, int]]]
-        (Kraus operators [4 x (18,18)], outcome labels [(d_H, d_V)])
+        (Kraus算符 [4 x (18,18)], 结果标签 [(d_H, d_V)])
 
     Notes
     -----
-    1517nm basis: vac, H, V, 2H, 2V, HV with photon numbers:
+    1517nm基：vac, H, V, 2H, 2V, HV，光子数为：
         - vac: n_H=0, n_V=0
         - H:   n_H=1, n_V=0
         - V:   n_H=0, n_V=1
@@ -358,16 +359,16 @@ def detection_povm_single_site(
         - 2V:  n_H=0, n_V=2
         - HV:  n_H=1, n_V=1
 
-    For on/off detector with efficiency eta:
-        P(no click | n photons) = (1-eta)^n * (1-p_dark)  (ignoring dark counts for n>0)
-        P(click | n photons) = 1 - (1-eta)^n + small dark count correction
+    对于效率为eta的开/关探测器：
+        P(无点击 | n个光子) = (1-eta)^n * (1-p_dark)  (忽略n>0时的暗计数)
+        P(点击 | n个光子) = 1 - (1-eta)^n + 小的暗计数修正
     """
     if not 0 <= eta_det <= 1:
-        raise ValueError(f"eta_det must be in [0, 1], got {eta_det}")
+        raise ValueError(f"eta_det必须在[0, 1]内，得到 {eta_det}")
     if not 0 <= p_dark <= 1:
-        raise ValueError(f"p_dark must be in [0, 1], got {p_dark}")
+        raise ValueError(f"p_dark必须在[0, 1]内，得到 {p_dark}")
 
-    # 1517nm basis photon numbers (n_H, n_V)
+    # 1517nm基光子数 (n_H, n_V)
     photon_numbers = [
         (0, 0),  # vac
         (1, 0),  # H
@@ -377,34 +378,34 @@ def detection_povm_single_site(
         (1, 1),  # HV
     ]
 
-    # Build POVM elements for 1517nm subspace (6D)
-    # E_{d_H, d_V} = P(d_H | n_H) * P(d_V | n_V) for each basis state
+    # 为1517nm子空间（6D）构建POVM元素
+    # E_{d_H, d_V} = 对于每个基态 P(d_H | n_H) * P(d_V | n_V)
 
     E_list_1517 = []
     outcomes = []
 
-    for d_H in range(2):  # 0 = no click, 1 = click
+    for d_H in range(2):  # 0 = 无点击，1 = 有点击
         for d_V in range(2):
             E = np.zeros((6, 6), dtype=complex)
             for i, (n_H, n_V) in enumerate(photon_numbers):
-                # Probability of outcome (d_H, d_V) given (n_H, n_V) photons
-                if d_H == 0:  # H no click
+                # 给定(n_H, n_V)个光子时结果(d_H, d_V)的概率
+                if d_H == 0:  # H无点击
                     if n_H == 0:
-                        P_H = 1 - p_dark  # No photon, no dark count
+                        P_H = 1 - p_dark  # 无光子，无暗计数
                     else:
-                        P_H = (1 - eta_det) ** n_H  # All photons missed
-                else:  # H click
+                        P_H = (1 - eta_det) ** n_H  # 所有光子都被漏掉
+                else:  # H有点击
                     if n_H == 0:
-                        P_H = p_dark  # Dark count only
+                        P_H = p_dark  # 仅暗计数
                     else:
-                        P_H = 1 - (1 - eta_det) ** n_H  # At least one detected
+                        P_H = 1 - (1 - eta_det) ** n_H  # 至少一个被探测到
 
-                if d_V == 0:  # V no click
+                if d_V == 0:  # V无点击
                     if n_V == 0:
                         P_V = 1 - p_dark
                     else:
                         P_V = (1 - eta_det) ** n_V
-                else:  # V click
+                else:  # V有点击
                     if n_V == 0:
                         P_V = p_dark
                     else:
@@ -415,7 +416,7 @@ def detection_povm_single_site(
             E_list_1517.append(E)
             outcomes.append((d_H, d_V))
 
-    # Kraus operators: M = sqrt(E) (diagonal, so element-wise sqrt)
+    # Kraus算符：M = sqrt(E)（对角，所以逐元素平方根）
     M_list_1517 = []
     for E in E_list_1517:
         M = np.zeros_like(E)
@@ -423,8 +424,8 @@ def detection_povm_single_site(
             M[i, i] = np.sqrt(max(0, E[i, i].real))
         M_list_1517.append(M)
 
-    # Embed into 18D bin space: I_780 ⊗ M_1517
-    # After fiber filtering, 780nm is vacuum, so we just need identity on 780
+    # 嵌入18D bin空间：I_780 ⊗ M_1517
+    # 光纤过滤后，780nm是真空，所以只需780上的单位
     I_780 = np.eye(3, dtype=complex)
     M_list_embedded = [np.kron(I_780, M) for M in M_list_1517]
 
@@ -436,51 +437,51 @@ def detection_channel_two_mode(
     p_dark: float = 0.0
 ) -> Tuple[List[np.ndarray], List[Tuple[int, int, int, int]]]:
     """
-    On/off detection POVM for two output ports (e.g., after beam splitter).
+    两个输出端口的开/关探测POVM（例如在分束器后）。
 
-    This returns Kraus operators for detecting photons at two sites (A and B),
-    each with H and V polarization detectors. Total 4 detectors, 16 outcomes.
+    返回用于在两个站点（A和B）探测光子的Kraus算符，
+    每个站点有H和V偏振探测器。总共4个探测器，16种结果。
 
-    The Kraus operators are tensor products: M_A ⊗ M_B
-    where M_A and M_B are single-site detection operators.
+    Kraus算符是张量积：M_A ⊗ M_B
+    其中M_A和M_B是单站点探测算符。
 
     Parameters
     ----------
     eta_det : float
-        Detection efficiency (same for all detectors)
+        探测效率（所有探测器相同）
     p_dark : float
-        Dark count probability per detector
+        每个探测器的暗计数概率
 
     Returns
     -------
     Tuple[List[np.ndarray], List[Tuple[int, int, int, int]]]
-        (Kraus operators [16 x (324,324)], outcome labels)
-        Each outcome is (dA_H, dA_V, dB_H, dB_V) where d=0 means no click, d=1 means click
+        (Kraus算符 [16 x (324,324)], 结果标签)
+        每个结果为 (dA_H, dA_V, dB_H, dB_V)，其中d=0表示无点击，d=1表示有点击
 
     Notes
     -----
-    For BSM (Bell State Measurement), the relevant outcomes are:
-        - (1,0,0,1) or (0,1,1,0): Psi+ heralding
-        - (0,1,0,1) or (1,0,1,0): Psi- heralding
-        - Other patterns: no successful heralding
+    对于BSM（贝尔态测量），相关的结果有：
+        - (1,0,0,1) 或 (0,1,1,0): Psi+ 信号
+        - (0,1,0,1) 或 (1,0,1,0): Psi- 信号
+        - 其他模式：无成功信号
 
     Examples
     --------
     >>> K, outcomes = detection_channel_two_mode(eta_det=0.9)
-    >>> # K has 16 operators, one for each click pattern
-    >>> # outcomes[i] gives (dA_H, dA_V, dB_H, dB_V) for K[i]
+    >>> # K有16个算符，每个对应一种点击模式
+    >>> # outcomes[i]给出K[i]的(dA_H, dA_V, dB_H, dB_V)
     """
-    # Get single-site detection operators (4 operators for 4 outcomes)
+    # 获取单站点探测算符（4个算符对应4种结果）
     M_single, outcomes_single = detection_povm_single_site(eta_det, p_dark)
-    # M_single[i] is 18x18, outcomes_single[i] is (d_H, d_V)
+    # M_single[i]是18x18，outcomes_single[i]是(d_H, d_V)
 
-    # Build tensor products for all 16 combinations
+    # 为所有16种组合构建张量积
     K_list = []
     outcomes = []
 
     for iA, (dA_H, dA_V) in enumerate(outcomes_single):
         for iB, (dB_H, dB_V) in enumerate(outcomes_single):
-            # Tensor product: M_A ⊗ M_B (324 x 324)
+            # 张量积：M_A ⊗ M_B (324 x 324)
             K = np.kron(M_single[iA], M_single[iB])
             K_list.append(K)
             outcomes.append((dA_H, dA_V, dB_H, dB_V))
@@ -493,23 +494,23 @@ def dephasing_channel(
     dim: int = 3
 ) -> List[np.ndarray]:
     """
-    Pure dephasing channel for atomic qubits.
+    原子量子比特的纯退相干信道。
 
         E(rho) = (1 - p_phi) * rho + p_phi * Z * rho * Z
 
-    where Z = |0><0| - |1><1| flips the phase in the {|0>, |1>} subspace.
+    其中 Z = |0><0| - |1><1| 在 {|0>, |1>} 子空间中翻转相位。
 
     Parameters
     ----------
     p_phi : float
-        Dephasing probability (0 <= p_phi <= 1)
+        退相干概率 (0 <= p_phi <= 1)
     dim : int
-        Dimension of the atomic subspace (default: 3 for |0>, |1>, |e>)
+        原子子空间的维度（默认：3表示|0>, |1>, |e>）
 
     Returns
     -------
     List[np.ndarray]
-        Kraus operators [K0, K1] where:
+        Kraus算符 [K0, K1]，其中：
         K0 = sqrt(1 - p_phi) * I
         K1 = sqrt(p_phi) * Z
 
@@ -518,15 +519,15 @@ def dephasing_channel(
     >>> K = dephasing_channel(p_phi=0.01)
     """
     if not 0 <= p_phi <= 1:
-        raise ValueError(f"p_phi must be in [0, 1], got {p_phi}")
+        raise ValueError(f"p_phi必须在[0, 1]内，得到 {p_phi}")
 
     K0 = np.sqrt(1 - p_phi) * np.eye(dim, dtype=complex)
 
     K1 = np.zeros((dim, dim), dtype=complex)
-    # Z = |0><0| - |1><1| in the {|0>, |1>, |e>} basis
+    # Z = |0><0| - |1><1| 在 {|0>, |1>, |e>} 基中
     K1[0, 0] = 1.0   # |0><0|
     K1[1, 1] = -1.0  # -|1><1|
-    # |e> is unchanged by dephasing
+    # |e>不受退相干影响
     K1[2, 2] = 1.0 if dim >= 3 else 0
     K1 = np.sqrt(p_phi) * K1
 
@@ -539,74 +540,74 @@ def dephasing_channel_from_rate(
     dim: int = 3
 ) -> List[np.ndarray]:
     """
-    Dephasing channel from continuous dephasing rate.
+    从连续退相干率导出退相干信道。
 
     p_phi = 1 - exp(-gamma_phi * tau)
 
     Parameters
     ----------
     gamma_phi : float
-        Dephasing rate (1/time)
+        退相干率（1/时间）
     tau : float
-        Time duration
+        持续时间
     dim : int
-        Dimension of the atomic subspace
+        原子子空间的维度
 
     Returns
     -------
     List[np.ndarray]
-        Kraus operators
+        Kraus算符
     """
     p_phi = 1 - np.exp(-gamma_phi * tau)
     return dephasing_channel(p_phi, dim)
 
 
 # =============================================================================
-# Fiber Channel Parameters (for realistic fiber transmission simulation)
+# 光纤信道参数（用于真实光纤传输仿真）
 # =============================================================================
 
 class FiberChannelParams:
     """
-    Parameters for fiber channel transmission with random polarization drift.
+    带随机偏振漂移的光纤信道传输参数。
 
-    This class models:
-    - Jones matrix polarization drift (SU(2) random matrices)
-    - Phase drift between arms
-    - Loss with small fluctuations
-    - PMD (polarization mode dispersion)
+    此类模拟：
+    - 琼斯矩阵偏振漂移（SU(2)随机矩阵）
+    - 两臂之间的相位漂移
+    - 带小波动的损耗
+    - PMD（偏振模色散）
 
-    Each trajectory samples new random parameters from the distributions.
+    每条轨迹从分布中采样新的随机参数。
 
     Parameters
     ----------
     U_mean_A : np.ndarray
-        Mean Jones matrix for arm A (2x2 unitary)
+        A臂的平均琼斯矩阵（2x2幺正）
     U_mean_B : np.ndarray
-        Mean Jones matrix for arm B (2x2 unitary)
+        B臂的平均琼斯矩阵（2x2幺正）
     polarization_model : str
-        "haar" - fully random SU(2) (uncompensated fiber)
-        "perturb" - small random rotation around mean (compensated fiber)
-        "euler" - random Euler angles (intermediate)
+        "haar" - 完全随机SU(2)（未补偿光纤）
+        "perturb" - 围绕平均值的小随机旋转（补偿光纤）
+        "euler" - 随机欧拉角（中等）
     polarization_sigma : float
-        For "perturb" model: standard deviation of rotation angle (radians)
+        "perturb"模型：旋转角的标准差（弧度）
     eta_mean : float
-        Mean transmissivity (0 to 1)
+        平均透过率（0到1）
     eta_std : float
-        Standard deviation of transmissivity
+        透过率的标准差
     phase_drift_std : float
-        Standard deviation of phase drift between arms (radians)
+        两臂之间相位漂移的标准差（弧度）
     pmd_enabled : bool
-        Whether to include PMD effect
+        是否包含PMD效应
     pmd_delay_bins : int
-        PMD delay in number of bins (integer shift)
+        PMD延迟，以仓数为单位（整数位移）
 
     Examples
     --------
-    >>> # Uncompensated long fiber
+    >>> # 未补偿的长光纤
     >>> params = FiberChannelParams(polarization_model="haar")
-    >>> # Compensated fiber with small drift
+    >>> # 带小漂移的补偿光纤
     >>> params = FiberChannelParams(polarization_model="perturb", polarization_sigma=0.1)
-    >>> # Sample for one trajectory
+    >>> # 为一条轨迹采样
     >>> U_A, U_B, eta, phase = params.sample_all(rng)
     """
 
@@ -638,20 +639,20 @@ class FiberChannelParams:
         self.pmd_delay_bins = pmd_delay_bins
 
     def sample_jones_A(self, rng: np.random.Generator) -> np.ndarray:
-        """Sample a Jones matrix for arm A."""
+        """为A臂采样琼斯矩阵。"""
         return self._sample_jones(self.U_mean_A, rng)
 
     def sample_jones_B(self, rng: np.random.Generator) -> np.ndarray:
-        """Sample a Jones matrix for arm B."""
+        """为B臂采样琼斯矩阵。"""
         return self._sample_jones(self.U_mean_B, rng)
 
     def _sample_jones(self, U_mean: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-        """Sample a Jones matrix given the mean matrix."""
+        """给定平均矩阵，采样琼斯矩阵。"""
         model = self.polarization_model
 
         if model == "haar":
-            # Fully random SU(2) from Haar measure
-            # Use quaternion parameterization
+            # 从Haar测度采样的完全随机SU(2)
+            # 使用四元数参数化
             x = rng.standard_normal(4)
             x = x / np.linalg.norm(x)
             a, b, c, d = x
@@ -661,15 +662,15 @@ class FiberChannelParams:
             ], dtype=complex)
 
         elif model == "perturb":
-            # Small random rotation around mean
-            # Generate random axis on Bloch sphere
+            # 围绕平均值的小随机旋转
+            # 在布洛赫球上生成随机轴
             axis = rng.standard_normal(3)
             axis = axis / np.linalg.norm(axis)
 
-            # Random rotation angle
+            # 随机旋转角
             delta_theta = rng.normal(0, self.polarization_sigma)
 
-            # Build rotation: U = U_mean @ exp(i * delta_theta * (axis·sigma/2))
+            # 构建旋转：U = U_mean @ exp(i * delta_theta * (axis·sigma/2))
             from scipy.linalg import expm
             sigma = [
                 np.array([[0, 1], [1, 0]], dtype=complex),   # sigma_x
@@ -681,7 +682,7 @@ class FiberChannelParams:
             U = U_mean @ delta_U
 
         elif model == "euler":
-            # Random Euler angles
+            # 随机欧拉角
             # U = R_z(alpha) @ R_y(beta) @ R_z(gamma)
             alpha = rng.uniform(0, 2*np.pi)
             beta = rng.uniform(0, np.pi)
@@ -702,38 +703,38 @@ class FiberChannelParams:
             U = Rz_a @ Ry_b @ Rz_g
 
         else:
-            raise ValueError(f"Unknown polarization_model: {model}")
+            raise ValueError(f"未知的 polarization_model: {model}")
 
         return U
 
     def sample_eta(self, rng: np.random.Generator) -> float:
-        """Sample transmissivity from truncated normal distribution."""
+        """从截断正态分布采样透过率。"""
         eta = rng.normal(self.eta_mean, self.eta_std)
         return np.clip(eta, 0, 1)
 
     def sample_phase_drift(self, rng: np.random.Generator) -> float:
-        """Sample phase drift between arms (in radians)."""
+        """采样两臂之间的相位漂移（弧度）。"""
         return rng.normal(0, self.phase_drift_std)
 
     def sample_all(self, rng: np.random.Generator) -> tuple:
         """
-        Sample all parameters for one trajectory.
+        为一条轨迹采样所有参数。
 
         Returns
         -------
         tuple
-            (U_A, U_B, eta, phase_drift) where:
-            - U_A: Jones matrix for arm A (2x2)
-            - U_B: Jones matrix for arm B (2x2, with possible phase drift)
-            - eta: transmissivity (0 to 1)
-            - phase_drift: relative phase between arms (radians)
+            (U_A, U_B, eta, phase_drift)，其中：
+            - U_A: A臂的琼斯矩阵（2x2）
+            - U_B: B臂的琼斯矩阵（2x2，可能有相位漂移）
+            - eta: 透过率（0到1）
+            - phase_drift: 两臂之间的相对相位（弧度）
         """
         U_A = self.sample_jones_A(rng)
         U_B = self.sample_jones_B(rng)
         eta = self.sample_eta(rng)
         phase = self.sample_phase_drift(rng)
 
-        # Apply phase drift to arm B (global phase affects interference)
+        # 对B臂应用相位漂移（全局相位影响干涉）
         U_B = np.exp(1j * phase) * U_B
 
         return U_A, U_B, eta, phase

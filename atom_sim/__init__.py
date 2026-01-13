@@ -1,13 +1,14 @@
+# -*- coding: utf-8 -*-
 """
-Atom Sim: Time-Bin MPS Simulation for Neutral Atom Quantum Interface
+Atom Sim：中性原子量子接口的时间仓MPS仿真
 
-This package provides a pure TeNPy implementation of time-bin MPS simulation
-for neutral atom quantum entanglement protocols.
+本包提供时间仓MPS仿真的纯TeNPy实现，
+用于中性原子量子纠缠协议。
 
-Main exports:
-- MPSState: Tensor network state container
-- run_simulation: Multi-trial statistics
-- Config classes: TimeGrid, EmitParams, QFCParams, FiberParams, DetParams
+主要导出：
+- MPSState：张量网络态容器
+- run_simulation：多试验统计
+- 配置类：TimeGrid, EmitParams, QFCParams, FiberParams, DetParams
 """
 
 from .core.mps import MPSState, create_timebin_mps

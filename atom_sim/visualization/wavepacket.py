@@ -1,8 +1,9 @@
+# -*- coding: utf-8 -*-
 """
-Wave Packet Visualization
+波包可视化模块
 
-This module provides functions to extract and visualize wave packets
-from MPS states, including intensity envelopes and single-photon probabilities.
+本模块提供从MPS态中提取和可视化波包的函数，
+包括强度包络和单光子概率。
 """
 
 from typing import Tuple, Optional, List, Union
@@ -15,38 +16,38 @@ from ..simulation.trajectory import EmissionResult
 
 
 # ============================================================================
-# Operators for Wave Packet Extraction
+# 波包提取算符
 # ============================================================================
 
 def _telecom_ops_1517():
     """
-    Construct projection and number operators for the 1517nm subspace.
+    构造1517nm子空间的投影和数算符。
 
-    1517 basis: [vac, 1H, 1V, 2H, 2V, HV]
+    1517基：[vac, 1H, 1V, 2H, 2V, HV]
 
     Returns
     -------
     Tuple of np.ndarray
         (P1_1517, N_1517, P1H_1517, P1V_1517, NH_1517, NV_1517)
-        - P1_1517: Single-photon projection (all pol)
-        - N_1517: Total photon number operator
-        - P1H_1517: Single H-photon projection
-        - P1V_1517: Single V-photon projection
-        - NH_1517: H-photon number operator
-        - NV_1517: V-photon number operator
+        - P1_1517: 单光子投影（所有偏振）
+        - N_1517: 总光子数算符
+        - P1H_1517: 单H光子投影
+        - P1V_1517: 单V光子投影
+        - NH_1517: H光子数算符
+        - NV_1517: V光子数算符
     """
-    # Basis: [vac, 1H, 1V, 2H, 2V, HV]
-    # Single-photon projection (all pol)
+    # 基：[vac, 1H, 1V, 2H, 2V, HV]
+    # 单光子投影（所有偏振）
     P1_1517 = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)
 
-    # Total photon number
+    # 总光子数
     N_1517 = np.diag([0, 1, 1, 2, 2, 2]).astype(complex)
 
-    # H/V single-photon projections
+    # H/V单光子投影
     P1H_1517 = np.diag([0, 1, 0, 0, 0, 0]).astype(complex)
     P1V_1517 = np.diag([0, 0, 1, 0, 0, 0]).astype(complex)
 
-    # H/V photon numbers
+    # H/V光子数
     NH_1517 = np.diag([0, 1, 0, 2, 0, 1]).astype(complex)
     NV_1517 = np.diag([0, 0, 1, 0, 2, 1]).astype(complex)
 
@@ -55,22 +56,22 @@ def _telecom_ops_1517():
 
 def telecom_ops_bin18():
     """
-    Construct telecom operators embedded in the 18D bin space.
+    构造嵌入18维仓空间的通信算符。
 
-    Bin space = 780(3D) x 1517(6D) = 18D
-    Assumes flatten order: |i_780> ⊗ |j_1517>, index = i_780 * 6 + j_1517
+    仓空间 = 780(3D) x 1517(6D) = 18D
+    假设展平顺序：|i_780> ⊗ |j_1517>，索引 = i_780 * 6 + j_1517
 
     Returns
     -------
     Tuple of np.ndarray
         (P1_bin, N_bin, P1H_bin, P1V_bin, NH_bin, NV_bin)
-        Each is 18x18 acting on the full bin space
+        每个都是18x18，作用于完整仓空间
     """
     I_780 = np.eye(3, dtype=complex)
 
     P1_1517, N_1517, P1H_1517, P1V_1517, NH_1517, NV_1517 = _telecom_ops_1517()
 
-    # Embed: I_780 ⊗ Op_1517
+    # 嵌入：I_780 ⊗ Op_1517
     P1_bin = np.kron(I_780, P1_1517)
     N_bin = np.kron(I_780, N_1517)
     P1H_bin = np.kron(I_780, P1H_1517)
@@ -82,7 +83,7 @@ def telecom_ops_bin18():
 
 
 # ============================================================================
-# Wave Packet Extraction
+# 波包提取
 # ============================================================================
 
 def extract_wavepacket(
@@ -92,34 +93,34 @@ def extract_wavepacket(
     polarized: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Extract wave packet data from MPS state.
+    从MPS态中提取波包数据。
 
-    Chain layout: atomA, atomB, A1, B1, A2, B2, ..., AN, BN
-    Site indices: A_n = 2 + 2*(n-1), B_n = 3 + 2*(n-1)
+    链布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN
+    格点索引：A_n = 2 + 2*(n-1), B_n = 3 + 2*(n-1)
 
     Parameters
     ----------
     mps : MPSState
-        MPS state (access mps._mps for TeNPy MPS)
+        MPS态（访问 mps._mps 获取TeNPy MPS）
     n_bins : int
-        Number of time bins to extract
+        要提取的时间仓数量
     use_single_photon_prob : bool
-        If True, return single-photon probability q_n
-        If False, return intensity <N_n>
+        若为True，返回单光子概率 q_n
+        若为False，返回强度 <N_n>
     polarized : bool
-        If True, return separate H and V components
-        If False, return total (H+V)
+        若为True，分别返回H和V分量
+        若为False，返回总量（H+V）
 
     Returns
     -------
     Tuple of np.ndarray
-        (data_A, data_B) where each is:
-        - (n_bins,) if polarized=False
-        - (n_bins, 2) if polarized=True [H, V columns]
+        (data_A, data_B) 其中每个为：
+        - (n_bins,) 当 polarized=False
+        - (n_bins, 2) 当 polarized=True [H, V 列]
     """
     P1_bin, N_bin, P1H_bin, P1V_bin, NH_bin, NV_bin = telecom_ops_bin18()
 
-    # Choose operator based on mode
+    # 根据模式选择算符
     if use_single_photon_prob:
         if polarized:
             OpA = P1H_bin  # Will use separate H/V
@@ -135,7 +136,7 @@ def extract_wavepacket(
             OpA = N_bin
             OpB = N_bin
 
-    # Initialize arrays
+    # 初始化数组
     if polarized:
         data_A = np.zeros((n_bins, 2))
         data_B = np.zeros((n_bins, 2))
@@ -147,15 +148,15 @@ def extract_wavepacket(
         idx_A = 2 + 2 * (n - 1)  # A_n site index
         idx_B = 3 + 2 * (n - 1)  # B_n site index
 
-        # Get reduced density matrices
+        # 获取约化密度矩阵
         rhoA = mps.get_reduced_density([idx_A])
         rhoB = mps.get_reduced_density([idx_B])
 
         if polarized:
-            # H component
+            # H分量
             data_A[n - 1, 0] = float(np.real(np.trace(rhoA @ P1H_bin)))
             data_B[n - 1, 0] = float(np.real(np.trace(rhoB @ P1H_bin)))
-            # V component
+            # V分量
             data_A[n - 1, 1] = float(np.real(np.trace(rhoA @ P1V_bin)))
             data_B[n - 1, 1] = float(np.real(np.trace(rhoB @ P1V_bin)))
         else:
@@ -171,21 +172,21 @@ def extract_intensity_envelope(
     polarized: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Extract intensity envelope <N_n> for each bin.
+    提取每个仓的强度包络 <N_n>。
 
     Parameters
     ----------
     mps : MPSState
-        MPS state
+        MPS态
     n_bins : int
-        Number of time bins
+        时间仓数量
     polarized : bool
-        If True, return H and V separately
+        若为True，分别返回H和V
 
     Returns
     -------
     Tuple of np.ndarray
-        (pA, pB) intensity arrays
+        (pA, pB) 强度数组
     """
     return extract_wavepacket(
         mps, n_bins,
@@ -200,21 +201,21 @@ def extract_single_photon_prob(
     polarized: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Extract single-photon probability for each bin.
+    提取每个仓的单光子概率。
 
     Parameters
     ----------
     mps : MPSState
-        MPS state
+        MPS态
     n_bins : int
-        Number of time bins
+        时间仓数量
     polarized : bool
-        If True, return H and V separately
+        若为True，分别返回H和V
 
     Returns
     -------
     Tuple of np.ndarray
-        (qA, qB) probability arrays
+        (qA, qB) 概率数组
     """
     return extract_wavepacket(
         mps, n_bins,
@@ -224,7 +225,7 @@ def extract_single_photon_prob(
 
 
 # ============================================================================
-# Plotting Functions
+# 绘图函数
 # ============================================================================
 
 def plot_wavepacket(
@@ -238,31 +239,31 @@ def plot_wavepacket(
     ax: Optional[plt.Axes] = None,
 ) -> plt.Axes:
     """
-    Plot wave packet for both arms.
+    绘制双臂的波包。
 
     Parameters
     ----------
     data_A : np.ndarray
-        Arm A data (n_bins,) or (n_bins, 2) for polarized
+        A臂数据 (n_bins,) 或 (n_bins, 2) 用于偏振情况
     data_B : np.ndarray
-        Arm B data
+        B臂数据
     time_grid : TimeGrid, optional
-        Time grid for x-axis
+        x轴的时间网格
     polarized : bool
-        Whether data is polarized (H/V separate)
+        数据是否为偏振（H/V分离）
     normalize : bool
-        If True, normalize to sum=1
+        若为True，归一化使和为1
     title : str
-        Plot title
+        图标题
     labels : Tuple[str, str], optional
-        Legend labels for arms A and B
+        A臂和B臂的图例标签
     ax : plt.Axes, optional
-        Existing axes to plot on
+        现有坐标轴用于绘图
 
     Returns
     -------
     plt.Axes
-        The axes object
+        坐标轴对象
     """
     if ax is None:
         fig, ax = plt.subplots(figsize=(10, 5))
@@ -275,7 +276,7 @@ def plot_wavepacket(
         x = time_grid.t[:n_bins]
         xlabel = "Time (s)"
 
-    # Normalize if requested
+    # 如果需要则归一化
     if normalize:
         if polarized:
             data_A = data_A / (data_A.sum() + 1e-15)
@@ -284,9 +285,9 @@ def plot_wavepacket(
             data_A = data_A / (data_A.sum() + 1e-15)
             data_B = data_B / (data_B.sum() + 1e-15)
 
-    # Plot
+    # 绘图
     if polarized:
-        # data_A and data_B are (n_bins, 2) with [H, V] columns
+        # data_A 和 data_B 是 (n_bins, 2) 含 [H, V] 列
         ax.plot(x, data_A[:, 0], '--', label=f"A: H" if labels is None else labels[0] + " H",
                 color='tab:blue', alpha=0.7)
         ax.plot(x, data_A[:, 1], '--', label=f"A: V" if labels is None else labels[0] + " V",
@@ -318,20 +319,20 @@ def plot_intensity_envelope(
     ax: Optional[plt.Axes] = None,
 ) -> plt.Axes:
     """
-    Plot intensity envelope <N_n> for both arms.
+    绘制双臂的强度包络 <N_n>。
 
     Parameters
     ----------
     mps : MPSState
-        MPS state
+        MPS态
     n_bins : int
-        Number of time bins
+        时间仓数量
     time_grid : TimeGrid, optional
-        Time grid
+        时间网格
     polarized : bool
-        Whether to show H/V separately
+        是否分别显示H/V
     ax : plt.Axes, optional
-        Existing axes
+        现有坐标轴
 
     Returns
     -------
@@ -356,22 +357,22 @@ def plot_single_photon_prob(
     ax: Optional[plt.Axes] = None,
 ) -> plt.Axes:
     """
-    Plot single-photon probability for both arms.
+    绘制双臂的单光子概率。
 
     Parameters
     ----------
     mps : MPSState
-        MPS state
+        MPS态
     n_bins : int
-        Number of time bins
+        时间仓数量
     time_grid : TimeGrid, optional
-        Time grid
+        时间网格
     polarized : bool
-        Whether to show H/V separately
+        是否分别显示H/V
     normalize : bool
-        Whether to normalize (recommended)
+        是否归一化（推荐）
     ax : plt.Axes, optional
-        Existing axes
+        现有坐标轴
 
     Returns
     -------
@@ -387,96 +388,42 @@ def plot_single_photon_prob(
     )
 
 
-def plot_mode_overlap(
-    data_A: np.ndarray,
-    data_B: np.ndarray,
-    time_grid: Optional[TimeGrid] = None,
-    ax: Optional[plt.Axes] = None,
-) -> plt.Axes:
-    """
-    Plot mode overlap between two arms.
-
-    Overlap M = |sum_n (xi_A_n* xi_B_n)|^2
-
-    Parameters
-    ----------
-    data_A : np.ndarray
-        Complex amplitudes for arm A
-    data_B : np.ndarray
-        Complex amplitudes for arm B
-    time_grid : TimeGrid, optional
-        Time grid
-    ax : plt.Axes, optional
-        Existing axes
-
-    Returns
-    -------
-    plt.Axes
-    """
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(10, 5))
-
-    n_bins = len(data_A)
-    if time_grid is None:
-        x = np.arange(n_bins)
-        xlabel = "Bin index"
-    else:
-        x = time_grid.t[:n_bins]
-        xlabel = "Time (s)"
-
-    # Compute overlap
-    overlap = np.abs(np.sum(data_A * np.conj(data_B))) ** 2
-
-    ax.plot(x, np.real(data_A), '--', label='Re(A)', color='tab:blue', alpha=0.7)
-    ax.plot(x, np.imag(data_A), ':', label='Im(A)', color='tab:blue', alpha=0.5)
-    ax.plot(x, np.real(data_B), '--', label='Re(B)', color='tab:orange', alpha=0.7)
-    ax.plot(x, np.imag(data_B), ':', label='Im(B)', color='tab:orange', alpha=0.5)
-
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel("Amplitude")
-    ax.set_title(f"Mode Overlap M = {overlap:.4f}")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-
-    return ax
-
-
 # ============================================================================
-# Bin State Heatmap Visualization
+# 仓状态热图可视化
 # ============================================================================
 
 def _get_bin18_state_labels() -> List[str]:
     """
-    Get labels for the 18 bin states.
+    获取18个仓状态的标签。
 
-    Bin space = 780(3D) x 1517(6D) with index = i_780 * 6 + i_1517
+    仓空间 = 780(3D) x 1517(6D)，索引 = i_780 * 6 + i_1517
 
-    780 subspace: only supports 0 or 1 photon (|vac>, |H>, |V>)
-    1517 subspace: supports up to 2 photons (|vac>, |H>, |V>, |2H>, |2V>, |HV>)
+    780子空间：仅支持0或1个光子（|vac>, |H>, |V>）
+    1517子空间：支持最多2个光子（|vac>, |H>, |V>, |2H>, |2V>, |HV>）
 
     Returns
     -------
     List[str]
-        18 state labels in the form |780,1517>
+        18个状态标签，格式为 |780,1517>
     """
-    # 780 basis states (single photon only)
+    # 780基态（仅单光子）
     bases_780 = ['|vac>', '|H>', '|V>']
-    # 1517 basis states (up to two photons)
+    # 1517基态（最多两个光子）
     bases_1517 = ['|vac>', '|H>', '|V>', '|2H>', '|2V>', '|HV>']
 
     labels = []
     for i_780, b780 in enumerate(bases_780):
         for i_1517, b1517 in enumerate(bases_1517):
-            # Format: |780_state, 1517_state>
-            # Remove angle brackets for cleaner display, keep structure clear
+            # 格式：|780_state, 1517_state>
+            # 移除尖括号以更清晰地显示，保持结构清晰
             if b780 == '|vac>' and b1517 == '|vac>':
-                label = '|vac,vac>'  # Both vacuum
+                label = '|vac,vac>'  # 两者都是真空
             elif b780 == '|vac>':
-                label = f'|vac,{b1517[1:-1]}>'  # Only 1517 state
+                label = f'|vac,{b1517[1:-1]}>'  # 仅1517态
             elif b1517 == '|vac>':
-                label = f'|{b780[1:-1]},vac>'  # Only 780 state
+                label = f'|{b780[1:-1]},vac>'  # 仅780态
             else:
-                # Both non-vacuum: show both states
+                # 两者都不是真空：显示两个态
                 label = f'|{b780[1:-1]},{b1517[1:-1]}>'
             labels.append(label)
 
@@ -490,87 +437,87 @@ def extract_bin_state_probabilities(
     atom_at_end: bool = False,
 ) -> np.ndarray:
     """
-    Extract probability for each of the 18 bin states across all time bins.
+    提取所有时间仓中18个仓状态各自的概率。
 
-    For each bin, computes the reduced density matrix and extracts
-    the diagonal elements (probabilities for each of the 18 states).
+    对每个仓，计算约化密度矩阵并提取对角元素
+    （18个状态中每个状态的概率）。
 
-    Supports multiple chain layouts:
-    1. Dual-atom: atomA, atomB, A1, B1, A2, B2, ..., AN, BN
-    2. Single-atom (no SWAP): atom, bin1, bin2, ..., binN
-    3. Single-atom (after SWAP): bin1, bin2, ..., binN, atom
+    支持多种链布局：
+    1. 双原子：atomA, atomB, A1, B1, A2, B2, ..., AN, BN
+    2. 单原子（无SWAP）：atom, bin1, bin2, ..., binN
+    3. 单原子（SWAP后）：bin1, bin2, ..., binN, atom
 
     Parameters
     ----------
     mps : MPSState
-        MPS state
+        MPS态
     arm : str
-        Which arm to extract ('A' or 'B'). Ignored for single-atom layout.
+        要提取的臂（'A' 或 'B'）。单原子布局时忽略。
     n_bins : int, optional
-        Number of time bins. If None, infers from chain length.
+        时间仓数量。若为None，从链长度推断。
     atom_at_end : bool
-        If True, assumes single-atom layout with atom at the end
-        (after SWAP conveyor belt). Bins are at sites 0 to n_bins-1.
+        若为True，假设单原子布局且原子在末端
+        （SWAP传送带后）。仓位于格点0到n_bins-1。
 
     Returns
     -------
     np.ndarray
-        Probability array of shape (n_bins, 18)
-        prob[i, j] = probability of state j in bin i
+        概率数组，形状为 (n_bins, 18)
+        prob[i, j] = 仓i中状态j的概率
     """
     if n_bins is None:
-        # Auto-detect chain layout
-        # Count how many 3D sites (atoms) vs 18D sites (bins)
+        # 自动检测链布局
+        # 统计有多少个3维格点（原子）vs 18维格点（仓）
         n_3d = sum(1 for d in mps.d if d == 3)
         if n_3d == 1:
-            # Single atom: L = 1 + n_bins
+            # 单原子：L = 1 + n_bins
             n_bins = mps.L - 1
         else:
-            # Dual atom: L = 2 + 2 * n_bins
+            # 双原子：L = 2 + 2 * n_bins
             n_bins = (mps.L - 2) // 2
 
-    # Detect chain type by checking dimensions
-    # Single-atom: exactly one 3D site (atom), rest are 18D (bins)
-    # Dual-atom: exactly two 3D sites (atoms), rest are 18D (bins)
+    # 通过检查维度检测链类型
+    # 单原子：恰好一个3维格点（原子），其余为18维（仓）
+    # 双原子：恰好两个3维格点（原子），其余为18维（仓）
     n_3d = sum(1 for d in mps.d if d == 3)
     is_single_atom = n_3d == 1
 
-    # Array to store probabilities: (n_bins, 18)
+    # 存储概率的数组：(n_bins, 18)
     probs = np.zeros((n_bins, 18))
 
     if is_single_atom:
         if atom_at_end:
-            # After SWAP: bins at sites 0, 1, ..., n_bins-1, atom at site n_bins
-            # But we need to be careful: mps.L = 1 + n_bins, and atom is at the end
-            # The actual number of bins might be less than mps.L - 1 if atom is at the end
-            # Find where the 3D atom site is
+            # SWAP后：仓位于格点0, 1, ..., n_bins-1，原子位于格点n_bins
+            # 需要注意：mps.L = 1 + n_bins，原子在末端
+            # 实际仓数可能少于 mps.L - 1，如果原子在末端
+            # 找到3维原子格点的位置
             atom_site = next(i for i, d in enumerate(mps.d) if d == 3)
-            actual_n_bins = min(n_bins, atom_site)  # Don't go past the atom
+            actual_n_bins = min(n_bins, atom_site)  # 不要越过原子
             for n in range(actual_n_bins):
-                idx = n  # bin indices are 0, 1, ..., n_bins-1
+                idx = n  # 仓索引为 0, 1, ..., n_bins-1
                 rho = mps.get_reduced_density([idx])
-                # Handle both 3D (atom) and 18D (bin) cases
+                # 处理3D（原子）和18D（仓）两种情况
                 if rho.shape[0] == 18:
                     probs[n, :] = np.diag(rho).real
-                # else: skip 3D sites (atoms)
+                # 否则：跳过3D格点（原子）
         else:
-            # Before SWAP: atom at site 0, bins at sites 1, 2, ..., n_bins
-            # Find atom site (3D) and start from there
+            # SWAP前：原子在格点0，仓在格点1, 2, ..., n_bins
+            # 找到原子格点（3D）并从那里开始
             atom_site = next(i for i, d in enumerate(mps.d) if d == 3)
             for n in range(n_bins):
-                idx = atom_site + 1 + n  # bins follow atom
+                idx = atom_site + 1 + n  # 仓跟随原子
                 if idx >= mps.L:
-                    continue  # skip if out of bounds
+                    continue  # 若越界则跳过
                 rho = mps.get_reduced_density([idx])
                 if rho.shape[0] == 18:
                     probs[n, :] = np.diag(rho).real
     else:
-        # Dual-atom layout: atomA, atomB, A1, B1, A2, B2, ..., AN, BN
+        # 双原子布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN
         for n in range(n_bins):
             if arm.upper() == 'A':
-                idx = 2 + 2 * n  # A_n site index
+                idx = 2 + 2 * n  # A_n格点索引
             else:
-                idx = 3 + 2 * n  # B_n site index
+                idx = 3 + 2 * n  # B_n格点索引
             rho = mps.get_reduced_density([idx])
             probs[n, :] = np.diag(rho).real
 
@@ -591,59 +538,58 @@ def plot_bin_state_heatmap(
     separate_vac_scale: bool = False,
 ) -> plt.Axes:
     """
-    Plot heatmap of bin state probabilities across time bins.
+    绘制时间仓上仓状态概率的热图。
 
-    Creates a heatmap showing the probability of each of the 18 bin states
-    for each time bin. Rows are the 18 states (labeled on the left),
-    columns are time bins (labeled with time on bottom).
+    创建一个热图，显示每个时间仓中18个仓状态各自的概率。
+    行是18个状态（左侧标注），列是时间仓（底部标注时间）。
 
     Parameters
     ----------
     mps : MPSState
-        MPS state
+        MPS态
     arm : str
-        Which arm to plot ('A' or 'B')
+        要绘制的臂（'A' 或 'B'）
     n_bins : int, optional
-        Number of time bins. If None, infers from chain length.
+        时间仓数量。若为None，从链长度推断。
     time_grid : TimeGrid, optional
-        Time grid for x-axis labels
+        x轴标签的时间网格
     subspace : str
-        Which subspace to show ('780', '1517', or 'both')
+        显示哪个子空间（'780'、'1517' 或 'both'）
     group_by : str
-        How to group separator lines ('780' or '1517')
-        - '780': Group by 780 state (vac/H/V) - lines at 5.5, 11.5
-        - '1517': Group by 1517 photon number (0/1/2 photons) - lines at 2.5, 5.5 across all 780 states
+        如何分组分隔线（'780' 或 '1517'）
+        - '780'：按780态分组（vac/H/V）- 线在5.5, 11.5
+        - '1517'：按1517光子数分组（0/1/2光子）- 线在2.5, 5.5，跨越所有780态
     vmax : float, optional
-        Maximum value for color scale. If None, auto-scales.
+        色标的最大值。若为None，自动缩放。
     figsize : tuple
-        Figure size (width, height)
+        图形大小（宽度，高度）
     ax : plt.Axes, optional
-        Existing axes to plot on
+        现有坐标轴用于绘图
     atom_at_end : bool
-        If True, assumes single-atom layout with atom at the end
-        (after SWAP conveyor belt). Use this for test_emission_wavepacket.py results.
+        若为True，假设单原子布局且原子在末端
+        （SWAP传送带后）。用于test_emission_wavepacket.py的结果。
     separate_vac_scale : bool
-        If True, uses a separate color scale for the |vac,vac> row (index 0)
-        to better visualize small changes in vacuum probability.
+        若为True，为 |vac,vac> 行（索引0）使用单独的色标
+        以更好地可视化真空概率的小变化。
 
     Returns
     -------
     plt.Axes
-        The axes object
+        坐标轴对象
     """
     import matplotlib
 
-    # Extract probabilities
+    # 提取概率
     probs = extract_bin_state_probabilities(mps, arm=arm, n_bins=n_bins, atom_at_end=atom_at_end)
     n_bins_actual = probs.shape[0]
 
-    # Get state labels
+    # 获取状态标签
     state_labels = _get_bin18_state_labels()
 
-    # Filter by subspace if requested
+    # 根据请求过滤子空间
     if subspace == '780':
-        # Show only states where 780 is not vacuum (indices 6-17)
-        # Or reorganize to show 780 subspace structure
+        # 仅显示780非真空的状态（索引6-17）
+        # 或重新组织以显示780子空间结构
         row_indices = list(range(18))
         row_labels = state_labels
         title_suffix = " (780nm subspace highlighted)"
@@ -656,7 +602,7 @@ def plot_bin_state_heatmap(
         row_labels = state_labels
         title_suffix = ""
 
-    # Filter data
+    # 过滤数据
     probs_filtered = probs[:, row_indices]
 
     created_fig = False
@@ -666,28 +612,28 @@ def plot_bin_state_heatmap(
     else:
         fig = ax.figure
 
-    # Create heatmap with separate scale for vac,vac if requested
+    # 如果请求，为vac,vac创建单独色标的热图
     if separate_vac_scale:
-        # Split: row 0 (|vac,vac>) and rows 1-17
+        # 分割：第0行（|vac,vac>）和第1-17行
         from matplotlib.colors import Normalize
 
-        # For vac,vac row: use its own range centered at 1
+        # 对于vac,vac行：使用自身范围，中心在1
         vac_row = probs_filtered[:, 0:1].T
         vac_vmin = max(0, vac_row.min() - 0.05)
         vac_vmax = min(1, vac_row.max() + 0.05)
 
-        # For other rows: use auto-scale or provided vmax
+        # 对于其他行：使用自动缩放或提供的vmax
         other_rows = probs_filtered[:, 1:].T
         if vmax is None:
             other_vmax = max(0.01, other_rows.max())
         else:
             other_vmax = vmax
 
-        # Create combined data for display with separate normalization
-        # We'll use two imshow calls stacked
+        # 创建用于显示的组合数据，使用单独归一化
+        # 我们将使用堆叠的两个imshow调用
         display_data = probs_filtered.T
 
-        # Create a masked array for two different normalizations
+        # 为两种不同归一化创建掩码数组
         im = ax.imshow(
             display_data,
             aspect='auto',
@@ -697,9 +643,9 @@ def plot_bin_state_heatmap(
             origin='upper'
         )
     else:
-        # Standard single-scale heatmap
+        # 标准单色标热图
         im = ax.imshow(
-            probs_filtered.T,  # Transpose so states are rows, bins are columns
+            probs_filtered.T,  # 转置使状态为行，仓为列
             aspect='auto',
             cmap='viridis',
             vmin=0,
@@ -707,15 +653,15 @@ def plot_bin_state_heatmap(
             origin='upper'
         )
 
-    # Set y-axis labels (state names)
+    # 设置y轴标签（状态名称）
     ax.set_yticks(range(len(row_labels)))
     ax.set_yticklabels(row_labels)
 
-    # Set x-axis labels (dual: bin index on top, time on bottom)
+    # 设置x轴标签（双重：顶部仓索引，底部时间）
     n_ticks = min(10, n_bins_actual)
     tick_indices = np.linspace(0, n_bins_actual - 1, n_ticks, dtype=int)
 
-    # Bottom x-axis: time (ns)
+    # 底部x轴：时间（纳秒）
     ax.set_xticks(tick_indices)
     if time_grid is not None:
         ax.set_xticklabels([f'{time_grid.t[i]:.1f}' for i in tick_indices])
@@ -723,34 +669,34 @@ def plot_bin_state_heatmap(
         ax.set_xticklabels([str(i) for i in tick_indices])
     ax.set_xlabel('Time (ns)')
 
-    # Top x-axis: bin index
+    # 顶部x轴：仓索引
     ax_top = ax.twiny()
     ax_top.set_xticks(tick_indices)
     ax_top.set_xticklabels([str(i) for i in tick_indices])
     ax_top.set_xlabel('Bin index')
-    ax_top.set_xlim(ax.get_xlim())  # Sync limits
+    ax_top.set_xlim(ax.get_xlim())  # 同步限制
 
     ax.set_ylabel('Bin state |780,1517>')
     ax.set_title(f'Arm {arm.upper()} Bin State Probabilities{title_suffix}')
 
-    # Add colorbar with better positioning to avoid overlap
+    # 添加色条，更好地定位避免重叠
     from mpl_toolkits.axes_grid1 import make_axes_locatable
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="3%", pad=0.1)
     cbar = fig.colorbar(im, cax=cax)
     cbar.set_label('Probability')
 
-    # Add separator lines based on group_by parameter
+    # 根据group_by参数添加分隔线
     if group_by == '780':
-        # Group by 780 state: |vac>, |H>, |V>
-        # Rows 0-5: 780=vac, Rows 6-11: 780=H, Rows 12-17: 780=V
+        # 按780态分组：|vac>, |H>, |V>
+        # 行0-5：780=vac，行6-11：780=H，行12-17：780=V
         boundaries = [5.5, 11.5]
     else:  # '1517'
-        # Group by 1517 photon number: 0/1/2 photons
-        # 1517 structure repeats for each 780 state (every 6 rows)
-        # vac(0), H(1), V(1) -> boundary after row 2
-        # 2H(2), 2V(2), HV(2) -> boundary after row 5
-        # This pattern repeats for 780=H (rows 6-11) and 780=V (rows 12-17)
+        # 按1517光子数分组：0/1/2光子
+        # 1517结构对每个780态重复（每6行）
+        # vac(0), H(1), V(1) -> 第2行后边界
+        # 2H(2), 2V(2), HV(2) -> 第5行后边界
+        # 此模式对780=H（行6-11）和780=V（行12-17）重复
         boundaries = [2.5, 5.5, 8.5, 11.5, 14.5, 17.5]
 
     for boundary in boundaries:
@@ -760,7 +706,7 @@ def plot_bin_state_heatmap(
 
 
 # ============================================================================
-# Dual-Arm Heatmap Visualization (General Purpose)
+# 双臂热图可视化（通用）
 # ============================================================================
 
 def plot_dual_arm_heatmap(
@@ -772,37 +718,37 @@ def plot_dual_arm_heatmap(
     vmax_scale_factor: float = 1.5,
 ) -> None:
     """
-    Visualize dual-arm bin state probabilities with optional atomic state display.
+    可视化双臂仓状态概率，可选显示原子状态。
 
-    General-purpose heatmap function that works for any simulation stage:
-    - Emission: use show_atomic=True to show atomic state evolution
-    - QFC/Jones/Loss/BS: use show_atomic=False (atoms not involved)
+    通用热图函数，适用于任何仿真阶段：
+    - 发射：使用 show_atomic=True 显示原子状态演化
+    - QFC/Jones/Loss/BS：使用 show_atomic=False（原子不参与）
 
-    Each arm shows:
-    - If show_atomic=True: Top 3 rows (atomic) + Bottom 18 rows (bin states)
-    - If show_atomic=False: 18 rows of bin states only
+    每个臂显示：
+    - 若 show_atomic=True：顶部3行（原子）+ 底部18行（仓状态）
+    - 若 show_atomic=False：仅18行仓状态
 
-    Three colormaps:
-    - Atomic states: YlOrRd (Yellow-Orange-Red)
-    - (vac,vac) state: Greys (separate colorbar)
-    - Other bin states: plasma
+    三种色图：
+    - 原子态：YlOrRd（黄-橙-红）
+    - (vac,vac) 态：Greys（单独色条）
+    - 其他仓态：plasma
 
     Parameters
     ----------
     result : Union[EmissionResult, MPSState]
-        Simulation result to visualize. If EmissionResult and show_atomic=True,
-        atomic state evolution is extracted from result.atom_X_state_evolution.
+        要可视化的仿真结果。如果是EmissionResult且show_atomic=True，
+        从result.atom_X_state_evolution提取原子状态演化。
     save_path : str
-        Path to save the figure
+        保存图形的路径
     show_atomic : bool
-        Whether to display atomic state rows (default: False)
+        是否显示原子状态行（默认：False）
     stage_name : str
-        Stage name for title (e.g., "Emission", "QFC", "BS")
+        标题的阶段名称（如 "Emission", "QFC", "BS"）
     time_grid : TimeGrid, optional
-        Time grid for x-axis labels. If None and result is EmissionResult,
-        uses result.time_grid.
+        x轴标签的时间网格。若为None且result是EmissionResult，
+        使用result.time_grid。
     vmax_scale_factor : float
-        Factor for scaling vmax (relative to max bin probability)
+        缩放vmax的因子（相对于最大仓概率）
     """
     import matplotlib as mpl
     from matplotlib.colors import Normalize
@@ -810,7 +756,7 @@ def plot_dual_arm_heatmap(
 
     mpl.rcParams['image.interpolation'] = 'nearest'
 
-    # Extract MPS and time_grid from result
+    # 从结果中提取MPS和time_grid
     if isinstance(result, EmissionResult):
         mps = result.mps
         if time_grid is None:
@@ -820,25 +766,25 @@ def plot_dual_arm_heatmap(
     else:  # MPSState
         mps = result
         if time_grid is None:
-            time_grid = TimeGrid(dt=1.0, N=1)  # Dummy
-        n_bins = (mps.L - 2) // 2  # Infer from chain length
+            time_grid = TimeGrid(dt=1.0, N=1)  # 虚拟
+        n_bins = (mps.L - 2) // 2  # 从链长度推断
         has_atom_evol = False
 
     if show_atomic and not has_atom_evol:
         raise ValueError("show_atomic=True requires EmissionResult with atomic state evolution")
 
-    # Create figure with more spacing
+    # 创建具有更大间距的图形
     fig, axes = plt.subplots(1, 2, figsize=(24, 13))
     plt.subplots_adjust(left=0.04, right=0.85, top=0.80, bottom=0.06, wspace=0.50)
 
-    # Extract atomic state evolution if needed
+    # 如果需要，提取原子状态演化
     if show_atomic and has_atom_evol:
         atom_A_evol = result.atom_A_state_evolution
         atom_B_evol = result.atom_B_state_evolution
-        # For visualization, take every other column (after each full bin processing)
+        # 用于可视化，取每隔一列（每次完整仓处理后）
         atom_A_for_bins = atom_A_evol[:, 1::2]
         atom_B_for_bins = atom_B_evol[:, 1::2]
-        # If evolution has fewer columns than bins, pad with final state
+        # 如果演化列数少于仓数，用末态填充
         if atom_A_for_bins.shape[1] < n_bins:
             padding = np.tile(atom_A_for_bins[:, -1:], (1, n_bins - atom_A_for_bins.shape[1]))
             atom_A_for_bins = np.hstack([atom_A_for_bins, padding])
@@ -846,12 +792,12 @@ def plot_dual_arm_heatmap(
             padding = np.tile(atom_B_for_bins[:, -1:], (1, n_bins - atom_B_for_bins.shape[1]))
             atom_B_for_bins = np.hstack([atom_B_for_bins, padding])
 
-    # Extract bin probabilities
+    # 提取仓概率
     probs_A = np.zeros((n_bins, 18))
     probs_B = np.zeros((n_bins, 18))
 
     for n in range(n_bins):
-        # Chain layout: A1(0), B1(1), A2(2), B2(3), ..., AN, BN
+        # 链布局：A1(0), B1(1), A2(2), B2(3), ..., AN, BN
         site_A = 2 * n
         site_B = 2 * n + 1
         rho_A = mps.get_reduced_density([site_A])
@@ -1163,32 +1109,32 @@ def plot_dual_arm_heatmap(
 
 
 # ============================================================================
-# Cross-Bin First-Order Coherence (for Phase Visualization)
+# 跨仓一阶相干性（用于相位可视化）
 # ============================================================================
 
 def _telecom_annihilation_ops():
     """
-    Construct annihilation operators for the 1517nm subspace.
+    构造1517nm子空间的湮灭算符。
 
-    1517 basis: [vac, 1H, 1V, 2H, 2V, HV]
-    a_H: annihilates H photon (maps |1H> -> |vac>)
-    a_V: annihilates V photon (maps |1V> -> |vac>)
+    1517基：[vac, 1H, 1V, 2H, 2V, HV]
+    a_H：湮灭H光子（映射 |1H> -> |vac>）
+    a_V：湮灭V光子（映射 |1V> -> |vac>）
 
     Returns
     -------
     Tuple of np.ndarray
         (a_H_1517, a_V_1517, a_H_dag_1517, a_V_dag_1517)
-        Each is 6x6 complex matrix
+        每个都是6x6复数矩阵
     """
-    # a_H: maps |1H> (index 1) to |vac> (index 0)
+    # a_H：映射 |1H>（索引1）到 |vac>（索引0）
     a_H_1517 = np.zeros((6, 6), dtype=complex)
     a_H_1517[0, 1] = 1.0
 
-    # a_V: maps |1V> (index 2) to |vac> (index 0)
+    # a_V：映射 |1V>（索引2）到 |vac>（索引0）
     a_V_1517 = np.zeros((6, 6), dtype=complex)
     a_V_1517[0, 2] = 1.0
 
-    # Hermitian conjugates (creation operators)
+    # 厄米共轭（产生算符）
     a_H_dag_1517 = a_H_1517.conj().T
     a_V_dag_1517 = a_V_1517.conj().T
 
@@ -1197,21 +1143,21 @@ def _telecom_annihilation_ops():
 
 def _bin18_annihilation_ops():
     """
-    Construct annihilation operators embedded in the 18D bin space.
+    构造嵌入18维仓空间的湮灭算符。
 
-    Bin space = 780(3D) x 1517(6D) = 18D
-    We care about telecom (1517nm) photons only.
+    仓空间 = 780(3D) x 1517(6D) = 18D
+    我们只关心通信（1517nm）光子。
 
     Returns
     -------
     Tuple of np.ndarray
         (a_H_bin, a_V_bin, a_H_dag_bin, a_V_dag_bin)
-        Each is 18x18 complex matrix
+        每个都是18x18复数矩阵
     """
     I_780 = np.eye(3, dtype=complex)
     a_H_1517, a_V_1517, a_H_dag_1517, a_V_dag_1517 = _telecom_annihilation_ops()
 
-    # Embed: I_780 ⊗ a_1517
+    # 嵌入：I_780 ⊗ a_1517
     a_H_bin = np.kron(I_780, a_H_1517)
     a_V_bin = np.kron(I_780, a_V_1517)
     a_H_dag_bin = np.kron(I_780, a_H_dag_1517)
@@ -1228,55 +1174,54 @@ def extract_first_order_coherence(
     coherence_threshold: float = 1e-10,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Extract first-order coherence G_{nm} = <a_n^dag a_m> for wave packet phase.
+    提取一阶相干性 G_{nm} = <a_n^dag a_m> 用于波包相位。
 
-    For single-photon states, G is approximately rank-1: G_{nm} ≈ ξ_n* ξ_m
-    where ξ_n is the wave packet amplitude. The phase of ξ_n gives the
-    optical phase at each bin.
+    对于单光子态，G近似秩-1：G_{nm} ≈ ξ_n* ξ_m
+    其中ξ_n是波包振幅。ξ_n的相位给出每个仓的光学相位。
 
-    Two extraction modes:
-    1. reference_bin=None: Extract full G matrix, get phase from eigenvector
-    2. reference_bin=int: Extract relative phase g_n = <a_ref^dag a_n>
+    两种提取模式：
+    1. reference_bin=None：提取完整G矩阵，从特征向量获取相位
+    2. reference_bin=int：提取相对相位 g_n = <a_ref^dag a_n>
 
     Parameters
     ----------
     mps : MPSState
-        MPS state
+        MPS态
     n_bins : int
-        Number of time bins
+        时间仓数量
     arm : str
-        Which arm to extract ('A' or 'B')
+        要提取的臂（'A' 或 'B'）
     reference_bin : int, optional
-        Reference bin index. If None, uses eigendecomposition.
-        If specified, computes relative phase to this bin.
+        参考仓索引。若为None，使用特征分解。
+        若指定，计算相对此仓的相位。
     coherence_threshold : float
-        Minimum coherence magnitude to trust phase. Below this, phase is masked.
+        信任相位的相干幅度最小值。低于此值，相位被屏蔽。
 
     Returns
     -------
     Tuple of np.ndarray
         (phases, amplitudes)
-        - phases: (n_bins,) phase array in radians [-π, π]
-        - amplitudes: (n_bins,) coherence magnitude array
+        - phases: (n_bins,) 相位数组，单位弧度 [-π, π]
+        - amplitudes: (n_bins,) 相干幅度数组
     """
-    # Get annihilation operators
+    # 获取湮灭算符
     a_H, a_V, a_H_dag, a_V_dag = _bin18_annihilation_ops()
 
-    # Use H polarization as default (can extend to both)
+    # 默认使用H偏振（可扩展到两者）
     a = a_H
     a_dag = a_H_dag
 
-    # Get site indices for this arm
-    # Chain layout: A1(0), B1(1), A2(2), B2(3), ..., AN, BN
+    # 获取此臂的格点索引
+    # 链布局：A1(0), B1(1), A2(2), B2(3), ..., AN, BN
     arm_indices = []
     if arm.upper() == 'A':
         for n in range(n_bins):
             arm_indices.append(2 * n)
-    else:  # arm B
+    else:  # B臂
         for n in range(n_bins):
             arm_indices.append(2 * n + 1)
 
-    # Method 1: Reference bin approach (faster, gives relative phase)
+    # 方法1：参考仓方法（更快，给出相对相位）
     if reference_bin is not None:
         if reference_bin < 0 or reference_bin >= n_bins:
             raise ValueError(f"reference_bin={reference_bin} out of range [0, {n_bins})")
@@ -1287,51 +1232,51 @@ def extract_first_order_coherence(
 
         for i, site in enumerate(arm_indices):
             if i == reference_bin:
-                # Self-correlation: <a^dag a> = number operator
+                # 自相关：<a^dag a> = 数算符
                 rho_ref = mps.get_reduced_density([ref_site])
                 if rho_ref.shape[0] == 18:
                     N_op = a_dag @ a
                     amplitudes[i] = np.abs(np.trace(rho_ref @ N_op))
                 else:
                     amplitudes[i] = 0.0
-                phases[i] = 0.0  # Reference phase
+                phases[i] = 0.0  # 参考相位
             else:
-                # Get two-site reduced density matrix
-                # Must ensure sites are in order for consistent tensor product
+                # 获取两格点约化密度矩阵
+                # 必须确保格点按张量积顺序排列
                 if ref_site < site:
                     sites = [ref_site, site]
-                    # Construct two-site operator: a_ref^dag ⊗ a_i
-                    # Operator dimension: 18x18 for each site -> 324x324 for two sites
+                    # 构造两格点算符：a_ref^dag ⊗ a_i
+                    # 算符维度：每个格点18x18 -> 两格点324x324
                     op_2site = np.kron(a_dag, a)
                 else:
                     sites = [site, ref_site]
-                    # Order reversed: a_i ⊗ a_ref^dag
+                    # 顺序反转：a_i ⊗ a_ref^dag
                     op_2site = np.kron(a, a_dag)
 
                 rho_2site = mps.get_reduced_density(sites)
 
-                # rho_2site should be (18*18) x (18*18) = 324x324
-                # op_2site should also be 324x324
+                # rho_2site 应该是 (18*18) x (18*18) = 324x324
+                # op_2site 也应该是 324x324
                 if rho_2site.shape[0] == 324 and op_2site.shape[0] == 324:
-                    # Compute expectation value: Tr[rho * (a_dag ⊗ a)]
+                    # 计算期望值：Tr[rho * (a_dag ⊗ a)]
                     g = np.trace(rho_2site @ op_2site)
                     phases[i] = np.angle(g)
                     amplitudes[i] = np.abs(g)
                 else:
-                    # Dimension mismatch, skip
+                    # 维度不匹配，跳过
                     phases[i] = 0.0
                     amplitudes[i] = 0.0
 
         return phases, amplitudes
 
-    # Method 2: Full correlation matrix with eigendecomposition
-    # Build G matrix where G[n,m] = <a_n^dag a_m>
+    # 方法2：完整相关矩阵和特征分解
+    # 构造G矩阵，其中 G[n,m] = <a_n^dag a_m>
     G = np.zeros((n_bins, n_bins), dtype=complex)
 
     for n in range(n_bins):
         for m in range(n_bins):
             if m < n:
-                # Use Hermitian symmetry: G[n,m] = conj(G[m,n])
+                # 利用厄米对称性：G[n,m] = conj(G[m,n])
                 G[n, m] = np.conj(G[m, n])
                 continue
 
@@ -1339,16 +1284,16 @@ def extract_first_order_coherence(
             site_m = arm_indices[m]
 
             if n == m:
-                # On-site: <a_n^dag a_n> = photon number at bin n
+                # 在位：<a_n^dag a_n> = 仓n的光子数
                 rho_n = mps.get_reduced_density([site_n])
                 if rho_n.shape[0] == 18:
-                    # Tr[rho * a^dag a] = number expectation
+                    # Tr[rho * a^dag a] = 数期望
                     N_op = a_dag @ a
                     G[n, n] = np.trace(rho_n @ N_op)
                 else:
                     G[n, n] = 0.0
             else:
-                # Cross-bin correlation
+                # 跨仓相关
                 if site_n < site_m:
                     sites = [site_n, site_m]
                     op_2site = np.kron(a_dag, a)
@@ -1363,23 +1308,23 @@ def extract_first_order_coherence(
                 else:
                     G[n, m] = 0.0
 
-    # Extract phases from dominant eigenvector
-    # For pure single-photon states, G should be rank-1
+    # 从主特征向量提取相位
+    # 对于纯单光子态，G应该是秩-1
     eigvals, eigvecs = np.linalg.eigh(G)
 
-    # Dominant eigenvalue and eigenvector
+    # 主特征值和特征向量
     idx_max = np.argmax(np.abs(eigvals))
     eigenmode = eigvecs[:, idx_max]
 
-    # Phase is the argument of the eigenmode
-    # Global phase is arbitrary, so we set mean phase to 0
+    # 相位是特征变量的辐角
+    # 全局相位是任意的，所以我们设平均相位为0
     phases = np.angle(eigenmode)
-    phases = phases - np.mean(phases)  # Remove global phase
+    phases = phases - np.mean(phases)  # 移除全局相位
 
-    # Amplitude from eigenvalue (sqrt for single-photon)
+    # 从特征值获取振幅（单光子取平方根）
     amplitudes = np.sqrt(np.abs(eigvals[idx_max])) * np.abs(eigenmode)
 
-    # Apply threshold mask: set phase to 0 where amplitude is too small
+    # 应用阈值屏蔽：在振幅太小的位置将相位设为0
     mask = amplitudes < coherence_threshold
     phases[mask] = 0.0
 
@@ -1387,7 +1332,7 @@ def extract_first_order_coherence(
 
 
 # ============================================================================
-# Phase-Aware (Domain Coloring) Heatmap Visualization
+# 相位感知（域着色）热图可视化
 # ============================================================================
 
 def extract_bin_state_coherences(
@@ -1399,50 +1344,50 @@ def extract_bin_state_coherences(
     reference_bin: Optional[int] = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Extract probabilities and coherence phases for all 18 bin states.
+    提取所有18个仓状态的概率和相干相位。
 
-    For each bin, extracts:
-    - Probability: rho[k,k] (diagonal elements)
-    - Phase: Two methods available:
-      1. use_crossbin_phase=False: arg(rho[0,k]) (coherence with vacuum)
-         WARNING: This is usually noise for entangled states!
-      2. use_crossbin_phase=True: Uses cross-bin first-order coherence
-         G_nm = <a_n^dag a_m> for single-photon wavepacket phase.
-         This is the physically meaningful phase for entangled atom-photon states.
+    对每个仓，提��：
+    - 概率：rho[k,k]（对角元素）
+    - 相位：两种可用方法：
+      1. use_crossbin_phase=False：arg(rho[0,k])（与真空的相干）
+         警告：对于纠缠态这通常是噪声！
+      2. use_crossbin_phase=True：使用跨仓一阶相干性
+         G_nm = <a_n^dag a_m> 用于单光子波包相位。
+         这是原子-光子纠缠态的物理上有意义的相位。
 
     Parameters
     ----------
     mps : MPSState
-        MPS state
+        MPS态
     n_bins : int
-        Number of time bins
+        时间仓数量
     arm : str
-        Which arm to extract ('A' or 'B')
+        要提取的臂（'A' 或 'B'）
     coherence_threshold : float
-        Threshold for coherence magnitude. When |rho[0,k]| < threshold,
-        phase is set to 0 and masked (to avoid displaying numerical noise).
+        相干幅度阈值。当 |rho[0,k]| < threshold 时，
+        相位被设为0并被屏蔽（以避免显示数值噪声）。
     use_crossbin_phase : bool
-        If True, use cross-bin first-order coherence for phase extraction.
-        This is the recommended method for atom-photon entangled states.
+        若为True，使用跨仓一阶相干性进行相位提取。
+        这是原子-光子纠缠态的推荐方法。
     reference_bin : int, optional
-        Reference bin for cross-bin phase calculation. If None, uses
-        bin with maximum intensity as reference.
+        跨仓相位计算的参考仓。若为None，使用
+        最大强度的仓作为参考。
 
     Returns
     -------
     Tuple of np.ndarray
         (probs_A, probs_B, phases_A, phases_B)
-        - probs: (n_bins, 18) real probability array
-        - phases: (n_bins, 18) real phase array (in radians, -π to π)
+        - probs: (n_bins, 18) 实数概率数组
+        - phases: (n_bins, 18) 实数相位数组（单位弧度，-π到π）
     """
     probs_A = np.zeros((n_bins, 18), dtype=float)
     probs_B = np.zeros((n_bins, 18), dtype=float)
     phases_A = np.zeros((n_bins, 18), dtype=float)
     phases_B = np.zeros((n_bins, 18), dtype=float)
 
-    # Extract probabilities for all bins
+    # 提取所有仓的概率
     for n in range(n_bins):
-        # Chain layout: A1(0), B1(1), A2(2), B2(3), ..., AN, BN
+        # 链布局：A1(0), B1(1), A2(2), B2(3), ..., AN, BN
         site_A = 2 * n
         site_B = 2 * n + 1
 
@@ -1455,11 +1400,11 @@ def extract_bin_state_coherences(
             probs_B[n, :] = np.diag(rho_B).real
 
     if use_crossbin_phase:
-        # Use cross-bin first-order coherence for physically meaningful phase
-        # This extracts the wavepacket phase from G_nm = <a_n^dag a_m>
+        # 使用跨仓一阶相干性获取物理上有意义的相位
+        # 这从 G_nm = <a_n^dag a_m> 提取波包相位
         if reference_bin is None:
-            # Find bin with maximum single-photon probability
-            # Single-photon states are at indices 1 (|vac,H>) and 2 (|vac,V>)
+            # 找到具有最大单光子概率的仓
+            # 单光子态位于索引1（|vac,H>）和2（|vac,V>）
             total_1ph_A = probs_A[:, 1] + probs_A[:, 2]
             total_1ph_B = probs_B[:, 1] + probs_B[:, 2]
             ref_A = int(np.argmax(total_1ph_A))
@@ -1467,7 +1412,7 @@ def extract_bin_state_coherences(
         else:
             ref_A = ref_B = reference_bin
 
-        # Extract cross-bin phases
+        # 提取跨仓相位
         crossbin_phases_A, crossbin_amps_A = extract_first_order_coherence(
             mps, n_bins, arm='A', reference_bin=ref_A,
             coherence_threshold=coherence_threshold
@@ -1477,19 +1422,19 @@ def extract_bin_state_coherences(
             coherence_threshold=coherence_threshold
         )
 
-        # Broadcast to all 18 states (phase is shared across bin states)
+        # 广播到所有18个状态（相位在仓状态间共享）
         for n in range(n_bins):
             phases_A[n, :] = crossbin_phases_A[n]
             phases_B[n, :] = crossbin_phases_B[n]
 
-            # Apply amplitude mask: where coherence is small, set phase to 0
+            # 应用幅度屏蔽：在相干性小的位置将相位设为0
             if crossbin_amps_A[n] < coherence_threshold:
                 phases_A[n, :] = 0.0
             if crossbin_amps_B[n] < coherence_threshold:
                 phases_B[n, :] = 0.0
 
     else:
-        # Original method: use vacuum coherence (often noise for entangled states)
+        # 原始方法：使用真空相干性（对纠缠态通常是噪声）
         for n in range(n_bins):
             site_A = 2 * n
             site_B = 2 * n + 1
@@ -1498,11 +1443,11 @@ def extract_bin_state_coherences(
             rho_B = mps.get_reduced_density([site_B])
 
             if rho_A.shape[0] == 18:
-                # Get coherence magnitudes
+                # 获取相干幅度
                 coh_A = rho_A[0, :]
                 coh_mag_A = np.abs(coh_A)
 
-                # Apply threshold mask: if coherence too small, phase is noise
+                # 应用阈值屏蔽：若相干性太小，相位是噪声
                 phases_A[n, :] = np.where(
                     coh_mag_A >= coherence_threshold,
                     np.angle(coh_A),
@@ -1530,49 +1475,49 @@ def _probs_phases_to_rgb_image(
     max_prob: float = None,
 ) -> np.ndarray:
     """
-    Convert probabilities and phases to RGB image using HSV color model.
+    使用HSV颜色模型将概率和相位转换为RGB图像。
 
-    For each element:
-    - Hue = phase (0 to 2π mapped to 0-1)
-    - Saturation = fixed value
-    - Value = prob^value_power (normalized)
+    对每个元素：
+    - Hue = 相位（0到2π映射到0-1）
+    - Saturation = 固定值
+    - Value = prob^value_power（归一化）
 
     Parameters
     ----------
     probs : np.ndarray
-        Probability array (n_rows, n_cols), real values >= 0
+        概率数组 (n_rows, n_cols)，实数值 >= 0
     phases : np.ndarray
-        Phase array (n_rows, n_cols), real values in [-π, π]
+        相位数组 (n_rows, n_cols)，[-π, π]内的实数值
     saturation : float
-        Color saturation (0-1)
+        颜色饱和度（0-1）
     value_power : float
-        Power for intensity mapping
+        强度映射的幂次
     max_prob : float, optional
-        Maximum probability for normalization. If None, uses data max.
+        归一化的最大概率。若为None，使用数据最大值。
 
     Returns
     -------
     np.ndarray
-        RGB image array (n_rows, n_cols, 3) with values in [0, 1]
+        RGB图像数组 (n_rows, n_cols, 3)，值在[0, 1]内
     """
     from matplotlib.colors import hsv_to_rgb
 
-    # Normalize phases to [0, 1] for hue
+    # 将相位归一化到[0, 1]作为色相
     hues = (phases + np.pi) / (2 * np.pi)
 
-    # Normalize probabilities for value channel
+    # 为亮度通道归一化概率
     if max_prob is None or max_prob <= 0:
         max_prob = probs.max() if probs.max() > 0 else 1.0
     values = (probs / max_prob) ** value_power
     values = np.clip(values, 0, 1)
 
-    # Create HSV array
+    # 创建HSV数组
     hsv = np.zeros(probs.shape + (3,))
     hsv[..., 0] = hues
     hsv[..., 1] = saturation
     hsv[..., 2] = values
 
-    # Convert to RGB
+    # 转换为RGB
     rgb = hsv_to_rgb(hsv)
 
     return rgb
@@ -1584,7 +1529,7 @@ def _create_hsv_phase_colorbar(
     label: str = "Phase",
 ) -> None:
     """
-    Add a horizontal phase colorbar (HSV color wheel) to the figure.
+    向图形添加水平相位色条（HSV色轮）。
 
     Parameters
     ----------
@@ -1639,60 +1584,59 @@ def plot_dual_arm_heatmap_phase(
     reference_bin: Optional[int] = None,
 ) -> None:
     """
-    Visualize dual-arm bin state amplitudes with phase information.
+    可视化带有相位信息的双臂仓状态振幅。
 
-    This function mimics the layout of plot_dual_arm_heatmap() but uses HSV
-    coloring where:
-    - Hue = phase of coherence (0 to 2π as color wheel)
-    - Saturation = color intensity (default: 1.0)
-    - Value = brightness ∝ probability^value_power
+    此函数模仿 plot_dual_arm_heatmap() 的布局，但使用HSV着色：
+    - 色相 = 相干性相位（0到2π作为色轮）
+    - 饱和度 = 颜色强度（默认：1.0）
+    - 明度 = 亮度 ∝ 概率^value_power
 
-    Phase Extraction Methods:
-    - use_crossbin_phase=False (default): Uses arg(rho[0,k]) (vacuum coherence)
-      with threshold masking. This is fast but may show noise for entangled states.
-      Phases where |rho[0,k]| < coherence_threshold are masked to 0.
-    - use_crossbin_phase=True: Uses cross-bin first-order coherence
-      G_nm = <a_n^dag a_m> to extract the wavepacket phase.
-      WARNING: This is O(n_bins^2) and can be very slow for large n_bins.
+    相位提取方法：
+    - use_crossbin_phase=False（默认）：使用 arg(rho[0,k])（真空相干）
+      配阈值屏蔽。这很快但对纠缠态可能显示噪声。
+      |rho[0,k]| < coherence_threshold 的相位被屏蔽为0。
+    - use_crossbin_phase=True：使用跨仓一阶相干性
+      G_nm = <a_n^dag a_m> 提取波包相位。
+      警告：这是 O(n_bins^2)，对大n_bins可能很慢。
 
     Parameters
     ----------
     result : Union[EmissionResult, MPSState]
-        Simulation result to visualize. If EmissionResult and show_atomic=True,
-        atomic state evolution is extracted from result.atom_X_state_evolution.
+        要可视化的仿真结果。如果是EmissionResult且show_atomic=True，
+        从result.atom_X_state_evolution提取原子状态演化。
     save_path : str
-        Path to save the figure
+        保存图形的路径
     show_atomic : bool
-        Whether to display atomic state rows (default: False)
+        是否显示原子状态行（默认：False）
     stage_name : str
-        Stage name for title (e.g., "Emission", "QFC", "BS")
+        标题的阶段名称（如 "Emission", "QFC", "BS"）
     time_grid : TimeGrid, optional
-        Time grid for x-axis labels. If None and result is EmissionResult,
-        uses result.time_grid.
+        x轴标签的时间网格。若为None且result是EmissionResult，
+        使用result.time_grid。
     saturation : float
-        Color saturation (0-1). Lower values give more pastel colors.
+        颜色饱和度（0-1）。较低值产生更柔和的颜色。
     value_power : float
-        Power for intensity mapping. 0.5 = sqrt (default), 1.0 = linear.
-        Higher values increase contrast for small amplitudes.
+        强度映射的幂次。0.5 = 平方根（默认），1.0 = 线性。
+        较高值增加小幅振幅的对比度。
     vmax_scale_factor : float
-        Factor for scaling max amplitude (relative to max coherence magnitude).
+        缩放最大振幅的因子（相对于最大相干幅度）。
     use_crossbin_phase : bool
-        If True, use cross-bin first-order coherence for phase.
-        This extracts the wavepacket phase from G_nm = <a_n^dag a_m>.
-        WARNING: Very slow for large n_bins (O(n_bins^2) density matrix calls).
-        If False (default), use vacuum coherence arg(rho[0,k]) with masking.
+        若为True，使用跨仓一阶相干性获取相位。
+        这从 G_nm = <a_n^dag a_m> 提取波包相位。
+        警告：对大n_bins非常慢（O(n_bins^2)密度矩阵调用）。
+        若为False（默认），使用带屏蔽的真空相干 arg(rho[0,k])。
     coherence_threshold : float
-        Threshold for coherence magnitude. Below this, phase is masked.
+        相干幅度的阈值。低于此值，相位被屏蔽。
     reference_bin : int, optional
-        Reference bin for cross-bin phase calculation. If None, uses
-        bin with maximum intensity.
+        跨仓相位计算的参考仓。若为None，使用
+        最大强度的仓。
     """
     import matplotlib as mpl
     from matplotlib.colors import hsv_to_rgb
 
     mpl.rcParams['image.interpolation'] = 'nearest'
 
-    # Extract MPS and time_grid from result
+    # 从结果中提取MPS和time_grid
     if isinstance(result, EmissionResult):
         mps = result.mps
         if time_grid is None:

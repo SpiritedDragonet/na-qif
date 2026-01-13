@@ -43,9 +43,11 @@ Thumbs.db
 
 # Claude
 .claude/
+tmpclaude-*
 
 # Project specific
 *.log
+outputs/
 
 # Test outputs in root directory (but keep notebooks/*.png)
 /test_*.png

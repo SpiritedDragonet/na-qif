@@ -1,8 +1,9 @@
+# -*- coding: utf-8 -*-
 """
-Hilbert Space Module
+希尔伯特空间模块
 
-Provides classes and functions for defining Hilbert spaces,
-operators, and site types for the time-bin MPS simulation.
+提供用于定义希尔伯特空间、算符和时间仓MPS仿真的
+格点类型的类和函数。
 """
 
 from .basis import (
@@ -25,12 +26,6 @@ from .operators import (
     atom_transition,
     number_op,
 )
-from .sites import (
-    FiniteDimSite,
-    bin_site,
-    atom_site,
-    system_site,
-)
 
 __all__ = [
     # basis
@@ -51,9 +46,4 @@ __all__ = [
     'creation_op',
     'atom_transition',
     'number_op',
-    # sites
-    'FiniteDimSite',
-    'bin_site',
-    'atom_site',
-    'system_site',
 ]

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Total Simulation: Dual-Atom Emission -> Time-Bin Wave Packets
 
@@ -51,6 +52,7 @@ def run_dual_atom_emission(
     t0_A: Optional[float] = None,
     t0_B: Optional[float] = None,
     sigma: float = 12.0,
+    delay_bins_B: int = 0,
     verbose: bool = True,
 ) -> EmissionResult:
     """
@@ -80,6 +82,9 @@ def run_dual_atom_emission(
         Peak time for atom B (ns)
     sigma : float
         Width parameter for Gaussian emission profile (ns)
+    delay_bins_B : int
+        原子B发射延迟的仓数（负数表示B晚于A）
+        例如-10表示A先开始发射，10个仓后B才开始
     verbose : bool
         Whether to print progress information
 
@@ -122,14 +127,12 @@ def run_dual_atom_emission(
     )
 
     # Run simulation using the simulation layer
-    # delay_bins_B=0: no delay for testing BSM
-    # TODO: Later make this random from -100 to +100
     result = run_emission_only(
         time_grid=time_grid,
         emit_params=emit_params,
         chi_max=chi_max,
         verbose=verbose,
-        delay_bins_B=0,  # No delay for BSM testing
+        delay_bins_B=delay_bins_B,
     )
 
     return result
@@ -238,6 +241,86 @@ def save_detection_summary(
         f.write(f"  Bell state: {bell_state}\n")
 
 
+def save_debug_info(
+    mps,
+    n_bins: int,
+    stage: str,
+    output_dir: Path,
+    step_index: int,
+):
+    """
+    保存调试信息到文件。
+
+    Parameters
+    ----------
+    mps : MPSState
+        当前MPS态
+    n_bins : int
+        时间仓数量
+    stage : str
+        当前阶段名称
+    output_dir : Path
+        输出目录
+    step_index : int
+        步骤索引
+    """
+    from atom_sim.simulation.detection import (
+        compute_photon_statistics, build_jump_operators_18d,
+        extract_spin_state, compute_fidelity_with_bell
+    )
+
+    info = {}
+    info['stage'] = stage
+    info['step'] = step_index
+
+    # MPS维度信息
+    chi_list = mps._mps.chi
+    d_list = mps.d
+    info['n_sites'] = len(d_list)
+    info['n_bins'] = n_bins
+    info['bond_dimensions'] = f'chi_min={min(chi_list)}, chi_max={max(chi_list)}, chi_mean={np.mean(chi_list):.1f}'
+    info['local_dimensions'] = f'first_5={d_list[:5]}, last_5={d_list[-5:]}'
+
+    # 光子统计
+    stats = compute_photon_statistics(mps, n_bins, verbose=False)
+    info['photon_stats'] = stats
+
+    # 原子态信息
+    spin_state = extract_spin_state(mps, n_bins)
+    info['spin_state_diag'] = np.diag(spin_state).real.tolist()
+    info['spin_purity'] = float(np.real(np.trace(spin_state @ spin_state)))
+
+    # Bell态保真度
+    for bell in ['Psi+', 'Psi-', 'Phi+', 'Phi-']:
+        info[f'fidelity_{bell.replace("+", "p").replace("-", "m")}'] = compute_fidelity_with_bell(spin_state, bell)
+
+    # 保存到文件
+    info_file = output_dir / f'debug_step_{step_index:02d}_{stage.replace(" ", "_").lower()}.txt'
+    with open(info_file, 'w', encoding='utf-8') as f:
+        f.write(f'调试信息 - {stage}\n')
+        f.write('='*60 + '\n\n')
+        f.write(f'MPS维度信息:\n')
+        f.write(f'  n_sites = {info["n_sites"]}\n')
+        f.write(f'  n_bins = {info["n_bins"]}\n')
+        f.write(f'  {info["bond_dimensions"]}\n')
+        f.write(f'  {info["local_dimensions"]}\n\n')
+        f.write(f'光子统计:\n')
+        f.write(f'  总期望光子数 = {stats["n_total"]:.4f}\n')
+        f.write(f'  H偏振 = {stats["n_H"]:.4f}\n')
+        f.write(f'  V偏振 = {stats["n_V"]:.4f}\n')
+        f.write(f'  损耗概率 = {stats["loss_prob"]:.4f}\n\n')
+        f.write(f'原子态信息:\n')
+        f.write(f'  对角元: {info["spin_state_diag"]}\n')
+        f.write(f'  纯度: {info["spin_purity"]:.4f}\n\n')
+        f.write(f'Bell态保真度:\n')
+        f.write(f'  Psi+ = {info["fidelity_Psip"]:.4f}\n')
+        f.write(f'  Psi- = {info["fidelity_Psim"]:.4f}\n')
+        f.write(f'  Phi+ = {info["fidelity_Phip"]:.4f}\n')
+        f.write(f'  Phi- = {info["fidelity_Phim"]:.4f}\n')
+
+    print(f'  调试信息已保存: {info_file.name}')
+
+
 def main():
     """Main function for testing emission + QFC + fiber channel."""
     # Create output directory with timestamp
@@ -249,14 +332,15 @@ def main():
     print("Running emission + QFC + fiber channel simulation...")
 
     # Run emission
-    # With delay_bins_B=-10, A starts at bin 10
+    # delay_bins_B=-10: B比A晚10个仓开始发射（2ns延迟）
     result = run_dual_atom_emission(
-        n_bins=100,  # Back to 100 for testing
-        dt_ns=0.2,
+        n_bins=100,  # 仓数
+        dt_ns=0.2,   # 时间步长
         chi_max=30,
         gamma_peak_A=0.2,
         gamma_peak_B=0.2,
         sigma=6.0,
+        delay_bins_B=-10,  # B延迟10个仓
         verbose=True,
     )
 
@@ -267,6 +351,16 @@ def main():
         save_path=str(output_dir / "1_after_emission.png"),
         show_atomic=True,
         stage_name="After Emission"
+    )
+
+    # Save debug info
+    print("\nSaving debug information...")
+    save_debug_info(
+        mps=result.mps,
+        n_bins=result.get_n_bins(),
+        stage='After Emission',
+        output_dir=output_dir,
+        step_index=1,
     )
 
     # # Save phase-aware visualization (HSV domain coloring)
@@ -304,6 +398,15 @@ def main():
         show_atomic=False,
         stage_name="After QFC + 780nm Filter",
         time_grid=result.time_grid,
+    )
+
+    # Save debug info
+    save_debug_info(
+        mps=result.mps,
+        n_bins=result.get_n_bins(),
+        stage='After QFC + Filter',
+        output_dir=output_dir,
+        step_index=2,
     )
 
     # # Save phase-aware visualization after QFC
@@ -384,6 +487,15 @@ def main():
         time_grid=result.time_grid,
     )
 
+    # Save debug info after BS
+    save_debug_info(
+        mps=result.mps,
+        n_bins=result.get_n_bins(),
+        stage='After BS',
+        output_dir=output_dir,
+        step_index=3,
+    )
+
     # Compute photon statistics before normalization
     print("\nComputing photon statistics after BS...")
     photon_stats = compute_photon_statistics(
@@ -408,6 +520,15 @@ def main():
         time_grid=result.time_grid,
     )
 
+    # 保存归一化后的调试信息
+    save_debug_info(
+        mps=result.mps,
+        n_bins=result.get_n_bins(),
+        stage='After Normalization',
+        output_dir=output_dir,
+        step_index=4,
+    )
+
     # Verify photon statistics after normalization
     photon_stats_norm = compute_photon_statistics(
         mps=result.mps,
@@ -415,48 +536,82 @@ def main():
         verbose=True,
     )
 
-    # Detection parameters
-    eta_det = 0.85
-    p_dark = 1e-6
-
-    # Run detection and BSM using quantum jump method
-    print("\nRunning detection and BSM (Quantum Jump Method)...")
-    det_result = run_detection_and_bsm(
-        result=result,
-        eta_det=eta_det,
-        p_dark=p_dark,
-        seed=42,
-        verbose=True,
-        use_quantum_jump=True,  # Use new physically correct method
-    )
-
-    # Print results
-    if det_result.success:
-        print(f"\n  BSM SUCCESS!")
-        print(f"  Bell state heralded: {det_result.bell_state}")
-        print(f"  Clicks: {[(c.detector, c.bin_index) for c in det_result.clicks]}")
-
-        # Compute fidelity with expected Bell state
-        fidelity = compute_fidelity_with_bell(det_result.spin_state, det_result.bell_state)
-        print(f"  Fidelity with |{det_result.bell_state}>: {fidelity:.4f}")
-
-        # Also compute fidelity with all Bell states for reference
-        print(f"\n  Fidelity with all Bell states:")
-        for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
-            f = compute_fidelity_with_bell(det_result.spin_state, bell)
-            marker = " <-- heralded" if bell == det_result.bell_state else ""
-            print(f"    F(|{bell}>): {f:.4f}{marker}")
-
-        # Print spin state
-        print(f"\n  Spin density matrix (qubit subspace):")
-        rho = det_result.spin_state
-        print(f"    Tr(rho) = {np.trace(rho).real:.4f}")
-        print(f"    Purity = {np.trace(rho @ rho).real:.4f}")
-    else:
-        print(f"\n  BSM FAILED - no success pattern found")
-        print(f"  Number of clicks: {len(det_result.clicks)}")
-        if det_result.clicks:
-            print(f"  Clicks: {[(c.detector, c.bin_index) for c in det_result.clicks]}")
+    # =========================================================================
+    # Detection: TEMPORARILY DISABLED FOR TESTING
+    # =========================================================================
+    # # Detection parameters
+    # eta_det = 0.85
+    # p_dark = 1e-6
+    #
+    # # Run detection and BSM using quantum jump method
+    # print("\nRunning detection and BSM (Quantum Jump Method)...")
+    # det_result = run_detection_and_bsm(
+    #     result=result,
+    #     eta_det=eta_det,
+    #     p_dark=p_dark,
+    #     seed=42,
+    #     verbose=True,
+    #     use_quantum_jump=True,  # Use new physically correct method
+    # )
+    #
+    # # Print results
+    # if det_result.success:
+    #     print(f"\n  BSM SUCCESS!")
+    #     print(f"  Bell state heralded: {det_result.bell_state}")
+    #     print(f"  Clicks: {[(c.detector, c.bin_index) for c in det_result.clicks]}")
+    #
+    #     # Compute fidelity with expected Bell state
+    #     fidelity = compute_fidelity_with_bell(det_result.spin_state, det_result.bell_state)
+    #     print(f"  Fidelity with |{det_result.bell_state}>: {fidelity:.4f}")
+    #
+    #     # Also compute fidelity with all Bell states for reference
+    #     print(f"\n  Fidelity with all Bell states:")
+    #     for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
+    #         f = compute_fidelity_with_bell(det_result.spin_state, bell)
+    #         marker = " <-- heralded" if bell == det_result.bell_state else ""
+    #         print(f"    F(|{bell}>): {f:.4f}{marker}")
+    #
+    #     # Print spin state
+    #     print(f"\n  Spin density matrix (qubit subspace):")
+    #     rho = det_result.spin_state
+    #     print(f"    Tr(rho) = {np.trace(rho).real:.4f}")
+    #     print(f"    Purity = {np.trace(rho @ rho).real:.4f}")
+    # else:
+    #     print(f"\n  BSM FAILED - no success pattern found")
+    #     print(f"  Number of clicks: {len(det_result.clicks)}")
+    #     if det_result.clicks:
+    #         print(f"  Clicks: {[(c.detector, c.bin_index) for c in det_result.clicks]}")
+    #
+    # # 保存探测后的调试信息
+    # # 注意：探测后MPS已被修改，需要使用det_result.spin_state
+    # print("\nSaving post-detection debug info...")
+    # with open(output_dir / 'debug_detection_result.txt', 'w', encoding='utf-8') as file:
+    #     file.write(f'探测结果\n')
+    #     file.write('='*60 + '\n\n')
+    #     file.write(f'成功: {det_result.success}\n')
+    #     file.write(f'Bell态: {det_result.bell_state}\n')
+    #     file.write(f'点击次数: {len(det_result.clicks)}\n')
+    #     if det_result.clicks:
+    #         file.write(f'点击详情: {[(c.detector, c.bin_index) for c in det_result.clicks]}\n')
+    #
+    #     file.write(f'\n自旋密度矩阵:\n')
+    #     rho = det_result.spin_state
+    #     file.write(f'  基: |00>, |01>, |10>, |11>\n')
+    #     for i in range(4):
+    #         for j in range(4):
+    #             val = rho[i, j]
+    #             if abs(val) > 1e-10:
+    #                 file.write(f'  rho[{i},{j}] = {val:.4f}\n')
+    #
+    #     file.write(f'\n纯度: {np.trace(rho @ rho).real:.4f}\n')
+    #
+    #     file.write(f'\nBell态保真度:\n')
+    #     for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
+    #         fid = compute_fidelity_with_bell(rho, bell)
+    #         marker = " <-- 探测到的" if bell == det_result.bell_state else ""
+    #         file.write(f'  F({bell}) = {fid:.4f}{marker}\n')
+    #
+    # print(f"  调试信息已保存: debug_detection_result.txt")
 
     print(f"\nDone! Files saved to: {output_dir}/")
 
