@@ -18,8 +18,6 @@ from .trajectory import (
     apply_loss_combined,
     apply_bs,
     apply_fiber_channel,
-    apply_detection,
-    find_bsm_success,
 )
 from .simulator import (
     SimulationResult,
@@ -30,10 +28,9 @@ from .detection import (
     TwoPhotonDetectionResult,
     run_two_photon_detection,
     extract_spin_state,
-    check_bsm_success as check_bsm_success_qjump,
+    check_bsm_success,
     compute_fidelity_with_bell,
     compute_photon_statistics,
-    build_jump_operators_18d,
 )
 
 __all__ = [
@@ -51,18 +48,15 @@ __all__ = [
     'apply_loss_combined',
     'apply_bs',
     'apply_fiber_channel',
-    'apply_detection',
-    'find_bsm_success',
     # simulator
     'SimulationResult',
     'run_simulation',
-    # detection (quantum jump method)
+    # detection (Kraus measurement)
     'DetectionEvent',
     'TwoPhotonDetectionResult',
     'run_two_photon_detection',
     'extract_spin_state',
-    'check_bsm_success_qjump',
+    'check_bsm_success',
     'compute_fidelity_with_bell',
     'compute_photon_statistics',
-    'build_jump_operators_18d',
 ]

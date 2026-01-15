@@ -373,7 +373,8 @@ def emission_gate(
     gamma: float,
     dt: float,
     Alpha: np.ndarray,
-    which_atom: str = 'A'
+    which_atom: str = 'A',
+    bin_first: bool = False
 ) -> np.ndarray:
     """
     原子-光子纠缠的发射门 U_emit（嵌入bin空间）。
@@ -401,11 +402,16 @@ def emission_gate(
         [[alpha_H+, alpha_H-], [alpha_V+, alpha_V-]]
     which_atom : str
         哪个原子（'A' 或 'B'）
+    bin_first : bool
+        如果为 True，返回 I_1517 ⊗ U_9x9（作用于 bin × atom）
+        如果为 False，返回 U_9x9 ⊗ I_1517（作用于 atom × bin）
 
     Returns
     -------
     np.ndarray
-        作用于原子(3D) × bin(18D=780×1517)的(54, 54)幺正矩阵
+        54x54 幺正矩阵
+        - bin_first=False: 作用在 原子(3D) × bin(18D=780×1517)
+        - bin_first=True: 作用在 bin(18D) × 原子(3D)
 
     Examples
     --------
@@ -455,11 +461,44 @@ def emission_gate(
     # 指数化得到原子×780上的幺正
     U_9x9 = expm(G_9x9)
 
-    # 1517子空间（6D）上的单位
-    I_1517 = np.eye(6, dtype=complex)
+    # U_9x9 作用在 atom(3D) × 780(3D) 上，形状 (9, 9)
+    # Reshape 为 (d_atom, d_780, d_atom, d_780)
+    U_9x9_4d = U_9x9.reshape(3, 3, 3, 3)
 
-    # 嵌入原子×bin(780×1517)空间：U_54 = U_9x9 ⊗ I_1517
-    # 这给出(9×9) ⊗ (6×6) = (54, 54)
-    U_54 = np.kron(U_9x9, I_1517)
+    if bin_first:
+        # bin × atom: (780 × 1517) × atom
+        # 需要把 U_9x9 (作用在 atom × 780) 转换为作用在 780 × atom
+        # 交换前两个索引: (atom, 780, atom, 780) -> (780, atom, 780, atom)
+        U_swapped = U_9x9_4d.transpose(1, 0, 3, 2)
+
+        # 扩展到包含 1517 子空间
+        # (780, atom, 780, atom) -> (780, 1517, atom, 780, 1517, atom)
+        # 通过在 780 和 atom 之间插入 I_1517
+        d_780, d_atom, _, _ = U_swapped.shape
+        d_1517 = 6
+
+        # 构造最终的 (54, 54) 矩阵
+        # 方法：先构造 I_1517 ⊗ U_swapped，然后 reshape
+        # I_1517 ⊗ U_swapped 的形状是 (6*3*3, 6*3*3) = (18, 18)？不对
+        # 正确的维度：(d_780 * d_1517 * d_atom, d_780 * d_1517 * d_atom) = (54, 54)
+
+        # 使用循环构造更清晰
+        U_54 = np.zeros((d_780 * d_1517 * d_atom, d_780 * d_1517 * d_atom), dtype=complex)
+        for i780 in range(d_780):
+            for i1517 in range(d_1517):
+                for iatom in range(d_atom):
+                    row = (i780 * d_1517 + i1517) * d_atom + iatom
+                    for j780 in range(d_780):
+                        for j1517 in range(d_1517):
+                            for jatom in range(d_atom):
+                                col = (j780 * d_1517 + j1517) * d_atom + jatom
+                                # 只有当 i1517 == j1517 时才有非零元素（I_1517）
+                                if i1517 == j1517:
+                                    U_54[row, col] = U_swapped[i780, iatom, j780, jatom]
+    else:
+        # atom × bin: atom × (780 × 1517)
+        # U_9x9 作用在 atom × 780 上，只需要张量积上 I_1517
+        I_1517 = np.eye(6, dtype=complex)
+        U_54 = np.kron(U_9x9, I_1517)
 
     return U_54

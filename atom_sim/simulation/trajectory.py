@@ -494,9 +494,11 @@ class TrajectoryRunner:
                     gamma=gamma_B,
                     dt=self.time_grid.dt * 1e9,
                     Alpha=self.emit.Alpha_B,
-                    which_atom='B'
+                    which_atom='B',
+                    bin_first=False  # atom 在左边，bin 在右边
                 )
-                # 作用于 (仓 B_n, atomB)
+                # site_B 是 atomB 的位置，site_B+1 是 bin B_n 的位置
+                # 作用在 (atomB, bin B_n) 上
                 mps.apply_bond_op(site_B, U_emit_B)
 
                 # 提取发射概率
@@ -587,9 +589,11 @@ class TrajectoryRunner:
                     gamma=gamma_A,
                     dt=self.time_grid.dt * 1e9,
                     Alpha=self.emit.Alpha_A,
-                    which_atom='A'
+                    which_atom='A',
+                    bin_first=False  # atom 在左边，bin 在右边
                 )
-                # 作用于 (仓 A_n, atomA)
+                # site_A 是 atomA 的位置，site_A+1 是 bin A_n 的位置
+                # 作用在 (atomA, bin A_n) 上
                 mps.apply_bond_op(site_A, U_emit_A)
 
                 # 提取发射概率
@@ -1192,127 +1196,3 @@ def apply_fiber_channel(
     _print_footer(mps, verbose, stage="Fiber Channel")
 
     return mps, (U_A, U_B, eta, phase)
-
-
-def apply_detection(
-    mps: MPSState,
-    n_bins: int,
-    eta_det: float = 1.0,
-    p_dark: float = 0.0,
-    rng: np.random.Generator = None,
-    verbose: bool = True,
-) -> Tuple[MPSState, List[Tuple[int, int, int, int]]]:
-    """
-    对分束器后的所有仓对应用探测POVM。
-
-    这测量每个 (A_n, B_n) 对的光子并返回点击模式。
-    每个格点有H和V探测器，每对4个结果（共16种组合）。
-
-    Parameters
-    ----------
-    mps : MPSState
-        MPS态（布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB）
-    n_bins : int
-        时间仓数量
-    eta_det : float
-        探测效率（0 <= eta_det <= 1）
-    p_dark : float
-        每个探测器的暗计数概率
-    rng : np.random.Generator
-        用于测量采样的随机数生成器
-    verbose : bool
-        是否打印进度
-
-    Returns
-    -------
-    Tuple[MPSState, List[Tuple[int, int, int, int]]]
-        (mps, outcomes) 其中 outcomes[n] = (dA_H, dA_V, dB_H, dB_V)
-        对于仓n，d=0表示无点击，d=1表示有点击。
-
-    Notes
-    -----
-    对于BSM（贝尔态测量），成功模式为：
-        - (1,0,0,1) 或 (0,1,1,0)：Psi+ 通告（不同端口各有一个H和一个V）
-        - (0,1,0,1) 或 (1,0,1,0)：Psi- 通告（不同端口相同偏振）
-
-    测量是破坏性的：探测后，光子态塌缩。
-    """
-    if rng is None:
-        rng = np.random.default_rng()
-
-    _print_header("Detection", verbose)
-    if verbose:
-        print(f"  eta_det = {eta_det:.3f}, p_dark = {p_dark:.6f}")
-
-    # 获取单格点探测POVM（每个格点4个结果）
-    M_single, outcomes_single = detection_povm_single_site(eta_det, p_dark)
-    # M_single[i] 是18x18，outcomes_single[i] 是 (d_H, d_V)
-
-    all_outcomes = []
-
-    for n in range(n_bins):
-        site_A = 2 * n
-        site_B = 2 * n + 1
-
-        # 对格点A应用探测，获取结果索引
-        mu_A = mps.apply_kraus_one_site(site_A, M_single, rng)
-        dA_H, dA_V = outcomes_single[mu_A]
-
-        # 对格点B应用探测，获取结果索引
-        mu_B = mps.apply_kraus_one_site(site_B, M_single, rng)
-        dB_H, dB_V = outcomes_single[mu_B]
-
-        outcome = (dA_H, dA_V, dB_H, dB_V)
-        all_outcomes.append(outcome)
-
-        _print_progress(n + 1, n_bins, verbose)
-
-    if verbose:
-        # 统计成功模式
-        psi_plus = [(1,0,0,1), (0,1,1,0)]  # 不同端口H-V或V-H
-        psi_minus = [(0,1,0,1), (1,0,1,0)]  # 不同端口相同偏振（带相位）
-
-        n_psi_plus = sum(1 for o in all_outcomes if o in psi_plus)
-        n_psi_minus = sum(1 for o in all_outcomes if o in psi_minus)
-        n_double_click = sum(1 for o in all_outcomes if sum(o) >= 2)
-
-        print(f"  Results summary:")
-        print(f"    Psi+ heralding: {n_psi_plus} bins")
-        print(f"    Psi- heralding: {n_psi_minus} bins")
-        print(f"    Multi-click: {n_double_click} bins")
-
-    _print_footer(mps, verbose, stage="Detection")
-
-    return mps, all_outcomes
-
-
-def find_bsm_success(
-    outcomes: List[Tuple[int, int, int, int]]
-) -> Tuple[bool, int, str]:
-    """
-    检查是否有任何仓具有BSM成功模式。
-
-    Parameters
-    ----------
-    outcomes : List[Tuple[int, int, int, int]]
-        所有仓的探测结果，每个是 (dA_H, dA_V, dB_H, dB_V)
-
-    Returns
-    -------
-    Tuple[bool, int, str]
-        (success, bin_index, bell_state) 其中：
-        - success：如果找到BSM通告则为True
-        - bin_index：哪个仓（从0开始索引），无成功则为-1
-        - bell_state："Psi+" 或 "Psi-" 或 ""
-    """
-    # BSM成功模式（每臂单个光子，不同探测器）
-    psi_plus_patterns = [(1,0,0,1), (0,1,1,0)]  # H_A V_B 或 V_A H_B
-    psi_minus_patterns = [(1,0,1,0), (0,1,0,1)]  # H_A H_B 或 V_A V_B（带相位）
-
-    for n, outcome in enumerate(outcomes):
-        if outcome in psi_plus_patterns:
-            return True, n, "Psi+"
-        if outcome in psi_minus_patterns:
-            return True, n, "Psi-"
-
-    return False, -1, ""

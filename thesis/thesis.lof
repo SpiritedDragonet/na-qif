@@ -1,0 +1,10 @@
+\addvspace {10.0pt}
+\contentsline {figure}{\numberline {1-1}{\ignorespaces 面向中性原子处理节点的光子—原子量子接口典型链路示意：两端生成原子—光子纠缠，经（可选）量子频率转换进入电信波段后通过光纤传输，在中继站进行两光子干涉与贝尔态测量；符合点击作为“宣告信号”将远程原子寄存器投影到纠缠态。该示意图对应近五年代表性实验/方案中反复出现的端到端链路结构。\cite {vanleent2022entangling,Covey2023QuantumNetworksNeutralAtomNodes}}}{7}{figure.1.1}%
+\contentsline {figure}{\numberline {1-2}{\ignorespaces 本文第一性原理仿真框架的概念示意：将两臂光场离散为时间 bin（$A_n,B_n$），把“系统 $S$ 与每个 bin 的相互作用”写成逐步施加的局域门/量子信道，并在中继站处引入跨臂干涉门；探测过程以 Kraus 算符或量子轨迹方式实现时间分辨点击记录，并在成功事件集合上进行条件化，最终得到成功率与条件态等可直接对照实验的量。该类时间 bin–MPS 思路与近年来量子光学脉冲传播/含时延开放系统的张量网络方法一脉相承。\cite {Pichler2016TimeDelaysMPS,Yanagimoto2021MPSQuantumPulsePropagation}}}{8}{figure.1.2}%
+\addvspace {10.0pt}
+\addvspace {10.0pt}
+\addvspace {10.0pt}
+\addvspace {10.0pt}
+\addvspace {10.0pt}
+\addvspace {10.0pt}
+\addvspace {10.0pt}

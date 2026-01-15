@@ -76,9 +76,7 @@ atom_sim/
 │   │       ├── apply_loss()       # 损耗通道（仅 1517）
 │   │       ├── apply_loss_combined() # 损耗通道（780+1517）
 │   │       ├── apply_fiber_channel() # 琼斯+损耗（随机采样）
-│   │       ├── apply_bs()         # 对所有 bin 对应用分束器
-│   │       ├── apply_detection()  # 对所有 bins 应用探测 POVM
-│   │       └── find_bsm_success() # 检查 BSM 宣告模式
+│   │       └── apply_bs()         # 对所有 bin 对应用分束器
 │   │
 │   ├── simulator.py               # 多轨迹统计
 │   │   └── run_simulation()       # 返回 p_succ ± stderr, F_cond ± stderr
