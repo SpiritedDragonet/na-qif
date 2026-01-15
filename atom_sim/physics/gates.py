@@ -139,6 +139,22 @@ def filter_780_gate() -> np.ndarray:
 
 
 @lru_cache(maxsize=4)
+def bs_gate_6d() -> np.ndarray:
+    """
+    6D bin空间（仅1517nm）的50/50分束器门（36x36）。
+
+    这是QFC+780滤波后使用的版本，每个bin只有6D（1517nm子空间）。
+    比324x324的18D版本快9倍。
+
+    Returns
+    -------
+    np.ndarray
+        1517_A × 1517_B空间的36x36幺正矩阵（每个站点6×6）
+    """
+    return _bs_gate_1517()
+
+
+@lru_cache(maxsize=4)
 def _bs_gate_1517() -> np.ndarray:
     """
     内部函数：1517_A × 1517_B上的50/50分束器（36x36）。

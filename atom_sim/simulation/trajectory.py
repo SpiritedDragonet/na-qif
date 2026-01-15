@@ -332,7 +332,7 @@ class TrajectoryRunner:
             eta_det=self.det.eta_det,
             p_dark=self.det.p_dark
         )
-        mu = mps.apply_kraus_two_site(site_A, K_det, self.rng)
+        mu = mps.apply_two_site_kraus(site_A, K_det, self.rng)
         outcome = outcomes[mu]
 
         # (7) 完成已测量的仓对
@@ -881,7 +881,7 @@ def apply_780_filter(
         site_A = 2 + 2 * n
         site_B = 2 + 2 * n + 1
 
-        # 应用���影（非酉，暂不重新归一化）
+        # 应用投影（非酉，暂不重新归一化）
         mps._mps.apply_local_op(site_A, P_arr, unitary=False, renormalize=False)
         mps._mps.apply_local_op(site_B, P_arr, unitary=False, renormalize=False)
 
@@ -891,6 +891,87 @@ def apply_780_filter(
     mps._mps.canonical_form_finite(renormalize=True)
 
     _print_footer(mps, verbose, stage="780nm Filter")
+    return mps
+
+
+def project_to_1517(
+    mps: MPSState,
+    n_bins: int,
+    verbose: bool = True,
+) -> MPSState:
+    """
+    将所有bin从18D（780×1517）降维到6D（仅1517nm）。
+
+    在apply_780_filter之后，780nm子空间只有|vac>分量。
+    此函数通过投影移除780nm子空间，将每个bin从18D降到6D。
+    这大幅减少后续BS和探测的计算量（324x324 -> 36x36）。
+
+    物理意义：
+    - 780nm滤波后，每个bin的态为 |vac>_780 ⊗ |ψ>_1517
+    - 投影后只保留 |ψ>_1517（6D）
+
+    Parameters
+    ----------
+    mps : MPSState
+        MPS态（布局：atomA, atomB, A1, B1, ..., AN, BN）
+        bin维度必须为18D
+    n_bins : int
+        时间仓数量
+    verbose : bool
+        是否打印进度
+
+    Returns
+    -------
+    MPSState
+        降维后的MPS态（bin从18D变为6D）
+    """
+    from tenpy.linalg.np_conserved import Array
+    from tenpy.networks.site import BosonSite
+
+    _print_header("Project to 1517nm (18D -> 6D)", verbose)
+
+    if verbose:
+        print(f"  Before: bin dims = 18D (780×1517)")
+        print(f"  After:  bin dims = 6D (1517 only)")
+
+    # 构造投影矩阵 P: 18D -> 6D
+    # 18D基序：(780_idx * 6 + 1517_idx)
+    # 780基：vac=0, H=1, V=2
+    # 只保留780=vac的分量，即索引 0*6+j = j for j=0..5
+    P_18to6 = np.zeros((6, 18), dtype=complex)
+    for j in range(6):
+        P_18to6[j, j] = 1.0  # 780=vac, 1517=j
+
+    # 对每个bin应用投影并更新MPS结构
+    # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
+    for n in range(n_bins):
+        site_A = 2 + 2 * n
+        site_B = 2 + 2 * n + 1
+
+        for site in [site_A, site_B]:
+            # 获取当前格点张量
+            B = mps._mps.get_B(site, form='B')
+            B_np = B.to_ndarray()  # shape: (chi_L, 18, chi_R)
+
+            # 应用投影: (chi_L, 6, chi_R) = P @ (chi_L, 18, chi_R)
+            B_new_np = np.einsum('ij,ajb->aib', P_18to6, B_np)
+
+            # 创建新的TeNPy Array（6D物理维度）
+            B_new = Array.from_ndarray_trivial(B_new_np, labels=['vL', 'p', 'vR'])
+
+            # 更新MPS格点
+            mps._mps.sites[site] = BosonSite(5, None)  # 6D = Nmax=5
+            mps._mps.set_B(site, B_new, form='B')
+
+            # 更新MPSState的维度记录
+            mps.d[site] = 6
+
+        _print_progress(n + 1, n_bins, verbose)
+
+    # 重新规范化
+    mps._mps.canonical_form_finite(renormalize=True)
+
+    _print_footer(mps, verbose, stage="Project to 1517nm")
     return mps
 
 
@@ -1067,6 +1148,8 @@ def apply_bs(
     """
     对每个 A_n, B_n 对应用分束器。
 
+    自动检测bin维度（18D或6D）并使用相应的BS门。
+
     Parameters
     ----------
     mps : MPSState
@@ -1081,12 +1164,22 @@ def apply_bs(
     MPSState
         应用了BS的MPS态（原地修改）
     """
-    from ..physics.gates import bs_gate_bin18
+    from ..physics.gates import bs_gate_bin18, bs_gate_6d
 
     _print_header("BS", verbose)
 
-    # 获取BS门（324x324，作用于 bin_A × bin_B = 18 × 18）
-    U_bs = bs_gate_bin18()
+    # 检测bin维度
+    bin_dim = mps.d[2]  # 第一个bin的维度
+    if bin_dim == 18:
+        U_bs = bs_gate_bin18()
+        if verbose:
+            print(f"  Using 18D BS gate (324x324)")
+    elif bin_dim == 6:
+        U_bs = bs_gate_6d()
+        if verbose:
+            print(f"  Using 6D BS gate (36x36) - optimized!")
+    else:
+        raise ValueError(f"Unexpected bin dimension: {bin_dim}")
 
     if verbose:
         print(f"  U_bs shape: {U_bs.shape}")

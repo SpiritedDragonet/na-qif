@@ -251,34 +251,6 @@ class MPSState:
 
         return mu
 
-    def apply_kraus_two_site(
-        self,
-        i: int,
-        kraus_ops: List[np.ndarray],
-        rng: Optional[np.random.Generator] = None,
-    ) -> int:
-        """
-        通过量子轨迹应用两格点Kraus信道。
-
-        采样一个Kraus算符并归一化后应用。
-        apply_two_site_kraus() 的别名，保持API命名一致性。
-
-        Parameters
-        ----------
-        i : int
-            左格点索引（作用于格点i和i+1）
-        kraus_ops : List[np.ndarray]
-            Kraus算符列表，每个形状为 (d1*d2, d1*d2) 或 (d1, d2, d1, d2)
-        rng : np.random.Generator, optional
-            随机数生成器
-
-        Returns
-        -------
-        int
-            采样的Kraus算符索引
-        """
-        return self.apply_two_site_kraus(i, kraus_ops, rng)
-
     def finalize_bin_pair(self, i: int) -> None:
         """
         冻结已测量的bin对以确保线性复杂度。
@@ -516,7 +488,7 @@ class MPSState:
         return float(self._mps.norm)
 
     def get_bond_dimensions(self) -> List[int]:
-        """获取键维度（chi属性的别名）。"""
+        """获取所有键维度列表，等价于 self.chi。"""
         return self.chi
 
     def test_sanity(self) -> bool:

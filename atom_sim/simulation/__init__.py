@@ -18,6 +18,7 @@ from .trajectory import (
     apply_loss_combined,
     apply_bs,
     apply_fiber_channel,
+    project_to_1517,
 )
 from .simulator import (
     SimulationResult,
@@ -48,6 +49,7 @@ __all__ = [
     'apply_loss_combined',
     'apply_bs',
     'apply_fiber_channel',
+    'project_to_1517',
     # simulator
     'SimulationResult',
     'run_simulation',

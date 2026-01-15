@@ -29,16 +29,12 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from atom_sim.config import TimeGrid, EmitParams
 from atom_sim.simulation import (
     run_emission_only, EmissionResult, apply_qfc, apply_780_filter, apply_fiber_channel,
-    apply_bs,
+    apply_bs, project_to_1517,
     # 探测
     run_two_photon_detection, compute_fidelity_with_bell, compute_photon_statistics,
 )
 from atom_sim.visualization import plot_dual_arm_heatmap, plot_dual_arm_heatmap_phase
 from atom_sim.physics import FiberChannelParams
-
-
-# 向后兼容：EmissionResult的别名
-DualAtomEmissionResult = EmissionResult
 
 
 def run_dual_atom_emission(
@@ -203,8 +199,8 @@ def save_debug_info(
         f.write(f'  {info["local_dimensions"]}\n\n')
         f.write(f'光子统计:\n')
         f.write(f'  总期望光子数 = {stats["n_total"]:.4f}\n')
-        f.write(f'  H偏振 = {stats["n_H"]:.4f}\n')
-        f.write(f'  V偏振 = {stats["n_V"]:.4f}\n')
+        f.write(f'  780nm: H={stats.get("n_780_H", 0):.4f}, V={stats.get("n_780_V", 0):.4f}, total={stats.get("n_780_total", 0):.4f}\n')
+        f.write(f'  1517nm: H={stats.get("n_1517_H", 0):.4f}, V={stats.get("n_1517_V", 0):.4f}, total={stats.get("n_1517_total", 0):.4f}\n')
         f.write(f'  损耗概率 = {stats["loss_prob"]:.4f}\n\n')
         f.write(f'原子态信息:\n')
         f.write(f'  对角元: {info["spin_state_diag"]}\n')
@@ -273,6 +269,14 @@ def main():
     # 应用780nm滤波器（滤除未转换的780nm光子）
     print("\n应用780nm滤波器...")
     apply_780_filter(
+        mps=result.mps,
+        n_bins=result.get_n_bins(),
+        verbose=True,
+    )
+
+    # 投影到纯1517nm子空间（18D -> 6D），大幅加速后续计算
+    print("\n投影到1517nm子空间...")
+    project_to_1517(
         mps=result.mps,
         n_bins=result.get_n_bins(),
         verbose=True,
