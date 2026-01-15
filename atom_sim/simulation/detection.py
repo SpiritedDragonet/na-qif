@@ -37,14 +37,20 @@ class TwoPhotonDetectionResult:
 
 def build_detection_kraus_18d(eta: float) -> Tuple[List[np.ndarray], List[str]]:
     """
-    构造探测 Kraus 算符。
+    构造探测 Kraus 算符（桶式SNSPD模型）。
 
-    物理模型：光子探测模型，每个端口有H/V两个探测器。
-    关键：确保Kraus算符满足完备性关系 ∑ K_μ† K_μ = I
+    物理模型：
+    - 每个端口有H/V两个独立的桶式探测器
+    - 桶式探测器：不数分辨，破坏性探测
+    - 4个单端口结果：none, H only, V only, H+V
 
-    为满足完备性，双click算符需要按来源态分开（|2H>, |2V>, |HV>），
-    避免交叉项。这产生6个单端口算符，36个双端口算符，
-    但探测结果仍归类为16种（按哪些探测器响应）。
+    完备性：∑ K_μ† K_μ = I 严格满足
+
+    概率公式（对于Fock态|n_H, n_V>）：
+    - P_00 = (1-η)^{n_H} * (1-η)^{n_V}
+    - P_10 = [1-(1-η)^{n_H}] * (1-η)^{n_V}
+    - P_01 = (1-η)^{n_H} * [1-(1-η)^{n_V}]
+    - P_11 = [1-(1-η)^{n_H}] * [1-(1-η)^{n_V}]
 
     Parameters
     ----------
@@ -54,83 +60,60 @@ def build_detection_kraus_18d(eta: float) -> Tuple[List[np.ndarray], List[str]]:
     Returns
     -------
     kraus_list : List[np.ndarray]
-        36个324x324的Kraus算符
+        16个324x324的Kraus算符（4x4单端口组合）
     outcome_names : List[str]
-        36个结果名称（多个算符可能对应同一探测结果）
+        16个结果名称
     """
     # 1517nm 基：vac=0, H=1, V=2, 2H=3, 2V=4, HV=5
     I_780 = np.eye(3, dtype=complex)
 
-    # 定义6x6 1517子空间的Kraus算符
-    # 基：|vac>=0, |H>=1, |V>=2, |2H>=3, |2V>=4, |HV>=5
+    # 4个单端口6x6 Kraus算符
+    # K_00: no click - preserves state with amplitude scaling
+    K00_6d = np.diag([
+        1.0,                # |vac>: always no click
+        np.sqrt(1 - eta),   # |H>: H doesn't click
+        np.sqrt(1 - eta),   # |V>: V doesn't click
+        (1 - eta),          # |2H>: both H photons don't click, amp = (1-η)
+        (1 - eta),          # |2V>: both V photons don't click
+        (1 - eta),          # |HV>: neither clicks, amp = (1-η)
+    ]).astype(complex)
 
-    def K0_6d(eta: float) -> np.ndarray:
-        """无点击：H和V探测器都没有响应"""
-        K = np.zeros((6, 6), dtype=complex)
-        K[0, 0] = 1.0
-        K[1, 1] = np.sqrt(1 - eta)
-        K[2, 2] = np.sqrt(1 - eta)
-        K[3, 3] = 1 - eta
-        K[4, 4] = 1 - eta
-        K[5, 5] = 1 - eta
-        return K
+    # K_10: H only click - absorbs to |vac>
+    K10_6d = np.zeros((6, 6), dtype=complex)
+    K10_6d[0, 1] = np.sqrt(eta)                     # |H> -> |vac>
+    K10_6d[0, 3] = np.sqrt(1 - (1 - eta)**2)        # |2H> -> |vac>
+    K10_6d[0, 5] = np.sqrt(eta * (1 - eta))         # |HV> -> |vac> (H clicks, V doesn't)
 
-    def KH_6d(eta: float) -> np.ndarray:
-        """仅H探测器click（V探测器无响应）"""
-        K = np.zeros((6, 6), dtype=complex)
-        K[0, 1] = np.sqrt(eta)                          # |H> -> |vac>
-        K[1, 3] = np.sqrt(2 * eta * (1 - eta))          # |2H> -> |H>
-        K[2, 5] = np.sqrt(eta * (1 - eta))              # |HV> -> |V>
-        return K
+    # K_01: V only click - absorbs to |vac>
+    K01_6d = np.zeros((6, 6), dtype=complex)
+    K01_6d[0, 2] = np.sqrt(eta)                     # |V> -> |vac>
+    K01_6d[0, 4] = np.sqrt(1 - (1 - eta)**2)        # |2V> -> |vac>
+    K01_6d[0, 5] = np.sqrt(eta * (1 - eta))         # |HV> -> |vac> (V clicks, H doesn't)
 
-    def KV_6d(eta: float) -> np.ndarray:
-        """仅V探测器click（H探测器无响应）"""
-        K = np.zeros((6, 6), dtype=complex)
-        K[0, 2] = np.sqrt(eta)                          # |V> -> |vac>
-        K[2, 4] = np.sqrt(2 * eta * (1 - eta))          # |2V> -> |V>
-        K[1, 5] = np.sqrt(eta * (1 - eta))              # |HV> -> |H>
-        return K
+    # K_11: H+V both click - only from |HV>
+    K11_6d = np.zeros((6, 6), dtype=complex)
+    K11_6d[0, 5] = eta                              # |HV> -> |vac>
 
-    # 双click算符：按来源态分开以满足完备性
-    def KHV_from_2H(eta: float) -> np.ndarray:
-        """双click来自|2H>态"""
-        K = np.zeros((6, 6), dtype=complex)
-        K[0, 3] = eta                                   # |2H> -> |vac>
-        return K
+    # Embed into 18D (780nm x 1517nm)
+    K00_18d = np.kron(I_780, K00_6d)
+    K10_18d = np.kron(I_780, K10_6d)
+    K01_18d = np.kron(I_780, K01_6d)
+    K11_18d = np.kron(I_780, K11_6d)
 
-    def KHV_from_2V(eta: float) -> np.ndarray:
-        """双click来自|2V>态"""
-        K = np.zeros((6, 6), dtype=complex)
-        K[0, 4] = eta                                   # |2V> -> |vac>
-        return K
-
-    def KHV_from_HV(eta: float) -> np.ndarray:
-        """双click来自|HV>态"""
-        K = np.zeros((6, 6), dtype=complex)
-        K[0, 5] = eta                                   # |HV> -> |vac>
-        return K
-
-    # 嵌入18D
-    K0_18d = np.kron(I_780, K0_6d(eta))
-    KH_18d = np.kron(I_780, KH_6d(eta))
-    KV_18d = np.kron(I_780, KV_6d(eta))
-    KHV_2H_18d = np.kron(I_780, KHV_from_2H(eta))
-    KHV_2V_18d = np.kron(I_780, KHV_from_2V(eta))
-    KHV_HV_18d = np.kron(I_780, KHV_from_HV(eta))
-
-    # 6个单端口算符，探测结果名称
-    port_kraus = [K0_18d, KH_18d, KV_18d, KHV_2H_18d, KHV_2V_18d, KHV_HV_18d]
-    port_names = ["none", "H", "V", "H+V", "H+V", "H+V"]  # 后三个都是双click
+    # 4 single-port operators with names
+    port_kraus = [K00_18d, K10_18d, K01_18d, K11_18d]
+    port_names = ["none", "H", "V", "H+V"]
 
     kraus_list = []
     outcome_names = []
 
-    # 构造两端口Kraus算符（324x324）：6x6=36个
+    # Build 16 two-port Kraus operators (324x324)
     for i1, K1 in enumerate(port_kraus):
         for i2, K2 in enumerate(port_kraus):
             K_two = np.kron(K1, K2)
             kraus_list.append(K_two)
 
+            # Build outcome name from detector clicks
             clicks = []
             name1 = port_names[i1]
             name2 = port_names[i2]
