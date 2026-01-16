@@ -29,7 +29,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from atom_sim.config import TimeGrid, EmitParams
 from atom_sim.simulation import (
     run_emission_only, EmissionResult, apply_qfc, apply_780_filter, apply_fiber_channel,
-    apply_bs, project_to_1517,
+    apply_bs, project_to_1517, postselect_two_photon,
     # 探测
     run_two_photon_detection, compute_fidelity_with_bell, compute_photon_statistics,
 )
@@ -227,9 +227,9 @@ def main():
     # 运行发射
     # 使用合理的物理参数
     result = run_dual_atom_emission(
-        n_bins=100,  # 仓数
+        n_bins=30,  # 仓数
         dt_ns=0.2,   # 时间步长
-        chi_max=100,
+        chi_max=50,
         gamma_peak_A=0.5,  # 发射率
         gamma_peak_B=0.5,
         sigma=10.0,  # 波包宽度（纳秒）
@@ -301,6 +301,59 @@ def main():
         step_index=2,
     )
 
+    # 诊断：检查BS前每个arm的光子分布
+    print("\n诊断：检查BS前每个arm的光子分布...")
+    n_bins = result.get_n_bins()
+    total_A = 0.0
+    total_B = 0.0
+    for n in range(n_bins):
+        site_A = 2 + 2 * n  # Arm A的bin n
+        site_B = 2 + 2 * n + 1  # Arm B的bin n
+
+        # 获取单个site的约化密度矩阵
+        rho_A = result.mps.get_reduced_density([site_A])
+        rho_B = result.mps.get_reduced_density([site_B])
+
+        # 6D基: vac=0, H=1, V=2, 2H=3, 2V=4, HV=5
+        photon_count = [0, 1, 1, 2, 2, 2]
+        p_A = sum(rho_A[i, i].real * photon_count[i] for i in range(6))
+        p_B = sum(rho_B[i, i].real * photon_count[i] for i in range(6))
+        total_A += p_A
+        total_B += p_B
+
+        if p_A > 0.01 or p_B > 0.01:
+            print(f"  bin {n}: Arm_A={p_A:.4f}, Arm_B={p_B:.4f}")
+
+    print(f"  总计: Arm_A={total_A:.4f}, Arm_B={total_B:.4f}")
+
+    # 检查跨bin关联 - 光子A在bin i，光子B在bin j (i != j)
+    print("\n诊断：检查跨bin关联（光子A在bin i，光子B在bin j）...")
+    cross_bin_prob = 0.0
+    same_bin_prob = 0.0
+    for i in range(n_bins):
+        for j in range(n_bins):
+            site_Ai = 2 + 2 * i
+            site_Bj = 2 + 2 * j + 1
+            rho_AiBj = result.mps.get_reduced_density([site_Ai, site_Bj])
+
+            # 计算两个光子分别在Arm A bin i 和 Arm B bin j的概率
+            # 需要 Arm A bin i 有1光子，Arm B bin j 有1光子
+            p_one_one = 0.0
+            for a in [1, 2]:  # H或V
+                for b in [1, 2]:
+                    p_one_one += rho_AiBj[a, b, a, b].real
+
+            if i == j:
+                same_bin_prob += p_one_one
+            else:
+                cross_bin_prob += p_one_one
+
+            if p_one_one > 0.001 and i <= j:  # 只打印上三角
+                print(f"  (bin_A={i}, bin_B={j}): P={p_one_one:.6f}")
+
+    print(f"\n  同bin概率: {same_bin_prob:.6f}")
+    print(f"  跨bin概率: {cross_bin_prob:.6f}")
+
     # 应用分束器（BS），使A_n与B_n在每个仓处干涉
     print("\n应用分束器（BS）...")
     apply_bs(
@@ -328,6 +381,45 @@ def main():
         step_index=3,
     )
 
+    # 诊断：检查BS后每个bin的两端口关联
+    print("\n诊断：检查BS后的两端口关联...")
+    n_bins = result.get_n_bins()
+    for n in range(n_bins):
+        site_A = 2 + 2 * n
+        site_B = 2 + 2 * n + 1
+        rho_AB = result.mps.get_reduced_density([site_A, site_B])
+
+        # 检查各种双光子态的概率
+        # 6D基: vac=0, H=1, V=2, 2H=3, 2V=4, HV=5
+        p_vac_vac = rho_AB[0, 0, 0, 0].real
+        p_H_vac = rho_AB[1, 0, 1, 0].real
+        p_V_vac = rho_AB[2, 0, 2, 0].real
+        p_vac_H = rho_AB[0, 1, 0, 1].real
+        p_vac_V = rho_AB[0, 2, 0, 2].real
+        p_H_H = rho_AB[1, 1, 1, 1].real
+        p_V_V = rho_AB[2, 2, 2, 2].real
+        p_H_V = rho_AB[1, 2, 1, 2].real
+        p_V_H = rho_AB[2, 1, 2, 1].real
+        p_2H_vac = rho_AB[3, 0, 3, 0].real
+        p_2V_vac = rho_AB[4, 0, 4, 0].real
+        p_HV_vac = rho_AB[5, 0, 5, 0].real
+        p_vac_2H = rho_AB[0, 3, 0, 3].real
+        p_vac_2V = rho_AB[0, 4, 0, 4].real
+        p_vac_HV = rho_AB[0, 5, 0, 5].real
+
+        # 只打印有意义的bin
+        total_nonvac = 1 - p_vac_vac
+        if total_nonvac > 0.01:
+            print(f"  bin {n}: P(non-vac)={total_nonvac:.4f}")
+            if p_H_V + p_V_H > 1e-6:
+                print(f"    BSM成功态: P(H,V)={p_H_V:.6f}, P(V,H)={p_V_H:.6f}")
+            if p_H_H + p_V_V > 1e-6:
+                print(f"    同极化: P(H,H)={p_H_H:.6f}, P(V,V)={p_V_V:.6f}")
+            if p_2H_vac + p_2V_vac + p_HV_vac > 1e-6:
+                print(f"    bunching port1: P(2H,0)={p_2H_vac:.6f}, P(2V,0)={p_2V_vac:.6f}, P(HV,0)={p_HV_vac:.6f}")
+            if p_vac_2H + p_vac_2V + p_vac_HV > 1e-6:
+                print(f"    bunching port2: P(0,2H)={p_vac_2H:.6f}, P(0,2V)={p_vac_2V:.6f}, P(0,HV)={p_vac_HV:.6f}")
+
     # 计算归一化前的光子统计
     print("\n计算BS后的光子统计...")
     photon_stats = compute_photon_statistics(
@@ -336,10 +428,15 @@ def main():
         verbose=True,
     )
 
-    # 归一化MPS以条件化双光子到达
-    print("\n归一化MPS以条件化双光子到达...")
-    result.mps._mps.canonical_form_finite(renormalize=True)
-    print(f"  MPS已归一化。")
+    # 使用全局两光子投影（而非简单归一化）
+    print("\n应用全局两光子投影（条件化双光子到达）...")
+    projected_mps, two_photon_prob = postselect_two_photon(
+        mps=result.mps,
+        n_bins=result.get_n_bins(),
+        verbose=True,
+    )
+    result.mps = projected_mps  # 更新为投影后的MPS
+    print(f"  两光子概率: {two_photon_prob:.6f}")
 
     # 保存归一化后的可视化
     print("\n生成归一化后的可视化...")
@@ -372,6 +469,59 @@ def main():
     # =========================================================================
     # 探测参数
     eta_det = 0.95
+
+    # 诊断：检查每个bin的光子分布
+    print("\n诊断：检查每个bin的光子分布...")
+    n_bins = result.get_n_bins()
+
+    # 先检查第一个bin的rho形状
+    site_A = 2
+    site_B = 3
+    rho_AB = result.mps.get_reduced_density([site_A, site_B])
+    print(f"  rho_AB shape: {rho_AB.shape}")
+
+    # 统计总光子数和BSM相关态
+    total_photons_all = 0.0
+    bsm_success_prob = 0.0  # |H,V> + |V,H> 的概率
+
+    for n in range(n_bins):
+        site_A = 2 + 2 * n
+        site_B = 2 + 2 * n + 1
+
+        # 获取两个site的约化密度矩阵
+        rho_AB = result.mps.get_reduced_density([site_A, site_B])
+
+        # rho_AB形状是 (6, 6, 6, 6) - 即 rho[i,j,k,l] = <i,j|rho|k,l>
+        # 6D基: vac=0, H=1, V=2, 2H=3, 2V=4, HV=5
+        # 计算每个端口的光子数期望
+        photon_count = [0, 1, 1, 2, 2, 2]  # 每个基态的光子数
+
+        total_A = 0.0
+        total_B = 0.0
+        pop_A = np.zeros(6)
+        pop_B = np.zeros(6)
+
+        for i in range(6):
+            for j in range(6):
+                # 对角元 rho[i,j,i,j] 是 |i,j><i,j| 的概率
+                p = rho_AB[i, j, i, j].real
+                pop_A[i] += p
+                pop_B[j] += p
+                total_A += p * photon_count[i]
+                total_B += p * photon_count[j]
+
+        total_photons_all += total_A + total_B
+
+        # BSM成功态: |H,V> (i=1,j=2) 或 |V,H> (i=2,j=1)
+        p_HV = rho_AB[1, 2, 1, 2].real  # |H>_port1 |V>_port2
+        p_VH = rho_AB[2, 1, 2, 1].real  # |V>_port1 |H>_port2
+        bsm_success_prob += p_HV + p_VH
+
+        if total_A > 0.01 or total_B > 0.01:
+            print(f"  bin {n}: port1={total_A:.4f}, port2={total_B:.4f}, P(HV+VH)={p_HV+p_VH:.6f}")
+
+    print(f"\n  总光子数（所有bin）: {total_photons_all:.4f}")
+    print(f"  BSM成功态总概率 P(|H,V>+|V,H>): {bsm_success_prob:.6f}")
 
     # 使用逐bin Kraus测量方法运行探测和BSM
     print("\n运行探测和BSM（逐bin Kraus测量）...")

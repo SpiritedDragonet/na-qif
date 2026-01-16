@@ -16,9 +16,7 @@
 \hat{a}_n = \frac{1}{\sqrt{\Delta t}} \int_{t_n}^{t_n + \Delta t} \hat{a}(t) \, \mathrm{d}t, \quad t_n = n \Delta t.
 \end{equation}
 
-离散算符满足标准玻色对易关系 $[\hat{a}_m, \hat{a}_n^\dagger] = \delta_{mn}$，每个时间 bin 成为独立的量子谐振子模式。
-
-\textbf{物理直觉}：时间 bin 离散化将"连续流动的光场"转化为"离散的光子盒子序列"。每个盒子（bin）可以容纳 $0, 1, 2, \ldots$ 个光子，形成一个量子谐振子。这种离散化在 $\Delta t$ 远小于系统特征时间尺度时是精确的。
+离散算符满足标准玻色对易关系 $[\hat{a}_m, \hat{a}_n^\dagger] = \delta_{mn}$，每个时间 bin 成为独立的量子谐振子模式。从物理角度理解，时间 bin 离散化将连续流动的光场转化为离散的光子盒子序列，每个盒子（bin）可以容纳 $0, 1, 2, \ldots$ 个光子，形成一个量子谐振子。这种离散化在 $\Delta t$ 远小于系统特征时间尺度时是精确的。
 
 \subsection{光场态的 MPS 结构}
 
@@ -27,15 +25,11 @@
 |\psi_{\mathrm{field}}\rangle = \sum_{n_1, \ldots, n_N = 0}^{n_{\max}} C_{n_1 \cdots n_N} |n_1\rangle \otimes \cdots \otimes |n_N\rangle.
 \end{equation}
 
-这正是 MPS 可以高效表示的形式。关键观察是：\textbf{光子发射过程产生的纠缠是局域的}——原子在时刻 $t$ 发射的光子只与该时刻附近的时间 bin 纠缠，不会与远处的 bin 产生长程纠缠。因此，光场态的纠缠熵满足面积律，MPS 键维度 $\chi$ 不随 bin 数 $N$ 指数增长。
+这正是 MPS 可以高效表示的形式。关键观察是：光子发射过程产生的纠缠是局域的——原子在时刻 $t$ 发射的光子只与该时刻附近的时间 bin 纠缠，不会与远处的 bin 产生长程纠缠。因此，光场态的纠缠熵满足面积律，MPS 键维度 $\chi$ 不随 bin 数 $N$ 指数增长。
 
 \subsection{原子—光场联合系统}
 
-完整的量子接口涉及原子与光场的联合系统。对于双节点纠缠分发，系统包含：
-\begin{itemize}
-\item 两个原子（Alice 和 Bob），各有 $d_{\mathrm{atom}}$ 维 Hilbert 空间
-\item 两条光纤臂，各有 $N$ 个时间 bin、两个偏振模式（H/V）
-\end{itemize}
+完整的量子接口涉及原子与光场的联合系统。对于双节点纠缠分发，系统包含两个原子（Alice 和 Bob），各有 $d_{\mathrm{atom}}$ 维 Hilbert 空间，以及两条光纤臂，各有 $N$ 个时间 bin、两个偏振模式（H/V）。
 
 总系统的 MPS 结构为
 \begin{equation}
@@ -51,9 +45,7 @@ $\Lambda$ 型三能级原子（基态 $|0\rangle$, $|1\rangle$，激发态 $|e\r
 \begin{equation}
 \hat{U}_{\mathrm{emit}}^{(n)} = \exp\left[\sqrt{\gamma \Delta t}\left(\hat{L}_H \otimes \hat{a}_{n,H}^\dagger + \hat{L}_V \otimes \hat{a}_{n,V}^\dagger - \mathrm{h.c.}\right)\right],
 \end{equation}
-其中 $\gamma$ 是自发辐射率，$\hat{L}_{H/V} = \alpha_{H/V,+} |0\rangle\langle e| + \alpha_{H/V,-} |1\rangle\langle e|$ 是偏振相关的跃迁算符，$\boldsymbol{\alpha}$ 是由原子能级结构决定的偏振映射矩阵。
-
-\textbf{物理直觉}：发射门将原子激发态的量子信息"转印"到光子偏振上。若原子初态为 $|e\rangle$，发射后原子—光子联合态为 $\alpha_+ |0\rangle|H\rangle + \alpha_- |1\rangle|V\rangle$（忽略归一化），实现了原子自旋与光子偏振的纠缠。
+其中 $\gamma$ 是自发辐射率，$\hat{L}_{H/V} = \alpha_{H/V,+} |0\rangle\langle e| + \alpha_{H/V,-} |1\rangle\langle e|$ 是偏振相关的跃迁算符，$\boldsymbol{\alpha}$ 是由原子能级结构决定的偏振映射矩阵。从物理角度理解，发射门将原子激发态的量子信息转印到光子偏振上。若原子初态为 $|e\rangle$，发射后原子—光子联合态为 $\alpha_+ |0\rangle|H\rangle + \alpha_- |1\rangle|V\rangle$（忽略归一化），实现了原子自旋与光子偏振的纠缠。
 
 在 MPS 实现中，发射门是作用在原子格点与相邻光场 bin 上的双格点门，通过 TEBD 方式更新。
 
@@ -70,7 +62,7 @@ $\Lambda$ 型三能级原子（基态 $|0\rangle$, $|1\rangle$，激发态 $|e\r
 \hat{U}_{\mathrm{QFC}} = \hat{U}_{\mathrm{QFC}}^{(H)}(\theta_H) \otimes \hat{U}_{\mathrm{QFC}}^{(V)}(\theta_V).
 \end{equation}
 
-\textbf{QFC 噪声}：实际 QFC 过程伴随自发参量下转换（SPDC）噪声，在信号模式中引入额外光子。噪声建模为热光子添加
+实际 QFC 过程伴随自发参量下转换（SPDC）噪声，在信号模式中引入额外光子。噪声建模为热光子添加
 \begin{equation}
 \hat{\rho}_{\mathrm{out}} = (1 - p_{\mathrm{noise}}) \hat{\rho}_{\mathrm{in}} + p_{\mathrm{noise}} \hat{a}^\dagger \hat{\rho}_{\mathrm{in}} \hat{a} / \mathrm{Tr}(\cdots),
 \end{equation}
@@ -85,12 +77,12 @@ $\Lambda$ 型三能级原子（基态 $|0\rangle$, $|1\rangle$，激发态 $|e\r
 
 对于单光子态，这是简单的偏振旋转；对于多光子态，需要按 $\mathbf{U}^{\otimes n}$ 作用于 $n$ 光子子空间。
 
-\textbf{光纤损耗}：透过率 $\eta_{\mathrm{fiber}} = 10^{-\alpha L / 10}$（$\alpha \approx 0.2$ dB/km）建模为振幅阻尼信道
+光纤损耗以透过率 $\eta_{\mathrm{fiber}} = 10^{-\alpha L / 10}$（$\alpha \approx 0.2$ dB/km）建模为振幅阻尼信道
 \begin{equation}
 \mathcal{E}_{\mathrm{loss}}(\hat{\rho}) = \sum_{k=0}^{\infty} \hat{K}_k \hat{\rho} \hat{K}_k^\dagger, \quad \hat{K}_k = \sum_{n \geq k} \sqrt{\binom{n}{k}} \eta^{(n-k)/2} (1-\eta)^{k/2} |n-k\rangle\langle n|.
 \end{equation}
 
-\textbf{偏振模色散（PMD）}：不同偏振模式的群速度差异导致时间延迟 $\Delta\tau_{\mathrm{PMD}}$，在时间 bin 尺度上表现为偏振相关的 bin 间耦合。当 $\Delta\tau_{\mathrm{PMD}} \ll \Delta t$ 时可忽略。
+偏振模色散（PMD）源于不同偏振模式的群速度差异，导致时间延迟 $\Delta\tau_{\mathrm{PMD}}$，在时间 bin 尺度上表现为偏振相关的 bin 间耦合。当 $\Delta\tau_{\mathrm{PMD}} \ll \Delta t$ 时可忽略。
 
 \subsection{分束干涉与贝尔态测量}
 
@@ -100,13 +92,7 @@ $\Lambda$ 型三能级原子（基态 $|0\rangle$, $|1\rangle$，激发态 $|e\r
 \end{equation}
 变换关系为 $\hat{a}_A \to (\hat{a}_A + \hat{a}_B)/\sqrt{2}$，$\hat{a}_B \to (\hat{a}_A - \hat{a}_B)/\sqrt{2}$。
 
-\textbf{Hong-Ou-Mandel 效应}：两个全同光子入射分束器时，输出态为 $(|2,0\rangle - |0,2\rangle)/\sqrt{2}$——光子"聚束"到同一输出端口。这是贝尔态测量的物理基础。
-
-\textbf{BSM 成功判据}：线性光学 BSM 最多区分 4 个贝尔态中的 2 个。成功事件定义为同一时间 bin 内恰好两次探测器点击：
-\begin{itemize}
-\item $|\Psi^-\rangle$：点击模式 $\{H_1, V_2\}$ 或 $\{V_1, H_2\}$
-\item $|\Psi^+\rangle$：点击模式 $\{H_1, V_1\}$ 或 $\{H_2, V_2\}$
-\end{itemize}
+根据 Hong-Ou-Mandel 效应，两个全同光子入射分束器时，输出态为 $(|2,0\rangle - |0,2\rangle)/\sqrt{2}$——光子聚束到同一输出端口。这是贝尔态测量的物理基础。线性光学 BSM 最多区分 4 个贝尔态中的 2 个，成功事件定义为同一时间 bin 内恰好两次探测器点击：$|\Psi^-\rangle$ 对应点击模式 $\{H_1, V_2\}$ 或 $\{V_1, H_2\}$，$|\Psi^+\rangle$ 对应点击模式 $\{H_1, V_1\}$ 或 $\{H_2, V_2\}$。
 
 \section{探测器建模与 Kraus 算符}[Detector Modeling and Kraus Operators]
 
@@ -122,18 +108,16 @@ $\Lambda$ 型三能级原子（基态 $|0\rangle$, $|1\rangle$，激发态 $|e\r
 \hat{K}_0 = \sum_{n=0}^{\infty} (1-\eta_d)^{n/2} |n\rangle\langle n|, \quad \hat{K}_1 = \sum_{n=1}^{\infty} \sqrt{1 - (1-\eta_d)^n} |0\rangle\langle n|.
 \end{equation}
 
-\textbf{物理直觉}：$\hat{K}_0$ 描述"未点击"——所有光子都逃脱了探测；$\hat{K}_1$ 描述"点击"——至少一个光子被探测到，探测后光场坍缩到真空态。
+从物理角度理解，$\hat{K}_0$ 描述未点击事件——所有光子都逃脱了探测；$\hat{K}_1$ 描述点击事件——至少一个光子被探测到，探测后光场坍缩到真空态。
 
 \subsection{暗计数与时间抖动}
 
-\textbf{暗计数}：探测器在无光子时也可能产生假点击，暗计数率 $R_{\mathrm{dark}}$ 典型值 $\sim 10$ Hz。在时间 bin $\Delta t$ 内暗计数概率 $p_{\mathrm{dark}} = R_{\mathrm{dark}} \Delta t$。
-
-修正后的 Kraus 算符：
+探测器在无光子时也可能产生假点击，暗计数率 $R_{\mathrm{dark}}$ 典型值约为 10 Hz。在时间 bin $\Delta t$ 内暗计数概率 $p_{\mathrm{dark}} = R_{\mathrm{dark}} \Delta t$。修正后的 Kraus 算符为
 \begin{equation}
 \hat{K}_0' = \sqrt{1 - p_{\mathrm{dark}}} \hat{K}_0, \quad \hat{K}_1' = \sqrt{p_{\mathrm{dark}}} \hat{K}_0 + \hat{K}_1.
 \end{equation}
 
-\textbf{时间抖动}：探测器响应时间的不确定性 $\sigma_t \sim 50$ ps 导致点击时刻的模糊。当 $\sigma_t \ll \Delta t$ 时，抖动效应可忽略；否则需要引入 bin 间的概率混合。
+探测器响应时间的不确定性（时间抖动）$\sigma_t \sim 50$ ps 导致点击时刻的模糊。当 $\sigma_t \ll \Delta t$ 时，抖动效应可忽略；否则需要引入 bin 间的概率混合。
 
 \subsection{联合探测与成功事件}
 
@@ -151,17 +135,9 @@ P_{\mathrm{success}} = \sum_{\mu \in \mathcal{S}} \|\hat{K}_\mu |\psi\rangle\|^2
 
 \subsection{SWAP 传送带调度}
 
-量子接口仿真的特殊性在于：原子与光场的相互作用是\textbf{顺序的}——原子在时刻 $t_n$ 只与第 $n$ 个时间 bin 耦合。这要求一种特殊的 MPS 更新策略。
+量子接口仿真的特殊性在于：原子与光场的相互作用是顺序的——原子在时刻 $t_n$ 只与第 $n$ 个时间 bin 耦合。这要求一种特殊的 MPS 更新策略。
 
-"SWAP 传送带"方法：
-\begin{enumerate}
-\item 原子格点固定在 MPS 的一端
-\item 每个时间步，新的光场 bin 在原子旁边"生成"
-\item 发射门作用后，通过 SWAP 门将光场 bin "传送"到链的远端
-\item 重复直到所有 bin 处理完毕
-\end{enumerate}
-
-\textbf{物理直觉}：SWAP 传送带模拟了"光子飞离原子"的物理过程——新发射的光子与原子相邻，随后沿光纤传播远离。
+SWAP 传送带方法的工作流程如下：首先，原子格点固定在 MPS 的一端；其次，每个时间步，新的光场 bin 在原子旁边生成；然后，发射门作用后，通过 SWAP 门将光场 bin 传送到链的远端；最后，重复直到所有 bin 处理完毕。从物理角度理解，SWAP 传送带模拟了光子飞离原子的物理过程——新发射的光子与原子相邻，随后沿光纤传播远离。
 
 \subsection{双臂并行演化}
 
@@ -174,19 +150,13 @@ P_{\mathrm{success}} = \sum_{\mu \in \mathcal{S}} \|\hat{K}_\mu |\psi\rangle\|^2
 
 \subsection{量子轨迹采样}
 
-探测器测量通过量子轨迹方法实现：
-
-\begin{enumerate}
-\item \textbf{概率计算}：对每个时间 bin，计算 16 个联合点击模式的概率
+探测器测量通过量子轨迹方法实现。首先进行概率计算：对每个时间 bin，计算 16 个联合点击模式的概率
 \begin{equation}
-p_{ijkl}^{(n)} = \langle\psi|\hat{K}_{ijkl}^{(n)\dagger} \hat{K}_{ijkl}^{(n)}|\psi\rangle
+p_{ijkl}^{(n)} = \langle\psi|\hat{K}_{ijkl}^{(n)\dagger} \hat{K}_{ijkl}^{(n)}|\psi\rangle.
 \end{equation}
-\item \textbf{随机采样}：按概率分布采样得到点击结果 $(i,j,k,l)$
-\item \textbf{态更新}：将对应 Kraus 算符作用于 MPS 并重新归一化
-\item \textbf{成功判定}：检查点击模式是否满足 BSM 成功判据
-\end{enumerate}
+然后按概率分布随机采样得到点击结果 $(i,j,k,l)$，将对应 Kraus 算符作用于 MPS 并重新归一化完成态更新，最后检查点击模式是否满足 BSM 成功判据。
 
-\textbf{首击事件}：在纠缠分发协议中，通常只关心"首次成功"事件。仿真中记录首次满足成功判据的时间 bin $n^*$，并提取该时刻的条件原子态。
+在纠缠分发协议中，通常只关心首次成功事件。仿真中记录首次满足成功判据的时间 bin $n^*$，并提取该时刻的条件原子态。
 
 \subsection{条件态重建与保真度计算}
 
@@ -197,36 +167,19 @@ p_{ijkl}^{(n)} = \langle\psi|\hat{K}_{ijkl}^{(n)\dagger} \hat{K}_{ijkl}^{(n)}|\p
 
 在 MPS 表示中，这等价于收缩所有光场格点的张量，只保留原子格点。
 
-\textbf{保真度}：与目标贝尔态 $|\Phi_{\mathrm{target}}\rangle$ 的保真度为
+与目标贝尔态 $|\Phi_{\mathrm{target}}\rangle$ 的保真度定义为
 \begin{equation}
 F = \langle\Phi_{\mathrm{target}}|\rho_{\mathrm{atoms}}|\Phi_{\mathrm{target}}\rangle.
 \end{equation}
-
-\textbf{纠缠度量}：Concurrence $C = \max(0, \lambda_1 - \lambda_2 - \lambda_3 - \lambda_4)$，其中 $\lambda_i$ 是 $\rho (\sigma_y \otimes \sigma_y) \rho^* (\sigma_y \otimes \sigma_y)$ 的特征值降序排列。
+纠缠程度可用 Concurrence 量化：$C = \max(0, \lambda_1 - \lambda_2 - \lambda_3 - \lambda_4)$，其中 $\lambda_i$ 是 $\rho (\sigma_y \otimes \sigma_y) \rho^* (\sigma_y \otimes \sigma_y)$ 的特征值降序排列。
 
 \subsection{收敛性与误差控制}
 
-数值仿真的可靠性需要系统验证：
-
-\textbf{键维度收敛}：增大 $\chi_{\max}$ 观察物理量变化，典型收敛判据 $|F(\chi) - F(2\chi)| < 10^{-6}$。
-
-\textbf{Fock 空间截断}：增大 $n_{\max}$ 验证高光子数态的贡献可忽略，通常 $n_{\max} = 3$ 或 4 已足够。
-
-\textbf{时间 bin 分辨率}：减小 $\Delta t$ 检查离散化误差，要求 $\Delta t \ll 1/\gamma$。
-
-\textbf{轨迹数统计}：成功率和保真度的统计误差随轨迹数 $N_{\mathrm{traj}}$ 按 $1/\sqrt{N_{\mathrm{traj}}}$ 衰减。
+数值仿真的可靠性需要系统验证。键维度收敛性通过增大 $\chi_{\max}$ 观察物理量变化来检验，典型收敛判据为 $|F(\chi) - F(2\chi)| < 10^{-6}$。Fock 空间截断的合理性则通过增大 $n_{\max}$ 验证高光子数态的贡献可忽略，通常 $n_{\max} = 3$ 或 4 已足够。时间 bin 分辨率需要通过减小 $\Delta t$ 检查离散化误差，要求 $\Delta t \ll 1/\gamma$。成功率和保真度的统计误差随轨迹数 $N_{\mathrm{traj}}$ 按 $1/\sqrt{N_{\mathrm{traj}}}$ 衰减。
 
 \section{本章小结}[Chapter Summary]
 
-本章建立了光子—原子量子接口的端到端仿真框架：
-
-\begin{enumerate}
-\item \textbf{时间 bin 离散化}：将连续光场映射为一维量子链，自然适配 MPS 表示
-\item \textbf{模块化量子门}：发射、QFC、光纤、分束器等模块统一表示为局域量子门或信道
-\item \textbf{探测器 Kraus 算符}：桶式探测器、暗计数、时间抖动的完整建模
-\item \textbf{SWAP 传送带}：处理原子—光场顺序耦合的 MPS 更新策略
-\item \textbf{量子轨迹采样}：实现测量条件化与成功事件筛选
-\end{enumerate}
+本章建立了光子—原子量子接口的端到端仿真框架。时间 bin 离散化方法将连续光场映射为一维量子链，自然适配 MPS 表示。发射、QFC、光纤、分束器等模块统一表示为局域量子门或信道，实现了模块化设计。探测器建模涵盖了桶式探测器、暗计数、时间抖动等效应的 Kraus 算符描述。SWAP 传送带策略有效处理了原子—光场顺序耦合的 MPS 更新问题。量子轨迹采样方法实现了测量条件化与成功事件筛选。
 
 该框架将器件层面的物理参数（发射率、转换效率、光纤损耗、探测效率等）与协议层面的性能指标（成功率、保真度、纠缠速率）直接关联，为下一章的系统性参数扫描与优化分析奠定基础。
 

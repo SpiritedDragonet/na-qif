@@ -430,6 +430,43 @@ def _get_bin18_state_labels() -> List[str]:
     return labels
 
 
+def _get_bin6_state_labels() -> List[str]:
+    """
+    获取6个仓状态的标签（仅1517nm子空间）。
+
+    1517子空间：支持最多2个光子
+    - |vac>: 真空态
+    - |H>: 单H光子
+    - |V>: 单V光子
+    - |2H>: 双H光子
+    - |2V>: 双V光子
+    - |HV>: H+V各一个
+
+    Returns
+    -------
+    List[str]
+        6个状态标签
+    """
+    return ['|vac>', '|H>', '|V>', '|2H>', '|2V>', '|HV>']
+
+
+def _get_bin3_state_labels() -> List[str]:
+    """
+    获取3个仓状态的标签（发射后的原始780nm态）。
+
+    780子空间：支持最多1个光子
+    - |vac>: 真空态
+    - |H>: 单H光子（780nm）
+    - |V>: 单V光子（780nm）
+
+    Returns
+    -------
+    List[str]
+        3个状态标签
+    """
+    return ['|vac>', '|H>', '|V>']
+
+
 def extract_bin_state_probabilities(
     mps: MPSState,
     arm: str = 'A',
@@ -792,9 +829,24 @@ def plot_dual_arm_heatmap(
             padding = np.tile(atom_B_for_bins[:, -1:], (1, n_bins - atom_B_for_bins.shape[1]))
             atom_B_for_bins = np.hstack([atom_B_for_bins, padding])
 
+    # 检测bin维度（18D、6D或3D）
+    # 检查第一个bin格点的维度
+    first_bin_dim = mps.d[0]
+    if first_bin_dim == 18:
+        bin_dim = 18
+        bin_state_labels = _get_bin18_state_labels()
+    elif first_bin_dim == 6:
+        bin_dim = 6
+        bin_state_labels = _get_bin6_state_labels()
+    elif first_bin_dim == 3:
+        bin_dim = 3
+        bin_state_labels = _get_bin3_state_labels()
+    else:
+        raise ValueError(f"Unsupported bin dimension: {first_bin_dim}. Expected 18, 6, or 3.")
+
     # 提取仓概率
-    probs_A = np.zeros((n_bins, 18))
-    probs_B = np.zeros((n_bins, 18))
+    probs_A = np.zeros((n_bins, bin_dim))
+    probs_B = np.zeros((n_bins, bin_dim))
 
     for n in range(n_bins):
         # 链布局：A1(0), B1(1), A2(2), B2(3), ..., AN, BN
@@ -802,9 +854,9 @@ def plot_dual_arm_heatmap(
         site_B = 2 * n + 1
         rho_A = mps.get_reduced_density([site_A])
         rho_B = mps.get_reduced_density([site_B])
-        if rho_A.shape[0] == 18:
+        if rho_A.shape[0] == bin_dim:
             probs_A[n, :] = np.diag(rho_A).real
-        if rho_B.shape[0] == 18:
+        if rho_B.shape[0] == bin_dim:
             probs_B[n, :] = np.diag(rho_B).real
 
     # Calculate vmax EXCLUDING (vac,vac) row (index 0)
@@ -812,15 +864,12 @@ def plot_dual_arm_heatmap(
     vmax_B = max(0.01, probs_B[:, 1:].max() * vmax_scale_factor)
     vmax = max(vmax_A, vmax_B)
 
-    # Get state labels
-    bin_state_labels = _get_bin18_state_labels()
-
     # Create combined data matrices
     if show_atomic:
         atomic_labels = ['|e>', '|1>', '|0>']
         combined_labels_A = atomic_labels + bin_state_labels
         combined_labels_B = atomic_labels + bin_state_labels
-        total_rows = 3 + 18
+        total_rows = 3 + bin_dim
 
         combined_A = np.zeros((total_rows, n_bins))
         combined_A[0, :] = atom_A_for_bins[2, :]  # |e>
@@ -836,7 +885,7 @@ def plot_dual_arm_heatmap(
     else:
         combined_labels_A = bin_state_labels
         combined_labels_B = bin_state_labels
-        total_rows = 18
+        total_rows = bin_dim
 
         combined_A = probs_A.T
         combined_B = probs_B.T

@@ -366,14 +366,14 @@ def extract_spin_state(mps: MPSState, n_bins: int) -> np.ndarray:
     if rho_full.ndim == 4:
         rho_full = rho_full.reshape(9, 9)
 
-    # 3D原子基：|e>=0, |0>=1, |1>=2
-    # 提取量子比特子空间：|0>, |1> → indices [1, 3] in single atom
+    # 3D原子基：|0>=0, |1>=1, |e>=2
+    # 提取量子比特子空间：|0>, |1> → indices [0, 1] in single atom
     # 双原子：|00>=0, |01>=1, |10>=2, |11>=3
     # 完整9x9基顺序：
-    #   |e,e>=0, |e,0>=1, |e,1>=2,
-    #   |0,e>=3, |0,0>=4, |0,1>=5,
-    #   |1,e>=6, |1,0>=7, |1,1>=8
-    qubit_indices = [4, 5, 7, 8]  # |00>, |01>, |10>, |11>
+    #   |0,0>=0, |0,1>=1, |0,e>=2,
+    #   |1,0>=3, |1,1>=4, |1,e>=5,
+    #   |e,0>=6, |e,1>=7, |e,e>=8
+    qubit_indices = [0, 1, 3, 4]  # |00>, |01>, |10>, |11>
 
     rho_qubit = np.zeros((4, 4), dtype=complex)
     for i, qi in enumerate(qubit_indices):

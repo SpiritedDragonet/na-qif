@@ -1,4 +1,4 @@
-\begin{thebibliography}{15}
+\begin{thebibliography}{17}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{#1}
 \expandafter\ifx\csname urlstyle\endcsname\relax\else
@@ -111,6 +111,12 @@ LIU J~L, et~al.
 \newblock Nature, 2024, 629\allowbreak (8012): 579-585.
 \newblock DOI: \doi{10.1038/s41586-024-07308-0}.
 
+\bibitem[Zhou et~al.(2023)Zhou, Jiang, and Liang]{Zhou2023QuantumNetworkNoise}
+ZHOU Y, JIANG L, LIANG L.
+\newblock Noise analysis for quantum network links connecting processing
+  nodes\allowbreak[Z].
+\newblock 2023.
+
 \bibitem[Pichler et~al.(2016)Pichler and Zoller]{Pichler2016TimeDelaysMPS}
 PICHLER H, ZOLLER P.
 \newblock Photonic quantum circuits with time delays and quantum
@@ -126,5 +132,12 @@ YANAGIMOTO R, OTHERS.
 Proceedings of SPIE.
 \newblock SPIE, 2021.
 \newblock DOI: \doi{10.1117/12.2576098}.
+
+\bibitem[Wang et~al.(2017)Wang and Clerk]{Wang2017MPSCascadedQuantumSystems}
+WANG C, CLERK A~A.
+\newblock Quantum theory of driven-dissipative cascaded quantum systems:
+  Application to photon-mediated entanglement generation\allowbreak[J/OL].
+\newblock New Journal of Physics, 2017, 19: 113021.
+\newblock DOI: \doi{10.1088/1367-2630/aa8f09}.
 
 \end{thebibliography}

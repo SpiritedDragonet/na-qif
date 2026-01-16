@@ -19,6 +19,7 @@ from .trajectory import (
     apply_bs,
     apply_fiber_channel,
     project_to_1517,
+    postselect_two_photon,
 )
 from .simulator import (
     SimulationResult,
@@ -50,6 +51,7 @@ __all__ = [
     'apply_bs',
     'apply_fiber_channel',
     'project_to_1517',
+    'postselect_two_photon',
     # simulator
     'SimulationResult',
     'run_simulation',

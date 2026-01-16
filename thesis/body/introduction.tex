@@ -14,33 +14,15 @@
 \end{equation}
 其中系数张量 $C_{s_1 s_2 \cdots s_N}$ 是一个 $N$ 阶、每个指标取值 $1, \ldots, d$ 的复数数组，共有 $d^N$ 个独立分量。
 
-\textbf{物理直觉}：系数张量 $C$ 完整编码了量子态的全部信息——每个分量 $C_{s_1 \cdots s_N}$ 就是在计算基 $|s_1 \cdots s_N\rangle$ 上的概率振幅。张量的"形状"反映了系统的组成结构，而张量元的"数值"则反映了量子关联的具体模式。
+从物理角度看，系数张量 $C$ 完整编码了量子态的全部信息：每个分量 $C_{s_1 \cdots s_N}$ 对应计算基 $|s_1 \cdots s_N\rangle$ 上的概率振幅，张量的结构反映系统的组成方式，而张量元的数值则刻画量子关联的具体模式。
 
 \subsection{张量图示记号}
 
-张量网络理论广泛采用图示记号（graphical notation），将抽象的张量收缩转化为直观的图形操作：
-
-\begin{itemize}
-\item \textbf{张量}：用几何形状（圆、方块等）表示，每条伸出的"腿"（leg）对应一个指标
-\item \textbf{收缩}：两个张量的指标收缩用连线表示，对应求和 $\sum_\alpha A_{\cdots \alpha \cdots} B_{\cdots \alpha \cdots}$
-\item \textbf{开放指标}：未连接的腿对应张量的自由指标，决定结果张量的阶数
-\end{itemize}
-
-例如，矩阵乘法 $C_{ik} = \sum_j A_{ij} B_{jk}$ 在图示中表示为两个二阶张量（各有两条腿）通过一条内线连接，结果仍是二阶张量。
-
-这种记号的优势在于：复杂的多张量收缩可以一目了然地看出收缩顺序、中间张量的阶数、以及最终结果的结构，而无需追踪繁琐的指标符号。
+张量网络理论广泛采用图示记号（graphical notation），将抽象的张量收缩转化为直观的图形操作。在图示表示中，张量用几何形状（圆、方块等）表示，每条伸出的线（称为"腿"）对应一个指标；两个张量之间的指标收缩用连线表示，对应求和运算 $\sum_\alpha A_{\cdots \alpha \cdots} B_{\cdots \alpha \cdots}$；未连接的腿则对应张量的自由指标，决定结果张量的阶数。以矩阵乘法 $C_{ik} = \sum_j A_{ij} B_{jk}$ 为例，在图示中表示为两个二阶张量通过一条内线连接，结果仍是二阶张量。这种记号的优势在于，复杂的多张量收缩可以直观地展示收缩顺序、中间张量的阶数以及最终结果的结构，而无需追踪繁琐的指标符号。
 
 \subsection{张量分解的物理意义}
 
-将高阶张量分解为低阶张量网络的核心思想是：\textbf{利用量子态的结构性}。并非所有 $d^N$ 维向量都是物理上有意义的——自然界中的量子态往往具有特殊结构：
-
-\begin{enumerate}
-\item \textbf{局域性}：物理相互作用通常是局域的，导致量子关联在空间上衰减
-\item \textbf{面积律}：基态的纠缠熵通常满足"面积律"而非"体积律"
-\item \textbf{对称性}：系统可能具有平移、旋转或其他对称性
-\end{enumerate}
-
-张量网络正是捕捉这些结构的数学工具：通过限制张量网络的拓扑结构和键维度，我们可以高效表示满足特定物理约束的量子态子空间。
+将高阶张量分解为低阶张量网络的核心思想在于利用量子态的内在结构性。并非所有 $d^N$ 维向量都是物理上有意义的，自然界中的量子态往往具有特殊结构。首先，物理相互作用通常是局域的，导致量子关联在空间上衰减；其次，基态的纠缠熵通常满足面积律而非体积律；此外，系统可能具有平移、旋转或其他对称性。张量网络正是捕捉这些结构的数学工具：通过限制张量网络的拓扑结构和键维度，可以高效表示满足特定物理约束的量子态子空间。
 
 \section{矩阵乘积态（MPS）：一维量子态的最优表示}[Matrix Product States: Optimal Representation of 1D Quantum States]
 
@@ -52,20 +34,16 @@ C_{s_1 s_2 \cdots s_N} = \sum_{\alpha_1, \ldots, \alpha_{N-1}} A^{[1]s_1}_{\alph
 \end{equation}
 其中 $A^{[n]s_n}_{\alpha_{n-1} \alpha_n}$ 是第 $n$ 个格点的局域张量，物理指标 $s_n$ 取值 $1, \ldots, d$，虚拟指标（bond index）$\alpha_n$ 取值 $1, \ldots, \chi_n$。
 
-\textbf{物理直觉}：MPS 可以理解为"从左到右依次生成量子态"的过程。想象一个"量子工厂"从左端开始，每经过一个格点就根据该格点的物理状态 $s_n$ 选择一个矩阵 $A^{[n]s_n}$，最终将所有矩阵相乘得到概率振幅。虚拟指标 $\alpha$ 扮演"量子记忆"的角色，携带左侧所有格点的关联信息传递给右侧。
+从物理角度理解，MPS 可以视为从左到右依次生成量子态的过程。设想一个量子系统从左端开始演化，每经过一个格点就根据该格点的物理状态 $s_n$ 选择一个矩阵 $A^{[n]s_n}$，最终将所有矩阵相乘得到概率振幅。虚拟指标 $\alpha$ 在此过程中扮演量子记忆的角色，携带左侧所有格点的关联信息传递给右侧。
 
 \subsection{键维度与表示能力}
 
-键维度 $\chi = \max_n \chi_n$ 是 MPS 最重要的参数，它决定了：
-
-\textbf{存储复杂度}：MPS 的参数量为 $O(N d \chi^2)$，相比原始张量的 $d^N$ 实现了指数级压缩（当 $\chi$ 为常数时）。
-
-\textbf{表示能力}：键维度 $\chi$ 限制了 MPS 能表示的纠缠量。具体地，对于将系统在第 $n$ 个键处二分，约化密度矩阵的秩至多为 $\chi_n$，因此纠缠熵满足
+键维度 $\chi = \max_n \chi_n$ 是 MPS 最重要的参数，它同时决定了存储复杂度和表示能力。就存储复杂度而言，MPS 的参数量为 $O(N d \chi^2)$，相比原始张量的 $d^N$ 实现了指数级压缩（当 $\chi$ 为常数时）。就表示能力而言，键维度 $\chi$ 限制了 MPS 能表示的纠缠量。具体地，对于将系统在第 $n$ 个键处二分，约化密度矩阵的秩至多为 $\chi_n$，因此纠缠熵满足
 \begin{equation}
 S_n = -\mathrm{Tr}(\rho_L \log \rho_L) \leq \log \chi_n.
 \end{equation}
 
-\textbf{物理直觉}：键维度 $\chi$ 可以理解为"量子信息通道的带宽"。$\chi=1$ 时 MPS 退化为乘积态（无纠缠），$\chi$ 越大能表示的纠缠越强。对于满足面积律的一维基态，$\chi$ 通常只需取常数或对数增长即可达到高精度。
+从物理上看，键维度 $\chi$ 可以理解为量子信息通道的带宽。当 $\chi=1$ 时，MPS 退化为乘积态，不含任何纠缠；$\chi$ 越大，能表示的纠缠越强。对于满足面积律的一维基态，$\chi$ 通常只需取常数或对数增长即可达到高精度。
 
 \subsection{规范自由度与正则形式}
 
@@ -74,23 +52,11 @@ MPS 表示存在规范自由度（gauge freedom）：在相邻张量之间插入
 A^{[n]} \to A^{[n]} X, \quad A^{[n+1]} \to X^{-1} A^{[n+1]}.
 \end{equation}
 
-利用这一自由度，可以将 MPS 化为便于计算的正则形式：
-
-\textbf{左正则形式}：要求 $\sum_{s_n} A^{[n]s_n\dagger} A^{[n]s_n} = I$，即每个张量作为从左指标到（物理+右）指标的映射是等距的。
-
-\textbf{右正则形式}：要求 $\sum_{s_n} B^{[n]s_n} B^{[n]s_n\dagger} = I$，即每个张量作为从（左+物理）指标到右指标的映射是等距的。
-
-\textbf{混合正则形式}：选定正交中心（orthogonality center）位置 $n_c$，其左侧为左正则、右侧为右正则。此时约化密度矩阵可以直接从正交中心张量读出，无需收缩整个网络。
+利用这一自由度，可以将 MPS 化为便于计算的正则形式。左正则形式要求 $\sum_{s_n} A^{[n]s_n\dagger} A^{[n]s_n} = I$，即每个张量作为从左指标到（物理+右）指标的映射是等距的。右正则形式要求 $\sum_{s_n} B^{[n]s_n} B^{[n]s_n\dagger} = I$，即每个张量作为从（左+物理）指标到右指标的映射是等距的。混合正则形式则选定正交中心（orthogonality center）位置 $n_c$，其左侧为左正则、右侧为右正则。此时约化密度矩阵可以直接从正交中心张量读出，无需收缩整个网络。
 
 \subsection{MPS 与量子信息}
 
-MPS 与量子信息理论有深刻联系：
-
-\textbf{Schmidt 分解}：将系统在任意位置二分，MPS 自然给出 Schmidt 分解。混合正则形式下，奇异值直接存储在正交中心的对角矩阵中。
-
-\textbf{纠缠谱}：Schmidt 系数的平方 $\{\lambda_\alpha^2\}$ 构成纠缠谱，完整刻画了二分纠缠的结构。纠缠熵 $S = -\sum_\alpha \lambda_\alpha^2 \log \lambda_\alpha^2$ 是纠缠谱的函数。
-
-\textbf{AKLT 态}：著名的 AKLT 模型基态可以精确写成 $\chi=2$ 的 MPS，是理解对称保护拓扑相的范例。
+MPS 与量子信息理论有深刻联系。将系统在任意位置二分时，MPS 自然给出 Schmidt 分解，在混合正则形式下，奇异值直接存储在正交中心的对角矩阵中。Schmidt 系数的平方 $\{\lambda_\alpha^2\}$ 构成纠缠谱，完整刻画了二分纠缠的结构，纠缠熵 $S = -\sum_\alpha \lambda_\alpha^2 \log \lambda_\alpha^2$ 即为纠缠谱的函数。作为一个经典范例，著名的 AKLT 模型基态可以精确写成 $\chi=2$ 的 MPS，是理解对称保护拓扑相的重要模型。
 
 \section{MPS 上的基本操作}[Basic Operations on MPS]
 
@@ -104,28 +70,19 @@ MPS 与量子信息理论有深刻联系：
 
 计算复杂度为 $O(N \chi^3)$，相比直接收缩的 $O(d^N)$ 实现了指数加速。
 
-\textbf{局域算符期望值}：对于作用在格点 $n$ 上的算符 $\hat{O}$，期望值 $\langle\psi|\hat{O}|\psi\rangle$ 只需在第 $n$ 个转移矩阵中插入 $O$ 的矩阵元，复杂度仍为 $O(N\chi^3)$。
-
-\textbf{关联函数}：两点关联函数 $\langle\hat{O}_m \hat{O}_n\rangle$ 需要在位置 $m$ 和 $n$ 处分别插入算符，复杂度 $O(N\chi^3)$。
+对于作用在格点 $n$ 上的局域算符 $\hat{O}$，期望值 $\langle\psi|\hat{O}|\psi\rangle$ 只需在第 $n$ 个转移矩阵中插入 $O$ 的矩阵元，复杂度仍为 $O(N\chi^3)$。两点关联函数 $\langle\hat{O}_m \hat{O}_n\rangle$ 需要在位置 $m$ 和 $n$ 处分别插入算符，复杂度同样为 $O(N\chi^3)$。
 
 \subsection{局域门作用与张量更新}
 
-将局域幺正门 $\hat{U}$ 作用于 MPS 是张量网络仿真的核心操作：
+将局域幺正门 $\hat{U}$ 作用于 MPS 是张量网络仿真的核心操作。
 
-\textbf{单格点门}：作用在格点 $n$ 上的门 $\hat{U}$ 只需更新该格点张量
+对于作用在格点 $n$ 上的单格点门 $\hat{U}$，只需更新该格点张量
 \begin{equation}
 \tilde{A}^{[n]s'_n}_{\alpha\beta} = \sum_{s_n} U_{s'_n s_n} A^{[n]s_n}_{\alpha\beta},
 \end{equation}
-复杂度 $O(d^2 \chi^2)$，不增加键维度。
+复杂度为 $O(d^2 \chi^2)$，不增加键维度。
 
-\textbf{双格点门}：作用在相邻格点 $(n, n+1)$ 上的门需要：
-\begin{enumerate}
-\item 收缩两个张量形成 $\Theta^{s_n s_{n+1}}_{\alpha\gamma} = \sum_\beta A^{[n]s_n}_{\alpha\beta} A^{[n+1]s_{n+1}}_{\beta\gamma}$
-\item 作用门 $\tilde{\Theta}^{s'_n s'_{n+1}} = \sum_{s_n s_{n+1}} U_{s'_n s'_{n+1}, s_n s_{n+1}} \Theta^{s_n s_{n+1}}$
-\item 通过 SVD 重新分解 $\tilde{\Theta} = \tilde{A}^{[n]} \Lambda \tilde{A}^{[n+1]}$
-\end{enumerate}
-
-关键问题：SVD 后的精确键维度可能增长到 $d\chi$，需要截断以控制计算成本。
+对于作用在相邻格点 $(n, n+1)$ 上的双格点门，需要首先收缩两个张量形成 $\Theta^{s_n s_{n+1}}_{\alpha\gamma} = \sum_\beta A^{[n]s_n}_{\alpha\beta} A^{[n+1]s_{n+1}}_{\beta\gamma}$，然后作用门操作 $\tilde{\Theta}^{s'_n s'_{n+1}} = \sum_{s_n s_{n+1}} U_{s'_n s'_{n+1}, s_n s_{n+1}} \Theta^{s_n s_{n+1}}$，最后通过 SVD 重新分解 $\tilde{\Theta} = \tilde{A}^{[n]} \Lambda \tilde{A}^{[n+1]}$。这里的关键问题在于，SVD 后的精确键维度可能增长到 $d\chi$，需要截断以控制计算成本。
 
 \subsection{SVD 截断与误差控制}
 
@@ -135,14 +92,14 @@ MPS 与量子信息理论有深刻联系：
 \end{equation}
 其中 $\lambda_1 \geq \lambda_2 \geq \cdots \geq \lambda_r > 0$ 是奇异值，$r \leq d\chi$ 是精确秩。
 
-\textbf{截断策略}：保留最大的 $\chi_{\max}$ 个奇异值，截断误差为
+截断时保留最大的 $\chi_{\max}$ 个奇异值，截断误差为
 \begin{equation}
 \epsilon = \sqrt{\sum_{\beta > \chi_{\max}} \lambda_\beta^2}.
 \end{equation}
 
-\textbf{物理直觉}：截断丢弃的是"最弱的量子关联"。奇异值 $\lambda_\beta$ 的物理意义是 Schmidt 系数，小奇异值对应低权重的纠缠模式。在大多数物理问题中，奇异值谱快速衰减，截断误差可以控制在机器精度量级。
+从物理角度理解，截断丢弃的是最弱的量子关联。奇异值 $\lambda_\beta$ 的物理意义是 Schmidt 系数，小奇异值对应低权重的纠缠模式。在大多数物理问题中，奇异值谱快速衰减，截断误差可以控制在机器精度量级。
 
-\textbf{误差累积}：多步演化后截断误差会累积。设每步截断误差为 $\epsilon$，$T$ 步后总误差上界为 $O(T\epsilon)$。实践中通过监控奇异值谱和增大 $\chi_{\max}$ 来验证收敛性。
+需要注意的是，多步演化后截断误差会累积。设每步截断误差为 $\epsilon$，$T$ 步后总误差上界为 $O(T\epsilon)$。实践中通过监控奇异值谱和增大 $\chi_{\max}$ 来验证收敛性。
 
 \section{时间演化块消去（TEBD）算法}[Time-Evolving Block Decimation Algorithm]
 
@@ -159,29 +116,17 @@ e^{-i\hat{H}\Delta t} \approx \prod_n e^{-i\hat{h}_{n,n+1}\Delta t} + O(\Delta t
 \begin{equation}
 e^{-i\hat{H}\Delta t} = e^{-i\hat{H}_{\mathrm{odd}}\Delta t/2} e^{-i\hat{H}_{\mathrm{even}}\Delta t} e^{-i\hat{H}_{\mathrm{odd}}\Delta t/2} + O(\Delta t^3),
 \end{equation}
-其中 $\hat{H}_{\mathrm{odd/even}}$ 分别包含奇/偶键上的相互作用项。
-
-\textbf{物理直觉}：Trotter 分解的本质是"时间切片"——将连续时间演化离散化为小步长的序列，每一步内不同位置的相互作用近似独立。这与路径积分的时间切片思想一脉相承。
+其中 $\hat{H}_{\mathrm{odd/even}}$ 分别包含奇/偶键上的相互作用项。从物理角度理解，Trotter 分解的本质是时间切片——将连续时间演化离散化为小步长的序列，每一步内不同位置的相互作用近似独立，这与路径积分的时间切片思想一脉相承。
 
 \subsection{TEBD 算法流程}
 
-TEBD（Time-Evolving Block Decimation）算法将 Trotter 分解与 MPS 更新结合：
+TEBD（Time-Evolving Block Decimation）算法将 Trotter 分解与 MPS 更新结合。算法首先将初态表示为 MPS，然后交替进行奇键和偶键更新：对所有奇数键 $(1,2), (3,4), \ldots$ 并行作用双格点门 $e^{-i\hat{h}\Delta t/2}$，每个门后做 SVD 截断；接着对所有偶数键 $(2,3), (4,5), \ldots$ 并行作用双格点门 $e^{-i\hat{h}\Delta t}$；最后再次对奇数键作用 $e^{-i\hat{h}\Delta t/2}$。迭代上述步骤直到达到目标时间。
 
-\begin{enumerate}
-\item \textbf{初始化}：将初态表示为 MPS
-\item \textbf{奇键更新}：对所有奇数键 $(1,2), (3,4), \ldots$ 并行作用双格点门 $e^{-i\hat{h}\Delta t/2}$，每个门后做 SVD 截断
-\item \textbf{偶键更新}：对所有偶数键 $(2,3), (4,5), \ldots$ 并行作用双格点门 $e^{-i\hat{h}\Delta t}$
-\item \textbf{奇键更新}：再次对奇数键作用 $e^{-i\hat{h}\Delta t/2}$
-\item \textbf{重复}：迭代步骤 2-4 直到达到目标时间
-\end{enumerate}
-
-\textbf{复杂度分析}：每个时间步需要 $O(N)$ 次双格点更新，每次更新的复杂度为 $O(d^3 \chi^3)$（SVD 主导），总复杂度 $O(N d^3 \chi^3 T/\Delta t)$。
+从复杂度角度分析，每个时间步需要 $O(N)$ 次双格点更新，每次更新的复杂度为 $O(d^3 \chi^3)$（SVD 主导），总复杂度为 $O(N d^3 \chi^3 T/\Delta t)$。
 
 \subsection{开放边界与周期边界}
 
-\textbf{开放边界条件（OBC）}：MPS 两端的张量只有一个虚拟指标，自然适应开放边界。边界效应可能影响中心区域的物理量，需要取足够大的系统尺寸。
-
-\textbf{周期边界条件（PBC）}：需要在首尾张量之间添加额外的虚拟指标连接，形成"环形 MPS"。这会使某些操作（如正则化）变得复杂，但对于研究热力学极限下的体性质很重要。
+对于开放边界条件（OBC），MPS 两端的张量只有一个虚拟指标，自然适应开放边界。边界效应可能影响中心区域的物理量，需要取足够大的系统尺寸。对于周期边界条件（PBC），需要在首尾张量之间添加额外的虚拟指标连接，形成环形 MPS。这会使某些操作（如正则化）变得复杂，但对于研究热力学极限下的体性质很重要。
 
 \subsection{虚时演化与基态求解}
 
@@ -189,10 +134,7 @@ TEBD（Time-Evolving Block Decimation）算法将 Trotter 分解与 MPS 更新�
 \begin{equation}
 |\psi_0\rangle = \lim_{\tau\to\infty} \frac{e^{-\hat{H}\tau}|\psi_{\mathrm{init}}\rangle}{\|e^{-\hat{H}\tau}|\psi_{\mathrm{init}}\rangle\|}.
 \end{equation}
-
-\textbf{物理直觉}：虚时演化是"量子退火"过程——高能态被指数压制，系统自然"冷却"到基态。只要初态与基态有非零重叠，虚时演化必然收敛到基态。
-
-收敛速度由能隙 $\Delta = E_1 - E_0$ 决定：$\tau \sim 1/\Delta$ 时激发态权重衰减到 $e^{-1}$。
+从物理角度理解，虚时演化是量子退火过程——高能态被指数压制，系统自然冷却到基态。只要初态与基态有非零重叠，虚时演化必然收敛到基态。收敛速度由能隙 $\Delta = E_1 - E_0$ 决定：$\tau \sim 1/\Delta$ 时激发态权重衰减到 $e^{-1}$。
 
 \section{量子信道与 Kraus 算符的张量网络处理}[Tensor Network Treatment of Quantum Channels and Kraus Operators]
 
@@ -202,28 +144,23 @@ TEBD（Time-Evolving Block Decimation）算法将 Trotter 分解与 MPS 更新�
 \begin{equation}
 \mathcal{E}(\rho) = \sum_{\mu} \hat{K}_\mu \rho \hat{K}_\mu^\dagger,
 \end{equation}
-其中 Kraus 算符 $\{\hat{K}_\mu\}$ 满足完备性条件 $\sum_\mu \hat{K}_\mu^\dagger \hat{K}_\mu = \hat{I}$。
-
-\textbf{物理直觉}：Kraus 表示可以理解为"环境测量"的观点——系统与环境相互作用后，环境被（假想地）测量，不同测量结果 $\mu$ 对应不同的 Kraus 算符作用于系统。完备性条件保证所有可能结果的概率之和为 1。
+其中 Kraus 算符 $\{\hat{K}_\mu\}$ 满足完备性条件 $\sum_\mu \hat{K}_\mu^\dagger \hat{K}_\mu = \hat{I}$。从物理角度理解，Kraus 表示可以理解为环境测量的观点——系统与环境相互作用后，环境被（假想地）测量，不同测量结果 $\mu$ 对应不同的 Kraus 算符作用于系统，完备性条件保证所有可能结果的概率之和为 1。
 
 \subsection{纯态 MPS 上的信道作用}
 
-对于纯态 $|\psi\rangle$，量子信道将其映射为混合态 $\rho = \mathcal{E}(|\psi\rangle\langle\psi|)$。在 MPS 框架下有两种处理方式：
+对于纯态 $|\psi\rangle$，量子信道将其映射为混合态 $\rho = \mathcal{E}(|\psi\rangle\langle\psi|)$。在 MPS 框架下有两种处理方式。
 
-\textbf{密度矩阵 MPS（MPO）}：将 $\rho$ 表示为矩阵乘积算符
+第一种是密度矩阵 MPS（MPO）方法，将 $\rho$ 表示为矩阵乘积算符
 \begin{equation}
 \rho_{s_1\cdots s_N, s'_1\cdots s'_N} = \mathrm{Tr}(W^{[1]s_1 s'_1} W^{[2]s_2 s'_2} \cdots W^{[N]s_N s'_N}),
 \end{equation}
 其中每个张量 $W^{[n]}$ 有两个物理指标（bra 和 ket）。这种方法可以精确表示混合态，但键维度平方增长。
 
-\textbf{量子轨迹方法}：保持纯态 MPS 表示，将信道作用解释为随机过程
+第二种是量子轨迹方法，保持纯态 MPS 表示，将信道作用解释为随机过程
 \begin{equation}
 |\psi\rangle \to |\psi_\mu\rangle = \frac{\hat{K}_\mu |\psi\rangle}{\|\hat{K}_\mu |\psi\rangle\|}, \quad \text{概率 } p_\mu = \|\hat{K}_\mu |\psi\rangle\|^2.
 \end{equation}
-
-物理量通过轨迹平均得到：$\langle\hat{O}\rangle = \sum_\mu p_\mu \langle\psi_\mu|\hat{O}|\psi_\mu\rangle$。
-
-\textbf{物理直觉}：量子轨迹方法模拟了"单次实验"的随机演化，多次采样后统计平均恢复量子信道的完整效果。这与实验中的单次测量—后选择过程直接对应。
+物理量通过轨迹平均得到：$\langle\hat{O}\rangle = \sum_\mu p_\mu \langle\psi_\mu|\hat{O}|\psi_\mu\rangle$。从物理角度理解，量子轨迹方法模拟了单次实验的随机演化，多次采样后统计平均恢复量子信道的完整效果，这与实验中的单次测量—后选择过程直接对应。
 
 \subsection{测量与条件化}
 
@@ -233,30 +170,16 @@ TEBD（Time-Evolving Block Decimation）算法将 Trotter 分解与 MPS 更新�
 \end{equation}
 其中 $\hat{M}_\mu$ 是测量算符，$p_\mu = \langle\psi|\hat{M}_\mu^\dagger \hat{M}_\mu|\psi\rangle$ 是得到结果 $\mu$ 的概率。
 
-在 MPS 中实现测量：
-\begin{enumerate}
-\item 计算各结果的概率 $p_\mu$（通过期望值计算）
-\item 按概率采样得到结果 $\mu$
-\item 将 $\hat{M}_\mu$ 作用于相应格点的张量
-\item 重新正则化 MPS
-\end{enumerate}
+在 MPS 中实现测量需要以下步骤：首先通过期望值计算各结果的概率 $p_\mu$，然后按概率采样得到结果 $\mu$，接着将 $\hat{M}_\mu$ 作用于相应格点的张量，最后重新正则化 MPS。
 
-\textbf{条件化}：当我们只关心特定测量结果（如"成功"事件）时，可以只保留满足条件的轨迹，计算条件期望值
+当我们只关心特定测量结果（如成功事件）时，可以只保留满足条件的轨迹，计算条件期望值
 \begin{equation}
 \langle\hat{O}\rangle_{\mathrm{success}} = \frac{\sum_{\mu \in \mathrm{success}} p_\mu \langle\psi_\mu|\hat{O}|\psi_\mu\rangle}{\sum_{\mu \in \mathrm{success}} p_\mu}.
 \end{equation}
 
 \section{本章小结}[Chapter Summary]
 
-本章系统介绍了张量网络理论的数学结构与物理直觉：
-
-\begin{enumerate}
-\item \textbf{张量表示}：量子态的系数张量可以分解为低阶张量网络，利用量子态的结构性实现指数级压缩
-\item \textbf{MPS 结构}：矩阵乘积态是一维系统的最优表示，键维度 $\chi$ 控制表示能力与计算复杂度的平衡
-\item \textbf{基本操作}：内积、期望值、门作用等操作可在 $O(N\chi^3)$ 复杂度内完成
-\item \textbf{TEBD 算法}：通过 Trotter 分解将全局演化转化为局域门序列，实现高效时间演化
-\item \textbf{量子信道}：Kraus 算符可通过量子轨迹方法在纯态 MPS 上实现，自然支持测量条件化
-\end{enumerate}
+本章系统介绍了张量网络理论的数学结构与物理直觉。在张量表示方面，量子态的系数张量可以分解为低阶张量网络，利用量子态的结构性实现指数级压缩。在 MPS 结构方面，矩阵乘积态是一维系统的最优表示，键维度 $\chi$ 控制表示能力与计算复杂度的平衡。在基本操作方面，内积、期望值、门作用等操作可在 $O(N\chi^3)$ 复杂度内完成。在 TEBD 算法方面，通过 Trotter 分解将全局演化转化为局域门序列，实现高效时间演化。在量子信道方面，Kraus 算符可通过量子轨迹方法在纯态 MPS 上实现，自然支持测量条件化。
 
 这些理论工具为下一章的量子接口端到端仿真提供了计算框架。特别是，时间 bin 编码的光场天然具有一维链结构，MPS 表示与 TEBD 演化可以直接应用；而量子轨迹方法则为处理光子探测的条件化问题提供了自然的解决方案。
 
