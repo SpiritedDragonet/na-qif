@@ -1,21 +1,43 @@
 % -*-coding: utf-8 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\chapter{带章节的附录}[Full Appendix]%
-内容
+\chapter{补充数学推导}[Supplementary Mathematical Derivations]
+
+本附录给出正文中省略的详细数学推导。
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{附录节的内容}[Section in Appendix]
-内容
+\section{时间 bin 离散化与量子门构造}[Time-Bin Discretization and Quantum Gate Construction]
 
-\chapter{这个星球上最好的免费Linux软件列表}[List of the Best Linux Software in our Planet]
-\section{系统}
+\textbf{光场离散化.} 连续时间湮灭算符 $\hat{a}(t)$ 满足 $[\hat{a}(t), \hat{a}^\dagger(t')] = \delta(t - t')$。定义时间 bin 算符
+\begin{equation}
+\hat{a}_n = \frac{1}{\sqrt{\Delta t}} \int_{t_n}^{t_n + \Delta t} \hat{a}(t) \, \mathrm{d}t, \quad [\hat{a}_m, \hat{a}_n^\dagger] = \delta_{mn}.
+\end{equation}
 
-内容
+\textbf{发射门.} $\Lambda$ 型三能级原子（基态 $|0\rangle$, $|1\rangle$，激发态 $|e\rangle$）的跃迁算符为 $\hat{S}_+ = |0\rangle\langle e|$, $\hat{S}_- = |1\rangle\langle e|$。设偏振映射矩阵 $\boldsymbol{\alpha}$，Lindblad 算符为
+\begin{equation}
+\hat{L}_{H/V} = \sqrt{\gamma} (\alpha_{H/V,+} \hat{S}_+ + \alpha_{H/V,-} \hat{S}_-).
+\end{equation}
+发射门 $\hat{U}_{\mathrm{emit}} = \exp[\sqrt{\Delta t}(\hat{L}_H \otimes \hat{b}_H^\dagger + \hat{L}_V \otimes \hat{b}_V^\dagger - \mathrm{h.c.})]$ 产生原子—光子纠缠。
 
-\subsection{hifvwm的优点}
+\textbf{QFC 门.} 量子频率转换的幺正演化为
+\begin{equation}
+\hat{U}_{\mathrm{QFC}} = \exp[\theta_H (\hat{b}_H \hat{c}_H^\dagger - \hat{b}_H^\dagger \hat{c}_H) + \theta_V (\hat{b}_V \hat{c}_V^\dagger - \hat{b}_V^\dagger \hat{c}_V)],
+\end{equation}
+其中 $\hat{b}$, $\hat{c}$ 分别为 780 nm 和 1517 nm 模式算符，转换效率 $\eta = \sin^2\theta$。
 
-内容
+\textbf{分束器门.} 50/50 分束器 $\hat{U}_{\mathrm{BS}} = \exp[\frac{\pi}{4}(\hat{a}_A^\dagger \hat{a}_B - \hat{a}_A \hat{a}_B^\dagger)]$ 实现
+\begin{equation}
+\hat{a}_A \to \frac{1}{\sqrt{2}}(\hat{a}_A + \hat{a}_B), \quad \hat{a}_B \to \frac{1}{\sqrt{2}}(\hat{a}_A - \hat{a}_B).
+\end{equation}
+Hong-Ou-Mandel 效应：$\hat{U}_{\mathrm{BS}} |1\rangle_A |1\rangle_B = \frac{1}{2}(|2\rangle_A |0\rangle_B - |0\rangle_A |2\rangle_B)$。
 
-\section{其他}
+\textbf{琼斯门.} 光纤偏振演化用 $\mathbf{U} \in \mathrm{SU}(2)$ 描述，对单光子 $|H/V\rangle \to u_{00/01}|H\rangle + u_{10/11}|V\rangle$，对双光子按 $\mathbf{U} \otimes \mathbf{U}$ 作用。
 
-内容 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Kraus 算符与 MPS 截断}[Kraus Operators and MPS Truncation]
+
+\textbf{探测器 Kraus 算符.} 效率 $\eta$ 的桶式探测器：无点击 $\hat{K}_0 = \sum_n (1-\eta)^{n/2} |n\rangle\langle n|$，有点击 $\hat{K}_1 = \sum_n \sqrt{1-(1-\eta)^n} |0\rangle\langle n|$，满足 $\sum_\mu \hat{K}_\mu^\dagger \hat{K}_\mu = \hat{I}$。双偏振双端口系统共 64 个联合 Kraus 算符 $\hat{K}_{ij} = \hat{K}_i^{(A)} \otimes \hat{K}_j^{(B)}$。BSM 成功判据：同一 bin 内恰好两次点击，$|\Psi^-\rangle$ 对应 $\{H_1,V_2\}$ 或 $\{V_1,H_2\}$，$|\Psi^+\rangle$ 对应 $\{H_1,V_1\}$ 或 $\{H_2,V_2\}$。
+
+\textbf{损耗信道.} 透过率 $\eta$ 的振幅阻尼：$\hat{K}_0 = \sum_n \eta^{n/2}|n\rangle\langle n|$，$\hat{K}_k = \sum_{n\geq k} \sqrt{\binom{n}{k}} \eta^{(n-k)/2}(1-\eta)^{k/2}|n-k\rangle\langle n|$。双模独立损耗取张量积 $\hat{K}_{k_H,k_V} = \hat{K}_{k_H}^{(H)} \otimes \hat{K}_{k_V}^{(V)}$。
+
+\textbf{MPS 截断.} 两格点张量 SVD：$\Theta^{s_i s_{i+1}}_{\alpha\beta} = \sum_\gamma U^{s_i}_{\alpha\gamma} \lambda_\gamma V^{s_{i+1}}_{\gamma\beta}$，截断误差 $\epsilon = \sqrt{\sum_{\gamma>\chi_{\max}} \lambda_\gamma^2}$。纠缠熵 $S = -\sum_\gamma \lambda_\gamma^2 \log \lambda_\gamma^2$ 决定所需键维度。时间 bin 链中纠缠局域化，$\chi$ 不随 bin 数指数增长，典型值 $\chi \lesssim 100$。收敛性检验：增大 $\chi_{\max}$ 观察物理量稳定性，监控累积截断误差 $< 10^{-10}$。
+

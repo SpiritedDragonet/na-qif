@@ -1,8 +1,8 @@
 \contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{I}{section*.1}%
 \contentsline {chapter}{\heiti 摘\hspace {\ccwd }要}{I}{section*.5}%
 \contentsline {chapter}{\heiti Abstract}{II}{section*.7}%
-\contentsline {chapter}{\heiti 插图索引}{VI}{section*.11}%
-\contentsline {chapter}{\heiti 表格索引}{VII}{section*.13}%
+\contentsline {chapter}{\heiti 插图索引}{VII}{section*.11}%
+\contentsline {chapter}{\heiti 表格索引}{VIII}{section*.13}%
 \contentsline {chapter}{\numberline {第1章}绪论}{1}{chapter.1}%
 \contentsline {section}{\numberline {1.1}研究背景}{1}{section.1.1}%
 \contentsline {subsection}{\numberline {1.1.1}量子接口的内涵：把“飞行比特”接入“处理节点”}{2}{subsection.1.1.1}%
@@ -14,81 +14,84 @@
 \contentsline {subsection}{\numberline {1.2.1}研究工作的创新点与理论价值}{7}{subsection.1.2.1}%
 \contentsline {section}{\numberline {1.3}论文结构安排}{8}{section.1.3}%
 \vspace {\baselineskip }
-\contentsline {chapter}{\numberline {第2章}理论框架与关键物理模型}{10}{chapter.2}%
-\contentsline {section}{\numberline {2.1}光子–原子量子接口基本原理}{10}{section.2.1}%
-\contentsline {subsection}{\numberline {2.1.1}物理背景}{10}{subsection.2.1.1}%
-\contentsline {subsection}{\numberline {2.1.2}接口工作机制}{10}{subsection.2.1.2}%
-\contentsline {section}{\numberline {2.2}跨尺度噪声来源及建模}{10}{section.2.2}%
-\contentsline {subsection}{\numberline {2.2.1}噪声分类}{10}{subsection.2.2.1}%
-\contentsline {subsection}{\numberline {2.2.2}噪声模型构建}{10}{subsection.2.2.2}%
-\contentsline {section}{\numberline {2.3}Lindblad主方程与量子系统动力学}{10}{section.2.3}%
-\contentsline {subsection}{\numberline {2.3.1}理论推导}{10}{subsection.2.3.1}%
-\contentsline {subsection}{\numberline {2.3.2}模型假设与近似}{10}{subsection.2.3.2}%
-\contentsline {section}{\numberline {2.4}光纤耦合理论与模式匹配}{11}{section.2.4}%
-\contentsline {subsection}{\numberline {2.4.1}耦合效率理论}{11}{subsection.2.4.1}%
-\contentsline {subsection}{\numberline {2.4.2}关键参数讨论}{11}{subsection.2.4.2}%
-\contentsline {section}{\numberline {2.5}理论预期与模型总结}{11}{section.2.5}%
-\contentsline {subsection}{\numberline {2.5.1}预期结果}{11}{subsection.2.5.1}%
-\contentsline {subsection}{\numberline {2.5.2}小结}{11}{subsection.2.5.2}%
-\contentsline {chapter}{\numberline {第3章}系统设计与数值仿真方法}{12}{chapter.3}%
-\contentsline {section}{\numberline {3.1}实验体系描述与参数确定}{12}{section.3.1}%
-\contentsline {subsection}{\numberline {3.1.1}体系描述}{12}{subsection.3.1.1}%
-\contentsline {subsection}{\numberline {3.1.2}参数确定}{12}{subsection.3.1.2}%
-\contentsline {section}{\numberline {3.2}多尺度噪声模型的数值实现}{12}{section.3.2}%
-\contentsline {subsection}{\numberline {3.2.1}离散化方案}{12}{subsection.3.2.1}%
-\contentsline {subsection}{\numberline {3.2.2}噪声数值模拟}{12}{subsection.3.2.2}%
-\contentsline {section}{\numberline {3.3}光纤耦合模拟及模式匹配计算}{12}{section.3.3}%
-\contentsline {subsection}{\numberline {3.3.1}耦合效率仿真}{12}{subsection.3.3.1}%
-\contentsline {subsection}{\numberline {3.3.2}参数敏感性分析}{12}{subsection.3.3.2}%
-\contentsline {section}{\numberline {3.4}数据处理与误差分析}{13}{section.3.4}%
-\contentsline {subsection}{\numberline {3.4.1}数据记录}{13}{subsection.3.4.1}%
-\contentsline {subsection}{\numberline {3.4.2}误差与收敛性检验}{13}{subsection.3.4.2}%
-\contentsline {section}{\numberline {3.5}本章小结}{13}{section.3.5}%
-\contentsline {chapter}{\numberline {第4章}数值仿真结果与实验数据比对}{14}{chapter.4}%
-\contentsline {section}{\numberline {4.1}仿真结果展示}{14}{section.4.1}%
-\contentsline {subsection}{\numberline {4.1.1}微观噪声效果}{14}{subsection.4.1.1}%
-\contentsline {subsection}{\numberline {4.1.2}中观噪声效果}{14}{subsection.4.1.2}%
-\contentsline {subsection}{\numberline {4.1.3}宏观噪声影响}{14}{subsection.4.1.3}%
-\contentsline {section}{\numberline {4.2}光纤耦合效率仿真}{14}{section.4.2}%
-\contentsline {subsection}{\numberline {4.2.1}理想耦合效率预测}{14}{subsection.4.2.1}%
-\contentsline {subsection}{\numberline {4.2.2}对准与模式匹配影响}{14}{subsection.4.2.2}%
-\contentsline {section}{\numberline {4.3}实验数据简介}{14}{section.4.3}%
-\contentsline {subsection}{\numberline {4.3.1}实验系统描述}{14}{subsection.4.3.1}%
-\contentsline {subsection}{\numberline {4.3.2}测量方法}{15}{subsection.4.3.2}%
-\contentsline {section}{\numberline {4.4}仿真与实验数据比对}{15}{section.4.4}%
-\contentsline {subsection}{\numberline {4.4.1}耦合效率比对}{15}{subsection.4.4.1}%
-\contentsline {subsection}{\numberline {4.4.2}量子态保真度与退相干比较}{15}{subsection.4.4.2}%
-\contentsline {subsection}{\numberline {4.4.3}综合讨论}{15}{subsection.4.4.3}%
-\contentsline {section}{\numberline {4.5}本章小结}{15}{section.4.5}%
-\contentsline {chapter}{\numberline {第5章}实验参数优化与改进策略}{16}{chapter.5}%
-\contentsline {section}{\numberline {5.1}光纤耦合优化策略}{16}{section.5.1}%
-\contentsline {subsection}{\numberline {5.1.1}关键参数敏感性分析回顾}{16}{subsection.5.1.1}%
-\contentsline {subsection}{\numberline {5.1.2}优化方案提出}{16}{subsection.5.1.2}%
-\contentsline {subsection}{\numberline {5.1.3}优化措施的数值仿真验证}{16}{subsection.5.1.3}%
-\contentsline {section}{\numberline {5.2}噪声管理与抑制策略}{16}{section.5.2}%
-\contentsline {subsection}{\numberline {5.2.1}激光噪声控制}{16}{subsection.5.2.1}%
-\contentsline {subsection}{\numberline {5.2.2}环境噪声与机械振动控制}{16}{subsection.5.2.2}%
-\contentsline {subsection}{\numberline {5.2.3}综合噪声管理效果}{16}{subsection.5.2.3}%
-\contentsline {section}{\numberline {5.3}实验参数优化与实施建议}{16}{section.5.3}%
-\contentsline {subsection}{\numberline {5.3.1}参数优化细节}{17}{subsection.5.3.1}%
-\contentsline {subsection}{\numberline {5.3.2}实验装置升级方案}{17}{subsection.5.3.2}%
-\contentsline {subsection}{\numberline {5.3.3}未来扩展与可重复性}{17}{subsection.5.3.3}%
-\contentsline {section}{\numberline {5.4}本章小结}{17}{section.5.4}%
-\contentsline {chapter}{\numberline {第6章}结论与未来展望}{18}{chapter.6}%
-\contentsline {section}{\numberline {6.1}全文总结}{18}{section.6.1}%
-\contentsline {subsection}{\numberline {6.1.1}研究工作回顾}{18}{subsection.6.1.1}%
-\contentsline {subsection}{\numberline {6.1.2}主要成果总结}{18}{subsection.6.1.2}%
-\contentsline {section}{\numberline {6.2}研究贡献与意义}{18}{section.6.2}%
-\contentsline {section}{\numberline {6.3}未来研究方向}{18}{section.6.3}%
-\contentsline {chapter}{\heiti 结\hspace {\ccwd }论}{19}{section*.21}%
-\contentsline {chapter}{\heiti 参考文献}{20}{section*.24}%
-\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{22}{section*.26}%
-\contentsline {chapter}{\heiti 致\hspace {\ccwd }谢}{23}{section*.28}%
-\contentsline {chapter}{\numberline {附录 A}带章节的附录}{24}{appendix.A}%
-\contentsline {section}{\numberline {A.1}附录节的内容}{24}{section.A.1}%
-\contentsline {chapter}{\numberline {附录 B}这个星球上最好的免费Linux软件列表}{25}{appendix.B}%
-\contentsline {section}{\numberline {B.1}系统}{25}{section.B.1}%
-\contentsline {subsection}{\numberline {B.1.1}hifvwm的优点}{25}{subsection.B.1.1}%
-\contentsline {section}{\numberline {B.2}其他}{25}{section.B.2}%
-\contentsline {chapter}{\heiti 攻读硕士学位期间发表的论文及其他成果}{26}{section*.32}%
-\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{27}{section*.34}%
+\contentsline {chapter}{\numberline {第2章}张量网络理论基础}{9}{chapter.2}%
+\contentsline {section}{\numberline {2.1}从量子态到张量：表示论视角}{9}{section.2.1}%
+\contentsline {subsection}{\numberline {2.1.1}量子态的张量表示}{9}{subsection.2.1.1}%
+\contentsline {subsection}{\numberline {2.1.2}张量图示记号}{9}{subsection.2.1.2}%
+\contentsline {subsection}{\numberline {2.1.3}张量分解的物理意义}{10}{subsection.2.1.3}%
+\contentsline {section}{\numberline {2.2}矩阵乘积态（MPS）：一维量子态的最优表示}{10}{section.2.2}%
+\contentsline {subsection}{\numberline {2.2.1}MPS 的定义与构造}{10}{subsection.2.2.1}%
+\contentsline {subsection}{\numberline {2.2.2}键维度与表示能力}{10}{subsection.2.2.2}%
+\contentsline {subsection}{\numberline {2.2.3}规范自由度与正则形式}{11}{subsection.2.2.3}%
+\contentsline {subsection}{\numberline {2.2.4}MPS 与量子信息}{11}{subsection.2.2.4}%
+\contentsline {section}{\numberline {2.3}MPS 上的基本操作}{11}{section.2.3}%
+\contentsline {subsection}{\numberline {2.3.1}内积与期望值计算}{11}{subsection.2.3.1}%
+\contentsline {subsection}{\numberline {2.3.2}局域门作用与张量更新}{12}{subsection.2.3.2}%
+\contentsline {subsection}{\numberline {2.3.3}SVD 截断与误差控制}{12}{subsection.2.3.3}%
+\contentsline {section}{\numberline {2.4}时间演化块消去（TEBD）算法}{13}{section.2.4}%
+\contentsline {subsection}{\numberline {2.4.1}Trotter 分解与局域化}{13}{subsection.2.4.1}%
+\contentsline {subsection}{\numberline {2.4.2}TEBD 算法流程}{13}{subsection.2.4.2}%
+\contentsline {subsection}{\numberline {2.4.3}开放边界与周期边界}{13}{subsection.2.4.3}%
+\contentsline {subsection}{\numberline {2.4.4}虚时演化与基态求解}{14}{subsection.2.4.4}%
+\contentsline {section}{\numberline {2.5}量子信道与 Kraus 算符的张量网络处理}{14}{section.2.5}%
+\contentsline {subsection}{\numberline {2.5.1}从幺正演化���量子信道}{14}{subsection.2.5.1}%
+\contentsline {subsection}{\numberline {2.5.2}纯态 MPS 上的信道作用}{14}{subsection.2.5.2}%
+\contentsline {subsection}{\numberline {2.5.3}测量与条件化}{15}{subsection.2.5.3}%
+\contentsline {section}{\numberline {2.6}本章小结}{15}{section.2.6}%
+\contentsline {chapter}{\numberline {第3章}量子接口的端到端仿真模型与实现}{17}{chapter.3}%
+\contentsline {section}{\numberline {3.1}时间 bin 离散化与光场的 MPS 表示}{17}{section.3.1}%
+\contentsline {subsection}{\numberline {3.1.1}连续光场的离散化}{17}{subsection.3.1.1}%
+\contentsline {subsection}{\numberline {3.1.2}光场态的 MPS 结构}{17}{subsection.3.1.2}%
+\contentsline {subsection}{\numberline {3.1.3}原子—光场联合系统}{18}{subsection.3.1.3}%
+\contentsline {section}{\numberline {3.2}接口链路各模块的量子门表示}{18}{section.3.2}%
+\contentsline {subsection}{\numberline {3.2.1}原子发射门}{18}{subsection.3.2.1}%
+\contentsline {subsection}{\numberline {3.2.2}量子频率转换（QFC）门}{18}{subsection.3.2.2}%
+\contentsline {subsection}{\numberline {3.2.3}光纤传输与偏振演化}{19}{subsection.3.2.3}%
+\contentsline {subsection}{\numberline {3.2.4}分束干涉与贝尔态测量}{19}{subsection.3.2.4}%
+\contentsline {section}{\numberline {3.3}探测器建模与 Kraus 算符}{20}{section.3.3}%
+\contentsline {subsection}{\numberline {3.3.1}桶式探测器的 POVM}{20}{subsection.3.3.1}%
+\contentsline {subsection}{\numberline {3.3.2}暗计数与时间抖动}{20}{subsection.3.3.2}%
+\contentsline {subsection}{\numberline {3.3.3}联合探测与成功事件}{20}{subsection.3.3.3}%
+\contentsline {section}{\numberline {3.4}MPS 仿真的数值实现}{21}{section.3.4}%
+\contentsline {subsection}{\numberline {3.4.1}SWAP 传送带调度}{21}{subsection.3.4.1}%
+\contentsline {subsection}{\numberline {3.4.2}双臂并行演化}{21}{subsection.3.4.2}%
+\contentsline {subsection}{\numberline {3.4.3}量子轨迹采样}{21}{subsection.3.4.3}%
+\contentsline {subsection}{\numberline {3.4.4}条件态重建与保真度计算}{22}{subsection.3.4.4}%
+\contentsline {subsection}{\numberline {3.4.5}收敛性与误差控制}{22}{subsection.3.4.5}%
+\contentsline {section}{\numberline {3.5}本章小结}{22}{section.3.5}%
+\contentsline {chapter}{\numberline {第4章}仿真结果与参数依赖性分析}{23}{chapter.4}%
+\contentsline {section}{\numberline {4.1}基准场景与参数设定}{23}{section.4.1}%
+\contentsline {subsection}{\numberline {4.1.1}原子系统参数}{23}{subsection.4.1.1}%
+\contentsline {subsection}{\numberline {4.1.2}光学链路参数}{23}{subsection.4.1.2}%
+\contentsline {subsection}{\numberline {4.1.3}探测器参数}{23}{subsection.4.1.3}%
+\contentsline {subsection}{\numberline {4.1.4}仿真参数}{23}{subsection.4.1.4}%
+\contentsline {section}{\numberline {4.2}单臂发射与原子—光子纠缠验证}{23}{section.4.2}%
+\contentsline {subsection}{\numberline {4.2.1}发射波包的时间结构}{23}{subsection.4.2.1}%
+\contentsline {subsection}{\numberline {4.2.2}原子—光子纠缠态}{25}{subsection.4.2.2}%
+\contentsline {subsection}{\numberline {4.2.3}MPS 键维度的演化}{25}{subsection.4.2.3}%
+\contentsline {section}{\numberline {4.3}双臂纠缠分发性能}{25}{section.4.3}%
+\contentsline {subsection}{\numberline {4.3.1}理想情况下的成功率}{25}{subsection.4.3.1}%
+\contentsline {subsection}{\numberline {4.3.2}实际参数下的性能}{26}{subsection.4.3.2}%
+\contentsline {subsection}{\numberline {4.3.3}Hong-Ou-Mandel 干涉可见度}{26}{subsection.4.3.3}%
+\contentsline {section}{\numberline {4.4}关键参数的敏感性分析}{27}{section.4.4}%
+\contentsline {subsection}{\numberline {4.4.1}QFC 噪声的影响}{27}{subsection.4.4.1}%
+\contentsline {subsection}{\numberline {4.4.2}光纤长度的影响}{27}{subsection.4.4.2}%
+\contentsline {subsection}{\numberline {4.4.3}探测器效率的影响}{27}{subsection.4.4.3}%
+\contentsline {subsection}{\numberline {4.4.4}时间 bin 宽度的影响}{28}{subsection.4.4.4}%
+\contentsline {section}{\numberline {4.5}误差来源分解}{28}{section.4.5}%
+\contentsline {subsection}{\numberline {4.5.1}保真度误差预算}{28}{subsection.4.5.1}%
+\contentsline {subsection}{\numberline {4.5.2}成功率损失分解}{28}{subsection.4.5.2}%
+\contentsline {section}{\numberline {4.6}优化策略讨论}{29}{section.4.6}%
+\contentsline {subsection}{\numberline {4.6.1}提升保真度}{29}{subsection.4.6.1}%
+\contentsline {subsection}{\numberline {4.6.2}提升成功率}{29}{subsection.4.6.2}%
+\contentsline {subsection}{\numberline {4.6.3}成功率���保真度权衡}{29}{subsection.4.6.3}%
+\contentsline {section}{\numberline {4.7}本章小结}{29}{section.4.7}%
+\contentsline {chapter}{\heiti 结\hspace {\ccwd }论}{31}{section*.19}%
+\contentsline {chapter}{\heiti 参考文献}{32}{section*.22}%
+\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{34}{section*.24}%
+\contentsline {chapter}{\heiti 致\hspace {\ccwd }谢}{35}{section*.26}%
+\contentsline {chapter}{\numberline {附录 A}补充数学推导}{36}{appendix.A}%
+\contentsline {section}{\numberline {A.1}时间 bin 离散化与量子门构造}{36}{section.A.1}%
+\contentsline {section}{\numberline {A.2}Kraus 算符与 MPS 截断}{36}{section.A.2}%
+\contentsline {chapter}{\heiti 攻读硕士学位期间发表的论文及其他成果}{38}{section*.29}%
+\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{39}{section*.31}%

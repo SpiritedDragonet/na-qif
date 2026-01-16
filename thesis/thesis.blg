@@ -9,10 +9,6 @@ Reallocating 'name_of_file' (item size: 1) to 18 items.
 A level-1 auxiliary file: body/chapter3.aux
 Reallocating 'name_of_file' (item size: 1) to 18 items.
 A level-1 auxiliary file: body/chapter4.aux
-Reallocating 'name_of_file' (item size: 1) to 18 items.
-A level-1 auxiliary file: body/chapter5.aux
-Reallocating 'name_of_file' (item size: 1) to 18 items.
-A level-1 auxiliary file: body/chapter6.aux
 Reallocating 'name_of_file' (item size: 1) to 20 items.
 A level-1 auxiliary file: back/conclusion.aux
 Reallocating 'name_of_file' (item size: 1) to 18 items.
@@ -32,45 +28,45 @@ Reallocating 'singl_function' (item size: 4) to 100 items.
 Reallocating 'singl_function' (item size: 4) to 100 items.
 Database file #1: reference.bib
 Warning--I didn't find a database entry for "Li2025FiberArrayArchitectureAtomQC"
-You've used 16 entries,
+You've used 15 entries,
             5265 wiz_defined-function locations,
-            1176 strings with 12471 characters,
-and the built_in function-call counts, 170307 in all, are:
-= -- 3876
-> -- 19380
-< -- 24136
-+ -- 6655
-- -- 1284
-* -- 1328
-:= -- 23830
-add.period$ -- 64
-call.type$ -- 16
-change.case$ -- 121
-chr.to.int$ -- 5928
-cite$ -- 16
-duplicate$ -- 416
-empty$ -- 1932
-format.name$ -- 555
-if$ -- 44006
+            1166 strings with 12146 characters,
+and the built_in function-call counts, 158462 in all, are:
+= -- 3621
+> -- 18010
+< -- 22431
++ -- 6193
+- -- 1190
+* -- 1249
+:= -- 22201
+add.period$ -- 60
+call.type$ -- 15
+change.case$ -- 113
+chr.to.int$ -- 5508
+cite$ -- 15
+duplicate$ -- 390
+empty$ -- 1814
+format.name$ -- 523
+if$ -- 40937
 int.to.chr$ -- 1
-int.to.str$ -- 17
+int.to.str$ -- 16
 missing$ -- 0
-newline$ -- 111
-num.names$ -- 48
-pop$ -- 8656
+newline$ -- 105
+num.names$ -- 45
+pop$ -- 7954
 preamble$ -- 1
-purify$ -- 16
+purify$ -- 15
 quote$ -- 0
-skip$ -- 17857
+skip$ -- 16692
 stack$ -- 0
-substring$ -- 8776
-swap$ -- 16
-text.length$ -- 388
+substring$ -- 8159
+swap$ -- 15
+text.length$ -- 365
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 176
+type$ -- 165
 warning$ -- 0
-while$ -- 427
+while$ -- 401
 width$ -- 0
-write$ -- 274
+write$ -- 258
 (There was 1 warning)

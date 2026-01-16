@@ -1,133 +1,92 @@
+# 获取脚本所在目录（无论从哪里运行都能正确定位）
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $scriptDir
+
 $texFile = "thesis.tex"
-$compileCommand = "& xelatex -interaction=nonstopmode $texFile"
-$bibCommand = "& bibtex thesis"
-$pdfFile = "thesis.pdf"
-$docxFile = "thesis.docx"
-$pandocExe = "C:\Program Files\Pandoc\pandoc.exe"
-$templateDocx = "thesis_template.docx"
+$compileCommand = "xelatex -interaction=nonstopmode $texFile"
+$bibCommand = "bibtex thesis"
 
-# Function to clean up temporary files
+# 清理临时文件
 function Clean-TexFiles {
-    Write-Host "Cleaning up temporary files..." -ForegroundColor Magenta
-    
-    # Remove common LaTeX temporary files
-    Get-ChildItem -Path $PWD -Include "*.aux", "*.log", "*.out", "*.toc", "*.lof", "*.lot", "*.bbl", "*.blg", "*.synctex.gz", "*.fls", "*.fdb_latexmk", "*.dvi", "*.xdv", "*.nav", "*.snm", "*.vrb", "*.bcf", "*.run.xml" -Recurse | ForEach-Object {
-        Remove-Item $_.FullName -Force
-        Write-Host "Removed: $($_.Name)" -ForegroundColor Gray
-    }
-    
-    Write-Host "Cleanup completed!" -ForegroundColor Magenta
+    Write-Host "清理临时文件..." -ForegroundColor Magenta
+    $extensions = @("*.aux", "*.log", "*.out", "*.toc", "*.lof", "*.lot", "*.bbl", "*.blg",
+                    "*.synctex.gz", "*.fls", "*.fdb_latexmk", "*.dvi", "*.xdv",
+                    "*.nav", "*.snm", "*.vrb", "*.bcf", "*.run.xml")
+    Get-ChildItem -Path $scriptDir -Include $extensions -Recurse -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+    Write-Host "清理完成!" -ForegroundColor Magenta
 }
 
-# Function to convert PDF to DOCX using Pandoc
-function Convert-ToDocx {
-    if (Test-Path $pdfFile) {
-        Write-Host "Converting PDF to DOCX using Pandoc..." -ForegroundColor Cyan
-        try {
-            # 检查是否存在模板文件
-            if (Test-Path $templateDocx) {
-                Write-Host "Using custom Word template: $templateDocx" -ForegroundColor Cyan
-                # 使用参考模板进行转换
-                & $pandocExe -f latex -t docx -o $docxFile --reference-doc=$templateDocx --toc --number-sections $texFile
-            } else {
-                # 标准转换
-                & $pandocExe -f latex -t docx -o $docxFile --toc --number-sections $texFile
-                Write-Host "No custom template found. For better formatting, consider creating a Word template." -ForegroundColor Yellow
-            }
-            
-            if (Test-Path $docxFile) {
-                Write-Host "Successfully converted to DOCX: $docxFile" -ForegroundColor Green
-            } else {
-                Write-Host "Failed to create DOCX file" -ForegroundColor Red
-            }
-        } catch {
-            Write-Host "Error during Pandoc conversion: $_" -ForegroundColor Red
-        }
-    } else {
-        Write-Host "PDF file not found, cannot convert to DOCX" -ForegroundColor Red
-    }
-}
-
-# 创建一个基本的Word模板函数
-function Create-DocxTemplate {
-    # 如果还没有模板，创建一个基本模板
-    if (-not (Test-Path $templateDocx)) {
-        try {
-            Write-Host "Creating a basic Word template..." -ForegroundColor Cyan
-            # 首先创建一个普通的docx
-            & $pandocExe -f latex -t docx -o $templateDocx $texFile
-            
-            Write-Host "Basic template created: $templateDocx" -ForegroundColor Green
-            Write-Host "Please edit this template in Word to set your desired styles," -ForegroundColor Yellow
-            Write-Host "then save it and run the conversion again for better results." -ForegroundColor Yellow
-        } catch {
-            Write-Host "Error creating template: $_" -ForegroundColor Red
-        }
-    }
-}
-
-# Initial compilation
-Write-Host "Initial compilation..." -ForegroundColor Green
-Invoke-Expression $compileCommand
-Invoke-Expression $bibCommand
-Invoke-Expression $compileCommand
-Invoke-Expression $compileCommand
-Write-Host "Initial compilation completed!" -ForegroundColor Green
-
-# Create Word template if needed
-Create-DocxTemplate
-
-# Convert to DOCX after initial compilation
-Convert-ToDocx
-
-# Optional cleanup after initial compilation
-# Clean-TexFiles
-
-# Watch for file changes
-$watcher = New-Object System.IO.FileSystemWatcher
-$watcher.Path = $PWD
-$watcher.Filter = "*.tex"
-$watcher.IncludeSubdirectories = $true
-$watcher.EnableRaisingEvents = $true
-
-$action = {
-    $path = $Event.SourceEventArgs.FullPath
-    $name = $Event.SourceEventArgs.Name
-    $changeType = $Event.SourceEventArgs.ChangeType
-    $timeStamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    
-    Write-Host "[$timeStamp] File $name $changeType" -ForegroundColor Yellow
-    Write-Host "Starting compilation..." -ForegroundColor Green
-    
-    # Compilation commands
+# 编译函数
+function Compile-Thesis {
+    Write-Host "开始编译..." -ForegroundColor Green
     Invoke-Expression $compileCommand
     Invoke-Expression $bibCommand
     Invoke-Expression $compileCommand
     Invoke-Expression $compileCommand
-    
-    Write-Host "Compilation completed!" -ForegroundColor Green
-    
-    # Convert to DOCX after compilation
-    Convert-ToDocx
-    
-    # Clean up temporary files after successful compilation
+    Write-Host "编译完成!" -ForegroundColor Green
+}
+
+# 初次编译
+Compile-Thesis
+
+# 监控文件变化
+$watcher = New-Object System.IO.FileSystemWatcher
+$watcher.Path = $scriptDir
+$watcher.IncludeSubdirectories = $true
+$watcher.EnableRaisingEvents = $true
+
+# 防抖：记录上次编译时间
+$script:lastCompileTime = Get-Date
+
+$action = {
+    $path = $Event.SourceEventArgs.FullPath
+    $name = $Event.SourceEventArgs.Name
+    $now = Get-Date
+
+    # 防抖：2秒内不重复编译
+    if (($now - $script:lastCompileTime).TotalSeconds -lt 2) { return }
+    $script:lastCompileTime = $now
+
+    Write-Host "[$($now.ToString('HH:mm:ss'))] 检测到变化: $name" -ForegroundColor Yellow
+
+    Set-Location $scriptDir
+    Compile-Thesis
     Clean-TexFiles
 }
 
-# Register events
-$changed = Register-ObjectEvent $watcher "Changed" -Action $action
-$created = Register-ObjectEvent $watcher "Created" -Action $action
+# 监控的文件类型：tex, bib, cls, sty, cfg
+$filters = @("*.tex", "*.bib", "*.cls", "*.sty", "*.cfg")
 
-Write-Host "Watching for file changes, press Ctrl+C to stop..." -ForegroundColor Cyan
-Write-Host "The script will automatically compile to PDF and convert to DOCX" -ForegroundColor Cyan
+# 为每种文件类型创建监控器
+$watchers = @()
+$events = @()
+
+foreach ($filter in $filters) {
+    $w = New-Object System.IO.FileSystemWatcher
+    $w.Path = $scriptDir
+    $w.Filter = $filter
+    $w.IncludeSubdirectories = $true
+    $w.EnableRaisingEvents = $true
+
+    $watchers += $w
+    $events += Register-ObjectEvent $w "Changed" -Action $action
+    $events += Register-ObjectEvent $w "Created" -Action $action
+}
+
+Write-Host ""
+Write-Host "正在监控文件变化 (tex/bib/cls/sty/cfg)..." -ForegroundColor Cyan
+Write-Host "按 Ctrl+C 停止" -ForegroundColor Cyan
+Write-Host ""
 
 try {
-    # Keep script running
     while ($true) { Start-Sleep -Seconds 1 }
 } finally {
-    # Cleanup
-    Unregister-Event -SourceIdentifier $changed.Name
-    Unregister-Event -SourceIdentifier $created.Name
-    $watcher.Dispose()
-    Write-Host "Monitoring stopped" -ForegroundColor Red
-} 
+    foreach ($e in $events) {
+        Unregister-Event -SourceIdentifier $e.Name -ErrorAction SilentlyContinue
+    }
+    foreach ($w in $watchers) {
+        $w.Dispose()
+    }
+    Write-Host "监控已停止" -ForegroundColor Red
+}

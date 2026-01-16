@@ -390,7 +390,11 @@ def check_bsm_success(clicks: List[DetectionEvent]) -> Tuple[bool, str]:
     """
     检查BSM成功。
 
-    判据：恰好2次click，在同一个bin中，且满足Bell态模式。
+    判据：恰好2次click（可在不同bin），且探测器组合满足Bell态模式。
+
+    BSM成功模式：
+    - Ψ⁻: {H1, V2} 或 {V1, H2} - 跨端口不同偏振
+    - Ψ⁺: {H1, V1} 或 {H2, V2} - 同端口不同偏振
 
     Parameters
     ----------
@@ -407,10 +411,7 @@ def check_bsm_success(clicks: List[DetectionEvent]) -> Tuple[bool, str]:
     if len(clicks) != 2:
         return False, ""
 
-    # 检查两个click是否在同一个bin中
-    if clicks[0].bin_index != clicks[1].bin_index:
-        return False, ""
-
+    # 注意：两个click可以在不同bin中，不要求同bin！
     detectors = {clicks[0].detector, clicks[1].detector}
 
     # Psi-: {H1, V2} or {V1, H2} - 跨端口不同偏振

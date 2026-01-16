@@ -371,7 +371,7 @@ def main():
     # 探测
     # =========================================================================
     # 探测参数
-    eta_det = 0.85
+    eta_det = 0.95
 
     # 使用逐bin Kraus测量方法运行探测和BSM
     print("\n运行探测和BSM（逐bin Kraus测量）...")
@@ -379,7 +379,7 @@ def main():
         mps=result.mps,
         n_bins=result.get_n_bins(),
         eta_det=eta_det,
-        rng=np.random.default_rng(seed=42),
+        rng=np.random.default_rng(seed=18),
         verbose=True,
     )
 

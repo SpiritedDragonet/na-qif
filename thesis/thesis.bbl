@@ -1,4 +1,4 @@
-\begin{thebibliography}{16}
+\begin{thebibliography}{15}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{#1}
 \expandafter\ifx\csname urlstyle\endcsname\relax\else
@@ -126,13 +126,5 @@ YANAGIMOTO R, OTHERS.
 Proceedings of SPIE.
 \newblock SPIE, 2021.
 \newblock DOI: \doi{10.1117/12.2576098}.
-
-\bibitem[Grinkemeyer et~al.(2025)Grinkemeyer, Guardado-Sanchez, and other
-  contributors]{Grinkemeyer2025ErrorDetectedCavityNeutralAtoms}
-GRINKEMEYER B, GUARDADO-SANCHEZ E, OTHER CONTRIBUTORS.
-\newblock Error-detected quantum operations with neutral atoms mediated by an
-  optical cavity\allowbreak[J/OL].
-\newblock Science, 2025, 387: 1301-1305.
-\newblock DOI: \doi{10.1126/science.adr7075}.
 
 \end{thebibliography}
