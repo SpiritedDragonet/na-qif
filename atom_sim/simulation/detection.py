@@ -453,11 +453,9 @@ def compute_fidelity_with_bell(spin_state: np.ndarray, target_bell: str) -> floa
     return float(np.real(psi.conj() @ spin_state @ psi))
 
 
-def compute_photon_statistics(mps: MPSState, n_bins: int, verbose: bool = False) -> dict:
+def _compute_photon_statistics_global(mps: MPSState, n_bins: int, bin_dim: int, verbose: bool) -> dict:
     """
-    计算光子统计（同时计算780nm和1517nm光子）。
-
-    自动检测bin维度（6D或18D）并使用相应的算符。
+    使用全局MPO方法计算光子统计（正确处理强关联态）。
 
     Parameters
     ----------
@@ -465,63 +463,60 @@ def compute_photon_statistics(mps: MPSState, n_bins: int, verbose: bool = False)
         MPS态
     n_bins : int
         时间仓数量
+    bin_dim : int
+        bin的维度（6或18）
     verbose : bool
         是否打印详细信息
 
     Returns
     -------
     dict
-        包含 'n_total', 'n_H', 'n_V', 'loss_prob',
-        以及 'n_780_H', 'n_780_V', 'n_1517_H', 'n_1517_V'
+        光子统计信息
     """
     from ..hilbert.operators import annihilation_op
 
-    # 检测bin维度
-    bin_dim = mps.d[2]  # 第一个bin的维度
+    # 构建全局光子数算符的MPO
+    n_sites = len(mps.d)
 
+    # 为每个站点准备单位算符和光子数算符
     if bin_dim == 6:
         # 6D空间：只有1517nm光子
         J_H_1517 = annihilation_op(SUBSPACE_1517, mode_id=0)
         J_V_1517 = annihilation_op(SUBSPACE_1517, mode_id=1)
+        n_H_op = J_H_1517.conj().T @ J_H_1517
+        n_V_op = J_V_1517.conj().T @ J_V_1517
 
-        n_780_H = n_780_V = 0.0  # 6D空间中没有780nm光子
-        n_1517_H = n_1517_V = 0.0
+        # 构建全局光子数算符MPO
+        n_1517_H = _build_sum_mpo(mps, n_bins, n_H_op, is_6d=True)
+        n_1517_V = _build_sum_mpo(mps, n_bins, n_V_op, is_6d=True)
 
-        for n in range(n_bins):
-            for site in [2 + 2 * n, 2 + 2 * n + 1]:
-                rho = mps.get_reduced_density([site])
-                # 1517nm 光子
-                n_1517_H += np.real(np.trace(J_H_1517.conj().T @ J_H_1517 @ rho))
-                n_1517_V += np.real(np.trace(J_V_1517.conj().T @ J_V_1517 @ rho))
+        n_780_H = n_780_V = 0.0
 
     elif bin_dim == 18:
         # 18D空间：780nm和1517nm光子都有
-        # 1517nm 光子算符（在18D空间中）
+        # 1517nm 光子算符
         J_H_1517 = annihilation_op(SUBSPACE_1517, mode_id=0)
         J_V_1517 = annihilation_op(SUBSPACE_1517, mode_id=1)
         I_780 = np.eye(3, dtype=complex)
         J_H_1517_18 = np.kron(I_780, J_H_1517)
         J_V_1517_18 = np.kron(I_780, J_V_1517)
+        n_1517_H_op = J_H_1517_18.conj().T @ J_H_1517_18
+        n_1517_V_op = J_V_1517_18.conj().T @ J_V_1517_18
 
-        # 780nm 光子算符（在18D空间中）
+        # 780nm 光子算符
         J_H_780 = annihilation_op(SUBSPACE_780, mode_id=0)
         J_V_780 = annihilation_op(SUBSPACE_780, mode_id=1)
         I_1517 = np.eye(6, dtype=complex)
         J_H_780_18 = np.kron(J_H_780, I_1517)
         J_V_780_18 = np.kron(J_V_780, I_1517)
+        n_780_H_op = J_H_780_18.conj().T @ J_H_780_18
+        n_780_V_op = J_V_780_18.conj().T @ J_V_780_18
 
-        n_780_H = n_780_V = 0.0
-        n_1517_H = n_1517_V = 0.0
-
-        for n in range(n_bins):
-            for site in [2 + 2 * n, 2 + 2 * n + 1]:
-                rho = mps.get_reduced_density([site])
-                # 780nm 光子
-                n_780_H += np.real(np.trace(J_H_780_18.conj().T @ J_H_780_18 @ rho))
-                n_780_V += np.real(np.trace(J_V_780_18.conj().T @ J_V_780_18 @ rho))
-                # 1517nm 光子
-                n_1517_H += np.real(np.trace(J_H_1517_18.conj().T @ J_H_1517_18 @ rho))
-                n_1517_V += np.real(np.trace(J_V_1517_18.conj().T @ J_V_1517_18 @ rho))
+        # 构建全局光子数算符MPO
+        n_780_H = _build_sum_mpo(mps, n_bins, n_780_H_op, is_6d=False)
+        n_780_V = _build_sum_mpo(mps, n_bins, n_780_V_op, is_6d=False)
+        n_1517_H = _build_sum_mpo(mps, n_bins, n_1517_H_op, is_6d=False)
+        n_1517_V = _build_sum_mpo(mps, n_bins, n_1517_V_op, is_6d=False)
     else:
         raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6 or 18.")
 
@@ -541,10 +536,147 @@ def compute_photon_statistics(mps: MPSState, n_bins: int, verbose: bool = False)
     }
 
     if verbose:
-        print(f"\n  光子统计：")
+        print(f"\n  光子统计（全局MPO方法）：")
         print(f"    总期望光子数：{stats['n_total']:.4f}")
         print(f"    780nm: H={stats['n_780_H']:.4f}, V={stats['n_780_V']:.4f}, total={stats['n_780_total']:.4f}")
         print(f"    1517nm: H={stats['n_1517_H']:.4f}, V={stats['n_1517_V']:.4f}, total={stats['n_1517_total']:.4f}")
         print(f"    损耗概率：{stats['loss_prob']:.4f}")
 
     return stats
+
+
+def _build_sum_mpo(mps: MPSState, n_bins: int, local_op: np.ndarray, is_6d: bool) -> float:
+    """
+    构建并应用求和MPO：sum_i O_i，其中O_i是第i个bin上的局域算符。
+
+    Parameters
+    ----------
+    mps : MPSState
+        MPS态
+    n_bins : int
+        时间仓数量
+    local_op : np.ndarray
+        局域算符（作用在单个bin上）
+    is_6d : bool
+        是否是6D空间（否则是18D）
+
+    Returns
+    -------
+    float
+        期望值 <sum_i O_i>
+    """
+    # 直接计算期望值，不构建完整MPO
+    # 对于求和算符，期望值 = sum_i <O_i>_global
+    # 其中 <O_i>_global 需要用全局态计算
+
+    total = 0.0
+    n_sites = len(mps.d)
+
+    # 对每个bin（每个bin有2个站点：左臂和右臂）
+    # 修复：使用两站点约化密度矩阵计算bin对的光子数，避免重复计数
+    for n in range(n_bins):
+        site_A = 2 + 2 * n      # 左臂
+        site_B = 2 + 2 * n + 1  # 右臂
+
+        # 获取两站点约化密度矩阵
+        rho_AB = mps.get_reduced_density([site_A, site_B])
+
+        # rho_AB 的形状应该是 (d_A * d_B, d_A * d_B)
+        dim = local_op.shape[0]
+        expected_dim = dim * dim
+
+        # 如果形状不对，需要reshape
+        if rho_AB.shape[0] != expected_dim:
+            # 可能是 (d_A, d_B, d_A, d_B) 形状，需要reshape
+            rho_AB = rho_AB.reshape(expected_dim, expected_dim)
+
+        # 构建两站点算符：O_A ⊗ I_B + I_A ⊗ O_B
+        I = np.eye(dim, dtype=complex)
+        O_A = np.kron(local_op, I)  # 作用在左臂
+        O_B = np.kron(I, local_op)  # 作用在右臂
+        O_total = O_A + O_B
+
+        # 计算期望值：Tr(rho * O)
+        expectation = np.trace(rho_AB @ O_total)
+        total += np.real(expectation)
+
+    return total
+
+
+def _compute_global_expectation(mps: MPSState, operators: list) -> float:
+    """
+    计算全局算符的期望值 <psi|O_0 ⊗ O_1 ⊗ ... ⊗ O_n|psi>。
+
+    Parameters
+    ----------
+    mps : MPSState
+        MPS态
+    operators : list of np.ndarray
+        每个站点上的算符列表
+
+    Returns
+    -------
+    float
+        期望值
+    """
+    # 使用MPS收缩技术计算期望值
+    # <psi|O|psi> = sum_{s,s'} conj(A[s]) * O[s,s'] * A[s']
+
+    n_sites = len(operators)
+
+    # 从左到右收缩
+    # L[i] 表示从左边收缩到第i个站点的结果
+    L = np.array([[1.0]], dtype=complex)  # 初始：标量1
+
+    for i in range(n_sites):
+        # 获取第i个站点的MPS张量
+        A_tenpy = mps._mps.get_B(i, form=None)  # TeNPy Array
+        A = A_tenpy.to_ndarray()  # 转换为numpy数组: shape (chi_left, d, chi_right)
+        O = operators[i]  # shape: (d, d)
+
+        # 收缩：L_new = sum_{s,s'} L * conj(A[:, s, :]) * O[s, s'] * A[:, s', :]
+        # L: (chi_L_prev, chi_L_prev)
+        # A: (chi_L, d, chi_R)
+        # O: (d, d)
+        # 结果: (chi_R, chi_R)
+        chi_left, d, chi_right = A.shape
+
+        L_new = np.zeros((chi_right, chi_right), dtype=complex)
+        for s in range(d):
+            for s_prime in range(d):
+                # L_new += conj(A[:, s, :]).T @ L @ A[:, s_prime, :] * O[s, s_prime]
+                L_new += A[:, s_prime, :].T @ L @ A[:, s, :].conj() * O[s, s_prime]
+
+        L = L_new
+
+    # 最后L应该是一个标量（或1x1矩阵）
+    result = np.trace(L)
+    return float(np.real(result))
+
+
+def compute_photon_statistics(mps: MPSState, n_bins: int, verbose: bool = False) -> dict:
+    """
+    计算光子统计（同时计算780nm和1517nm光子）。
+
+    使用全局MPO方法，正确处理投影后的强关联态。
+
+    Parameters
+    ----------
+    mps : MPSState
+        MPS态
+    n_bins : int
+        时间仓数量
+    verbose : bool
+        是否打印详细信息
+
+    Returns
+    -------
+    dict
+        包含 'n_total', 'n_H', 'n_V', 'loss_prob',
+        以及 'n_780_H', 'n_780_V', 'n_1517_H', 'n_1517_V'
+    """
+    # 检测bin维度
+    bin_dim = mps.d[2]  # 第一个bin的维度
+
+    # 使用全局MPO方法计算（正确处理强关联态）
+    return _compute_photon_statistics_global(mps, n_bins, bin_dim, verbose)

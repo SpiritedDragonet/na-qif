@@ -810,8 +810,8 @@ def plot_dual_arm_heatmap(
     if show_atomic and not has_atom_evol:
         raise ValueError("show_atomic=True requires EmissionResult with atomic state evolution")
 
-    # 创建具有更大间距的图形
-    fig, axes = plt.subplots(1, 2, figsize=(24, 13))
+    # 创建具有更大间距的图形 (1080x720 aspect ratio)
+    fig, axes = plt.subplots(1, 2, figsize=(14.4, 7.2))
     plt.subplots_adjust(left=0.04, right=0.85, top=0.80, bottom=0.06, wspace=0.50)
 
     # 如果需要，提取原子状态演化
@@ -829,35 +829,55 @@ def plot_dual_arm_heatmap(
             padding = np.tile(atom_B_for_bins[:, -1:], (1, n_bins - atom_B_for_bins.shape[1]))
             atom_B_for_bins = np.hstack([atom_B_for_bins, padding])
 
-    # 检测bin维度（18D、6D或3D）
-    # 检查第一个bin格点的维度
-    first_bin_dim = mps.d[0]
+    # 检测bin维度（18D或6D）
+    # 链结构：[atomA(3D), atomB(3D), A1, B1, A2, B2, ...]
+    # 检查第一个bin格点的维度（跳过前两个原子站点）
+    if show_atomic and has_atom_evol:
+        # 有原子演化数据，说明链中有原子站点
+        # 前两个站点是原子（3D），从第3个站点开始是bin
+        first_bin_site = 2
+    else:
+        # 没有原子演化数据，检查是否有3D站点
+        n_3d_sites = sum(1 for d in mps.d if d == 3)
+        if n_3d_sites >= 2:
+            # 有两个原子站点
+            first_bin_site = 2
+        else:
+            # 没有原子站点，从第一个站点开始
+            first_bin_site = 0
+
+    # 获取第一个bin的维度
+    if first_bin_site < len(mps.d):
+        first_bin_dim = mps.d[first_bin_site]
+    else:
+        raise ValueError(f"Cannot find bin site: chain has only {len(mps.d)} sites")
+
     if first_bin_dim == 18:
         bin_dim = 18
         bin_state_labels = _get_bin18_state_labels()
     elif first_bin_dim == 6:
         bin_dim = 6
         bin_state_labels = _get_bin6_state_labels()
-    elif first_bin_dim == 3:
-        bin_dim = 3
-        bin_state_labels = _get_bin3_state_labels()
     else:
-        raise ValueError(f"Unsupported bin dimension: {first_bin_dim}. Expected 18, 6, or 3.")
+        raise ValueError(f"Unsupported bin dimension: {first_bin_dim}. Expected 18 or 6.")
 
     # 提取仓概率
     probs_A = np.zeros((n_bins, bin_dim))
     probs_B = np.zeros((n_bins, bin_dim))
 
     for n in range(n_bins):
-        # 链布局：A1(0), B1(1), A2(2), B2(3), ..., AN, BN
-        site_A = 2 * n
-        site_B = 2 * n + 1
-        rho_A = mps.get_reduced_density([site_A])
-        rho_B = mps.get_reduced_density([site_B])
-        if rho_A.shape[0] == bin_dim:
-            probs_A[n, :] = np.diag(rho_A).real
-        if rho_B.shape[0] == bin_dim:
-            probs_B[n, :] = np.diag(rho_B).real
+        # 链布局：[atomA, atomB, A1, B1, A2, B2, ..., AN, BN]
+        # 原子占据前2个站点（如果存在），bin从站点2开始
+        site_A = first_bin_site + 2 * n
+        site_B = first_bin_site + 2 * n + 1
+
+        if site_A < len(mps.d) and site_B < len(mps.d):
+            rho_A = mps.get_reduced_density([site_A])
+            rho_B = mps.get_reduced_density([site_B])
+            if rho_A.shape[0] == bin_dim:
+                probs_A[n, :] = np.diag(rho_A).real
+            if rho_B.shape[0] == bin_dim:
+                probs_B[n, :] = np.diag(rho_B).real
 
     # Calculate vmax EXCLUDING (vac,vac) row (index 0)
     vmax_A = max(0.01, probs_A[:, 1:].max() * vmax_scale_factor)
@@ -1054,11 +1074,12 @@ def plot_dual_arm_heatmap(
         cbar_A_vac.set_label('Vac', fontsize=8)
 
         # Bin colorbar for arm A
+        bin_rows = total_rows - 4  # 除去3个原子行和1个vac行
         cax_A = fig.add_axes([
             ax_pos_A.x1 + 0.01,
             ax_pos_A.y0,
             0.01,
-            fig_height * (17/total_rows)
+            fig_height * (bin_rows/total_rows)
         ])
         cbar_A = fig.colorbar(im_A, cax=cax_A)
         n_ticks_cb = 4
@@ -1089,11 +1110,12 @@ def plot_dual_arm_heatmap(
         cbar_B_vac.set_label('Vac', fontsize=8)
 
         # Bin colorbar for arm B
+        bin_rows = total_rows - 4  # 除去3个原子行和1个vac行
         cax_B = fig.add_axes([
             ax_pos_B.x1 + 0.01,
             ax_pos_B.y0,
             0.01,
-            fig_height * (17/total_rows)
+            fig_height * (bin_rows/total_rows)
         ])
         cbar_B = fig.colorbar(im_B, cax=cax_B)
         cbar_B.set_ticks(tick_vals)
@@ -1112,11 +1134,12 @@ def plot_dual_arm_heatmap(
         cbar_A_vac.set_label('Vac', fontsize=8)
 
         # Bin colorbar for arm A
+        bin_rows = total_rows - 1  # 除去1个vac行
         cax_A = fig.add_axes([
             ax_pos_A.x1 + 0.01,
             ax_pos_A.y0,
             0.01,
-            fig_height * (17/total_rows)
+            fig_height * (bin_rows/total_rows)
         ])
         cbar_A = fig.colorbar(im_A, cax=cax_A)
         n_ticks_cb = 4
@@ -1136,11 +1159,12 @@ def plot_dual_arm_heatmap(
         cbar_B_vac.set_label('Vac', fontsize=8)
 
         # Bin colorbar for arm B
+        bin_rows = total_rows - 1  # 除去1个vac行
         cax_B = fig.add_axes([
             ax_pos_B.x1 + 0.01,
             ax_pos_B.y0,
             0.01,
-            fig_height * (17/total_rows)
+            fig_height * (bin_rows/total_rows)
         ])
         cbar_B = fig.colorbar(im_B, cax=cax_B)
         cbar_B.set_ticks(tick_vals)
@@ -1154,6 +1178,9 @@ def plot_dual_arm_heatmap(
     plt.suptitle(title, fontsize=16, y=0.97)
 
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.show(block=False)  # 非阻塞显示
+    plt.pause(5)  # 显示5秒
+    plt.close()  # 自动关闭
     print(f"  Saved dual-arm heatmaps to: {save_path}")
 
 
@@ -1918,4 +1945,7 @@ def plot_dual_arm_heatmap_phase(
              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
 
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.show(block=False)  # 非阻塞显示
+    plt.pause(5)  # 显示5秒
+    plt.close()  # 自动关闭
     print(f"  Saved phase-aware heatmaps to: {save_path}")

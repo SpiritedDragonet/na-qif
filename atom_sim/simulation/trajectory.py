@@ -1536,143 +1536,334 @@ def postselect_two_photon(
     if verbose:
         print(f"  Total sites: {total_sites}, total Hilbert dim: {total_dim}")
 
-    # 如果系统太大，使用近似方法
-    if total_dim > 1e8:
-        if verbose:
-            print("  WARNING: System too large for exact projection, using approximate method")
-        # 使用近似方法：假设大部分光子在少数几个bin中
-        # 这里我们简单地跳过投影，只计算概率
-        proj_prob = 1.0  # 占位符
-        return mps, proj_prob
+    # ========================================================================
+    # 高效实现：使用MPO投影（不需要提取完整波函数）
+    # ========================================================================
+    #
+    # 方法：构造一个投影MPO，其bond dimension = 3（跟踪累计光子数0/1/2+）
+    # 然后用TeNPy的apply方法应用到MPS
+    #
+    # MPO结构：
+    # - 左边界向量: [1, 0, 0] (从累计0开始)
+    # - 右边界向量: [0, 0, 1] (只接受累计=2)
+    # - 中间W张量: 3x3矩阵，元素是局部投影算符
+    #
+    #   W = | Pi_0  Pi_1  Pi_2 |
+    #       |  0    Pi_0  Pi_1 |
+    #       |  0     0    Pi_0 |
+    #
+    # 其中Pi_k是投影到"该格点有k光子"的算符
+    # ========================================================================
+
+    from tenpy.networks.mpo import MPO
+    from tenpy.linalg import np_conserved as npc
+
+    # 获取sites
+    sites = mps._mps.sites
+
+    # 构造每个格点的W张量
+    W_list = []
+
+    for site_idx in range(total_sites):
+        site = sites[site_idx]
+        d = site.dim
+
+        # 确定该格点的光子数投影算符
+        if d == 3:
+            # 原子格点：光子数始终为0
+            Pi_0 = np.eye(3, dtype=complex)
+            Pi_1 = np.zeros((3, 3), dtype=complex)
+            Pi_2 = np.zeros((3, 3), dtype=complex)
+        elif d == 6:
+            # 光学bin：vac(0), H(1), V(2), 2H(3), 2V(4), HV(5)
+            # 光子数：  0      1      1      2       2      2
+            Pi_0 = np.diag([1, 0, 0, 0, 0, 0]).astype(complex)
+            Pi_1 = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)
+            Pi_2 = np.diag([0, 0, 0, 1, 1, 1]).astype(complex)
+        else:
+            raise ValueError(f"Unexpected dimension {d} at site {site_idx}")
+
+        # 构造W张量 (wL, wR, d, d)
+        # wL, wR = 3 (累计光子数 0, 1, 2+)
+        # 但边界需要特殊处理
+
+        if site_idx == 0:
+            # 左边界：wL=1, wR=3
+            W = np.zeros((1, 3, d, d), dtype=complex)
+            W[0, 0, :, :] = Pi_0  # 累计0 -> 累计0
+            W[0, 1, :, :] = Pi_1  # 累计0 -> 累计1
+            W[0, 2, :, :] = Pi_2  # 累计0 -> 累计2
+        elif site_idx == total_sites - 1:
+            # 右边界：wL=3, wR=1
+            W = np.zeros((3, 1, d, d), dtype=complex)
+            # 只接受累计=2的分量
+            W[2, 0, :, :] = Pi_0  # 累计2 + 0光子 -> 输出
+            # 累计1 + 1光子 -> 输出
+            W[1, 0, :, :] = Pi_1
+            # 累计0 + 2光子 -> 输出
+            W[0, 0, :, :] = Pi_2
+        else:
+            # 中间格点：wL=3, wR=3
+            W = np.zeros((3, 3, d, d), dtype=complex)
+            # 转移规则：累计n + k光子 -> 累计min(n+k, 2)
+            # 行=输入累计，列=输出累计
+            W[0, 0, :, :] = Pi_0  # 累计0 + 0 -> 累计0
+            W[0, 1, :, :] = Pi_1  # 累计0 + 1 -> 累计1
+            W[0, 2, :, :] = Pi_2  # 累计0 + 2 -> 累计2
+            W[1, 1, :, :] = Pi_0  # 累计1 + 0 -> 累计1
+            W[1, 2, :, :] = Pi_1  # 累计1 + 1 -> 累计2
+            # 累计1 + 2 -> 累计3+ (丢弃，不需要)
+            W[2, 2, :, :] = Pi_0  # 累计2 + 0 -> 累计2
+            # 累计2 + 1或2 -> 累计3+ (丢弃)
+
+        W_list.append(W)
+
+    # 计算投影概率：<Psi|P†P|Psi> = <Psi|P|Psi>（因为P是投影算符）
+    # 使用MPS-MPO-MPS收缩
+
+    # 方法：逐格点收缩，维护一个"环境"张量
+    # env[a, w, c] = <Psi_left|MPO_left|Psi_left> 的分量
+    # 其中a是bra的bond index，w是MPO的bond index，c是ket的bond index
+
+    # 初始化环境（左边界）
+    # 形状：(chi_bra, w, chi_ket)
+    # 初始：chi=1, w=1
+    env = np.ones((1, 1, 1), dtype=complex)
+
+    for site_idx in range(total_sites):
+        # 获取MPS张量
+        B = mps._mps.get_B(site_idx, form='B').to_ndarray()
+        # B的形状：(chi_L, d, chi_R)
+
+        # 获取W张量
+        W = W_list[site_idx]
+        # W的形状：(wL, wR, d, d) - 注意：这里d是物理维度，两个d分别对应bra和ket
+
+        # 收缩：env[a, w, c] * B*[a, d', b] * W[w, w', d', d] * B[c, d, e]
+        # 结果：new_env[b, w', e]
+
+        chi_L, d, chi_R = B.shape
+        wL, wR = W.shape[0], W.shape[1]
+
+        # 步骤1：收缩env和B* (bra)
+        # env[a, w, c] * B*[a, d', b] -> tmp1[w, c, d', b]
+        B_conj = np.conj(B)
+        tmp1 = np.einsum('awc,adb->wcdb', env, B_conj)
+
+        # 步骤2：收缩tmp1和W
+        # tmp1[w, c, d', b] * W[w, w', d', d] -> tmp2[c, b, w', d]
+        # 注意：W的索引是 (wL, wR, d_bra, d_ket)
+        tmp2 = np.einsum('wcpb,wvpd->cbvd', tmp1, W)
+
+        # 步骤3：收缩tmp2和B (ket)
+        # tmp2[c, b, w', d] * B[c, d, e] -> new_env[b, w', e]
+        new_env = np.einsum('cbvd,cde->bve', tmp2, B)
+
+        env = new_env
+
+    # 最终结果：env应该是(1, 1, 1)的标量
+    proj_prob = np.abs(env[0, 0, 0])
+
+    if verbose:
+        print(f"  Two-photon projection probability: {proj_prob:.6e}")
 
     # ========================================================================
-    # 精确实现：提取波函数，投影，重构MPS
+    # 应用投影：构造投影后的MPS
+    # ========================================================================
+    #
+    # 方法：对每个格点，应用"条件投影"
+    # 这需要扩展bond dimension来跟踪累计光子数
+    #
+    # 更简单的方法：直接用MPO-MPS乘法
     # ========================================================================
 
-    # 提取完整波函数
-    # 使用TeNPy的to_full方法
-    try:
-        psi_full = mps._mps.get_theta(0, mps.L).to_ndarray()
-        # 形状是 (1, d0, d1, ..., d_{L-1}, 1)
-        psi_full = psi_full.reshape(-1)  # 展平
-    except Exception as e:
-        if verbose:
-            print(f"  WARNING: Could not extract full wavefunction: {e}")
-            print("  Using approximate method")
-        proj_prob = 1.0
-        return mps, proj_prob
+    # 使用TeNPy的MPO.apply方法
+    # 首先构造TeNPy格式的MPO
+
+    # 创建MPO的W张量列表（TeNPy格式）
+    Ws_tenpy = []
+
+    for site_idx in range(total_sites):
+        site = sites[site_idx]
+        W = W_list[site_idx]
+        wL, wR, d, d2 = W.shape
+
+        # TeNPy的W张量需要特定的标签
+        # 形状：(wL, wR, d, d) -> 标签：('wL', 'wR', 'p', 'p*')
+        # 但TeNPy使用不同的约定...
+
+        # 使用npc.Array
+        W_npc = npc.Array.from_ndarray_trivial(
+            W,
+            labels=['wL', 'wR', 'p', 'p*']
+        )
+        Ws_tenpy.append(W_npc)
+
+    # 创建MPO
+    # 注意：TeNPy的MPO构造比较复杂，需要正确的legs
+    # 这里我们用一个更直接的方法：手动应用MPO
+
+    # ========================================================================
+    # 手动应用MPO到MPS
+    # ========================================================================
+    #
+    # 对于每个格点，新的MPS张量是：
+    # B'[a*w, d, b*w'] = sum_d' W[w, w', d', d] * B[a, d', b]
+    #
+    # 这会增加bond dimension（乘以MPO的bond dimension）
+    # 然后需要SVD压缩
+    # ========================================================================
+
+    from tenpy.networks.mps import MPS as TeNPy_MPS
+
+    # 复制MPS
+    new_mps_tensors = []
+
+    for site_idx in range(total_sites):
+        B = mps._mps.get_B(site_idx, form='B').to_ndarray()
+        W = W_list[site_idx]
+
+        chi_L, d, chi_R = B.shape
+        wL, wR = W.shape[0], W.shape[1]
+
+        # 新张量：B'[(a,w), d, (b,w')] = sum_d' W[w, w', d', d] * B[a, d', b]
+        # 形状：(chi_L * wL, d, chi_R * wR)
+
+        # 收缩：W[w, v, p, d] * B[a, p, b] -> B'[a, w, d, b, v]
+        # W的索引：(wL, wR, d_in, d_out)
+        B_new = np.einsum('wvpd,apb->awdbv', W, B)
+
+        # 重塑：(chi_L, wL, d, chi_R, wR) -> (chi_L*wL, d, chi_R*wR)
+        B_new = B_new.reshape(chi_L * wL, d, chi_R * wR)
+
+        new_mps_tensors.append(B_new)
+
+    # 现在需要将这些张量组装成MPS并压缩
+    # 使用SVD从左到右扫描
+
+    # 从左到右进行SVD压缩
+    max_chi = 100  # 最大bond dimension
+    cutoff = 1e-14
+
+    compressed_tensors = []
+    residual = None
+
+    for site_idx in range(total_sites):
+        B = new_mps_tensors[site_idx]
+
+        if residual is not None:
+            # 将上一步的残差乘入当前张量
+            B = np.tensordot(residual, B, axes=([1], [0]))
+
+        chi_L, d, chi_R = B.shape
+
+        if site_idx < total_sites - 1:
+            # SVD压缩
+            B_mat = B.reshape(chi_L * d, chi_R)
+            U, S, Vh = np.linalg.svd(B_mat, full_matrices=False)
+
+            # 截断
+            mask = S > cutoff * S[0]
+            if np.sum(mask) > max_chi:
+                mask[max_chi:] = False
+            chi_new = np.sum(mask)
+
+            U = U[:, mask]
+            S = S[mask]
+            Vh = Vh[mask, :]
+
+            # 新的B张量
+            B_compressed = U.reshape(chi_L, d, chi_new)
+            compressed_tensors.append(B_compressed)
+
+            # 残差传递到下一个格点
+            residual = np.diag(S) @ Vh
+        else:
+            # 最后一个格点，不需要SVD
+            compressed_tensors.append(B)
+
+    # 计算投影后的范数
+    norm_projected = 1.0
+    # 通过收缩计算范数
+    env_norm = np.ones((1, 1), dtype=complex)
+    for site_idx in range(total_sites):
+        B = compressed_tensors[site_idx]
+        B_conj = np.conj(B)
+        # env[a, c] * B*[a, d, b] * B[c, d, e] -> new_env[b, e]
+        tmp = np.einsum('ac,adb->cdb', env_norm, B_conj)
+        env_norm = np.einsum('cdb,cde->be', tmp, B)
+    norm_projected = np.sqrt(np.abs(env_norm[0, 0]))
 
     if verbose:
-        print(f"  Extracted wavefunction, shape: {psi_full.shape}")
-        print(f"  Wavefunction norm: {np.linalg.norm(psi_full):.6f}")
+        print(f"  Norm of projected state: {norm_projected:.6e}")
 
-    # 构造全局光子数算符的本征值
-    # 对于每个基态，计算总光子数
-    dims = mps.d
-
-    # 光子数映射（对于6D bin）
-    photon_count_6d = np.array([0, 1, 1, 2, 2, 2])  # vac, H, V, 2H, 2V, HV
-
-    # 对于原子格点（3D），光子数为0
-    photon_count_3d = np.array([0, 0, 0])  # g, e, s
-
-    # 构造每个基态的总光子数
-    n_basis = len(psi_full)
-    total_photon_counts = np.zeros(n_basis, dtype=int)
-
-    # 遍历所有基态
-    for idx in range(n_basis):
-        # 将线性索引转换为多指标
-        multi_idx = []
-        temp = idx
-        for d in reversed(dims):
-            multi_idx.append(temp % d)
-            temp //= d
-        multi_idx = list(reversed(multi_idx))
-
-        # 计算总光子数
-        total_n = 0
-        for site, local_idx in enumerate(multi_idx):
-            if dims[site] == 3:
-                # 原子格点
-                total_n += photon_count_3d[local_idx]
-            elif dims[site] == 6:
-                # 光学bin
-                total_n += photon_count_6d[local_idx]
-            else:
-                raise ValueError(f"Unexpected dimension {dims[site]} at site {site}")
-
-        total_photon_counts[idx] = total_n
-
-    # 统计光子数分布
-    unique, counts = np.unique(total_photon_counts, return_counts=True)
-    if verbose:
-        print(f"  Photon number distribution (basis states):")
-        for n, c in zip(unique, counts):
-            print(f"    n={n}: {c} basis states")
-
-    # 计算各光子数子空间的概率
-    probs_by_n = {}
-    for n in unique:
-        mask = (total_photon_counts == n)
-        prob = np.sum(np.abs(psi_full[mask])**2)
-        probs_by_n[n] = prob
-
-    if verbose:
-        print(f"  Probability by photon number:")
-        for n in sorted(probs_by_n.keys()):
-            print(f"    P(n={n}) = {probs_by_n[n]:.6e}")
-
-    # 投影到n=2子空间
-    mask_2 = (total_photon_counts == 2)
-    psi_projected = np.zeros_like(psi_full)
-    psi_projected[mask_2] = psi_full[mask_2]
-
-    # 计算投影概率
-    norm_projected = np.linalg.norm(psi_projected)
-    proj_prob = norm_projected**2
-
-    if verbose:
-        print(f"  Projection probability (two-photon arrival): {proj_prob:.6e}")
-
-    # 归一化投影态
+    # 归一化
     if norm_projected > 1e-15:
-        psi_projected = psi_projected / norm_projected
+        # 归一化第一个张量
+        compressed_tensors[0] = compressed_tensors[0] / norm_projected
     else:
         if verbose:
             print("  WARNING: Projected state has zero norm!")
         return mps, 0.0
 
-    # 重构MPS
-    # 将投影后的波函数重塑为张量
-    psi_tensor = psi_projected.reshape(dims)
+    # 重构TeNPy MPS
+    # 需要同时设置B张量和奇异值S
 
-    # 使用TeNPy的from_full方法重构MPS
-    from tenpy.networks.mps import MPS as TeNPy_MPS
-    from tenpy.linalg.np_conserved import Array as TeNPy_Array
+    # 复制原MPS
+    new_tenpy_mps = mps._mps.copy()
 
-    # 创建带正确标签的数组
-    labels = [f'p{i}' for i in range(len(dims))]
-    psi_arr = TeNPy_Array.from_ndarray_trivial(psi_tensor, labels=labels)
+    # 设置新的B张量和奇异值
+    for site_idx in range(total_sites):
+        B = compressed_tensors[site_idx]
+        chi_L, d, chi_R = B.shape
 
-    # 从完整波函数创建新MPS
-    new_mps = TeNPy_MPS.from_full(
-        sites=mps._mps.sites,
-        psi=psi_arr,
-        form='B',
-        cutoff=1e-14,
-        normalize=True,
-        bc='finite'
-    )
+        # 转换为npc.Array
+        B_npc = npc.Array.from_ndarray_trivial(
+            B,
+            labels=['vL', 'p', 'vR']
+        )
+        new_tenpy_mps.set_B(site_idx, B_npc, form='B')
+
+        # 设置奇异值（对于B形式，S在右边）
+        # S_R的长度应该等于chi_R
+        S_R = np.ones(chi_R, dtype=float)
+        new_tenpy_mps.set_SR(site_idx, S_R)
+
+    # 设置最左边的奇异值
+    new_tenpy_mps.set_SL(0, np.ones(compressed_tensors[0].shape[0], dtype=float))
 
     # 更新mps对象
-    mps._mps = new_mps
+    mps._mps = new_tenpy_mps
 
-    # 验证
-    norm_after = mps.norm()
+    # 重要：调用TeNPy的规范化，确保MPS处于正确的规范形式
+    mps._mps.canonical_form()
+
+    # 手动归一化MPS到范数=1
+    # canonical_form() 不会改变范数，所以我们需要显式归一化
+    actual_norm_squared = mps._mps.overlap(mps._mps, understood_infinite=False)
+    actual_norm = float(np.sqrt(actual_norm_squared.real))
+
+    if actual_norm > 1e-15:
+        # 归一化：将第一个张量除以实际范数
+        B0 = mps._mps.get_B(0, form='B')
+        B0_normalized = B0 / actual_norm
+        mps._mps.set_B(0, B0_normalized, form='B')
+
+        if verbose:
+            print(f"  Norm before final normalization: {actual_norm:.6f}")
+            # 验证归一化
+            final_norm_squared = mps._mps.overlap(mps._mps, understood_infinite=False)
+            final_norm = float(np.sqrt(final_norm_squared.real))
+            print(f"  Norm after final normalization: {final_norm:.6f}")
+    else:
+        if verbose:
+            print(f"  WARNING: MPS has zero norm after canonical_form!")
+
     if verbose:
-        print(f"  Norm after projection and reconstruction: {norm_after:.6f}")
-        print(f"  New bond dimensions: {mps.get_bond_dimensions()}")
+        print(f"  MPS form: {mps._mps.form}")
+        chi_list = [B.shape[0] for B in compressed_tensors]
+        chi_list.append(compressed_tensors[-1].shape[2])
+        print(f"  New bond dimensions: {chi_list}")
 
     _print_footer(mps, verbose, stage="Post-select Two-Photon (Global MPO)")
 
