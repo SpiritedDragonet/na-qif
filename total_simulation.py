@@ -28,110 +28,13 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from atom_sim.config import TimeGrid, EmitParams
 from atom_sim.simulation import (
-    run_emission_only, EmissionResult, apply_qfc, apply_780_filter, apply_fiber_channel,
-    apply_bs, project_to_1517, postselect_two_photon,
+    run_dual_atom_emission, EmissionResult, apply_qfc, apply_780_filter, apply_fiber_channel,
+    apply_bs, project_to_1517,
     # 探测
     run_two_photon_detection, compute_fidelity_with_bell, compute_photon_statistics,
 )
-from atom_sim.visualization import plot_dual_arm_heatmap, plot_dual_arm_heatmap_phase
+from atom_sim.visualization import plot_dual_arm_heatmap
 from atom_sim.physics import FiberChannelParams
-
-
-def run_dual_atom_emission(
-    n_bins: int = 200,
-    dt_ns: float = 0.2,
-    chi_max: int = 50,
-    Alpha_A: Optional[np.ndarray] = None,
-    Alpha_B: Optional[np.ndarray] = None,
-    gamma_peak_A: float = 0.2,
-    gamma_peak_B: float = 0.2,
-    t0_A: Optional[float] = None,
-    t0_B: Optional[float] = None,
-    sigma: float = 12.0,
-    delay_bins_B: int = 0,
-    verbose: bool = True,
-) -> EmissionResult:
-    """
-    运行双原子发射仿真。
-
-    原子向左移动，依次与每个时间仓相互作用。
-
-    Parameters
-    ----------
-    n_bins : int
-        时间仓数量
-    dt_ns : float
-        时间步长（纳秒）
-    chi_max : int
-        MPS最大键维度
-    Alpha_A : np.ndarray, optional
-        原子A的2x2偏振矩阵
-    Alpha_B : np.ndarray, optional
-        原子B的2x2偏振矩阵
-    gamma_peak_A : float
-        原子A的峰值发射率
-    gamma_peak_B : float
-        原子B的峰值发射率
-    t0_A : float, optional
-        原子A的峰值时间（纳秒）
-    t0_B : float, optional
-        原子B的峰值时间（纳秒）
-    sigma : float
-        高斯发射轮廓的宽度参数（纳秒）
-    delay_bins_B : int
-        原子B发射延迟的仓数（负数表示B晚于A）
-        例如-10表示A先开始发射，10个仓后B才开始
-    verbose : bool
-        是否打印进度信息
-
-    Returns
-    -------
-    EmissionResult
-        仿真结果容器
-    """
-    # 创建时间网格
-    time_grid = TimeGrid(dt=dt_ns * 1e-9, N=n_bins)  # 将ns转换为秒
-    t = time_grid.t
-
-    # 设置默认峰值为时间窗口中心
-    if t0_A is None:
-        t0_A = n_bins * dt_ns / 2
-    if t0_B is None:
-        t0_B = n_bins * dt_ns / 2
-
-    # 创建高斯发射率函数
-    def gamma_A_func(t_sec):
-        t_ns = t_sec * 1e9  # 转换为ns进行计算
-        return gamma_peak_A * np.exp(-0.5 * ((t_ns - t0_A) / sigma) ** 2)
-
-    def gamma_B_func(t_sec):
-        t_ns = t_sec * 1e9
-        return gamma_peak_B * np.exp(-0.5 * ((t_ns - t0_B) / sigma) ** 2)
-
-    # 设置默认Alpha矩阵（单位矩阵=无偏振混合）
-    if Alpha_A is None:
-        Alpha_A = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=complex)
-    if Alpha_B is None:
-        Alpha_B = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=complex)
-
-    # 创建发射参数
-    emit_params = EmitParams(
-        gamma_A=gamma_A_func,
-        gamma_B=gamma_B_func,
-        Alpha_A=Alpha_A,
-        Alpha_B=Alpha_B,
-    )
-
-    # 使用仿真层运行仿真
-    result = run_emission_only(
-        time_grid=time_grid,
-        emit_params=emit_params,
-        chi_max=chi_max,
-        verbose=verbose,
-        delay_bins_B=delay_bins_B,
-    )
-
-    return result
 
 
 def save_debug_info(
@@ -233,7 +136,7 @@ def main():
         gamma_peak_A=0.5,  # 发射率
         gamma_peak_B=0.5,
         sigma=10.0,  # 波包宽度（纳秒）
-        delay_bins_B=0,  # 无延迟（测试）
+        delay_ns=5.0,  # B相对于A延迟5ns（半个波包宽度）
         verbose=True,
     )
 
@@ -472,32 +375,21 @@ def main():
         verbose=True,
     )
 
-    # 投影到两光子子空间（post-selection）
-    # 这会剔除"至少一路光子被吸收"的分量
-    print("\n投影到两光子子空间...")
-    result.mps, two_photon_prob = postselect_two_photon(
-        mps=result.mps,
-        n_bins=result.get_n_bins(),
-        verbose=True,
-    )
-    print(f"  两光子到达概率: {two_photon_prob:.6f}")
-    print(f"  已更新MPS为条件态（只含两光子到达的分量）")
-
-    # 保存归一化后的可视化
-    print("\n生成归一化后的可视化...")
+    # 保存光纤传输后的可视化
+    print("\n生成光纤传输后的可视化...")
     plot_dual_arm_heatmap(
         result.mps,
-        save_path=str(output_dir / "4_after_normalization.png"),
+        save_path=str(output_dir / "4_after_fiber.png"),
         show_atomic=False,
-        stage_name="After Normalization (Two-Photon Branch)",
+        stage_name="After Fiber Channel",
         time_grid=result.time_grid,
     )
 
-    # 保存归一化后的调试信息
+    # 保存光纤传输后的调试信息
     save_debug_info(
         mps=result.mps,
         n_bins=result.get_n_bins(),
-        stage='After Normalization',
+        stage='After Fiber Channel',
         output_dir=output_dir,
         step_index=4,
     )

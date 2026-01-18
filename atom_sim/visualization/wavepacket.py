@@ -273,7 +273,9 @@ def plot_wavepacket(
         x = np.arange(n_bins)
         xlabel = "Bin index"
     else:
-        x = time_grid.t[:n_bins]
+        # 反转时间轴：data_A[0]对应A1(最晚发射)，data_A[N-1]对应AN(最早发射)
+        # 所以 x[0] 应该是 t[N-1]，x[N-1] 应该是 t[0]
+        x = time_grid.t[:n_bins][::-1]  # 反转时间数组
         xlabel = "Time (s)"
 
     # 如果需要则归一化
@@ -594,8 +596,8 @@ def plot_bin_state_heatmap(
         显示哪个子空间（'780'、'1517' 或 'both'）
     group_by : str
         如何分组分隔线（'780' 或 '1517'）
-        - '780'：按780态分组（vac/H/V）- 线在5.5, 11.5
-        - '1517'：按1517光子数分组（0/1/2光子）- 线在2.5, 5.5，跨越所有780态
+        - '780'：按780态分组（vac/H/V）- 线在6, 12
+        - '1517'：按1517光子数分组（0/1/2光子）- 线在3, 6，跨越所有780态
     vmax : float, optional
         色标的最大值。若为None，自动缩放。
     figsize : tuple
@@ -699,9 +701,12 @@ def plot_bin_state_heatmap(
     tick_indices = np.linspace(0, n_bins_actual - 1, n_ticks, dtype=int)
 
     # 底部x轴：时间（纳秒）
+    # 反转时间轴：probs[0]对应A1/B1(最晚发射)，probs[N-1]对应AN/BN(最早发射)
     ax.set_xticks(tick_indices)
     if time_grid is not None:
-        ax.set_xticklabels([f'{time_grid.t[i]:.1f}' for i in tick_indices])
+        # 反转时间标签：索引0显示t[N-1]，索引N-1显示t[0]
+        reversed_times = [time_grid.t[n_bins_actual - 1 - i] for i in tick_indices]
+        ax.set_xticklabels([f'{t:.1f}' for t in reversed_times])
     else:
         ax.set_xticklabels([str(i) for i in tick_indices])
     ax.set_xlabel('Time (ns)')
@@ -727,14 +732,14 @@ def plot_bin_state_heatmap(
     if group_by == '780':
         # 按780态分组：|vac>, |H>, |V>
         # 行0-5：780=vac，行6-11：780=H，行12-17：780=V
-        boundaries = [5.5, 11.5]
+        boundaries = [6, 12]
     else:  # '1517'
         # 按1517光子数分组：0/1/2光子
         # 1517结构对每个780态重复（每6行）
         # vac(0), H(1), V(1) -> 第2行后边界
         # 2H(2), 2V(2), HV(2) -> 第5行后边界
         # 此模式对780=H（行6-11）和780=V（行12-17）重复
-        boundaries = [2.5, 5.5, 8.5, 11.5, 14.5, 17.5]
+        boundaries = [3, 6, 9, 12, 15, 18]
 
     for boundary in boundaries:
         ax.axhline(boundary, color='white', linewidth=1, alpha=0.5, linestyle='--')
@@ -807,15 +812,30 @@ def plot_dual_arm_heatmap(
         n_bins = (mps.L - 2) // 2  # 从链长度推断
         has_atom_evol = False
 
-    if show_atomic and not has_atom_evol:
-        raise ValueError("show_atomic=True requires EmissionResult with atomic state evolution")
-
     # 创建具有更大间距的图形 (1080x720 aspect ratio)
     fig, axes = plt.subplots(1, 2, figsize=(14.4, 7.2))
-    plt.subplots_adjust(left=0.04, right=0.85, top=0.80, bottom=0.06, wspace=0.50)
+    # 注意：subplots_adjust 将在确定 display_atomic 后设置
 
-    # 如果需要，提取原子状态演化
-    if show_atomic and has_atom_evol:
+    # 检测是否有原子站点（3D站点）
+    n_3d_sites = sum(1 for d in mps.d if d == 3)
+    has_atomic_sites = n_3d_sites >= 2
+
+    # 确定first_bin_site
+    if has_atomic_sites:
+        first_bin_site = 2  # 前两个站点是原子
+    else:
+        first_bin_site = 0  # 没有原子站点
+
+    # 决定是否显示原子态行
+    # show_atomic=True: 显示原子态时间演化（仅emission阶段，需要has_atom_evol）
+    # show_atomic=False但has_atomic_sites: 显示原子态静态概率（QFC/BS阶段）
+    display_atomic_evolution = show_atomic and has_atom_evol
+    display_atomic_static = (not show_atomic) and has_atomic_sites
+    display_atomic = display_atomic_evolution or display_atomic_static
+
+    # 提取原子状态数据
+    if display_atomic_evolution:
+        # 模式1：显示原子态时间演化（emission阶段）
         atom_A_evol = result.atom_A_state_evolution
         atom_B_evol = result.atom_B_state_evolution
         # 用于可视化，取每隔一列（每次完整仓处理后）
@@ -829,22 +849,20 @@ def plot_dual_arm_heatmap(
             padding = np.tile(atom_B_for_bins[:, -1:], (1, n_bins - atom_B_for_bins.shape[1]))
             atom_B_for_bins = np.hstack([atom_B_for_bins, padding])
 
-    # 检测bin维度（18D或6D）
-    # 链结构：[atomA(3D), atomB(3D), A1, B1, A2, B2, ...]
-    # 检查第一个bin格点的维度（跳过前两个原子站点）
-    if show_atomic and has_atom_evol:
-        # 有原子演化数据，说明链中有原子站点
-        # 前两个站点是原子（3D），从第3个站点开始是bin
-        first_bin_site = 2
-    else:
-        # 没有原子演化数据，检查是否有3D站点
-        n_3d_sites = sum(1 for d in mps.d if d == 3)
-        if n_3d_sites >= 2:
-            # 有两个原子站点
-            first_bin_site = 2
-        else:
-            # 没有原子站点，从第一个站点开始
-            first_bin_site = 0
+        # 反转原子状态数据：使得最右列对应t=0（与AN相互作用），最左列对应t=(N-1)dt（与A1相互作用）
+        atom_A_for_bins = np.fliplr(atom_A_for_bins)
+        atom_B_for_bins = np.fliplr(atom_B_for_bins)
+    elif display_atomic_static:
+        # 模式2：显示原子态静态概率（QFC/BS阶段）
+        # 从MPS中提取原子站点的约化密度矩阵
+        rho_A = mps.get_reduced_density([0])
+        rho_B = mps.get_reduced_density([1])
+        # 提取对角元素（概率）
+        atom_A_probs = np.diag(rho_A).real  # shape: (3,)
+        atom_B_probs = np.diag(rho_B).real  # shape: (3,)
+        # 扩展为所有bin列显示相同的概率（整行同色）
+        atom_A_for_bins = np.tile(atom_A_probs.reshape(3, 1), (1, n_bins))
+        atom_B_for_bins = np.tile(atom_B_probs.reshape(3, 1), (1, n_bins))
 
     # 获取第一个bin的维度
     if first_bin_site < len(mps.d):
@@ -885,7 +903,7 @@ def plot_dual_arm_heatmap(
     vmax = max(vmax_A, vmax_B)
 
     # Create combined data matrices
-    if show_atomic:
+    if display_atomic:
         atomic_labels = ['|e>', '|1>', '|0>']
         combined_labels_A = atomic_labels + bin_state_labels
         combined_labels_B = atomic_labels + bin_state_labels
@@ -919,7 +937,7 @@ def plot_dual_arm_heatmap(
     bin_cmap = plt.get_cmap('plasma')
 
     # Create masks for different sections
-    if show_atomic:
+    if display_atomic:
         # Three sections: Atom (rows 0-2), Vac (row 3), Bin (rows 4-20)
         mask_atom = np.zeros((total_rows, n_bins), dtype=bool)
         mask_atom[:3, :] = True
@@ -937,6 +955,14 @@ def plot_dual_arm_heatmap(
         mask_bin[1:, :] = True
         atom_row_offset = 0
 
+    # 根据是否显示原子态调整子图布局
+    if display_atomic:
+        # 有原子态：使用原来的布局
+        plt.subplots_adjust(left=0.04, right=0.85, top=0.80, bottom=0.06, wspace=0.50)
+    else:
+        # 无原子态：增加底部边距，减少顶部边距，让行填满整个区域
+        plt.subplots_adjust(left=0.04, right=0.85, top=0.92, bottom=0.08, wspace=0.50)
+
     # Plot arm A
     # First plot all bin states with plasma colormap
     im_A = axes[0].imshow(
@@ -945,7 +971,8 @@ def plot_dual_arm_heatmap(
         cmap=bin_cmap,
         vmin=0,
         vmax=vmax,
-        origin='upper'
+        origin='upper',
+        extent=[0, n_bins, total_rows, 0]  # 明确设置范围
     )
 
     # Overlay (vac,vac) row with different colormap
@@ -956,11 +983,12 @@ def plot_dual_arm_heatmap(
         vmin=0,
         vmax=1,
         origin='upper',
-        interpolation='nearest'
+        interpolation='nearest',
+        extent=[0, n_bins, total_rows, 0]
     )
 
     # Overlay atomic states if needed
-    if show_atomic:
+    if display_atomic:
         im_A_atom = axes[0].imshow(
             np.ma.masked_where(~mask_atom, combined_A),
             aspect='auto',
@@ -968,7 +996,8 @@ def plot_dual_arm_heatmap(
             vmin=0,
             vmax=1,
             origin='upper',
-            interpolation='nearest'
+            interpolation='nearest',
+            extent=[0, n_bins, total_rows, 0]
         )
 
     axes[0].set_yticks(range(total_rows))
@@ -976,17 +1005,22 @@ def plot_dual_arm_heatmap(
     axes[0].set_ylabel('State', fontsize=10)
     axes[0].set_title(f'Arm A - Bin State Probabilities (vmax={vmax:.3f})', fontsize=11)
 
-    if show_atomic:
-        axes[0].axhline(2.5, color='black', linewidth=2)
+    if display_atomic:
+        # 黑色实线分隔原子态（行0-2）和仓态（行3+），应该在第2行下方（y=3）
+        axes[0].axhline(3, color='black', linewidth=2)
 
     # x-axis (dual: time and bin index)
+    # 时间轴：从左到右显示 (N-1)dt, ..., dt, 0（递减）
+    # 仓索引：从左到右显示 0, 1, ..., N-1（递增，因为A1索引是0，AN索引是N-1）
     n_ticks = min(10, n_bins)
     tick_indices = np.linspace(0, n_bins - 1, n_ticks, dtype=int)
     axes[0].set_xticks(tick_indices)
-    axes[0].set_xticklabels([f'{time_grid.t[i] * 1e9:.0f}' for i in tick_indices], fontsize=9)
+    # 反转时间标签：tick_indices[i] 对应的时间是 t[(n_bins-1) - tick_indices[i]]
+    axes[0].set_xticklabels([f'{time_grid.t[(n_bins - 1) - i] * 1e9:.0f}' for i in tick_indices], fontsize=9)
     axes[0].set_xlabel('Time (ns)', fontsize=10)
     axes[0].top = axes[0].twiny()
     axes[0].top.set_xticks(tick_indices)
+    # bin index保持原样：最左边是0（A1），最右边是N-1（AN）
     axes[0].top.set_xticklabels([str(i) for i in tick_indices], fontsize=9)
     axes[0].top.set_xlabel('Bin index', fontsize=10)
     axes[0].top.set_xlim(axes[0].get_xlim())
@@ -998,7 +1032,8 @@ def plot_dual_arm_heatmap(
         cmap=bin_cmap,
         vmin=0,
         vmax=vmax,
-        origin='upper'
+        origin='upper',
+        extent=[0, n_bins, total_rows, 0]
     )
 
     im_B_vac = axes[1].imshow(
@@ -1008,10 +1043,11 @@ def plot_dual_arm_heatmap(
         vmin=0,
         vmax=1,
         origin='upper',
-        interpolation='nearest'
+        interpolation='nearest',
+        extent=[0, n_bins, total_rows, 0]
     )
 
-    if show_atomic:
+    if display_atomic:
         im_B_atom = axes[1].imshow(
             np.ma.masked_where(~mask_atom, combined_B),
             aspect='auto',
@@ -1019,7 +1055,8 @@ def plot_dual_arm_heatmap(
             vmin=0,
             vmax=1,
             origin='upper',
-            interpolation='nearest'
+            interpolation='nearest',
+            extent=[0, n_bins, total_rows, 0]
         )
 
     axes[1].set_yticks(range(total_rows))
@@ -1027,21 +1064,36 @@ def plot_dual_arm_heatmap(
     axes[1].set_ylabel('State', fontsize=10)
     axes[1].set_title(f'Arm B - Bin State Probabilities (vmax={vmax:.3f})', fontsize=11)
 
-    if show_atomic:
-        axes[1].axhline(2.5, color='black', linewidth=2)
+    if display_atomic:
+        # 黑色实线分隔原子态（行0-2）和仓态（行3+），应该在第2行下方（y=3）
+        axes[1].axhline(3, color='black', linewidth=2)
 
     axes[1].set_xticks(tick_indices)
-    axes[1].set_xticklabels([f'{time_grid.t[i] * 1e9:.0f}' for i in tick_indices], fontsize=9)
+    # 反转时间标签：tick_indices[i] 对应的时间是 t[(n_bins-1) - tick_indices[i]]
+    axes[1].set_xticklabels([f'{time_grid.t[(n_bins - 1) - i] * 1e9:.0f}' for i in tick_indices], fontsize=9)
     axes[1].set_xlabel('Time (ns)', fontsize=10)
     axes[1].top = axes[1].twiny()
     axes[1].top.set_xticks(tick_indices)
+    # bin index保持原样：最左边是0（B1），最右边是N-1（BN）
     axes[1].top.set_xticklabels([str(i) for i in tick_indices], fontsize=9)
     axes[1].top.set_xlabel('Bin index', fontsize=10)
     axes[1].top.set_xlim(axes[1].get_xlim())
 
-    # Add separator lines for bin states (group by 780 state)
+    # Add separator lines for bin states
+    # 根据bin维度确定分界线位置
+    if bin_dim == 18:
+        # 18维：按780态分组 (vac/H/V)，每组6个1517态
+        # 行0-5：780=vac，行6-11：780=H，行12-17：780=V
+        boundaries = [6, 12]
+    elif bin_dim == 6:
+        # 6维：按1517光子数分组
+        # 行0：0光子(vac)，行1-2：1光子(H/V)，行3-5：2光子(2H/2V/HV)
+        boundaries = [1, 3]
+    else:
+        boundaries = []
+
     for ax in axes:
-        for boundary in [5.5, 11.5]:
+        for boundary in boundaries:
             ax.axhline(boundary + atom_row_offset, color='white', linewidth=1, alpha=0.5, linestyle='--')
 
     # Add colorbars aligned with their respective sections
@@ -1049,7 +1101,7 @@ def plot_dual_arm_heatmap(
     ax_pos_B = axes[1].get_position()
     fig_height = ax_pos_A.y1 - ax_pos_A.y0
 
-    if show_atomic:
+    if display_atomic:
         # Three colorbars: Atom (3/21), Vac (1/21), Bin (17/21)
         # Atomic colorbar for arm A
         cax_A_atom = fig.add_axes([
@@ -1070,7 +1122,7 @@ def plot_dual_arm_heatmap(
             fig_height * (1/total_rows)
         ])
         cbar_A_vac = fig.colorbar(im_A_vac, cax=cax_A_vac)
-        cbar_A_vac.set_ticks([0, 0.5, 1])
+        cbar_A_vac.set_ticks([0.5])
         cbar_A_vac.set_label('Vac', fontsize=8)
 
         # Bin colorbar for arm A
@@ -1106,7 +1158,7 @@ def plot_dual_arm_heatmap(
             fig_height * (1/total_rows)
         ])
         cbar_B_vac = fig.colorbar(im_B_vac, cax=cax_B_vac)
-        cbar_B_vac.set_ticks([0, 0.5, 1])
+        cbar_B_vac.set_ticks([0.5])
         cbar_B_vac.set_label('Vac', fontsize=8)
 
         # Bin colorbar for arm B
@@ -1130,7 +1182,7 @@ def plot_dual_arm_heatmap(
             fig_height * (1/total_rows)
         ])
         cbar_A_vac = fig.colorbar(im_A_vac, cax=cax_A_vac)
-        cbar_A_vac.set_ticks([0, 0.5, 1])
+        cbar_A_vac.set_ticks([0.5])
         cbar_A_vac.set_label('Vac', fontsize=8)
 
         # Bin colorbar for arm A
@@ -1155,7 +1207,7 @@ def plot_dual_arm_heatmap(
             fig_height * (1/total_rows)
         ])
         cbar_B_vac = fig.colorbar(im_B_vac, cax=cax_B_vac)
-        cbar_B_vac.set_ticks([0, 0.5, 1])
+        cbar_B_vac.set_ticks([0.5])
         cbar_B_vac.set_label('Vac', fontsize=8)
 
         # Bin colorbar for arm B
@@ -1184,768 +1236,3 @@ def plot_dual_arm_heatmap(
     print(f"  Saved dual-arm heatmaps to: {save_path}")
 
 
-# ============================================================================
-# 跨仓一阶相干性（用于相位可视化）
-# ============================================================================
-
-def _telecom_annihilation_ops():
-    """
-    构造1517nm子空间的湮灭算符。
-
-    1517基：[vac, 1H, 1V, 2H, 2V, HV]
-    a_H：湮灭H光子（映射 |1H> -> |vac>）
-    a_V：湮灭V光子（映射 |1V> -> |vac>）
-
-    Returns
-    -------
-    Tuple of np.ndarray
-        (a_H_1517, a_V_1517, a_H_dag_1517, a_V_dag_1517)
-        每个都是6x6复数矩阵
-    """
-    # a_H：映射 |1H>（索引1）到 |vac>（索引0）
-    a_H_1517 = np.zeros((6, 6), dtype=complex)
-    a_H_1517[0, 1] = 1.0
-
-    # a_V：映射 |1V>（索引2）到 |vac>（索引0）
-    a_V_1517 = np.zeros((6, 6), dtype=complex)
-    a_V_1517[0, 2] = 1.0
-
-    # 厄米共轭（产生算符）
-    a_H_dag_1517 = a_H_1517.conj().T
-    a_V_dag_1517 = a_V_1517.conj().T
-
-    return a_H_1517, a_V_1517, a_H_dag_1517, a_V_dag_1517
-
-
-def _bin18_annihilation_ops():
-    """
-    构造嵌入18维仓空间的湮灭算符。
-
-    仓空间 = 780(3D) x 1517(6D) = 18D
-    我们只关心通信（1517nm）光子。
-
-    Returns
-    -------
-    Tuple of np.ndarray
-        (a_H_bin, a_V_bin, a_H_dag_bin, a_V_dag_bin)
-        每个都是18x18复数矩阵
-    """
-    I_780 = np.eye(3, dtype=complex)
-    a_H_1517, a_V_1517, a_H_dag_1517, a_V_dag_1517 = _telecom_annihilation_ops()
-
-    # 嵌入：I_780 ⊗ a_1517
-    a_H_bin = np.kron(I_780, a_H_1517)
-    a_V_bin = np.kron(I_780, a_V_1517)
-    a_H_dag_bin = np.kron(I_780, a_H_dag_1517)
-    a_V_dag_bin = np.kron(I_780, a_V_dag_1517)
-
-    return a_H_bin, a_V_bin, a_H_dag_bin, a_V_dag_bin
-
-
-def extract_first_order_coherence(
-    mps: MPSState,
-    n_bins: int,
-    arm: str = 'A',
-    reference_bin: Optional[int] = None,
-    coherence_threshold: float = 1e-10,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    提取一阶相干性 G_{nm} = <a_n^dag a_m> 用于波包相位。
-
-    对于单光子态，G近似秩-1：G_{nm} ≈ ξ_n* ξ_m
-    其中ξ_n是波包振幅。ξ_n的相位给出每个仓的光学相位。
-
-    两种提取模式：
-    1. reference_bin=None：提取完整G矩阵，从特征向量获取相位
-    2. reference_bin=int：提取相对相位 g_n = <a_ref^dag a_n>
-
-    Parameters
-    ----------
-    mps : MPSState
-        MPS态
-    n_bins : int
-        时间仓数量
-    arm : str
-        要提取的臂（'A' 或 'B'）
-    reference_bin : int, optional
-        参考仓索引。若为None，使用特征分解。
-        若指定，计算相对此仓的相位。
-    coherence_threshold : float
-        信任相位的相干幅度最小值。低于此值，相位被屏蔽。
-
-    Returns
-    -------
-    Tuple of np.ndarray
-        (phases, amplitudes)
-        - phases: (n_bins,) 相位数组，单位弧度 [-π, π]
-        - amplitudes: (n_bins,) 相干幅度数组
-    """
-    # 获取湮灭算符
-    a_H, a_V, a_H_dag, a_V_dag = _bin18_annihilation_ops()
-
-    # 默认使用H偏振（可扩展到两者）
-    a = a_H
-    a_dag = a_H_dag
-
-    # 获取此臂的格点索引
-    # 链布局：A1(0), B1(1), A2(2), B2(3), ..., AN, BN
-    arm_indices = []
-    if arm.upper() == 'A':
-        for n in range(n_bins):
-            arm_indices.append(2 * n)
-    else:  # B臂
-        for n in range(n_bins):
-            arm_indices.append(2 * n + 1)
-
-    # 方法1：参考仓方法（更快，给出相对相位）
-    if reference_bin is not None:
-        if reference_bin < 0 or reference_bin >= n_bins:
-            raise ValueError(f"reference_bin={reference_bin} out of range [0, {n_bins})")
-
-        ref_site = arm_indices[reference_bin]
-        phases = np.zeros(n_bins)
-        amplitudes = np.zeros(n_bins)
-
-        for i, site in enumerate(arm_indices):
-            if i == reference_bin:
-                # 自相关：<a^dag a> = 数算符
-                rho_ref = mps.get_reduced_density([ref_site])
-                if rho_ref.shape[0] == 18:
-                    N_op = a_dag @ a
-                    amplitudes[i] = np.abs(np.trace(rho_ref @ N_op))
-                else:
-                    amplitudes[i] = 0.0
-                phases[i] = 0.0  # 参考相位
-            else:
-                # 获取两格点约化密度矩阵
-                # 必须确保格点按张量积顺序排列
-                if ref_site < site:
-                    sites = [ref_site, site]
-                    # 构造两格点算符：a_ref^dag ⊗ a_i
-                    # 算符维度：每个格点18x18 -> 两格点324x324
-                    op_2site = np.kron(a_dag, a)
-                else:
-                    sites = [site, ref_site]
-                    # 顺序反转：a_i ⊗ a_ref^dag
-                    op_2site = np.kron(a, a_dag)
-
-                rho_2site = mps.get_reduced_density(sites)
-
-                # rho_2site 应该是 (18*18) x (18*18) = 324x324
-                # op_2site 也应该是 324x324
-                if rho_2site.shape[0] == 324 and op_2site.shape[0] == 324:
-                    # 计算期望值：Tr[rho * (a_dag ⊗ a)]
-                    g = np.trace(rho_2site @ op_2site)
-                    phases[i] = np.angle(g)
-                    amplitudes[i] = np.abs(g)
-                else:
-                    # 维度不匹配，跳过
-                    phases[i] = 0.0
-                    amplitudes[i] = 0.0
-
-        return phases, amplitudes
-
-    # 方法2：完整相关矩阵和特征分解
-    # 构造G矩阵，其中 G[n,m] = <a_n^dag a_m>
-    G = np.zeros((n_bins, n_bins), dtype=complex)
-
-    for n in range(n_bins):
-        for m in range(n_bins):
-            if m < n:
-                # 利用厄米对称性：G[n,m] = conj(G[m,n])
-                G[n, m] = np.conj(G[m, n])
-                continue
-
-            site_n = arm_indices[n]
-            site_m = arm_indices[m]
-
-            if n == m:
-                # 在位：<a_n^dag a_n> = 仓n的光子数
-                rho_n = mps.get_reduced_density([site_n])
-                if rho_n.shape[0] == 18:
-                    # Tr[rho * a^dag a] = 数期望
-                    N_op = a_dag @ a
-                    G[n, n] = np.trace(rho_n @ N_op)
-                else:
-                    G[n, n] = 0.0
-            else:
-                # 跨仓相关
-                if site_n < site_m:
-                    sites = [site_n, site_m]
-                    op_2site = np.kron(a_dag, a)
-                else:
-                    sites = [site_m, site_n]
-                    op_2site = np.kron(a, a_dag)
-
-                rho_2site = mps.get_reduced_density(sites)
-
-                if rho_2site.shape[0] == 324:
-                    G[n, m] = np.trace(rho_2site @ op_2site)
-                else:
-                    G[n, m] = 0.0
-
-    # 从主特征向量提取相位
-    # 对于纯单光子态，G应该是秩-1
-    eigvals, eigvecs = np.linalg.eigh(G)
-
-    # 主特征值和特征向量
-    idx_max = np.argmax(np.abs(eigvals))
-    eigenmode = eigvecs[:, idx_max]
-
-    # 相位是特征变量的辐角
-    # 全局相位是任意的，所以我们设平均相位为0
-    phases = np.angle(eigenmode)
-    phases = phases - np.mean(phases)  # 移除全局相位
-
-    # 从特征值获取振幅（单光子取平方根）
-    amplitudes = np.sqrt(np.abs(eigvals[idx_max])) * np.abs(eigenmode)
-
-    # 应用阈值屏蔽：在振幅太小的位置将相位设为0
-    mask = amplitudes < coherence_threshold
-    phases[mask] = 0.0
-
-    return phases, amplitudes
-
-
-# ============================================================================
-# 相位感知（域着色）热图可视化
-# ============================================================================
-
-def extract_bin_state_coherences(
-    mps: MPSState,
-    n_bins: int,
-    arm: str = 'A',
-    coherence_threshold: float = 1e-10,
-    use_crossbin_phase: bool = False,
-    reference_bin: Optional[int] = None,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    提取所有18个仓状态的概率和相干相位。
-
-    对每个仓，提��：
-    - 概率：rho[k,k]（对角元素）
-    - 相位：两种可用方法：
-      1. use_crossbin_phase=False：arg(rho[0,k])（与真空的相干）
-         警告：对于纠缠态这通常是噪声！
-      2. use_crossbin_phase=True：使用跨仓一阶相干性
-         G_nm = <a_n^dag a_m> 用于单光子波包相位。
-         这是原子-光子纠缠态的物理上有意义的相位。
-
-    Parameters
-    ----------
-    mps : MPSState
-        MPS态
-    n_bins : int
-        时间仓数量
-    arm : str
-        要提取的臂（'A' 或 'B'）
-    coherence_threshold : float
-        相干幅度阈值。当 |rho[0,k]| < threshold 时，
-        相位被设为0并被屏蔽（以避免显示数值噪声）。
-    use_crossbin_phase : bool
-        若为True，使用跨仓一阶相干性进行相位提取。
-        这是原子-光子纠缠态的推荐方法。
-    reference_bin : int, optional
-        跨仓相位计算的参考仓。若为None，使用
-        最大强度的仓作为参考。
-
-    Returns
-    -------
-    Tuple of np.ndarray
-        (probs_A, probs_B, phases_A, phases_B)
-        - probs: (n_bins, 18) 实数概率数组
-        - phases: (n_bins, 18) 实数相位数组（单位弧度，-π到π）
-    """
-    probs_A = np.zeros((n_bins, 18), dtype=float)
-    probs_B = np.zeros((n_bins, 18), dtype=float)
-    phases_A = np.zeros((n_bins, 18), dtype=float)
-    phases_B = np.zeros((n_bins, 18), dtype=float)
-
-    # 提取所有仓的概率
-    for n in range(n_bins):
-        # 链布局：A1(0), B1(1), A2(2), B2(3), ..., AN, BN
-        site_A = 2 * n
-        site_B = 2 * n + 1
-
-        rho_A = mps.get_reduced_density([site_A])
-        rho_B = mps.get_reduced_density([site_B])
-
-        if rho_A.shape[0] == 18:
-            probs_A[n, :] = np.diag(rho_A).real
-        if rho_B.shape[0] == 18:
-            probs_B[n, :] = np.diag(rho_B).real
-
-    if use_crossbin_phase:
-        # 使用跨仓一阶相干性获取物理上有意义的相位
-        # 这从 G_nm = <a_n^dag a_m> 提取波包相位
-        if reference_bin is None:
-            # 找到具有最大单光子概率的仓
-            # 单光子态位于索引1（|vac,H>）和2（|vac,V>）
-            total_1ph_A = probs_A[:, 1] + probs_A[:, 2]
-            total_1ph_B = probs_B[:, 1] + probs_B[:, 2]
-            ref_A = int(np.argmax(total_1ph_A))
-            ref_B = int(np.argmax(total_1ph_B))
-        else:
-            ref_A = ref_B = reference_bin
-
-        # 提取跨仓相位
-        crossbin_phases_A, crossbin_amps_A = extract_first_order_coherence(
-            mps, n_bins, arm='A', reference_bin=ref_A,
-            coherence_threshold=coherence_threshold
-        )
-        crossbin_phases_B, crossbin_amps_B = extract_first_order_coherence(
-            mps, n_bins, arm='B', reference_bin=ref_B,
-            coherence_threshold=coherence_threshold
-        )
-
-        # 广播到所有18个状态（相位在仓状态间共享）
-        for n in range(n_bins):
-            phases_A[n, :] = crossbin_phases_A[n]
-            phases_B[n, :] = crossbin_phases_B[n]
-
-            # 应用幅度屏蔽：在相干性小的位置将相位设为0
-            if crossbin_amps_A[n] < coherence_threshold:
-                phases_A[n, :] = 0.0
-            if crossbin_amps_B[n] < coherence_threshold:
-                phases_B[n, :] = 0.0
-
-    else:
-        # 原始方法：使用真空相干性（对纠缠态通常是噪声）
-        for n in range(n_bins):
-            site_A = 2 * n
-            site_B = 2 * n + 1
-
-            rho_A = mps.get_reduced_density([site_A])
-            rho_B = mps.get_reduced_density([site_B])
-
-            if rho_A.shape[0] == 18:
-                # 获取相干幅度
-                coh_A = rho_A[0, :]
-                coh_mag_A = np.abs(coh_A)
-
-                # 应用阈值屏蔽：若相干性太小，相位是噪声
-                phases_A[n, :] = np.where(
-                    coh_mag_A >= coherence_threshold,
-                    np.angle(coh_A),
-                    0.0
-                )
-
-            if rho_B.shape[0] == 18:
-                coh_B = rho_B[0, :]
-                coh_mag_B = np.abs(coh_B)
-
-                phases_B[n, :] = np.where(
-                    coh_mag_B >= coherence_threshold,
-                    np.angle(coh_B),
-                    0.0
-                )
-
-    return probs_A, probs_B, phases_A, phases_B
-
-
-def _probs_phases_to_rgb_image(
-    probs: np.ndarray,
-    phases: np.ndarray,
-    saturation: float = 1.0,
-    value_power: float = 0.5,
-    max_prob: float = None,
-) -> np.ndarray:
-    """
-    使用HSV颜色模型将概率和相位转换为RGB图像。
-
-    对每个元素：
-    - Hue = 相位（0到2π映射到0-1）
-    - Saturation = 固定值
-    - Value = prob^value_power（归一化）
-
-    Parameters
-    ----------
-    probs : np.ndarray
-        概率数组 (n_rows, n_cols)，实数值 >= 0
-    phases : np.ndarray
-        相位数组 (n_rows, n_cols)，[-π, π]内的实数值
-    saturation : float
-        颜色饱和度（0-1）
-    value_power : float
-        强度映射的幂次
-    max_prob : float, optional
-        归一化的最大概率。若为None，使用数据最大值。
-
-    Returns
-    -------
-    np.ndarray
-        RGB图像数组 (n_rows, n_cols, 3)，值在[0, 1]内
-    """
-    from matplotlib.colors import hsv_to_rgb
-
-    # 将相位归一化到[0, 1]作为色相
-    hues = (phases + np.pi) / (2 * np.pi)
-
-    # 为亮度通道归一化概率
-    if max_prob is None or max_prob <= 0:
-        max_prob = probs.max() if probs.max() > 0 else 1.0
-    values = (probs / max_prob) ** value_power
-    values = np.clip(values, 0, 1)
-
-    # 创建HSV数组
-    hsv = np.zeros(probs.shape + (3,))
-    hsv[..., 0] = hues
-    hsv[..., 1] = saturation
-    hsv[..., 2] = values
-
-    # 转换为RGB
-    rgb = hsv_to_rgb(hsv)
-
-    return rgb
-
-
-def _create_hsv_phase_colorbar(
-    fig: plt.Figure,
-    position: list,
-    label: str = "Phase",
-) -> None:
-    """
-    向图形添加水平相位色条（HSV色轮）。
-
-    Parameters
-    ----------
-    fig : plt.Figure
-        Figure to add colorbar to
-    position : list
-        [left, bottom, width, height] for colorbar axes
-    label : str
-        Label for the colorbar
-    """
-    from matplotlib.patches import Rectangle
-    from matplotlib.colors import hsv_to_rgb
-
-    # Create axes for colorbar
-    cax = fig.add_axes(position)
-    cax.set_aspect('auto')
-    cax.axis('off')
-
-    # Create phase gradient (0 to 2π)
-    n_grad = 256
-    phase_vals = np.linspace(0, 1, n_grad)
-    grad_hsv = np.zeros((1, n_grad, 3))
-    grad_hsv[0, :, 0] = phase_vals  # Hue
-    grad_hsv[0, :, 1] = 1.0  # Saturation
-    grad_hsv[0, :, 2] = 1.0  # Value
-
-    # Convert to RGB and display as image
-    grad_rgb = hsv_to_rgb(grad_hsv).squeeze()
-    cax.imshow(grad_rgb[np.newaxis, :], aspect='auto', extent=[0, 1, 0, 1])
-
-    # Add phase labels
-    cax.text(0, 1.15, '0', ha='left', va='bottom', transform=cax.transAxes, fontsize=8)
-    cax.text(0.25, 1.15, 'π/2', ha='center', va='bottom', transform=cax.transAxes, fontsize=8)
-    cax.text(0.5, 1.15, 'π', ha='center', va='bottom', transform=cax.transAxes, fontsize=8)
-    cax.text(0.75, 1.15, '3π/2', ha='center', va='bottom', transform=cax.transAxes, fontsize=8)
-    cax.text(1, 1.15, '2π', ha='right', va='bottom', transform=cax.transAxes, fontsize=8)
-
-    cax.text(0.5, -0.2, label, ha='center', va='top', transform=cax.transAxes, fontsize=9)
-
-
-def plot_dual_arm_heatmap_phase(
-    result: Union[EmissionResult, MPSState],
-    save_path: str = "dual_arm_heatmap_phase.png",
-    show_atomic: bool = False,
-    stage_name: str = "",
-    time_grid: Optional[TimeGrid] = None,
-    saturation: float = 1.0,
-    value_power: float = 0.5,
-    vmax_scale_factor: float = 1.5,
-    use_crossbin_phase: bool = False,
-    coherence_threshold: float = 1e-10,
-    reference_bin: Optional[int] = None,
-) -> None:
-    """
-    可视化带有相位信息的双臂仓状态振幅。
-
-    此函数模仿 plot_dual_arm_heatmap() 的布局，但使用HSV着色：
-    - 色相 = 相干性相位（0到2π作为色轮）
-    - 饱和度 = 颜色强度（默认：1.0）
-    - 明度 = 亮度 ∝ 概率^value_power
-
-    相位提取方法：
-    - use_crossbin_phase=False（默认）：使用 arg(rho[0,k])（真空相干）
-      配阈值屏蔽。这很快但对纠缠态可能显示噪声。
-      |rho[0,k]| < coherence_threshold 的相位被屏蔽为0。
-    - use_crossbin_phase=True：使用跨仓一阶相干性
-      G_nm = <a_n^dag a_m> 提取波包相位。
-      警告：这是 O(n_bins^2)，对大n_bins可能很慢。
-
-    Parameters
-    ----------
-    result : Union[EmissionResult, MPSState]
-        要可视化的仿真结果。如果是EmissionResult且show_atomic=True，
-        从result.atom_X_state_evolution提取原子状态演化。
-    save_path : str
-        保存图形的路径
-    show_atomic : bool
-        是否显示原子状态行（默认：False）
-    stage_name : str
-        标题的阶段名称（如 "Emission", "QFC", "BS"）
-    time_grid : TimeGrid, optional
-        x轴标签的时间网格。若为None且result是EmissionResult，
-        使用result.time_grid。
-    saturation : float
-        颜色饱和度（0-1）。较低值产生更柔和的颜色。
-    value_power : float
-        强度映射的幂次。0.5 = 平方根（默认），1.0 = 线性。
-        较高值增加小幅振幅的对比度。
-    vmax_scale_factor : float
-        缩放最大振幅的因子（相对于最大相干幅度）。
-    use_crossbin_phase : bool
-        若为True，使用跨仓一阶相干性获取相位。
-        这从 G_nm = <a_n^dag a_m> 提取波包相位。
-        警告：对大n_bins非常慢（O(n_bins^2)密度矩阵调用）。
-        若为False（默认），使用带屏蔽的真空相干 arg(rho[0,k])。
-    coherence_threshold : float
-        相干幅度的阈值。低于此值，相位被屏蔽。
-    reference_bin : int, optional
-        跨仓相位计算的参考仓。若为None，使用
-        最大强度的仓。
-    """
-    import matplotlib as mpl
-    from matplotlib.colors import hsv_to_rgb
-
-    mpl.rcParams['image.interpolation'] = 'nearest'
-
-    # 从结果中提取MPS和time_grid
-    if isinstance(result, EmissionResult):
-        mps = result.mps
-        if time_grid is None:
-            time_grid = result.time_grid
-        n_bins = result.get_n_bins()
-        has_atom_evol = True
-    else:  # MPSState
-        mps = result
-        if time_grid is None:
-            time_grid = TimeGrid(dt=1.0, N=1)
-        n_bins = (mps.L - 2) // 2
-        has_atom_evol = False
-
-    if show_atomic and not has_atom_evol:
-        raise ValueError("show_atomic=True requires EmissionResult with atomic state evolution")
-
-    # Create figure
-    fig, axes = plt.subplots(1, 2, figsize=(24, 13))
-    plt.subplots_adjust(left=0.04, right=0.85, top=0.80, bottom=0.06, wspace=0.50)
-
-    # Extract atomic state evolution if needed
-    if show_atomic and has_atom_evol:
-        atom_A_evol = result.atom_A_state_evolution
-        atom_B_evol = result.atom_B_state_evolution
-        atom_A_for_bins = atom_A_evol[:, 1::2]
-        atom_B_for_bins = atom_B_evol[:, 1::2]
-        if atom_A_for_bins.shape[1] < n_bins:
-            padding = np.tile(atom_A_for_bins[:, -1:], (1, n_bins - atom_A_for_bins.shape[1]))
-            atom_A_for_bins = np.hstack([atom_A_for_bins, padding])
-        if atom_B_for_bins.shape[1] < n_bins:
-            padding = np.tile(atom_B_for_bins[:, -1:], (1, n_bins - atom_B_for_bins.shape[1]))
-            atom_B_for_bins = np.hstack([atom_B_for_bins, padding])
-
-    # Extract probabilities and phases for all 18 states
-    probs_A, probs_B, phases_A, phases_B = extract_bin_state_coherences(
-        mps, n_bins, arm='A',
-        coherence_threshold=coherence_threshold,
-        use_crossbin_phase=use_crossbin_phase,
-        reference_bin=reference_bin
-    )
-    _, probs_B, _, phases_B = extract_bin_state_coherences(
-        mps, n_bins, arm='B',
-        coherence_threshold=coherence_threshold,
-        use_crossbin_phase=use_crossbin_phase,
-        reference_bin=reference_bin
-    )
-
-    # Get state labels
-    bin_state_labels = _get_bin18_state_labels()
-
-    # Calculate max probability for normalization (excluding vacuum-vacuum at index 0)
-    max_prob_A = np.max(probs_A[:, 1:]) if n_bins > 0 else 1.0
-    max_prob_B = np.max(probs_B[:, 1:]) if n_bins > 0 else 1.0
-    max_prob = max(max_prob_A, max_prob_B) * vmax_scale_factor
-
-    # Create combined data matrices with HSV coloring
-    if show_atomic:
-        atomic_labels = ['|e>', '|1>', '|0>']
-        combined_labels_A = atomic_labels + bin_state_labels
-        combined_labels_B = atomic_labels + bin_state_labels
-        total_rows = 3 + 18
-
-        # For atomic states, use the original probability display (no phase)
-        atom_cmap = plt.get_cmap('YlOrRd')
-
-        # Create atomic state displays (grayscale, no phase info)
-        atom_A_disp = np.zeros((3, n_bins, 3))
-        atom_B_disp = np.zeros((3, n_bins, 3))
-
-        atom_A_disp[0, :, 0] = atom_A_for_bins[2, :]  # |e>
-        atom_A_disp[0, :, 1] = atom_A_for_bins[2, :]
-        atom_A_disp[0, :, 2] = atom_A_for_bins[2, :]
-        atom_A_disp[1, :, 0] = atom_A_for_bins[1, :]  # |1>
-        atom_A_disp[1, :, 1] = atom_A_for_bins[1, :]
-        atom_A_disp[1, :, 2] = atom_A_for_bins[1, :]
-        atom_A_disp[2, :, 0] = atom_A_for_bins[0, :]  # |0>
-        atom_A_disp[2, :, 1] = atom_A_for_bins[0, :]
-        atom_A_disp[2, :, 2] = atom_A_for_bins[0, :]
-
-        atom_B_disp[0, :, 0] = atom_B_for_bins[2, :]
-        atom_B_disp[0, :, 1] = atom_B_for_bins[2, :]
-        atom_B_disp[0, :, 2] = atom_B_for_bins[2, :]
-        atom_B_disp[1, :, 0] = atom_B_for_bins[1, :]
-        atom_B_disp[1, :, 1] = atom_B_for_bins[1, :]
-        atom_B_disp[1, :, 2] = atom_B_for_bins[1, :]
-        atom_B_disp[2, :, 0] = atom_B_for_bins[0, :]
-        atom_B_disp[2, :, 1] = atom_B_for_bins[0, :]
-        atom_B_disp[2, :, 2] = atom_B_for_bins[0, :]
-
-        # Create bin state displays with HSV coloring (probs for intensity, phases for hue)
-        bin_A_rgb = _probs_phases_to_rgb_image(
-            probs_A.T,
-            phases_A.T,
-            saturation=saturation,
-            value_power=value_power,
-            max_prob=max_prob
-        )
-        bin_B_rgb = _probs_phases_to_rgb_image(
-            probs_B.T,
-            phases_B.T,
-            saturation=saturation,
-            value_power=value_power,
-            max_prob=max_prob
-        )
-
-        # Combine atomic and bin displays
-        combined_A = np.vstack([atom_A_disp, bin_A_rgb])
-        combined_B = np.vstack([atom_B_disp, bin_B_rgb])
-
-    else:
-        combined_labels_A = bin_state_labels
-        combined_labels_B = bin_state_labels
-        total_rows = 18
-
-        combined_A = _probs_phases_to_rgb_image(
-            probs_A.T,
-            phases_A.T,
-            saturation=saturation,
-            value_power=value_power,
-            max_prob=max_prob
-        )
-        combined_B = _probs_phases_to_rgb_image(
-            probs_B.T,
-            phases_B.T,
-            saturation=saturation,
-            value_power=value_power,
-            max_prob=max_prob
-        )
-
-    # Plot arm A
-    axes[0].imshow(combined_A, aspect='auto', origin='upper')
-    axes[0].set_yticks(range(total_rows))
-    axes[0].set_yticklabels(combined_labels_A, fontsize=8)
-    axes[0].set_ylabel('State', fontsize=10)
-    axes[0].set_title(f'Arm A - Phase & Amplitude (vmax={max_prob:.3f})', fontsize=11)
-
-    if show_atomic:
-        axes[0].axhline(2.5, color='black', linewidth=2)
-        atom_row_offset = 3
-    else:
-        atom_row_offset = 0
-
-    # x-axis (dual: time and bin index)
-    n_ticks = min(10, n_bins)
-    tick_indices = np.linspace(0, n_bins - 1, n_ticks, dtype=int)
-    axes[0].set_xticks(tick_indices)
-    axes[0].set_xticklabels([f'{time_grid.t[i] * 1e9:.0f}' for i in tick_indices], fontsize=9)
-    axes[0].set_xlabel('Time (ns)', fontsize=10)
-    ax_top_A = axes[0].twiny()
-    ax_top_A.set_xticks(tick_indices)
-    ax_top_A.set_xticklabels([str(i) for i in tick_indices], fontsize=9)
-    ax_top_A.set_xlabel('Bin index', fontsize=10)
-    ax_top_A.set_xlim(axes[0].get_xlim())
-
-    # Plot arm B
-    axes[1].imshow(combined_B, aspect='auto', origin='upper')
-    axes[1].set_yticks(range(total_rows))
-    axes[1].set_yticklabels(combined_labels_B, fontsize=8)
-    axes[1].set_ylabel('State', fontsize=10)
-    axes[1].set_title(f'Arm B - Phase & Amplitude (vmax={max_prob:.3f})', fontsize=11)
-
-    if show_atomic:
-        axes[1].axhline(2.5, color='black', linewidth=2)
-
-    axes[1].set_xticks(tick_indices)
-    axes[1].set_xticklabels([f'{time_grid.t[i] * 1e9:.0f}' for i in tick_indices], fontsize=9)
-    axes[1].set_xlabel('Time (ns)', fontsize=10)
-    ax_top_B = axes[1].twiny()
-    ax_top_B.set_xticks(tick_indices)
-    ax_top_B.set_xticklabels([str(i) for i in tick_indices], fontsize=9)
-    ax_top_B.set_xlabel('Bin index', fontsize=10)
-    ax_top_B.set_xlim(axes[1].get_xlim())
-
-    # Add separator lines for bin states (group by 780 state)
-    for ax in axes:
-        for boundary in [5.5, 11.5]:
-            ax.axhline(boundary + atom_row_offset, color='white', linewidth=1, alpha=0.5, linestyle='--')
-
-    # Add phase colorbar
-    ax_pos_A = axes[0].get_position()
-    fig_height = ax_pos_A.y1 - ax_pos_A.y0
-
-    if show_atomic:
-        # Phase colorbar for bin states only (bottom section)
-        cax_phase = fig.add_axes([
-            ax_pos_A.x1 + 0.01,
-            ax_pos_A.y0,
-            0.01,
-            fig_height * (17/21)
-        ])
-    else:
-        cax_phase = fig.add_axes([
-            ax_pos_A.x1 + 0.01,
-            ax_pos_A.y0,
-            0.01,
-            fig_height * (17/18)
-        ])
-
-    # Create phase colorbar manually
-    from matplotlib.patches import Rectangle
-    n_grad = 256
-    phase_hsv = np.zeros((n_grad, 1, 3))
-    phase_hsv[:, 0, 0] = np.linspace(0, 1, n_grad)
-    phase_hsv[:, 0, 1] = 1.0
-    phase_hsv[:, 0, 2] = 1.0
-    phase_rgb = hsv_to_rgb(phase_hsv).squeeze()
-    for i in range(n_grad):
-        cax_phase.add_patch(Rectangle((0, i/n_grad), 1, 1/n_grad,
-                                      facecolor=phase_rgb[i], edgecolor='none'))
-    cax_phase.set_xlim(0, 1)
-    cax_phase.set_ylim(0, 1)
-    cax_phase.axis('off')
-    cax_phase.text(0.5, 1.02, 'Phase (0 to 2π)', ha='center', va='bottom',
-                   transform=cax_phase.transAxes, fontsize=8)
-
-    # Title
-    if stage_name:
-        title = f'Phase-Aware Heatmap: {stage_name}'
-    else:
-        title = 'Phase-Aware Heatmap: Complex Amplitudes'
-    plt.suptitle(title, fontsize=16, y=0.97)
-
-    # Add explanation text with phase extraction method
-    if use_crossbin_phase:
-        method_str = "Cross-bin coherence G_nm = <a^dag_n a_m>"
-    else:
-        method_str = "Vacuum coherence arg(rho[0,k])"
-    explanation = f"Color = Phase (0 to 2pi), Brightness = Probability^{value_power}\nPhase extraction: {method_str}"
-    fig.text(0.5, 0.01, explanation, ha='center', fontsize=9,
-             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
-
-    plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    plt.show(block=False)  # 非阻塞显示
-    plt.pause(5)  # 显示5秒
-    plt.close()  # 自动关闭
-    print(f"  Saved phase-aware heatmaps to: {save_path}")

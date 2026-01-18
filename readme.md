@@ -37,7 +37,7 @@ atom_sim/
 │   ├── gates.py                   # 所有酉门工厂
 │   │   ├── emission_gate()        # U_emit: 原子-光子耦合 (54x54)
 │   │   ├── qfc_gate()             # U_qfc: 780→1517 频率转换 (18x18)
-│   │   ├── bs_gate_bin18()        # U_BS: 50/50 分束器 (324x324)
+│   │   ├── bs_gate_6d()           # U_BS: 50/50 分束器 (36x36, 仅1517nm)
 │   │   ├── jones_gate()           # U_pol: 琼斯旋转 (6x6)
 │   │   ├── jones_gate_from_array() # 从 2x2 琼斯矩阵构造门
 │   │   └── swap_gate()            # W_swap: SWAP 门 (324x324)

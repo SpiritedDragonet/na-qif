@@ -2,15 +2,13 @@
 """
 仿真模块
 
-提供轨迹执行和多试验统计。
+提供轨迹执行和探测统计。
 """
 
 from .trajectory import (
-    TrajectoryRunner,
     TrajectoryResult,
     EmissionResult,
-    run_single_trajectory,
-    run_emission_only,
+    run_dual_atom_emission,
     apply_qfc,
     apply_780_filter,
     apply_jones,
@@ -19,11 +17,6 @@ from .trajectory import (
     apply_bs,
     apply_fiber_channel,
     project_to_1517,
-    postselect_two_photon,
-)
-from .simulator import (
-    SimulationResult,
-    run_simulation,
 )
 from .detection import (
     DetectionEvent,
@@ -37,11 +30,9 @@ from .detection import (
 
 __all__ = [
     # trajectory
-    'TrajectoryRunner',
     'TrajectoryResult',
     'EmissionResult',
-    'run_single_trajectory',
-    'run_emission_only',
+    'run_dual_atom_emission',
     # apply_* functions
     'apply_qfc',
     'apply_780_filter',
@@ -51,10 +42,6 @@ __all__ = [
     'apply_bs',
     'apply_fiber_channel',
     'project_to_1517',
-    'postselect_two_photon',
-    # simulator
-    'SimulationResult',
-    'run_simulation',
     # detection (Kraus measurement)
     'DetectionEvent',
     'TwoPhotonDetectionResult',

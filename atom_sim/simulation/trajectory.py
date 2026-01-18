@@ -14,7 +14,7 @@ from ..core.mps import MPSState
 from ..config import TimeGrid, EmitParams, QFCParams, FiberParams, DetParams
 from ..hilbert.basis import BIN_SPACE, SUBSPACE_780, SUBSPACE_1517
 from ..physics.gates import (
-    emission_gate, qfc_gate, bs_gate_bin18, jones_gate_from_array, swap_gate
+    emission_gate, qfc_gate, jones_gate_from_array
 )
 from ..physics.channels import (
     loss_channel_1517, loss_channel_both_subspaces,
@@ -73,8 +73,11 @@ class TrajectoryResult:
 class EmissionResult:
     """
     双原子发射仿真的结果（仅发射阶段）。
-
-    发射后的链布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN
+    发射前的链布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB
+    可能需要先交换为：A1, B1, A2, B2, ..., AN, atomA, BN, atomB
+    然后通过和atomA和atomB逐渐地和门进行的作用，作用到头，当作用到最后一个原子时候布局差不多是：A1, atomA, B1, atomB, A2, B2, ..., AN, BN
+    拿发射矩阵作用完最后的原子了以后，再像往常顺序那样同时移动一下atomA和atomB：atomA，A1, atomB, B1, A2, B2, ..., AN, BN
+    最后移动一下atomB，就得到了发射后的链布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN
     （原子在前，仓在后）
 
     Attributes
@@ -111,7 +114,7 @@ class EmissionResult:
         获取仓n在A臂和B臂的MPS格点索引。
 
         发射后的链布局：
-        - atomA, atomB, A1, B1, A2, B2, ..., AN, BN
+        - atomA(0) - atomB(1) - A1(2) - B1(3) - A2(4) - B2(5) - ... - AN(2*n_bins) - BN(2*n_bins+1)
         - A_n 位于格点 2 + 2*n，B_n 位于格点 2 + 2*n + 1
 
         Parameters
@@ -124,8 +127,8 @@ class EmissionResult:
         Tuple[int, int]
             (site_A, site_B) - A_n和 B_n的MPS格点索引
         """
-        # 原子在格点 0, 1
-        # 仓从格点 2 开始：A1(2), B1(3), A2(4), B2(5), ...
+        # atomA在格点0，atomB在格点1
+        # A臂和B臂的仓交错排列：A1(2), B1(3), A2(4), B2(5), ...
         return 2 + 2 * n, 2 + 2 * n + 1
 
     def get_atom_site_indices(self) -> Tuple[int, int]:
@@ -160,618 +163,6 @@ class EmissionResult:
         return self.mps
 
 
-class TrajectoryRunner:
-    """
-    执行时间仓协议的单次轨迹。
-
-    实现"传送带"算法，每个仓按以下方式处理：
-    1. 发射（原子 -> 光子）
-    2. QFC（780 -> 1517 频率转换）
-    3. 琼斯旋转（偏振）
-    4. 损耗通道
-    5. 分束器（A_n 与 B_n）
-    6. 探测
-
-    链布局：A0 - B0 - A1 - B1 - A2 - B2 - ...
-    其中 A0, B0 是原子，A_n, B_n 是时间仓。
-    """
-
-    def __init__(
-        self,
-        time_grid: TimeGrid,
-        emit_params: EmitParams,
-        qfc_params: QFCParams,
-        fiber_params: FiberParams,
-        det_params: DetParams,
-        chi_max: int = 100,
-        seed: Optional[int] = None,
-    ):
-        """
-        初始化轨迹运行器。
-
-        Parameters
-        ----------
-        time_grid : TimeGrid
-            时间离散化
-        emit_params : EmitParams
-            发射参数
-        qfc_params : QFCParams
-            QFC参数
-        fiber_params : FiberParams
-            光纤/琼斯/PMD参数
-        det_params : DetParams
-            探测参数
-        chi_max : int
-            最大键维度
-        seed : int, optional
-            用于可重复性的随机种子
-        """
-        self.time_grid = time_grid
-        self.emit = emit_params
-        self.qfc = qfc_params
-        self.fiber = fiber_params
-        self.det = det_params
-        self.chi_max = chi_max
-
-        # 随机数生成器
-        self.rng = np.random.default_rng(seed)
-
-        # 缓存的门（仅计算一次）
-        self._cached_gates: Dict[str, np.ndarray] = {}
-
-    def initialize_mps(self) -> MPSState:
-        """
-        初始化MPS，原子处于激发态，仓处于真空态。
-
-        新架构链布局：A1(18D) - B1(18D) - ... - AN(18D) - BN(18D) - atomA(3D) - atomB(3D)
-        仓在前，原子在后。
-
-        Returns
-        -------
-        MPSState
-            初始化的MPS态
-        """
-        # 链布局：仓在前，原子在后
-        local_dims = [DIM_BIN, DIM_BIN] * self.time_grid.N + [DIM_ATOM, DIM_ATOM]
-
-        # 初态：仓真空，原子激发
-        # 原子基：|0>, |1>, |e>，|e> 在索引2
-        init_state = [0] * (2 * self.time_grid.N) + [2, 2]
-
-        mps = MPSState(local_dims, init_state=init_state, max_bond=self.chi_max)
-        return mps
-
-    def run_bin(
-        self,
-        mps: MPSState,
-        n: int,
-    ) -> Tuple[MPSState, Tuple[int, int, int, int]]:
-        """
-        处理单个时间仓n。
-
-        步骤：
-        1. A0-An 和 B0-Bn 上的发射
-        2. An 和 Bn 上的QFC
-        3. An 和 Bn 上的琼斯旋转
-        4. An 和 Bn 上的损耗
-        5. An-Bn 上的分束器
-        6. An-Bn 上的探测
-        7. 完成 An-Bn
-
-        Parameters
-        ----------
-        mps : MPSState
-            当前MPS态
-        n : int
-            仓索引（从1开始，n=1对应链中格点2,3）
-
-        Returns
-        -------
-        Tuple[MPSState, Tuple[int, int, int, int]]
-            更新后的MPS和探测器结果 (d1_H, d1_V, d2_H, d2_V)
-        """
-        # 格点索引：A0=0, B0=1, A1=2, B1=3, A2=4, B2=4, ...
-        # 对于仓n（从1开始），格点位于索引 2n 和 2n+1
-        site_A = 2 * n
-        site_B = 2 * n + 1
-
-        t = self.time_grid.t[n-1]  # n从1开始
-
-        # (1) 发射：两格点酉门（原子，仓）
-        U_emit_A = emission_gate(
-            gamma=self.emit.get_gamma_A(t),
-            dt=self.time_grid.dt * 1e9,  # 秒转换为纳秒
-            Alpha=self.emit.Alpha_A,
-            which_atom='A'
-        )
-        # 发射门作用于 atom(3D) ⊗ 780(3D)，需要嵌入到完整的18维仓空间
-        # 暂时使用简化版本
-        mps.apply_bond_op(0, U_emit_A)  # A0-An发射（简化）
-
-        U_emit_B = emission_gate(
-            gamma=self.emit.get_gamma_B(t),
-            dt=self.time_grid.dt * 1e9,  # 秒转换为纳秒
-            Alpha=self.emit.Alpha_B,
-            which_atom='B'
-        )
-        mps.apply_bond_op(1, U_emit_B)  # B0-Bn发射（简化）
-
-        # (2) QFC：An, Bn上的单格点酉门
-        U_qfc = qfc_gate(theta_H=self.qfc.theta_H, theta_V=self.qfc.theta_V)
-        mps.apply_one_site_gate(site_A, U_qfc)
-        mps.apply_one_site_gate(site_B, U_qfc)
-
-        # (3) 琼斯旋转：单格点酉门
-        U_pol_A = jones_gate_from_array(self.fiber.Jones_A)
-        U_pol_B = jones_gate_from_array(self.fiber.Jones_B)
-
-        # 嵌入到18维仓空间（仅作用于1517子空间）
-        # 暂时直接应用（假设已正确嵌入）
-        mps.apply_one_site_gate(site_A, U_pol_A)
-        mps.apply_one_site_gate(site_B, U_pol_B)
-
-        # (4) 损耗：单格点Kraus算符
-        K_loss_A = loss_channel_1517(
-            eta_H=self.fiber.eta_fiber_A * self.qfc.eta_ins_H,
-            eta_V=self.fiber.eta_fiber_A * self.qfc.eta_ins_V
-        )
-        mps.apply_kraus_one_site(site_A, K_loss_A, self.rng)
-
-        K_loss_B = loss_channel_1517(
-            eta_H=self.fiber.eta_fiber_B * self.qfc.eta_ins_H,
-            eta_V=self.fiber.eta_fiber_B * self.qfc.eta_ins_V
-        )
-        mps.apply_kraus_one_site(site_B, K_loss_B, self.rng)
-
-        # (5) 分束器：两格点酉门
-        U_bs = bs_gate_bin18()
-        mps.apply_bond_op(site_A, U_bs)
-
-        # (6) 探测：两格点测量Kraus算符
-        K_det, outcomes = detection_channel_two_mode(
-            eta_det=self.det.eta_det,
-            p_dark=self.det.p_dark
-        )
-        mu = mps.apply_two_site_kraus(site_A, K_det, self.rng)
-        outcome = outcomes[mu]
-
-        # (7) 完成已测量的仓对
-        mps.finalize_bin_pair(site_A)
-
-        return mps, outcome
-
-    def run(self) -> TrajectoryResult:
-        """
-        在所有时间仓上运行完整轨迹。
-
-        Returns
-        -------
-        TrajectoryResult
-            轨迹的结果
-        """
-        mps = self.initialize_mps()
-        record = []
-
-        for n in range(1, self.time_grid.N + 1):
-            mps, outcome = self.run_bin(mps, n)
-            record.append(outcome)
-
-            # 检查是否成功
-            if self.det.is_success(outcome):
-                # 提取原子态
-                rho_atom = mps.get_reduced_density([0, 1])  # A0, B0
-
-                return TrajectoryResult(
-                    success=True,
-                    rho_atom=rho_atom,
-                    outcome=outcome,
-                    success_bin=n,
-                    record=record
-                )
-
-        # 没有任何仓成功
-        rho_atom = mps.get_reduced_density([0, 1])
-        return TrajectoryResult(
-            success=False,
-            rho_atom=rho_atom,
-            outcome=None,
-            success_bin=None,
-            record=record
-        )
-
-    def run_emission(
-        self,
-        verbose: bool = True,
-        delay_bins_B: int = 0,
-    ) -> EmissionResult:
-        """
-        运行仅发射阶段（原子向左移动版本）。
-
-        链结构（初始）：A1, B1, ..., AN, BN, atomA, atomB
-        链结构（最终）：atomA, atomB, A1, B1, ..., AN, BN
-
-        原子从右向左移动，依次与每个仓对相互作用。
-        关键：发射前原子先 swap 到仓左侧，使门顺序为 (atom, bin)。
-        """
-        start_bin_A = max(0, -delay_bins_B)
-        start_bin_B = max(0, delay_bins_B)
-
-        if verbose:
-            print("=" * 70)
-            print("Dual-Atom Emission Simulation")
-            print("=" * 70)
-            print(f"\nParameters:")
-            print(f"  n_bins = {self.time_grid.N}, dt = {self.time_grid.dt * 1e9:.1f} ns")
-            if delay_bins_B != 0:
-                print(f"  delay_bins_B = {delay_bins_B}")
-                print(f"    -> Atom A starts at bin {start_bin_A}")
-                print(f"    -> Atom B starts at bin {start_bin_B}")
-
-        # 初始化MPS：仓在前，原子在后
-        local_dims = [DIM_BIN, DIM_BIN] * self.time_grid.N + [DIM_ATOM, DIM_ATOM]
-        init_state = [0] * (2 * self.time_grid.N) + [2, 2]
-        mps = MPSState(local_dims=local_dims, init_state=init_state, max_bond=self.chi_max)
-
-        per_bin_prob_A = np.zeros(self.time_grid.N)
-        per_bin_prob_B = np.zeros(self.time_grid.N)
-        atom_A_state_evolution = np.zeros((3, 2 * self.time_grid.N))
-        atom_B_state_evolution = np.zeros((3, 2 * self.time_grid.N))
-
-        # 记录初始原子态（原子在最后两个格点）
-        site_A = 2 * self.time_grid.N
-        site_B = 2 * self.time_grid.N + 1
-        rho_A_init = mps.get_reduced_density([site_A])
-        rho_B_init = mps.get_reduced_density([site_B])
-        atom_A_state_evolution[0, 0] = rho_A_init[0, 0].real
-        atom_A_state_evolution[1, 0] = rho_A_init[1, 1].real
-        atom_A_state_evolution[2, 0] = rho_A_init[2, 2].real
-        atom_B_state_evolution[0, 0] = rho_B_init[0, 0].real
-        atom_B_state_evolution[1, 0] = rho_B_init[1, 1].real
-        atom_B_state_evolution[2, 0] = rho_B_init[2, 2].real
-
-        if verbose:
-            print(f"\nRunning emission (atoms move left)...")
-            print(f"  Initial: [A1, B1, ..., AN, BN, atomA, atomB]")
-            print(f"  Target:  [atomA, atomB, A1, B1, ..., AN, BN]")
-
-        # 逐个处理仓（从最后一个仓开始，向左移动）
-        for n in reversed(range(self.time_grid.N)):
-            t = self.time_grid.t[n]
-
-            # === 原子B发射 ===
-            # 目标仓 B_n 在格点 2*n + 1
-            target_B = 2 * n + 1
-
-            # 策略：atomB 最终需要到达 site_B = target_B（在仓左侧）
-            # 但在此之前，需要确保 atomA 不阻挡
-
-            # 步骤1：如果 atomA 阻挡在 target_B 或 target_B+1，先将其移到 target_B - 1
-            if site_A >= target_B:
-                # atomA 在 target_B 或更右边，需要向左移
-                while site_A > target_B - 1 and site_A > 0:
-                    if site_A - 1 == site_B:
-                        # atomB 在左边，先交换
-                        mps.swap_sites(site_A - 1)
-                        # swap 后 atomB 到 site_A，atomA 到 site_A-1
-                        old_site_B = site_B
-                        site_B = site_A  # atomB 新位置
-                        site_A = old_site_B  # atomA 新位置
-                    else:
-                        mps.swap_sites(site_A - 1)
-                        site_A -= 1
-
-            # 步骤2：现在 atomA 在 target_B - 1 或更左边，移动 atomB
-            while site_B > target_B + 1:
-                if site_B - 1 == site_A:
-                    # atomA 在左边，交换
-                    mps.swap_sites(site_B - 1)
-                    # swap 后 atomB 到 site_B-1，atomA 到 site_B
-                    site_A = site_B  # atomA 新位置
-                    site_B = site_B - 1  # atomB 新位置
-                else:
-                    mps.swap_sites(site_B - 1)
-                    site_B -= 1
-
-            # 步骤3：现在 site_B = target_B + 1，需要 swap 使 atomB 在仓左侧
-            if site_B - 1 == site_A:
-                # atomA 在 target_B 位置，这是特殊情况
-                # 交换 atomB 和 atomA
-                mps.swap_sites(site_B - 1)
-                temp = site_A
-                site_A = site_B
-                site_B = temp
-            else:
-                # 正常情况：swap atomB 和 bin
-                mps.swap_sites(site_B - 1)
-                site_B -= 1
-
-            # 应用发射门
-            t_rel_B = self.time_grid.t[n - start_bin_B] if n >= start_bin_B else 0.0
-            gamma_B = self.emit.get_gamma_B(t_rel_B) if n >= start_bin_B else 0.0
-            should_emit_B = (n >= start_bin_B) and (gamma_B >= 1e-6)
-            if should_emit_B:
-                U_emit_B = emission_gate(
-                    gamma=gamma_B,
-                    dt=self.time_grid.dt * 1e9,
-                    Alpha=self.emit.Alpha_B,
-                    which_atom='B',
-                    bin_first=False  # atom 在左边，bin 在右边
-                )
-                # site_B 是 atomB 的位置，site_B+1 是 bin B_n 的位置
-                # 作用在 (atomB, bin B_n) 上
-                mps.apply_bond_op(site_B, U_emit_B)
-
-                # 提取发射概率（bin是18D: 780×1517）
-                # 780nm光子: H在索引6-11, V在索引12-17
-                # site_B+1 是 bin B_n 的位置
-                rho_bin_B_n = mps.get_reduced_density([site_B + 1])
-                # 780H块的对角元之和
-                p_B_H = sum(rho_bin_B_n[i, i].real for i in range(IDX_BIN_780H_START, IDX_BIN_780H_END))
-                # 780V块的对角元之和
-                p_B_V = sum(rho_bin_B_n[i, i].real for i in range(IDX_BIN_780V_START, IDX_BIN_780V_END))
-                per_bin_prob_B[n] = p_B_H + p_B_V
-
-            # 将atomB继续向左移（越过已处理的仓）
-            if site_B > 0:
-                if site_B - 1 == site_A:
-                    # atomA 在左边，交换
-                    mps.swap_sites(site_B - 1)
-                    # swap 后 atomB 到 site_B-1，atomA 到 site_B
-                    temp = site_A
-                    site_A = site_B
-                    site_B = temp
-                else:
-                    mps.swap_sites(site_B - 1)
-                    site_B -= 1
-
-            # 记录原子B状态
-            rho_B_after = mps.get_reduced_density([site_B])
-            col_idx_B = 2 * n
-            atom_B_state_evolution[0, col_idx_B] = rho_B_after[0, 0].real
-            atom_B_state_evolution[1, col_idx_B] = rho_B_after[1, 1].real
-            atom_B_state_evolution[2, col_idx_B] = rho_B_after[2, 2].real
-
-            # === 原子A发射 ===
-            # 目标仓 A_n 在格点 2*n
-            target_A = 2 * n
-
-            # 策略：atomA 最终需要到达 site_A = target_A（在仓左侧）
-            # 但在此之前，需要确保 atomB 不在 target_A 或 target_A + 1
-
-            # 步骤1：如果 atomB 阻挡在 target_A 或 target_A+1，先将其移到 target_A - 1
-            if site_B >= target_A:
-                # atomB 在 target_A 或更右边，需要向左移
-                while site_B > target_A - 1 and site_B > 0:
-                    # 将 atomB 向左移动
-                    if site_B - 1 == site_A:
-                        # atomA 在左边，先交换
-                        mps.swap_sites(site_B - 1)
-                        # swap 后 atomA 到 site_B，atomB 到 site_B-1
-                        site_B = site_B - 1  # atomB 新位置
-                        # site_A 不变（实际上 atomA 移到了 site_B，但我们会更新）
-                        # 实际上 atomA 移到了原 site_B，所以 site_A = site_B + 1
-                        old_site_A = site_A
-                        site_A = site_B + 1
-                        # 现在 site_B = old_site_A - 1, site_A = old_site_A
-                    else:
-                        mps.swap_sites(site_B - 1)
-                        site_B -= 1
-
-            # 步骤2：现在 atomB 在 target_A - 1 或更左边，移动 atomA
-            while site_A > target_A + 1:
-                if site_A - 1 == site_B:
-                    # atomB 在左边，交换
-                    mps.swap_sites(site_A - 1)
-                    # swap 后 atomA 到 site_A-1，atomB 到 site_A
-                    site_B = site_A  # atomB 新位置
-                    site_A = site_A - 1  # atomA 新位置
-                else:
-                    mps.swap_sites(site_A - 1)
-                    site_A -= 1
-
-            # 步骤3：现在 site_A = target_A + 1，需要 swap 使 atomA 在仓左侧
-            if site_A - 1 == site_B:
-                # atomB 在 target_A 位置，这是特殊情况
-                # 交换 atomA 和 atomB
-                mps.swap_sites(site_A - 1)
-                temp = site_A
-                site_A = site_B
-                site_B = temp
-            else:
-                # 正常情况：swap atomA 和 bin
-                mps.swap_sites(site_A - 1)
-                site_A -= 1
-
-            # 应用发射门
-            t_rel_A = self.time_grid.t[n - start_bin_A] if n >= start_bin_A else 0.0
-            gamma_A = self.emit.get_gamma_A(t_rel_A) if n >= start_bin_A else 0.0
-            should_emit_A = (n >= start_bin_A) and (gamma_A >= 1e-6)
-            if should_emit_A:
-                U_emit_A = emission_gate(
-                    gamma=gamma_A,
-                    dt=self.time_grid.dt * 1e9,
-                    Alpha=self.emit.Alpha_A,
-                    which_atom='A',
-                    bin_first=False  # atom 在左边，bin 在右边
-                )
-                # site_A 是 atomA 的位置，site_A+1 是 bin A_n 的位置
-                # 作用在 (atomA, bin A_n) 上
-                mps.apply_bond_op(site_A, U_emit_A)
-
-                # 提取发射概率（bin是18D: 780×1517）
-                # 780nm光子: H在索引6-11, V在索引12-17
-                # site_A+1 是 bin A_n 的位置
-                rho_bin_A_n = mps.get_reduced_density([site_A + 1])
-                # 780H块的对角元之和
-                p_A_H = sum(rho_bin_A_n[i, i].real for i in range(IDX_BIN_780H_START, IDX_BIN_780H_END))
-                # 780V块的对角元之和
-                p_A_V = sum(rho_bin_A_n[i, i].real for i in range(IDX_BIN_780V_START, IDX_BIN_780V_END))
-                per_bin_prob_A[n] = p_A_H + p_A_V
-
-            # 将atomA继续向左移（越过已处理的仓）
-            if site_A > 0:
-                if site_A - 1 == site_B:
-                    # atomB 在左边，交换
-                    mps.swap_sites(site_A - 1)
-                    # swap 后 atomA 到 site_A-1，atomB 到 site_A
-                    temp = site_B
-                    site_B = site_A
-                    site_A = temp
-                else:
-                    mps.swap_sites(site_A - 1)
-                    site_A -= 1
-
-            # 记录原子A状态
-            rho_A_after = mps.get_reduced_density([site_A])
-            col_idx_A = 2 * n + 1
-            atom_A_state_evolution[0, col_idx_A] = rho_A_after[0, 0].real
-            atom_A_state_evolution[1, col_idx_A] = rho_A_after[1, 1].real
-            atom_A_state_evolution[2, col_idx_A] = rho_A_after[2, 2].real
-
-            if verbose and (self.time_grid.N - n) % 50 == 0:
-                processed = self.time_grid.N - n
-                print(f"  Processed {processed}/{self.time_grid.N} bins... "
-                      f"(atomA@{site_A}, atomB@{site_B})")
-
-        # 获取最终原子态
-        rho_atom_A = mps.get_reduced_density([0])
-        rho_atom_B = mps.get_reduced_density([1])
-
-        atom_states = {'A': rho_atom_A, 'B': rho_atom_B}
-
-        if verbose:
-            print(f"\n  Complete!")
-            print(f"  Final: atomA@0, atomB@1")
-            print(f"  Final chi: {mps.get_bond_dimensions()}")
-            print(f"  Norm: {mps.norm():.6f}")
-            print(f"\nFinal atomic states:")
-            print(f"  Atom A: P(|e>)={rho_atom_A[2,2].real:.4f}")
-            print(f"  Atom B: P(|e>)={rho_atom_B[2,2].real:.4f}")
-            print(f"\nEmission statistics:")
-            print(f"  Arm A total: {per_bin_prob_A.sum():.4f}, peak: {per_bin_prob_A.max():.4f}")
-            print(f"  Arm B total: {per_bin_prob_B.sum():.4f}, peak: {per_bin_prob_B.max():.4f}")
-
-        return EmissionResult(
-            mps=mps,
-            time_grid=self.time_grid,
-            per_bin_prob_A=per_bin_prob_A,
-            per_bin_prob_B=per_bin_prob_B,
-            atom_states=atom_states,
-            atom_A_state_evolution=atom_A_state_evolution,
-            atom_B_state_evolution=atom_B_state_evolution,
-        )
-
-
-def run_single_trajectory(
-    time_grid: TimeGrid,
-    emit_params: EmitParams,
-    qfc_params: QFCParams,
-    fiber_params: FiberParams,
-    det_params: DetParams,
-    chi_max: int = 100,
-    seed: Optional[int] = None,
-) -> TrajectoryResult:
-    """
-    运行单次轨迹的便捷函数。
-
-    Parameters
-    ----------
-    time_grid : TimeGrid
-        时间离散化
-    emit_params : EmitParams
-        发射参数
-    qfc_params : QFCParams
-        QFC参数
-    fiber_params : FiberParams
-        光纤/琼斯/PMD参数
-    det_params : DetParams
-        探测参数
-    chi_max : int
-        最大键维度
-    seed : int, optional
-        随机种子
-
-    Returns
-    -------
-    TrajectoryResult
-        轨迹的结果
-    """
-    runner = TrajectoryRunner(
-        time_grid=time_grid,
-        emit_params=emit_params,
-        qfc_params=qfc_params,
-        fiber_params=fiber_params,
-        det_params=det_params,
-        chi_max=chi_max,
-        seed=seed,
-    )
-    return runner.run()
-
-
-def run_emission_only(
-    time_grid: TimeGrid,
-    emit_params: EmitParams,
-    qfc_params: Optional[QFCParams] = None,
-    fiber_params: Optional[FiberParams] = None,
-    det_params: Optional[DetParams] = None,
-    chi_max: int = 100,
-    verbose: bool = True,
-    delay_bins_B: int = 0,
-) -> EmissionResult:
-    """
-    使用SWAP传送带协议运行仅发射仿真。
-
-    这是总仿真第一阶段的便捷函数：
-    - 两个原子（A和B）处于激发态
-    - 发射到时间仓（仅780nm，暂无QFC）
-    - 最终态准备好进入下一门（基站BSM）
-
-    Parameters
-    ----------
-    time_grid : TimeGrid
-        时间离散化
-    emit_params : EmitParams
-        发射参数（gamma_A, gamma_B, Alpha_A, Alpha_B）
-    qfc_params : QFCParams, optional
-        仅发射阶段不使用，但保留以保持接口一致
-    fiber_params : FiberParams, optional
-        仅发射阶段不使用，但保留以保持接口一致
-    det_params : DetParams, optional
-        仅发射阶段不使用，但保留以保持接口一致
-    chi_max : int
-        最大键维度
-    verbose : bool
-        是否打印进度信息
-    delay_bins_B : int
-        原子B发射延迟的仓数（用于时间偏移）
-
-    Returns
-    -------
-    EmissionResult
-        发射仿真结果的容器
-    """
-    # 如果未提供则创建默认参数
-    if qfc_params is None:
-        from ..config import QFCParams as _QFCParams
-        qfc_params = _QFCParams()
-    if fiber_params is None:
-        from ..config import FiberParams as _FiberParams
-        fiber_params = _FiberParams()
-    if det_params is None:
-        from ..config import DetParams as _DetParams
-        det_params = _DetParams()
-
-    runner = TrajectoryRunner(
-        time_grid=time_grid,
-        emit_params=emit_params,
-        qfc_params=qfc_params,
-        fiber_params=fiber_params,
-        det_params=det_params,
-        chi_max=chi_max,
-    )
-    return runner.run_emission(verbose=verbose, delay_bins_B=delay_bins_B)
-
-
 # ============================================================================
 # 统一处理函数（apply_* 模式）
 # 所有函数遵循相同接口：
@@ -793,7 +184,7 @@ def apply_qfc(
     Parameters
     ----------
     mps : MPSState
-        MPS态（布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB）
+        MPS态（布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN）
     n_bins : int
         时间仓数量
     theta_H : float
@@ -1152,7 +543,7 @@ def apply_bs(
     """
     对每个 A_n, B_n 对应用分束器。
 
-    自动检测bin维度（18D或6D）并使用相应的BS门。
+    使用6D BS门（仅适用于1517nm子空间）。
 
     Parameters
     ----------
@@ -1168,24 +559,14 @@ def apply_bs(
     MPSState
         应用了BS的MPS态（原地修改）
     """
-    from ..physics.gates import bs_gate_bin18, bs_gate_6d
+    from ..physics.gates import bs_gate_6d
 
     _print_header("BS", verbose)
 
-    # 检测bin维度
-    bin_dim = mps.d[2]  # 第一个bin的维度
-    if bin_dim == 18:
-        U_bs = bs_gate_bin18()
-        if verbose:
-            print(f"  Using 18D BS gate (324x324)")
-    elif bin_dim == 6:
-        U_bs = bs_gate_6d()
-        if verbose:
-            print(f"  Using 6D BS gate (36x36) - optimized!")
-    else:
-        raise ValueError(f"Unexpected bin dimension: {bin_dim}")
-
+    # 使用6D BS门
+    U_bs = bs_gate_6d()
     if verbose:
+        print(f"  Using 6D BS gate (36x36)")
         print(f"  U_bs shape: {U_bs.shape}")
 
     # 对每个 A_n, B_n 对应用BS
@@ -1295,576 +676,330 @@ def apply_fiber_channel(
     return mps, (U_A, U_B, eta, phase)
 
 
-def postselect_two_photon(
-    mps: MPSState,
-    n_bins: int,
+
+
+
+# ============================================================================
+# 高层便捷函数
+# ============================================================================
+
+def run_dual_atom_emission(
+    n_bins: int = 200,
+    dt_ns: float = 0.2,
+    chi_max: int = 50,
+    Alpha_A: Optional[np.ndarray] = None,
+    Alpha_B: Optional[np.ndarray] = None,
+    gamma_peak_A: float = 0.2,
+    gamma_peak_B: float = 0.2,
+    t0_A: Optional[float] = None,
+    t0_B: Optional[float] = None,
+    sigma: float = 12.0,
+    delay_ns: float = 0.0,
     verbose: bool = True,
-) -> Tuple[MPSState, float]:
+) -> EmissionResult:
     """
-    投影到全局两光子子空间（post-selection）。
-
-    根据文档15的描述，使用MPO方法投影到全局光子数=2的子空间。
-
-    关键点（文档15）：
-    - 不是对每个bin投影到两光子，而是全局总光子数=2
-    - 使用bond dimension=3的MPO（累计计数0/1/2）
-    - 这保持了不同bin之间的量子相干性
-
-    物理意义：
-    - 投影到"两光子都到达中间站"的条件态
-    - 剔除"至少一路光子被吸收"的分量
-    - 投影概率 = 两光子到达概率 p_E
-
-    6D基态（1517nm子空间）的光子数：
-    - |vac> (0): 0光子
-    - |H> (1): 1光子
-    - |V> (2): 1光子
-    - |2H> (3): 2光子
-    - |2V> (4): 2光子
-    - |HV> (5): 2光子
+    运行双原子发射仿真（原子向左移动方案）。
+    发射前的链布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB
+    需要先交换为：A1, B1, A2, B2, ..., AN, atomA, BN, atomB
+    然后通过和atomA和atomB逐渐地和门进行的作用，作用到头，当作用到最后一个原子时候布局差不多是：A1, atomA, B1, atomB, A2, B2, ..., AN, BN
+    拿发射矩阵作用完最后的原子了以后，再像往常顺序那样同时移动一下atomA和atomB：atomA，A1, atomB, B1, A2, B2, ..., AN, BN
+    最后移动一下atomB，就得到了发射后的链布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN
+    原子从链的右端开始，每个时间步与最左边的仓相互作用后向左移动一步。
+    最终布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN
 
     Parameters
     ----------
-    mps : MPSState
-        MPS态（布局：atomA, atomB, A1, B1, ..., AN, BN 或 A1, B1, ..., AN, BN）
-        bin维度必须为6D（1517nm子空间）
     n_bins : int
         时间仓数量
+    dt_ns : float
+        时间步长（纳秒）
+    chi_max : int
+        MPS最大键维度
+    Alpha_A : np.ndarray, optional
+        原子A的2x2偏振矩阵
+    Alpha_B : np.ndarray, optional
+        原子B的2x2偏振矩阵
+    gamma_peak_A : float
+        原子A的峰值发射率
+    gamma_peak_B : float
+        原子B的峰值发射率
+    t0_A : float, optional
+        原子A的峰值时间（纳秒）
+    t0_B : float, optional
+        原子B的峰值时间（纳秒）
+    sigma : float
+        高斯发射轮廓的宽度参数（纳秒）
+    delay_ns : float
+        原子B相对于A的时间延迟（纳秒）
+        正值表示B的高斯峰晚于A，负值表示B早于A
+        注意：这是时间延迟，不改变bin索引
     verbose : bool
-        是否打印进度
+        是否打印进度信息
 
     Returns
     -------
-    Tuple[MPSState, float]
-        (投影后的MPS态, 投影概率)
-        投影概率 = 两光子到达概率
+    EmissionResult
+        仿真结果容器
     """
-    _print_header("Post-select Two-Photon (Global MPO)", verbose)
+    if verbose:
+        print("=" * 70)
+        print("双原子发射仿真（原子向左移动方案）")
+        print("=" * 70)
 
-    # 检测链布局：是否有原子格点
-    has_atoms = mps.d[0] == 3
+    # 创建时间网格
+    time_grid = TimeGrid(dt=dt_ns * 1e-9, N=n_bins)
+    t_sec = time_grid.t
+    t_ns = t_sec * 1e9
 
-    if has_atoms:
-        bin_offset = 2
-    else:
-        bin_offset = 0
+    # 设置默认峰值为bin中心
+    # 时间数组是 [0, dt, 2*dt, ..., (N-1)*dt]
+    # 中心bin索引是 (N-1)/2，对应时间是 (N-1)*dt/2
+    if t0_A is None:
+        t0_A = (n_bins - 1) * dt_ns / 2
+    if t0_B is None:
+        t0_B = (n_bins - 1) * dt_ns / 2
 
-    # 验证bin维度
-    first_bin_dim = mps.d[bin_offset]
-    if first_bin_dim != 6:
-        raise ValueError(
-            f"postselect_two_photon requires 6D bins (1517nm only), "
-            f"but got {first_bin_dim}D. Run project_to_1517 first."
-        )
+    # 应用时间延迟到B的峰值时间
+    t0_B = t0_B + delay_ns
+
+    # 计算每个仓的发射率（高斯轮廓）
+    gamma_A_values = gamma_peak_A * np.exp(-0.5 * ((t_ns - t0_A) / sigma) ** 2)
+    gamma_B_values = gamma_peak_B * np.exp(-0.5 * ((t_ns - t0_B) / sigma) ** 2)
+
+    # 设置默认Alpha矩阵
+    if Alpha_A is None:
+        Alpha_A = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=complex)
+    if Alpha_B is None:
+        Alpha_B = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=complex)
 
     if verbose:
-        print(f"  Chain layout: {'with atoms' if has_atoms else 'bins only'}")
-        print(f"  Bin offset: {bin_offset}")
-        print(f"  n_bins: {n_bins}, total optical sites: {2 * n_bins}")
+        print(f"\n时间网格:")
+        print(f"  N_bins = {n_bins}")
+        print(f"  dt = {dt_ns} ns")
+        print(f"  总时间 = {n_bins * dt_ns} ns")
+        print(f"\n发射参数:")
+        print(f"  原子A: gamma_peak={gamma_peak_A:.4f}, t0={t0_A:.1f} ns, sigma={sigma:.1f} ns")
+        print(f"  原子B: gamma_peak={gamma_peak_B:.4f}, t0={t0_B:.1f} ns, sigma={sigma:.1f} ns")
+        print(f"  时间延迟: delay_ns={delay_ns:.1f} ns")
 
     # ========================================================================
-    # 构造单格点光子数投影算符（6D）
+    # 初始化 MPS: 交错布局 A1, B1, A2, B2, ..., AN, BN, atomA, atomB
     # ========================================================================
-    # 6D基：vac(0), H(1), V(2), 2H(3), 2V(4), HV(5)
-    # 光子数：  0      1      1      2       2      2
+    # 布局：A1(0) - B1(1) - A2(2) - B2(3) - ... - AN(2n-2) - BN(2n-1) - atomA(2n) - atomB(2n+1)
+    # 所有仓初始为真空态，原子在激发态
+    local_dims = []
+    init_state = []
 
-    Pi_0 = np.diag([1, 0, 0, 0, 0, 0]).astype(complex)  # 0光子
-    Pi_1 = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)  # 1光子
-    Pi_2 = np.diag([0, 0, 0, 1, 1, 1]).astype(complex)  # 2光子
+    # 交错添加 A 和 B 仓
+    for i in range(n_bins):
+        local_dims.append(DIM_BIN)  # A_i
+        local_dims.append(DIM_BIN)  # B_i
+        init_state.append(0)  # A_i 真空
+        init_state.append(0)  # B_i 真空
+
+    # 添加两个原子
+    local_dims.append(DIM_ATOM)  # atomA
+    local_dims.append(DIM_ATOM)  # atomB
+    init_state.append(2)  # atomA 在 |e>
+    init_state.append(2)  # atomB 在 |e>
+
+    mps = MPSState(local_dims=local_dims, init_state=init_state, max_bond=chi_max)
 
     if verbose:
-        print(f"  Pi_0 (0-photon): rank {np.linalg.matrix_rank(Pi_0)}")
-        print(f"  Pi_1 (1-photon): rank {np.linalg.matrix_rank(Pi_1)}")
-        print(f"  Pi_2 (2-photon): rank {np.linalg.matrix_rank(Pi_2)}")
+        print(f"\nMPS 初始化:")
+        print(f"  链长度 L = {mps.L}")
+        print(f"  布局: A1(0) - B1(1) - A2(2) - B2(3) - ... - AN({2*n_bins-2}) - BN({2*n_bins-1}) - atomA({2*n_bins}) - atomB({2*n_bins+1})")
+        print(f"  初始态: 两原子在 |e>, 所有仓在 |vac>")
+        print(f"  max_bond = {chi_max}")
 
     # ========================================================================
-    # MPO扫描：从左到右累积光子数，投影到总数=2
+    # 预处理：交换 BN 和 atomA
     # ========================================================================
-    #
-    # MPO的W矩阵（bond dim = 3，表示累计光子数0/1/2）：
-    #     W = | Pi_0  Pi_1  Pi_2 |
-    #         |  0    Pi_0  Pi_1 |
-    #         |  0     0    Pi_0 |
-    #
-    # 左边界：(1, 0, 0) - 从累计0开始
-    # 右边界：(0, 0, 1)^T - 只接受累计2
-    #
-    # 实现：用3维向量v表示"累计到k光子的未归一化态"
-    # 从左扫描，每个格点更新v
-    # ========================================================================
-
-    norm_before = mps.norm()
+    # 初始布局：A1(0) - B1(1) - ... - AN(2n-2) - BN(2n-1) - atomA(2n) - atomB(2n+1)
+    # 目标布局：A1(0) - B1(1) - ... - AN(2n-2) - atomA(2n-1) - BN(2n) - atomB(2n+1)
     if verbose:
-        print(f"  Norm before projection: {norm_before:.6f}")
+        print(f"\n预处理：交换 BN({2*n_bins-1}) 和 atomA({2*n_bins})...")
 
-    # 总光学格点数
-    n_optical_sites = 2 * n_bins
+    # 使用 swap_sites 方法（自动更新维度）
+    mps.swap_sites(2*n_bins-1)
 
-    # 我们需要对MPS应用MPO投影
-    # 由于TeNPy的限制，我们用一种等效方法：
-    # 逐格点扫描，用辅助向量跟踪累计光子数的分支
-
-    # 方法：构造一个"扩展"的投影算符序列
-    # 对于每个格点i，我们需要知道"到此为止累计了多少光子"
-    # 这需要用到MPS的结构
-
-    # 更直接的方法：直接构造全局投影算符P_2并应用
-    # 但这对于大系统不可行
-
-    # 实际可行的方法：使用TeNPy的MPO功能
-    # 或者：逐格点应用条件投影
-
-    # 这里我们用一个简化但正确的方法：
-    # 1. 计算全局光子数分布
-    # 2. 构造投影到n=2的算符
-    # 3. 应用投影
-
-    # 由于我们的系统最多2光子，可以用更直接的方法：
-    # 遍历所有可能的"光子分布"配置，只保留总数=2的
-
-    # 最简单正确的实现：使用MPO收缩
-    # 我们构造一个bond-dim=3的MPO，然后用TeNPy的apply_mpo
-
-    # 但由于我们的MPSState封装没有直接的apply_mpo，
-    # 我们用等效的方法：逐格点扫描并累积
-
-    # ========================================================================
-    # 实现：逐格点扫描，维护3个分支（累计0/1/2光子）
-    # ========================================================================
-    #
-    # 这个方法的关键洞察：
-    # 对于每个格点，我们可以分解态为"该格点有k光子"的分量
-    # 然后根据累计光子数决定保留哪些分量
-    #
-    # 但这需要修改MPS结构，比较复杂
-    #
-    # 更简单的方法：直接计算<Psi|P_2|Psi>和P_2|Psi>
-    # 其中P_2是全局两光子投影
-    # ========================================================================
-
-    # 使用迭代方法：
-    # 从左到右扫描，每个格点应用"条件投影"
-    # 维护一个"累计光子数"的量子态叠加
-
-    # 实际上，对于我们的情况（最多2光子），可以用更直接的方法：
-    #
-    # 全局两光子态的形式是：
-    # |Psi_2> = sum_{i<j} c_{ij} |1_i, 1_j> + sum_i d_i |2_i>
-    #
-    # 其中|1_i, 1_j>表示格点i和j各有1光子，|2_i>表示格点i有2光子
-    #
-    # 投影P_2就是只保留这些分量
-
-    # ========================================================================
-    # 正确实现：使用MPO的矩阵乘法结构
-    # ========================================================================
-    #
-    # 我们不能直接修改MPS，但可以用以下方法：
-    # 1. 对每个格点，应用一个"标记"算符，标记该格点的光子数
-    # 2. 最后只保留总标记=2的分量
-    #
-    # 这等价于：对每个格点应用 sum_k |k><k| ⊗ |k>_aux
-    # 然后在辅助空间投影到总数=2
-    #
-    # 但这会增加bond dimension
-    #
-    # 更实际的方法：直接在MPS上做MPO收缩
-    # ========================================================================
-
-    # 由于实现复杂性，我们用一个等效但更直接的方法：
-    # 利用我们知道系统最多2光子的事实
-    #
-    # 全局态可以分解为：
-    # |Psi> = c_0|vac> + sum_i c_i^(1)|1_i> + sum_{i<=j} c_{ij}^(2)|2_{ij}>
-    #
-    # 其中|2_{ij}>表示格点i和j共有2光子（i=j时是同一格点2光子）
-    #
-    # 投影P_2|Psi> = sum_{i<=j} c_{ij}^(2)|2_{ij}>
-    #
-    # 我们需要计算这个投影态
-
-    # ========================================================================
-    # 实现：逐对格点扫描，累积两光子分量
-    # ========================================================================
-    #
-    # 方法：
-    # 1. 对每对格点(i,j)，计算"格点i有k光子且格点j有2-k光子"的分量
-    # 2. 累加所有这些分量
-    #
-    # 但这需要O(N^2)次操作，对于大N不可行
-    #
-    # 更好的方法：使用MPO的线性扫描
-    # ========================================================================
-
-    # 最终实现：使用TeNPy的MPO功能
-    # 我们需要构造MPO并应用到MPS
-
-    from tenpy.networks.mpo import MPO
-    from tenpy.linalg.np_conserved import Array
-
-    # 获取TeNPy的sites
-    sites = mps._mps.sites
-
-    # 构造MPO的W张量
-    # W[i]的形状是 (wL, wR, d, d) 其中 w是bond dimension
-    # 对于我们的情况，w=3（累计0/1/2光子）
-
-    # 但是，TeNPy的MPO需要与MPS的sites兼容
-    # 我们的sites是BosonSite，需要正确处理
-
-    # 更简单的方法：直接操作MPS张量
-    # 我们用一个"虚拟"的辅助指标来跟踪累计光子数
-
-    # ========================================================================
-    # 最简单正确的实现：直接计算投影概率和投影态
-    # ========================================================================
-    #
-    # 对于小系统，我们可以：
-    # 1. 提取完整波函数
-    # 2. 计算投影
-    # 3. 重新构造MPS
-    #
-    # 但这对于大系统不可行
-    #
-    # 对于我们的情况（n_bins通常较小），这是可行的
-    # ========================================================================
-
-    # 检查系统大小
-    total_sites = mps.L
-    total_dim = np.prod(mps.d)
+    # 当前原子位置
+    site_atomA = 2*n_bins - 1
+    site_atomB = 2*n_bins + 1
 
     if verbose:
-        print(f"  Total sites: {total_sites}, total Hilbert dim: {total_dim}")
+        print(f"  预处理后布局: A1(0) - B1(1) - ... - AN({2*n_bins-2}) - atomA({site_atomA}) - BN({2*n_bins}) - atomB({site_atomB})")
+        print(f"  维度验证: d[{site_atomA}]={mps.d[site_atomA]} (应为{DIM_ATOM}), d[{2*n_bins}]={mps.d[2*n_bins]} (应为{DIM_BIN})")
 
     # ========================================================================
-    # 高效实现：使用MPO投影（不需要提取完整波函数）
+    # 发射循环：原子从右向左移动，依次与仓发射
     # ========================================================================
-    #
-    # 方法：构造一个投影MPO，其bond dimension = 3（跟踪累计光子数0/1/2+）
-    # 然后用TeNPy的apply方法应用到MPS
-    #
-    # MPO结构：
-    # - 左边界向量: [1, 0, 0] (从累计0开始)
-    # - 右边界向量: [0, 0, 1] (只接受累计=2)
-    # - 中间W张量: 3x3矩阵，元素是局部投影算符
-    #
-    #   W = | Pi_0  Pi_1  Pi_2 |
-    #       |  0    Pi_0  Pi_1 |
-    #       |  0     0    Pi_0 |
-    #
-    # 其中Pi_k是投影到"该格点有k光子"的算符
-    # ========================================================================
+    if verbose:
+        print(f"\n开始发射循环（原子向左移动方案）...")
 
-    from tenpy.networks.mpo import MPO
-    from tenpy.linalg import np_conserved as npc
+    # 用于记录每个仓的发射概率
+    per_bin_prob_A = np.zeros(n_bins)
+    per_bin_prob_B = np.zeros(n_bins)
 
-    # 获取sites
-    sites = mps._mps.sites
+    # 用于记录原子状态演化
+    atom_A_evolution = []
+    atom_B_evolution = []
 
-    # 构造每个格点的W张量
-    W_list = []
+    for n in range(n_bins-1, -1, -1):  # 从 n_bins-1 到 0（空间索引）
+        # 时间索引：Bin n 对应时间索引 n（最后的 Bin 对应最早发射）
+        # 物理图景：先发射的光子先到达 QFC/BS，存储在空间上靠后的 bin
+        time_idx = n
+        gamma_A_n = gamma_A_values[time_idx]
+        gamma_B_n = gamma_B_values[time_idx]
 
-    for site_idx in range(total_sites):
-        site = sites[site_idx]
-        d = site.dim
+        # 当前目标仓的位置
+        site_A_n = 2 * n      # A_n 在位置 2n
+        site_B_n = 2 * n + 1  # B_n 在位置 2n+1
 
-        # 确定该格点的光子数投影算符
-        if d == 3:
-            # 原子格点：光子数始终为0
-            Pi_0 = np.eye(3, dtype=complex)
-            Pi_1 = np.zeros((3, 3), dtype=complex)
-            Pi_2 = np.zeros((3, 3), dtype=complex)
-        elif d == 6:
-            # 光学bin：vac(0), H(1), V(2), 2H(3), 2V(4), HV(5)
-            # 光子数：  0      1      1      2       2      2
-            Pi_0 = np.diag([1, 0, 0, 0, 0, 0]).astype(complex)
-            Pi_1 = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)
-            Pi_2 = np.diag([0, 0, 0, 1, 1, 1]).astype(complex)
-        else:
-            raise ValueError(f"Unexpected dimension {d} at site {site_idx}")
+        # 记录发射前的原子状态
+        rho_A = mps.get_reduced_density([site_atomA])
+        rho_B = mps.get_reduced_density([site_atomB])
+        atom_A_evolution.append(np.diag(rho_A).real)
+        atom_B_evolution.append(np.diag(rho_B).real)
 
-        # 构造W张量 (wL, wR, d, d)
-        # wL, wR = 3 (累计光子数 0, 1, 2+)
-        # 但边界需要特殊处理
+        # ====================================================================
+        # 步骤1：原子A与左边的A仓发射
+        # ====================================================================
+        if gamma_A_n > 1e-8:
+            # atomA 应该在 site_A_n 的右边（site_A_n + 1）
+            # 但实际位置是 site_atomA，所以发射门作用在 bond(site_atomA-1, site_atomA)
+            # 其中 site_atomA-1 应该是 A_n 仓
+            if verbose:
+                print(f"  [n={n}] atomA在位置{site_atomA}，左边仓在{site_atomA-1}，期望A_{n}在{site_A_n}")
+                print(f"    维度检查: d[{site_atomA-1}]={mps.d[site_atomA-1]}, d[{site_atomA}]={mps.d[site_atomA]}")
 
-        if site_idx == 0:
-            # 左边界：wL=1, wR=3
-            W = np.zeros((1, 3, d, d), dtype=complex)
-            W[0, 0, :, :] = Pi_0  # 累计0 -> 累计0
-            W[0, 1, :, :] = Pi_1  # 累计0 -> 累计1
-            W[0, 2, :, :] = Pi_2  # 累计0 -> 累计2
-        elif site_idx == total_sites - 1:
-            # 右边界：wL=3, wR=1
-            W = np.zeros((3, 1, d, d), dtype=complex)
-            # 只接受累计=2的分量
-            W[2, 0, :, :] = Pi_0  # 累计2 + 0光子 -> 输出
-            # 累计1 + 1光子 -> 输出
-            W[1, 0, :, :] = Pi_1
-            # 累计0 + 2光子 -> 输出
-            W[0, 0, :, :] = Pi_2
-        else:
-            # 中间格点：wL=3, wR=3
-            W = np.zeros((3, 3, d, d), dtype=complex)
-            # 转移规则：累计n + k光子 -> 累计min(n+k, 2)
-            # 行=输入累计，列=输出累计
-            W[0, 0, :, :] = Pi_0  # 累计0 + 0 -> 累计0
-            W[0, 1, :, :] = Pi_1  # 累计0 + 1 -> 累计1
-            W[0, 2, :, :] = Pi_2  # 累计0 + 2 -> 累计2
-            W[1, 1, :, :] = Pi_0  # 累计1 + 0 -> 累计1
-            W[1, 2, :, :] = Pi_1  # 累计1 + 1 -> 累计2
-            # 累计1 + 2 -> 累计3+ (丢弃，不需要)
-            W[2, 2, :, :] = Pi_0  # 累计2 + 0 -> 累计2
-            # 累计2 + 1或2 -> 累计3+ (丢弃)
+            U_emit_A = emission_gate(
+                gamma=gamma_A_n * 1e9,  # 转换 1/ns -> 1/s
+                dt=dt_ns * 1e-9,
+                Alpha=Alpha_A,
+                which_atom='A',
+                bin_first=True  # bin × atom（仓在左，原子在右）
+            )
+            mps.apply_bond_op(site_atomA - 1, U_emit_A)
 
-        W_list.append(W)
+        # ====================================================================
+        # 步骤2：原子B与左边的B仓发射
+        # ====================================================================
+        if gamma_B_n > 1e-8:
+            # atomB 应该在 site_B_n 的右边
+            # 但实际位置是 site_atomB，所以发射门作用在 bond(site_atomB-1, site_atomB)
+            if verbose:
+                print(f"  [n={n}] atomB在位置{site_atomB}，左边仓在{site_atomB-1}，期望B_{n}在{site_B_n}")
+                print(f"    维度检查: d[{site_atomB-1}]={mps.d[site_atomB-1]}, d[{site_atomB}]={mps.d[site_atomB]}")
 
-    # 计算投影概率：<Psi|P†P|Psi> = <Psi|P|Psi>（因为P是投影算符）
-    # 使用MPS-MPO-MPS收缩
+            U_emit_B = emission_gate(
+                gamma=gamma_B_n * 1e9,  # 转换 1/ns -> 1/s
+                dt=dt_ns * 1e-9,
+                Alpha=Alpha_B,
+                which_atom='B',
+                bin_first=True  # bin × atom
+            )
+            mps.apply_bond_op(site_atomB - 1, U_emit_B)
 
-    # 方法：逐格点收缩，维护一个"环境"张量
-    # env[a, w, c] = <Psi_left|MPO_left|Psi_left> 的分量
-    # 其中a是bra的bond index，w是MPO的bond index，c是ket的bond index
+        # ====================================================================
+        # 步骤3：移动原子（使用 swap_sites 方法）
+        # ====================================================================
+        if n > 0:  # 不是最后一次循环
+            # atomA 向左移动2步
+            mps.swap_sites(site_atomA - 1)
+            site_atomA -= 1
+            mps.swap_sites(site_atomA - 1)
+            site_atomA -= 1
 
-    # 初始化环境（左边界）
-    # 形状：(chi_bra, w, chi_ket)
-    # 初始：chi=1, w=1
-    env = np.ones((1, 1, 1), dtype=complex)
+            # atomB 向左移动2步
+            mps.swap_sites(site_atomB - 1)
+            site_atomB -= 1
+            mps.swap_sites(site_atomB - 1)
+            site_atomB -= 1
 
-    for site_idx in range(total_sites):
-        # 获取MPS张量
-        B = mps._mps.get_B(site_idx, form='B').to_ndarray()
-        # B的形状：(chi_L, d, chi_R)
+        elif n == 0:  # 最后一次循环，特殊处理
+            # atomA 向左移动1步
+            mps.swap_sites(site_atomA - 1)
+            site_atomA -= 1
 
-        # 获取W张量
-        W = W_list[site_idx]
-        # W的形状：(wL, wR, d, d) - 注意：这里d是物理维度，两个d分别对应bra和ket
+            # atomB 向左移动2步
+            mps.swap_sites(site_atomB - 1)
+            site_atomB -= 1
+            mps.swap_sites(site_atomB - 1)
+            site_atomB -= 1
 
-        # 收缩：env[a, w, c] * B*[a, d', b] * W[w, w', d', d] * B[c, d, e]
-        # 结果：new_env[b, w', e]
+        # 记录原子状态（每个仓都记录）
+        rho_A = mps.get_reduced_density([site_atomA])
+        rho_B = mps.get_reduced_density([site_atomB])
+        atom_A_evolution.append(np.diag(rho_A).real)
+        atom_B_evolution.append(np.diag(rho_B).real)
 
-        chi_L, d, chi_R = B.shape
-        wL, wR = W.shape[0], W.shape[1]
-
-        # 步骤1：收缩env和B* (bra)
-        # env[a, w, c] * B*[a, d', b] -> tmp1[w, c, d', b]
-        B_conj = np.conj(B)
-        tmp1 = np.einsum('awc,adb->wcdb', env, B_conj)
-
-        # 步骤2：收缩tmp1和W
-        # tmp1[w, c, d', b] * W[w, w', d', d] -> tmp2[c, b, w', d]
-        # 注意：W的索引是 (wL, wR, d_bra, d_ket)
-        tmp2 = np.einsum('wcpb,wvpd->cbvd', tmp1, W)
-
-        # 步骤3：收缩tmp2和B (ket)
-        # tmp2[c, b, w', d] * B[c, d, e] -> new_env[b, w', e]
-        new_env = np.einsum('cbvd,cde->bve', tmp2, B)
-
-        env = new_env
-
-    # 最终结果：env应该是(1, 1, 1)的标量
-    proj_prob = np.abs(env[0, 0, 0])
+        # 打印进度
+        if verbose and (n % 10 == 0 or n == 0):
+            chi = mps.get_bond_dimensions()
+            print(f"  仓 {n+1:3d}/{n_bins}: gamma_A={gamma_A_n:.4f}, gamma_B={gamma_B_n:.4f}, "
+                  f"atomA@{site_atomA}, atomB@{site_atomB}, chi_max={max(chi)}")
 
     if verbose:
-        print(f"  Two-photon projection probability: {proj_prob:.6e}")
+        print(f"\n发射完成!")
+        print(f"  原子位置: atomA@{site_atomA}, atomB@{site_atomB}")
+        print(f"  最终键维度: max={max(mps.get_bond_dimensions())}")
+        print(f"  最终态归一化: {mps.norm():.6f}")
 
     # ========================================================================
-    # 应用投影：构造投影后的MPS
+    # 计算每个仓的发射概率
     # ========================================================================
-    #
-    # 方法：对每个格点，应用"条件投影"
-    # 这需要扩展bond dimension来跟踪累计光子数
-    #
-    # 更简单的方法：直接用MPO-MPS乘法
-    # ========================================================================
+    if verbose:
+        print(f"\n计算每个仓的发射概率...")
 
-    # 使用TeNPy的MPO.apply方法
-    # 首先构造TeNPy格式的MPO
+    # 最终布局：atomA(0) - atomB(1) - A1(2) - B1(3) - A2(4) - B2(5) - ... - AN(2n) - BN(2n+1)
+    for n in range(n_bins):
+        site_A_n = 2 + 2 * n      # A_n 在位置 2 + 2n
+        site_B_n = 2 + 2 * n + 1  # B_n 在位置 2 + 2n + 1
 
-    # 创建MPO的W张量列表（TeNPy格式）
-    Ws_tenpy = []
+        # 计算非真空概率
+        rho_A_n = mps.get_reduced_density([site_A_n])
+        per_bin_prob_A[n] = 1.0 - rho_A_n[0, 0].real
 
-    for site_idx in range(total_sites):
-        site = sites[site_idx]
-        W = W_list[site_idx]
-        wL, wR, d, d2 = W.shape
-
-        # TeNPy的W张量需要特定的标签
-        # 形状：(wL, wR, d, d) -> 标签：('wL', 'wR', 'p', 'p*')
-        # 但TeNPy使用不同的约定...
-
-        # 使用npc.Array
-        W_npc = npc.Array.from_ndarray_trivial(
-            W,
-            labels=['wL', 'wR', 'p', 'p*']
-        )
-        Ws_tenpy.append(W_npc)
-
-    # 创建MPO
-    # 注意：TeNPy的MPO构造比较复杂，需要正确的legs
-    # 这里我们用一个更直接的方法：手动应用MPO
+        rho_B_n = mps.get_reduced_density([site_B_n])
+        per_bin_prob_B[n] = 1.0 - rho_B_n[0, 0].real
 
     # ========================================================================
-    # 手动应用MPO到MPS
+    # 获取最终原子状态
     # ========================================================================
-    #
-    # 对于每个格点，新的MPS张量是：
-    # B'[a*w, d, b*w'] = sum_d' W[w, w', d', d] * B[a, d', b]
-    #
-    # 这会增加bond dimension（乘以MPO的bond dimension）
-    # 然后需要SVD压缩
-    # ========================================================================
+    rho_A_final = mps.get_reduced_density([site_atomA])  # atomA在位置0
+    rho_B_final = mps.get_reduced_density([site_atomB])  # atomB在位置1
 
-    from tenpy.networks.mps import MPS as TeNPy_MPS
-
-    # 复制MPS
-    new_mps_tensors = []
-
-    for site_idx in range(total_sites):
-        B = mps._mps.get_B(site_idx, form='B').to_ndarray()
-        W = W_list[site_idx]
-
-        chi_L, d, chi_R = B.shape
-        wL, wR = W.shape[0], W.shape[1]
-
-        # 新张量：B'[(a,w), d, (b,w')] = sum_d' W[w, w', d', d] * B[a, d', b]
-        # 形状：(chi_L * wL, d, chi_R * wR)
-
-        # 收缩：W[w, v, p, d] * B[a, p, b] -> B'[a, w, d, b, v]
-        # W的索引：(wL, wR, d_in, d_out)
-        B_new = np.einsum('wvpd,apb->awdbv', W, B)
-
-        # 重塑：(chi_L, wL, d, chi_R, wR) -> (chi_L*wL, d, chi_R*wR)
-        B_new = B_new.reshape(chi_L * wL, d, chi_R * wR)
-
-        new_mps_tensors.append(B_new)
-
-    # 现在需要将这些张量组装成MPS并压缩
-    # 使用SVD从左到右扫描
-
-    # 从左到右进行SVD压缩
-    max_chi = 100  # 最大bond dimension
-    cutoff = 1e-14
-
-    compressed_tensors = []
-    residual = None
-
-    for site_idx in range(total_sites):
-        B = new_mps_tensors[site_idx]
-
-        if residual is not None:
-            # 将上一步的残差乘入当前张量
-            B = np.tensordot(residual, B, axes=([1], [0]))
-
-        chi_L, d, chi_R = B.shape
-
-        if site_idx < total_sites - 1:
-            # SVD压缩
-            B_mat = B.reshape(chi_L * d, chi_R)
-            U, S, Vh = np.linalg.svd(B_mat, full_matrices=False)
-
-            # 截断
-            mask = S > cutoff * S[0]
-            if np.sum(mask) > max_chi:
-                mask[max_chi:] = False
-            chi_new = np.sum(mask)
-
-            U = U[:, mask]
-            S = S[mask]
-            Vh = Vh[mask, :]
-
-            # 新的B张量
-            B_compressed = U.reshape(chi_L, d, chi_new)
-            compressed_tensors.append(B_compressed)
-
-            # 残差传递到下一个格点
-            residual = np.diag(S) @ Vh
-        else:
-            # 最后一个格点，不需要SVD
-            compressed_tensors.append(B)
-
-    # 计算投影后的范数
-    norm_projected = 1.0
-    # 通过收缩计算范数
-    env_norm = np.ones((1, 1), dtype=complex)
-    for site_idx in range(total_sites):
-        B = compressed_tensors[site_idx]
-        B_conj = np.conj(B)
-        # env[a, c] * B*[a, d, b] * B[c, d, e] -> new_env[b, e]
-        tmp = np.einsum('ac,adb->cdb', env_norm, B_conj)
-        env_norm = np.einsum('cdb,cde->be', tmp, B)
-    norm_projected = np.sqrt(np.abs(env_norm[0, 0]))
+    atom_states = {
+        'A': rho_A_final,
+        'B': rho_B_final
+    }
 
     if verbose:
-        print(f"  Norm of projected state: {norm_projected:.6e}")
+        print(f"\n最终原子状态:")
+        print(f"  原子A: P(|0>)={rho_A_final[0,0].real:.4f}, P(|1>)={rho_A_final[1,1].real:.4f}, P(|e>)={rho_A_final[2,2].real:.4f}")
+        print(f"  原子B: P(|0>)={rho_B_final[0,0].real:.4f}, P(|1>)={rho_B_final[1,1].real:.4f}, P(|e>)={rho_B_final[2,2].real:.4f}")
+        print(f"\n总发射概率:")
+        print(f"  A臂: {per_bin_prob_A.sum():.4f}")
+        print(f"  B臂: {per_bin_prob_B.sum():.4f}")
 
-    # 归一化
-    if norm_projected > 1e-15:
-        # 归一化第一个张量
-        compressed_tensors[0] = compressed_tensors[0] / norm_projected
-    else:
-        if verbose:
-            print("  WARNING: Projected state has zero norm!")
-        return mps, 0.0
+    # ========================================================================
+    # 构造返回结果
+    # ========================================================================
+    atom_A_evolution_array = np.array(atom_A_evolution).T if atom_A_evolution else np.zeros((3, 1))
+    atom_B_evolution_array = np.array(atom_B_evolution).T if atom_B_evolution else np.zeros((3, 1))
 
-    # 重构TeNPy MPS
-    # 需要同时设置B张量和奇异值S
-
-    # 复制原MPS
-    new_tenpy_mps = mps._mps.copy()
-
-    # 设置新的B张量和奇异值
-    for site_idx in range(total_sites):
-        B = compressed_tensors[site_idx]
-        chi_L, d, chi_R = B.shape
-
-        # 转换为npc.Array
-        B_npc = npc.Array.from_ndarray_trivial(
-            B,
-            labels=['vL', 'p', 'vR']
-        )
-        new_tenpy_mps.set_B(site_idx, B_npc, form='B')
-
-        # 设置奇异值（对于B形式，S在右边）
-        # S_R的长度应该等于chi_R
-        S_R = np.ones(chi_R, dtype=float)
-        new_tenpy_mps.set_SR(site_idx, S_R)
-
-    # 设置最左边的奇异值
-    new_tenpy_mps.set_SL(0, np.ones(compressed_tensors[0].shape[0], dtype=float))
-
-    # 更新mps对象
-    mps._mps = new_tenpy_mps
-
-    # 重要：调用TeNPy的规范化，确保MPS处于正确的规范形式
-    mps._mps.canonical_form()
-
-    # 手动归一化MPS到范数=1
-    # canonical_form() 不会改变范数，所以我们需要显式归一化
-    actual_norm_squared = mps._mps.overlap(mps._mps, understood_infinite=False)
-    actual_norm = float(np.sqrt(actual_norm_squared.real))
-
-    if actual_norm > 1e-15:
-        # 归一化：将第一个张量除以实际范数
-        B0 = mps._mps.get_B(0, form='B')
-        B0_normalized = B0 / actual_norm
-        mps._mps.set_B(0, B0_normalized, form='B')
-
-        if verbose:
-            print(f"  Norm before final normalization: {actual_norm:.6f}")
-            # 验证归一化
-            final_norm_squared = mps._mps.overlap(mps._mps, understood_infinite=False)
-            final_norm = float(np.sqrt(final_norm_squared.real))
-            print(f"  Norm after final normalization: {final_norm:.6f}")
-    else:
-        if verbose:
-            print(f"  WARNING: MPS has zero norm after canonical_form!")
+    result = EmissionResult(
+        mps=mps,
+        time_grid=time_grid,
+        per_bin_prob_A=per_bin_prob_A,
+        per_bin_prob_B=per_bin_prob_B,
+        atom_states=atom_states,
+        atom_A_state_evolution=atom_A_evolution_array,
+        atom_B_state_evolution=atom_B_evolution_array,
+    )
 
     if verbose:
-        print(f"  MPS form: {mps._mps.form}")
-        chi_list = [B.shape[0] for B in compressed_tensors]
-        chi_list.append(compressed_tensors[-1].shape[2])
-        print(f"  New bond dimensions: {chi_list}")
+        print("=" * 70)
 
-    _print_footer(mps, verbose, stage="Post-select Two-Photon (Global MPO)")
-
-    return mps, proj_prob
+    return result

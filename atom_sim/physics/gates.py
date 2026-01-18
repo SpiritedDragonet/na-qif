@@ -195,62 +195,6 @@ def _bs_gate_1517() -> np.ndarray:
     return U_bs
 
 
-def bs_gate_bin18() -> np.ndarray:
-    """
-    18D bin的50/50分束器门（324x324）。
-
-    这是应该与当前MPS结构一起使用的版本，
-    其中每个bin是18D（780 × 1517）。
-
-    BS仅作用于1517nm子空间，保持780nm不变。
-    对于每个固定的(780_A, 780_B)配置，它将36x36 BS门
-    应用于1517_A × 1517_B子空间。
-
-    Returns
-    -------
-    np.ndarray
-        bin_A × bin_B空间的324x324幺正矩阵（每个站点18×18）
-    """
-    # 获取1517_A × 1517_B上的核心36x36 BS门
-    U_bs_1517 = _bs_gate_1517()  # 36x36
-
-    # 嵌入完整的324x324空间
-    # 每个bin是780(3D) × 1517(6D) = 18D
-    # 联合空间是18 × 18 = 324D
-    dim_780 = 3
-    dim_1517 = 6
-    dim_bin = 18
-    dim_full = 324
-
-    U_full = np.zeros((dim_full, dim_full), dtype=complex)
-
-    # 对于每个(780_A, 780_B)配置，将BS应用于1517子空间
-    # 780部分不变（单位），只有1517被混合
-    for i_780_A in range(dim_780):
-        for i_780_B in range(dim_780):
-            # 对于此固定的780配置，遍历所有1517组合
-            for i_1517_A_out in range(dim_1517):
-                for i_1517_B_out in range(dim_1517):
-                    # 输出bin索引
-                    idx_A_out = i_780_A * dim_1517 + i_1517_A_out
-                    idx_B_out = i_780_B * dim_1517 + i_1517_B_out
-                    row = idx_A_out * dim_bin + idx_B_out
-
-                    for i_1517_A_in in range(dim_1517):
-                        for i_1517_B_in in range(dim_1517):
-                            # 输入bin索引（相同780，不同1517）
-                            idx_A_in = i_780_A * dim_1517 + i_1517_A_in
-                            idx_B_in = i_780_B * dim_1517 + i_1517_B_in
-                            col = idx_A_in * dim_bin + idx_B_in
-
-                            # 获取此1517跃迁的BS矩阵元
-                            i_1517_out = i_1517_A_out * dim_1517 + i_1517_B_out
-                            i_1517_in = i_1517_A_in * dim_1517 + i_1517_B_in
-                            U_full[row, col] = U_bs_1517[i_1517_out, i_1517_in]
-
-    return U_full
-
-
 @lru_cache(maxsize=16)
 def jones_gate(U: Tuple[Tuple[complex, complex], Tuple[complex, complex]]) -> np.ndarray:
     """

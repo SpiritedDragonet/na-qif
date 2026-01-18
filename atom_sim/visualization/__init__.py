@@ -17,9 +17,6 @@ from .wavepacket import (
     extract_bin_state_probabilities,
     plot_bin_state_heatmap,
     plot_dual_arm_heatmap,
-    extract_bin_state_coherences,
-    plot_dual_arm_heatmap_phase,
-    extract_first_order_coherence,
 )
 
 __all__ = [
@@ -34,7 +31,4 @@ __all__ = [
     'extract_bin_state_probabilities',
     'plot_bin_state_heatmap',
     'plot_dual_arm_heatmap',
-    'extract_bin_state_coherences',
-    'plot_dual_arm_heatmap_phase',
-    'extract_first_order_coherence',
 ]

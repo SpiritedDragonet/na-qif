@@ -566,38 +566,38 @@ def _build_sum_mpo(mps: MPSState, n_bins: int, local_op: np.ndarray, is_6d: bool
         期望值 <sum_i O_i>
     """
     # 直接计算期望值，不构建完整MPO
-    # 对于求和算符，期望值 = sum_i <O_i>_global
-    # 其中 <O_i>_global 需要用全局态计算
+    # 对于求和算符，期望值 = sum_i <O_i>
+    # 其中 <O_i> 是第i个站点上的局域期望值
 
     total = 0.0
     n_sites = len(mps.d)
 
-    # 对每个bin（每个bin有2个站点：左臂和右臂）
-    # 修复：使用两站点约化密度矩阵计算bin对的光子数，避免重复计数
-    for n in range(n_bins):
-        site_A = 2 + 2 * n      # 左臂
-        site_B = 2 + 2 * n + 1  # 右臂
+    # MPS结构：[atomA, atomB, A1, B1, A2, B2, ..., An, Bn]
+    # 前2个站点是原子，后面是bin站点（交替左臂和右臂）
+    # 我们需要对所有bin站点求和（跳过原子站点）
 
-        # 获取两站点约化密度矩阵
-        rho_AB = mps.get_reduced_density([site_A, site_B])
+    for site_idx in range(2, n_sites):
+        # 获取单站点约化密度矩阵
+        rho = mps.get_reduced_density([site_idx])
 
-        # rho_AB 的形状应该是 (d_A * d_B, d_A * d_B)
-        dim = local_op.shape[0]
-        expected_dim = dim * dim
+        # 获取站点维度
+        dim = mps.d[site_idx]
 
-        # 如果形状不对，需要reshape
-        if rho_AB.shape[0] != expected_dim:
-            # 可能是 (d_A, d_B, d_A, d_B) 形状，需要reshape
-            rho_AB = rho_AB.reshape(expected_dim, expected_dim)
+        # 检查local_op的维度是否与站点维度匹配
+        if local_op.shape[0] != dim:
+            # 跳过维度不匹配的站点
+            continue
 
-        # 构建两站点算符：O_A ⊗ I_B + I_A ⊗ O_B
-        I = np.eye(dim, dtype=complex)
-        O_A = np.kron(local_op, I)  # 作用在左臂
-        O_B = np.kron(I, local_op)  # 作用在右臂
-        O_total = O_A + O_B
+        # 如果rho的形状不对，需要reshape
+        if len(rho.shape) == 2 and rho.shape[0] == dim and rho.shape[1] == dim:
+            # 已经是正确的形状
+            pass
+        else:
+            # 需要reshape
+            rho = rho.reshape(dim, dim)
 
         # 计算期望值：Tr(rho * O)
-        expectation = np.trace(rho_AB @ O_total)
+        expectation = np.trace(np.dot(rho, local_op))
         total += np.real(expectation)
 
     return total

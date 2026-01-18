@@ -8,7 +8,6 @@
 from .gates import (
     emission_gate,
     qfc_gate,
-    bs_gate_bin18,
     jones_gate,
     jones_gate_from_array,
     swap_gate,
@@ -28,7 +27,6 @@ __all__ = [
     # gates
     'emission_gate',
     'qfc_gate',
-    'bs_gate_bin18',
     'jones_gate',
     'jones_gate_from_array',
     'swap_gate',
