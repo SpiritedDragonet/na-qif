@@ -7,7 +7,24 @@
 """
 
 from typing import Tuple, Optional, List, Union
+import os
 import numpy as np
+import matplotlib
+
+
+def _is_headless() -> bool:
+    if os.environ.get("QSIM_NO_SHOW", "").lower() in ("1", "true", "yes"):
+        return True
+    if os.name == "nt":
+        return False
+    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        return False
+    return True
+
+
+if _is_headless():
+    matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
 
 from ..core.mps import MPSState
@@ -18,6 +35,14 @@ from ..simulation.trajectory import EmissionResult
 # ============================================================================
 # 波包提取算符
 # ============================================================================
+
+def _maybe_show(wait_s: float = 5.0, show: bool = True) -> None:
+    if not show:
+        return
+    if _is_headless():
+        return
+    plt.show(block=False)
+    plt.pause(wait_s)
 
 def _telecom_ops_1517():
     """
@@ -790,6 +815,7 @@ def plot_dual_arm_heatmap(
     stage_name: str = "",
     time_grid: Optional[TimeGrid] = None,
     vmax_scale_factor: float = 1.5,
+    show: bool = True,
     validate: bool = True,
     trace_tol: float = 1e-6,
 ) -> None:
@@ -825,6 +851,8 @@ def plot_dual_arm_heatmap(
         使用result.time_grid。
     vmax_scale_factor : float
         缩放vmax的因子（相对于最大仓概率）
+    show : bool
+        若为 True 且非无屏幕环境，显示图像并暂停 5 秒
     validate : bool
         若为 True，先检查单 bin 约化密度矩阵的归一化
     trace_tol : float
@@ -1271,8 +1299,7 @@ def plot_dual_arm_heatmap(
     plt.suptitle(title, fontsize=16, y=0.97)
 
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    plt.show(block=False)  # 非阻塞显示
-    plt.pause(5)  # 显示5秒
+    _maybe_show(show=show)
     plt.close()  # 自动关闭
     print(f"  Saved dual-arm heatmaps to: {save_path}")
 
@@ -1288,6 +1315,7 @@ def plot_cross_bin_joint_heatmap(
     arm_pair: Tuple[str, str] = ("A", "B"),
     normalize: bool = False,
     vmax: Optional[float] = None,
+    show: bool = True,
     validate: bool = True,
     trace_tol: float = 1e-6,
 ) -> np.ndarray:
@@ -1313,6 +1341,8 @@ def plot_cross_bin_joint_heatmap(
         若为 True，归一化 joint 使其总和为 1
     vmax : float, optional
         色标上限，None 则自动
+    show : bool
+        若为 True 且非无屏幕环境，显示图像并暂停 5 秒
     validate : bool
         若为 True，先检查单 bin 约化密度矩阵的归一化
     trace_tol : float
@@ -1409,8 +1439,7 @@ def plot_cross_bin_joint_heatmap(
     cbar.set_label("Probability" if not normalize else "Normalized probability")
 
     fig.savefig(save_path, dpi=150, bbox_inches='tight')
-    plt.show(block=False)
-    plt.pause(5)
+    _maybe_show(show=show)
     plt.close(fig)
     print(f"  Saved cross-bin joint heatmap to: {save_path}")
 

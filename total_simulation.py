@@ -17,6 +17,8 @@
 """
 
 import sys
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from datetime import datetime
 import numpy as np
@@ -57,16 +59,16 @@ class Tee:
         return False
 
 
-def _parse_run_params(argv) -> Tuple[int, int]:
+def _parse_run_params(argv) -> Tuple[int, int, int]:
     if len(argv) < 2:
-        return 1, 1
-    if len(argv) > 3:
-        print("用法: python total_simulation.py [N_runs] [shots_per_run]")
+        return 1, 1, 1
+    if len(argv) > 4:
+        print("用法: python total_simulation.py [N_runs] [shots_per_run] [jobs]")
         sys.exit(1)
     try:
         n_runs = int(argv[1])
     except ValueError:
-        print("用法: python total_simulation.py [N_runs] [shots_per_run]")
+        print("用法: python total_simulation.py [N_runs] [shots_per_run] [jobs]")
         sys.exit(1)
     if n_runs < 1:
         print("N_runs 必须 >= 1")
@@ -76,12 +78,22 @@ def _parse_run_params(argv) -> Tuple[int, int]:
         try:
             shots_per_run = int(argv[2])
         except ValueError:
-            print("用法: python total_simulation.py [N_runs] [shots_per_run]")
+            print("用法: python total_simulation.py [N_runs] [shots_per_run] [jobs]")
             sys.exit(1)
         if shots_per_run < 1:
             print("shots_per_run 必须 >= 1")
             sys.exit(1)
-    return n_runs, shots_per_run
+    jobs = 1
+    if len(argv) >= 4:
+        try:
+            jobs = int(argv[3])
+        except ValueError:
+            print("用法: python total_simulation.py [N_runs] [shots_per_run] [jobs]")
+            sys.exit(1)
+        if jobs < 1:
+            print("jobs 必须 >= 1")
+            sys.exit(1)
+    return n_runs, shots_per_run, jobs
 
 
 def save_debug_info(
@@ -392,12 +404,27 @@ def _finalize_success_metrics(acc: dict) -> dict:
         "false_fraction_approx": false_fraction_approx,
     }
 
-def _run_single_simulation(
+def _append_clicks_file(
+    target_path: Path,
+    run_clicks_path: Path,
+) -> None:
+    if not run_clicks_path.exists():
+        return
+    with open(target_path, 'a', encoding='utf-8') as dst:
+        with open(run_clicks_path, 'r', encoding='utf-8') as src:
+            for idx, line in enumerate(src):
+                if idx == 0 and line.startswith("run\t"):
+                    continue
+                dst.write(line)
+
+
+def _run_single_simulation_core(
     output_dir: Path,
     run_index: int,
     n_runs: int,
-    clicks_summary_path: Path,
+    run_clicks_path: Path,
     shots_per_run: int,
+    show_plots: bool,
 ):
     run_tag = f"run{run_index:03d}"
     success_metrics = None
@@ -432,7 +459,8 @@ def _run_single_simulation(
         result,
         save_path=str(output_dir / f"{run_tag}_1_after_emission.png"),
         show_atomic=True,
-        stage_name="After Emission"
+        stage_name="After Emission",
+        show=show_plots,
     )
 
     # 保存调试信息
@@ -480,6 +508,7 @@ def _run_single_simulation(
         show_atomic=False,
         stage_name="After QFC + 780nm Filter",
         time_grid=result.time_grid,
+        show=show_plots,
     )
 
     # 保存调试信息
@@ -510,6 +539,7 @@ def _run_single_simulation(
         show_atomic=False,
         stage_name="After Fiber Channel",
         time_grid=result.time_grid,
+        show=show_plots,
     )
 
     # 保存光纤传输后的调试信息
@@ -570,6 +600,7 @@ def _run_single_simulation(
         show_atomic=False,
         stage_name="After Beam Splitter",
         time_grid=result.time_grid,
+        show=show_plots,
     )
 
     print("\n生成BS后的跨bin联合分布热图...")
@@ -579,6 +610,7 @@ def _run_single_simulation(
         save_path=str(output_dir / f"{run_tag}_4b_after_bs_cross_bin_joint.png"),
         arm_pair=("A", "B"),
         normalize=False,
+        show=show_plots,
     )
 
     # 保存BS后的调试信息
@@ -787,6 +819,8 @@ def _run_single_simulation(
     # 使用逐bin Kraus测量方法运行探测和BSM（可多次采样）
     print("\n运行探测和BSM（逐bin Kraus测量）...")
     run_stats = _init_stats()
+    with open(run_clicks_path, 'w', encoding='utf-8') as file:
+        file.write("run\tshot\tsuccess\tbell\tclick_count\tevents\n")
     for shot_index in range(1, shots_per_run + 1):
         print(f"\n[shot {shot_index}/{shots_per_run}]")
         det_result = run_two_photon_detection(
@@ -839,8 +873,8 @@ def _run_single_simulation(
             file.write(f'成功: {det_result.success}\n')
             file.write(f'Bell态: {det_result.bell_state}\n')
             file.write(f'点击次数: {len(det_result.clicks)}\n')
-            if det_result.clicks:
-                file.write(f'点击详情: {[(c.detector, c.bin_index) for c in det_result.clicks]}\n')
+        if det_result.clicks:
+            file.write(f'点击详情: {[(c.detector, c.bin_index) for c in det_result.clicks]}\n')
 
             file.write(f'\n自旋密度矩阵:\n')
             rho = det_result.spin_state
@@ -868,15 +902,77 @@ def _run_single_simulation(
             if det_result.bell_state:
                 run_stats["bell"][det_result.bell_state] += 1
 
-        _append_click_summary(clicks_summary_path, run_index, shot_index, det_result)
+        _append_click_summary(run_clicks_path, run_index, shot_index, det_result)
 
     print(f"\n完成! 文件已保存至: {output_dir}/")
     return run_stats, success_metrics
 
 
+def _run_single_simulation(
+    output_dir: Path,
+    run_index: int,
+    n_runs: int,
+    run_clicks_path: Path,
+    shots_per_run: int,
+    log_path: Optional[Path] = None,
+    mirror_console: bool = True,
+    show_plots: bool = True,
+):
+    run_tag = f"run{run_index:03d}"
+    if log_path is None:
+        print(f"正在处理: {run_tag} | clicks: {run_clicks_path.name}")
+        return _run_single_simulation_core(
+            output_dir,
+            run_index,
+            n_runs,
+            run_clicks_path,
+            shots_per_run,
+            show_plots,
+        )
+    with open(log_path, 'w', encoding='utf-8') as log_file:
+        if mirror_console:
+            tee_out = Tee(sys.stdout, log_file)
+            tee_err = Tee(sys.stderr, log_file)
+        else:
+            tee_out = Tee(log_file)
+            tee_err = Tee(log_file)
+        old_out, old_err = sys.stdout, sys.stderr
+        sys.stdout, sys.stderr = tee_out, tee_err
+        try:
+            print(f"正在处理: {run_tag} | log: {log_path.name} | clicks: {run_clicks_path.name}")
+            return _run_single_simulation_core(
+                output_dir,
+                run_index,
+                n_runs,
+                run_clicks_path,
+                shots_per_run,
+                show_plots,
+            )
+        finally:
+            sys.stdout, sys.stderr = old_out, old_err
+
+
+def _run_single_simulation_task(args):
+    output_dir, run_index, n_runs, shots_per_run, mirror_console, show_plots = args
+    run_tag = f"run{run_index:03d}"
+    log_path = output_dir / f"{run_tag}_console.log"
+    run_clicks_path = output_dir / f"{run_tag}_clicks.txt"
+    run_stats, success_metrics = _run_single_simulation(
+        output_dir,
+        run_index,
+        n_runs,
+        run_clicks_path,
+        shots_per_run,
+        log_path=log_path,
+        mirror_console=mirror_console,
+        show_plots=show_plots,
+    )
+    return run_index, run_clicks_path, run_stats, success_metrics
+
+
 def main():
     """主函数：运行发射 + QFC + 分束器 + 探测仿真。"""
-    n_runs, shots_per_run = _parse_run_params(sys.argv)
+    n_runs, shots_per_run, jobs = _parse_run_params(sys.argv)
 
     # 创建带时间戳的输出目录
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
@@ -902,36 +998,47 @@ def main():
 
     print(f"Output directory: {output_dir}")
     print(f"将运行 {n_runs} 次仿真，每次 {shots_per_run} 次探测采样...")
+    jobs = max(1, min(jobs, n_runs, os.cpu_count() or 1))
+    print(f"并行进程数: {jobs}")
+
+    if jobs > 1:
+        focus_run = int(np.random.default_rng().integers(1, n_runs + 1))
+        print(f"并行模式: 仅显示 run{focus_run:03d} 的实时输出（若非无屏幕环境将显示图像）")
+    else:
+        focus_run = 1
 
     overall_stats = _init_stats()
     overall_success = _init_success_metrics_accumulator()
 
-    for run_index in range(1, n_runs + 1):
-        run_tag = f"run{run_index:03d}"
-        log_path = output_dir / f"{run_tag}_console.log"
-        with open(log_path, 'w', encoding='utf-8') as log_file:
-            tee_out = Tee(sys.stdout, log_file)
-            tee_err = Tee(sys.stderr, log_file)
-            old_out, old_err = sys.stdout, sys.stderr
-            sys.stdout, sys.stderr = tee_out, tee_err
-            run_stats = None
-            success_metrics = None
-            try:
-                run_stats, success_metrics = _run_single_simulation(
-                    output_dir,
-                    run_index,
-                    n_runs,
-                    clicks_summary_path,
-                    shots_per_run,
-                )
-            finally:
-                sys.stdout, sys.stderr = old_out, old_err
+    results = {}
+    if jobs == 1:
+        for run_index in range(1, n_runs + 1):
+            run_index, run_clicks_path, run_stats, success_metrics = _run_single_simulation_task(
+                (output_dir, run_index, n_runs, shots_per_run, True, True)
+            )
+            results[run_index] = (run_clicks_path, run_stats, success_metrics)
+    else:
+        tasks = []
+        for run_index in range(1, n_runs + 1):
+            mirror_console = run_index == focus_run
+            show_plots = mirror_console
+            tasks.append((output_dir, run_index, n_runs, shots_per_run, mirror_console, show_plots))
+        with ProcessPoolExecutor(max_workers=jobs) as executor:
+            future_map = {executor.submit(_run_single_simulation_task, task): task[1] for task in tasks}
+            for future in as_completed(future_map):
+                run_index, run_clicks_path, run_stats, success_metrics = future.result()
+                results[run_index] = (run_clicks_path, run_stats, success_metrics)
+
+    for run_index in sorted(results.keys()):
+        run_clicks_path, run_stats, success_metrics = results[run_index]
         if run_stats is not None:
             _append_run_summary(runs_summary_path, run_index, run_stats)
             _merge_stats(overall_stats, run_stats)
         if success_metrics is not None:
             _append_success_metrics_summary(success_summary_path, run_index, success_metrics)
             _accumulate_success_metrics(overall_success, success_metrics)
+        if run_clicks_path is not None:
+            _append_clicks_file(clicks_summary_path, run_clicks_path)
 
     _append_run_summary(runs_summary_path, "TOTAL", overall_stats)
     _write_overall_summary(
