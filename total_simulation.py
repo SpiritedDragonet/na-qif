@@ -32,7 +32,8 @@ from atom_sim.simulation import (
     run_dual_atom_emission, EmissionResult, apply_qfc, apply_780_filter, apply_fiber_channel,
     apply_bs, project_to_1517,
     # 探测
-    run_two_photon_detection, compute_fidelity_with_bell, compute_photon_statistics,
+    run_two_photon_detection, enumerate_success_events,
+    compute_fidelity_with_bell, compute_photon_statistics,
 )
 from atom_sim.visualization import plot_dual_arm_heatmap
 from atom_sim.visualization.wavepacket import plot_cross_bin_joint_heatmap
@@ -280,6 +281,117 @@ def _write_extra_data(
         np.savetxt(file, cross_bin_joint, fmt="%.6e")
 
 
+def _write_success_metrics_detail(
+    output_dir: Path,
+    run_tag: str,
+    metrics: dict,
+) -> Path:
+    output_path = output_dir / f"{run_tag}_success_metrics.txt"
+    with open(output_path, 'w', encoding='utf-8') as file:
+        file.write("success_metrics\n")
+        file.write("=" * 60 + "\n")
+        if "eta_det" in metrics:
+            file.write(f"eta_det = {metrics['eta_det']:.6f}\n")
+        if "p_dark" in metrics:
+            file.write(f"p_dark = {metrics['p_dark']:.6f}\n")
+        file.write(f"p_arrive = {metrics['p_arrive']:.8f}\n")
+        file.write("\nmethod_1_two_runs\n")
+        file.write(f"p_success_no_dark = {metrics['p_success_no_dark']:.8f}\n")
+        file.write(f"fidelity_no_dark = {metrics['fidelity_no_dark']:.6f}\n")
+        file.write(f"p_success_all = {metrics['p_success_all']:.8f}\n")
+        file.write(f"fidelity_all = {metrics['fidelity_all']:.6f}\n")
+        file.write(f"p_false_approx = {metrics['p_false_approx']:.8f}\n")
+        file.write(f"false_fraction_approx = {metrics['false_fraction_approx']:.6f}\n")
+
+        file.write("\nmethod_2_kraus_tag\n")
+        file.write(f"p_success_true = {metrics['p_success_true']:.8f}\n")
+        file.write(f"p_success_false = {metrics['p_success_false']:.8f}\n")
+        file.write(f"p_success_given_arrival = {metrics['p_success_given_arrival']:.8f}\n")
+        file.write(f"false_fraction = {metrics['false_fraction']:.6f}\n")
+        file.write(f"fidelity_true = {metrics['fidelity_true']:.6f}\n")
+        file.write(f"fidelity_false = {metrics['fidelity_false']:.6f}\n")
+    return output_path
+
+
+def _append_success_metrics_summary(
+    summary_path: Path,
+    run_id,
+    metrics: dict,
+) -> None:
+    with open(summary_path, 'a', encoding='utf-8') as file:
+        file.write(
+            f"{run_id}\t{metrics['p_arrive']:.8f}\t{metrics['p_success_all']:.8f}\t"
+            f"{metrics['p_success_true']:.8f}\t{metrics['p_success_false']:.8f}\t"
+            f"{metrics['p_success_given_arrival']:.8f}\t{metrics['fidelity_all']:.6f}\t"
+            f"{metrics['fidelity_true']:.6f}\t{metrics['fidelity_false']:.6f}\t"
+            f"{metrics['p_success_no_dark']:.8f}\t{metrics['fidelity_no_dark']:.6f}\t"
+            f"{metrics['p_false_approx']:.8f}\t{metrics['false_fraction']:.6f}\t"
+            f"{metrics['false_fraction_approx']:.6f}\n"
+        )
+
+
+def _init_success_metrics_accumulator() -> dict:
+    return {
+        "runs": 0,
+        "p_arrive_sum": 0.0,
+        "p_success_sum": 0.0,
+        "p_success_true_sum": 0.0,
+        "p_success_false_sum": 0.0,
+        "p_success_no_dark_sum": 0.0,
+        "fidelity_weighted_sum": 0.0,
+        "fidelity_true_weighted_sum": 0.0,
+        "fidelity_false_weighted_sum": 0.0,
+        "fidelity_no_dark_weighted_sum": 0.0,
+    }
+
+
+def _accumulate_success_metrics(acc: dict, metrics: dict) -> None:
+    acc["runs"] += 1
+    acc["p_arrive_sum"] += metrics["p_arrive"]
+    acc["p_success_sum"] += metrics["p_success_all"]
+    acc["p_success_true_sum"] += metrics["p_success_true"]
+    acc["p_success_false_sum"] += metrics["p_success_false"]
+    acc["p_success_no_dark_sum"] += metrics["p_success_no_dark"]
+    acc["fidelity_weighted_sum"] += metrics["p_success_all"] * metrics["fidelity_all"]
+    acc["fidelity_true_weighted_sum"] += metrics["p_success_true"] * metrics["fidelity_true"]
+    acc["fidelity_false_weighted_sum"] += metrics["p_success_false"] * metrics["fidelity_false"]
+    acc["fidelity_no_dark_weighted_sum"] += metrics["p_success_no_dark"] * metrics["fidelity_no_dark"]
+
+
+def _finalize_success_metrics(acc: dict) -> dict:
+    runs = max(acc["runs"], 1)
+    p_arrive = acc["p_arrive_sum"] / runs
+    p_success_all = acc["p_success_sum"] / runs
+    p_success_true = acc["p_success_true_sum"] / runs
+    p_success_false = acc["p_success_false_sum"] / runs
+    p_success_no_dark = acc["p_success_no_dark_sum"] / runs
+    p_success_given_arrival = (acc["p_success_true_sum"] / acc["p_arrive_sum"]) if acc["p_arrive_sum"] > 0 else 0.0
+
+    fidelity_all = acc["fidelity_weighted_sum"] / acc["p_success_sum"] if acc["p_success_sum"] > 0 else 0.0
+    fidelity_true = acc["fidelity_true_weighted_sum"] / acc["p_success_true_sum"] if acc["p_success_true_sum"] > 0 else 0.0
+    fidelity_false = acc["fidelity_false_weighted_sum"] / acc["p_success_false_sum"] if acc["p_success_false_sum"] > 0 else 0.0
+    fidelity_no_dark = acc["fidelity_no_dark_weighted_sum"] / acc["p_success_no_dark_sum"] if acc["p_success_no_dark_sum"] > 0 else 0.0
+
+    p_false_approx = max(0.0, p_success_all - p_success_no_dark)
+    false_fraction = (p_success_false / p_success_all) if p_success_all > 0 else 0.0
+    false_fraction_approx = (p_false_approx / p_success_all) if p_success_all > 0 else 0.0
+
+    return {
+        "p_arrive": p_arrive,
+        "p_success_all": p_success_all,
+        "p_success_true": p_success_true,
+        "p_success_false": p_success_false,
+        "p_success_given_arrival": p_success_given_arrival,
+        "fidelity_all": fidelity_all,
+        "fidelity_true": fidelity_true,
+        "fidelity_false": fidelity_false,
+        "p_success_no_dark": p_success_no_dark,
+        "fidelity_no_dark": fidelity_no_dark,
+        "p_false_approx": p_false_approx,
+        "false_fraction": false_fraction,
+        "false_fraction_approx": false_fraction_approx,
+    }
+
 def _run_single_simulation(
     output_dir: Path,
     run_index: int,
@@ -288,6 +400,7 @@ def _run_single_simulation(
     shots_per_run: int,
 ):
     run_tag = f"run{run_index:03d}"
+    success_metrics = None
     print("\n" + "=" * 80)
     print(f"Run {run_index}/{n_runs} ({run_tag})")
     print("=" * 80)
@@ -608,7 +721,8 @@ def _run_single_simulation(
     # 探测
     # =========================================================================
     # 探测参数
-    eta_det = 1
+    eta_det = 1.0
+    p_dark = 0.0
 
     # 诊断：检查每个bin的光子分布
     print("\n诊断：检查每个bin的光子分布...")
@@ -619,78 +733,56 @@ def _run_single_simulation(
     site_B = 3
     rho_AB = result.mps.get_reduced_density([site_A, site_B])
     print(f"  rho_AB shape: {rho_AB.shape}")
+    print("\n枚举成功事件（无暗计数）...")
+    enum_no_dark = enumerate_success_events(
+        mps=result.mps,
+        n_bins=result.get_n_bins(),
+        eta_det=eta_det,
+        p_dark=0.0,
+        verbose=True,
+    )
+    if p_dark > 0.0:
+        print("\n枚举成功事件（含暗计数）...")
+        enum_with_dark = enumerate_success_events(
+            mps=result.mps,
+            n_bins=result.get_n_bins(),
+            eta_det=eta_det,
+            p_dark=p_dark,
+            verbose=True,
+        )
+    else:
+        enum_with_dark = enum_no_dark
 
-    # 统计总光子数和BSM相关态
-    total_photons_all = 0.0
-    bsm_success_prob_psi_minus = 0.0  # Ψ⁻ 成功概率
-    bsm_success_prob_psi_plus = 0.0   # Ψ⁺ 成功概率
+    success_metrics = {
+        "eta_det": eta_det,
+        "p_dark": p_dark,
+        "p_arrive": enum_with_dark.p_arrive,
+        "p_success_all": enum_with_dark.p_success,
+        "p_success_true": enum_with_dark.p_success_true,
+        "p_success_false": enum_with_dark.p_success_false,
+        "p_success_given_arrival": enum_with_dark.p_success_given_arrival,
+        "fidelity_all": enum_with_dark.fidelity_declared,
+        "fidelity_true": enum_with_dark.fidelity_true,
+        "fidelity_false": enum_with_dark.fidelity_false,
+        "p_success_no_dark": enum_no_dark.p_success,
+        "fidelity_no_dark": enum_no_dark.fidelity_declared,
+    }
+    success_metrics["p_false_approx"] = max(
+        0.0, success_metrics["p_success_all"] - success_metrics["p_success_no_dark"]
+    )
+    success_metrics["false_fraction"] = (
+        success_metrics["p_success_false"] / success_metrics["p_success_all"]
+        if success_metrics["p_success_all"] > 0
+        else 0.0
+    )
+    success_metrics["false_fraction_approx"] = (
+        success_metrics["p_false_approx"] / success_metrics["p_success_all"]
+        if success_metrics["p_success_all"] > 0
+        else 0.0
+    )
 
-    print("\n【BSM成功率精确计算】")
-    print("="*70)
-    print("考虑所有可能的两光子态对BSM成功的贡献")
-    print("="*70)
-
-    # 6D基态索引
-    VAC, H, V, HH, VV, HV = 0, 1, 2, 3, 4, 5
-    state_names = ['vac', 'H', 'V', '2H', '2V', 'HV']
-
-    # =========================================================================
-    # 第一部分：同bin两光子态的贡献
-    # =========================================================================
-    print("\n【第一部分】同bin两光子态的贡献")
-    print("-"*70)
-
-    same_bin_contribution = 0.0
-
-    for n in range(n_bins):
-        site_A = 2 + 2 * n  # Port 1
-        site_B = 2 + 2 * n + 1  # Port 2
-
-        # 获取两个site的约化密度矩阵
-        rho_AB = result.mps.get_reduced_density([site_A, site_B])
-
-        # 计算光子数
-        photon_count = [0, 1, 1, 2, 2, 2]
-        total_A = 0.0
-        total_B = 0.0
-        for i in range(6):
-            for j in range(6):
-                p = rho_AB[i, j, i, j].real
-                total_A += p * photon_count[i]
-                total_B += p * photon_count[j]
-        total_photons_all += total_A + total_B
-
-        # 分析BSM成功态
-        # Ψ⁻ 模式: {H1, V2} 或 {V1, H2}
-        p_H1V2 = rho_AB[H, V, H, V].real  # |H⟩_port1 |V⟩_port2
-        p_V1H2 = rho_AB[V, H, V, H].real  # |V⟩_port1 |H⟩_port2
-
-        # Ψ⁺ 模式: {H1, V1} 或 {H2, V2}
-        p_H1V1 = rho_AB[HV, VAC, HV, VAC].real  # |HV⟩_port1 |vac⟩_port2
-        p_H2V2 = rho_AB[VAC, HV, VAC, HV].real  # |vac⟩_port1 |HV⟩_port2
-
-        bin_psi_minus = p_H1V2 + p_V1H2
-        bin_psi_plus = p_H1V1 + p_H2V2
-        bin_total = bin_psi_minus + bin_psi_plus
-
-        bsm_success_prob_psi_minus += bin_psi_minus
-        bsm_success_prob_psi_plus += bin_psi_plus
-        same_bin_contribution += bin_total
-
-        if bin_total > 1e-6:
-            print(f"  bin {n:2d}: Ψ⁻={bin_psi_minus:.6f}, Ψ⁺={bin_psi_plus:.6f}, "
-                  f"total={bin_total:.6f}")
-
-            # 打印主要态分量（用于调试）
-            if total_A > 0.01 or total_B > 0.01:
-                print(f"    光子分布: port1={total_A:.4f}, port2={total_B:.4f}")
-                for i in range(6):
-                    for j in range(6):
-                        p = rho_AB[i, j, i, j].real
-                        if p > 0.001:
-                            print(f"      |{state_names[i]},{state_names[j]}>: {p:.6f}")
-
-    print(f"\n  同bin总贡献: {same_bin_contribution:.6f}")
+    success_path = _write_success_metrics_detail(output_dir, run_tag, success_metrics)
+    print(f"  Success metrics saved: {success_path.name}")
 
     # 使用逐bin Kraus测量方法运行探测和BSM（可多次采样）
     print("\n运行探测和BSM（逐bin Kraus测量）...")
@@ -701,6 +793,7 @@ def _run_single_simulation(
             mps=result.mps,
             n_bins=result.get_n_bins(),
             eta_det=eta_det,
+            p_dark=p_dark,
             #rng=np.random.default_rng(seed=19),
             rng=np.random.default_rng(),
             verbose=True,
@@ -778,7 +871,7 @@ def _run_single_simulation(
         _append_click_summary(clicks_summary_path, run_index, shot_index, det_result)
 
     print(f"\n完成! 文件已保存至: {output_dir}/")
-    return run_stats
+    return run_stats, success_metrics
 
 
 def main():
@@ -799,10 +892,19 @@ def main():
     with open(runs_summary_path, 'w', encoding='utf-8') as file:
         file.write("run\tshots\tsuccess\tsuccess_rate\tbell_counts\tclick_count_dist\n")
 
+    success_summary_path = output_dir / "success_metrics_summary.txt"
+    with open(success_summary_path, 'w', encoding='utf-8') as file:
+        file.write(
+            "run\tp_arrive\tp_success_all\tp_success_true\tp_success_false\t"
+            "p_success_given_arrival\tfidelity_all\tfidelity_true\tfidelity_false\t"
+            "p_success_no_dark\tfidelity_no_dark\tp_false_approx\tfalse_fraction\tfalse_fraction_approx\n"
+        )
+
     print(f"Output directory: {output_dir}")
     print(f"将运行 {n_runs} 次仿真，每次 {shots_per_run} 次探测采样...")
 
     overall_stats = _init_stats()
+    overall_success = _init_success_metrics_accumulator()
 
     for run_index in range(1, n_runs + 1):
         run_tag = f"run{run_index:03d}"
@@ -813,8 +915,9 @@ def main():
             old_out, old_err = sys.stdout, sys.stderr
             sys.stdout, sys.stderr = tee_out, tee_err
             run_stats = None
+            success_metrics = None
             try:
-                run_stats = _run_single_simulation(
+                run_stats, success_metrics = _run_single_simulation(
                     output_dir,
                     run_index,
                     n_runs,
@@ -826,6 +929,9 @@ def main():
         if run_stats is not None:
             _append_run_summary(runs_summary_path, run_index, run_stats)
             _merge_stats(overall_stats, run_stats)
+        if success_metrics is not None:
+            _append_success_metrics_summary(success_summary_path, run_index, success_metrics)
+            _accumulate_success_metrics(overall_success, success_metrics)
 
     _append_run_summary(runs_summary_path, "TOTAL", overall_stats)
     _write_overall_summary(
@@ -834,6 +940,8 @@ def main():
         n_runs,
         shots_per_run,
     )
+    total_success_metrics = _finalize_success_metrics(overall_success)
+    _append_success_metrics_summary(success_summary_path, "TOTAL", total_success_metrics)
 
 if __name__ == "__main__":
     main()

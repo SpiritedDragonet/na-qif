@@ -11,8 +11,12 @@
 """
 
 import numpy as np
+from itertools import product
 from typing import Tuple, List, Optional
 from dataclasses import dataclass
+from collections import Counter
+
+from tenpy.linalg.np_conserved import Array
 
 from ..core.mps import MPSState
 from ..hilbert.basis import SUBSPACE_780, SUBSPACE_1517
@@ -35,7 +39,160 @@ class TwoPhotonDetectionResult:
     spin_state: np.ndarray  # 4x4 density matrix
 
 
-def build_detection_kraus_6d(eta: float) -> Tuple[List[np.ndarray], List[str]]:
+@dataclass
+class SuccessEnumerationResult:
+    """枚举成功事件的统计结果。"""
+    p_arrive: float
+    p_success: float
+    p_success_true: float
+    p_success_false: float
+    p_success_given_arrival: float
+    fidelity_declared: float
+    fidelity_true: float
+    fidelity_false: float
+    spin_state: np.ndarray  # success条件下的4x4密度矩阵
+    spin_state_true: np.ndarray
+    spin_state_false: np.ndarray
+    bell_weights: Counter
+    success_events: List[Tuple[str, int, int, float]]  # (bell, bin1, bin2, weight)
+
+
+def _order_detectors(detectors: List[str]) -> List[str]:
+    order = {"H": 0, "V": 1}
+    return sorted(detectors, key=lambda d: order[d])
+
+
+def _order_two_port_detectors(detectors: List[str]) -> Tuple[str, ...]:
+    order = {"H1": 0, "V1": 1, "H2": 2, "V2": 3}
+    return tuple(sorted(detectors, key=lambda d: order[d]))
+
+
+def _split_with_dark(
+    kraus: np.ndarray,
+    detectors: List[str],
+    p_dark: float,
+) -> List[Tuple[np.ndarray, List[str], List[str]]]:
+    if not 0 <= p_dark <= 1:
+        raise ValueError(f"p_dark必须在[0, 1]内，得到 {p_dark}")
+
+    base_detectors = _order_detectors(detectors)
+    if p_dark <= 0:
+        return [(kraus, base_detectors, [])]
+
+    off_detectors = [d for d in ("H", "V") if d not in base_detectors]
+    entries = []
+    for mask in product([0, 1], repeat=len(off_detectors)):
+        prob = 1.0
+        dark_detectors = []
+        for det, use_dark in zip(off_detectors, mask):
+            if use_dark:
+                prob *= p_dark
+                dark_detectors.append(det)
+            else:
+                prob *= (1 - p_dark)
+        if prob <= 0:
+            continue
+        combined_detectors = _order_detectors(base_detectors + dark_detectors)
+        entries.append((np.sqrt(prob) * kraus, combined_detectors, _order_detectors(dark_detectors)))
+    return entries
+
+
+def _build_port_kraus_entries_6d(
+    eta: float,
+    p_dark: float,
+    embed_780: bool = False,
+) -> List[Tuple[np.ndarray, List[str], List[str]]]:
+    # 1517nm 基：vac=0, H=1, V=2, 2H=3, 2V=4, HV=5
+    K00_6d = np.diag([
+        1.0,                # |vac>: always no click
+        np.sqrt(1 - eta),   # |H>: H doesn't click
+        np.sqrt(1 - eta),   # |V>: V doesn't click
+        (1 - eta),          # |2H>: both H photons don't click
+        (1 - eta),          # |2V>: both V photons don't click
+        (1 - eta),          # |HV>: neither clicks
+    ]).astype(complex)
+
+    K10a_6d = np.zeros((6, 6), dtype=complex)
+    K10a_6d[0, 1] = np.sqrt(eta)
+
+    K10b_6d = np.zeros((6, 6), dtype=complex)
+    K10b_6d[0, 3] = np.sqrt(1 - (1 - eta) ** 2)
+
+    K10c_6d = np.zeros((6, 6), dtype=complex)
+    K10c_6d[2, 5] = np.sqrt(eta * (1 - eta))
+
+    K01a_6d = np.zeros((6, 6), dtype=complex)
+    K01a_6d[0, 2] = np.sqrt(eta)
+
+    K01b_6d = np.zeros((6, 6), dtype=complex)
+    K01b_6d[0, 4] = np.sqrt(1 - (1 - eta) ** 2)
+
+    K01c_6d = np.zeros((6, 6), dtype=complex)
+    K01c_6d[1, 5] = np.sqrt(eta * (1 - eta))
+
+    K11_6d = np.zeros((6, 6), dtype=complex)
+    K11_6d[0, 5] = eta
+
+    base_entries = [
+        (K00_6d, []),
+        (K10a_6d, ["H"]),
+        (K10b_6d, ["H"]),
+        (K10c_6d, ["H"]),
+        (K01a_6d, ["V"]),
+        (K01b_6d, ["V"]),
+        (K01c_6d, ["V"]),
+        (K11_6d, ["H", "V"]),
+    ]
+
+    entries = []
+    for K, detectors in base_entries:
+        for K_split, det_split, dark_split in _split_with_dark(K, detectors, p_dark):
+            if embed_780:
+                I_780 = np.eye(3, dtype=complex)
+                K_split = np.kron(I_780, K_split)
+            entries.append((K_split, det_split, dark_split))
+    return entries
+
+
+def _build_detection_kraus(
+    eta: float,
+    p_dark: float,
+    embed_780: bool,
+) -> Tuple[List[np.ndarray], List[List[str]], List[List[str]]]:
+    port_entries = _build_port_kraus_entries_6d(eta, p_dark, embed_780=embed_780)
+
+    kraus_list = []
+    outcome_detectors = []
+    outcome_dark = []
+
+    for K1, det1, dark1 in port_entries:
+        for K2, det2, dark2 in port_entries:
+            K_two = np.kron(K1, K2)
+
+            dets = []
+            dark_dets = []
+            for det in ("H", "V"):
+                if det in det1:
+                    dets.append(f"{det}1")
+                if det in dark1:
+                    dark_dets.append(f"{det}1")
+            for det in ("H", "V"):
+                if det in det2:
+                    dets.append(f"{det}2")
+                if det in dark2:
+                    dark_dets.append(f"{det}2")
+
+            kraus_list.append(K_two)
+            outcome_detectors.append(dets)
+            outcome_dark.append(dark_dets)
+
+    return kraus_list, outcome_detectors, outcome_dark
+
+
+def build_detection_kraus_6d(
+    eta: float,
+    p_dark: float = 0.0,
+) -> Tuple[List[np.ndarray], List[List[str]], List[List[str]]]:
     """
     构造6D探测 Kraus 算符（桶式SNSPD模型）。
 
@@ -46,7 +203,7 @@ def build_detection_kraus_6d(eta: float) -> Tuple[List[np.ndarray], List[str]]:
     - 每个端口有H/V两个独立的桶式探测器
     - 桶式探测器：不数分辨，破坏性探测
     - 单端口8个Kraus算符（分解以满足完备性）
-    - 两端口64个Kraus算符
+    - p_dark=0 时，两端口64个Kraus算符；p_dark>0 会进一步拆分
 
     完备性：∑ K_μ† K_μ = I 严格满足
 
@@ -54,91 +211,25 @@ def build_detection_kraus_6d(eta: float) -> Tuple[List[np.ndarray], List[str]]:
     ----------
     eta : float
         探测效率
+    p_dark : float
+        每个探测器每个bin的暗计数概率
 
     Returns
     -------
     kraus_list : List[np.ndarray]
-        64个36x36的Kraus算符
-    outcome_names : List[str]
-        64个结果名称（物理结果可能重复）
+        两端口Kraus算符列表
+    outcome_detectors : List[List[str]]
+        每个Kraus对应的探测器点击列表（如 ["H1", "V2"]）
+    outcome_dark : List[List[str]]
+        每个Kraus对应的暗计数点击列表（为空表示无暗计数）
     """
-    # 1517nm 基：vac=0, H=1, V=2, 2H=3, 2V=4, HV=5
-    # 构造8个单端口6x6 Kraus算符（分解以满足完备性）
-
-    # K_00: no click - 保留态但缩幅
-    K00_6d = np.diag([
-        1.0,                # |vac>: always no click
-        np.sqrt(1 - eta),   # |H>: H doesn't click
-        np.sqrt(1 - eta),   # |V>: V doesn't click
-        (1 - eta),          # |2H>: both H photons don't click
-        (1 - eta),          # |2V>: both V photons don't click
-        (1 - eta),          # |HV>: neither clicks
-    ]).astype(complex)
-
-    # H-only click 分解为3个正交Kraus
-    # K_10a: |H> -> |vac>
-    K10a_6d = np.zeros((6, 6), dtype=complex)
-    K10a_6d[0, 1] = np.sqrt(eta)
-
-    # K_10b: |2H> -> |vac> (桶式：所有H光子被吸收)
-    K10b_6d = np.zeros((6, 6), dtype=complex)
-    K10b_6d[0, 3] = np.sqrt(1 - (1 - eta)**2)
-
-    # K_10c: |HV> -> |V> (H被吸收，V留下)
-    K10c_6d = np.zeros((6, 6), dtype=complex)
-    K10c_6d[2, 5] = np.sqrt(eta * (1 - eta))
-
-    # V-only click 分解为3个正交Kraus
-    # K_01a: |V> -> |vac>
-    K01a_6d = np.zeros((6, 6), dtype=complex)
-    K01a_6d[0, 2] = np.sqrt(eta)
-
-    # K_01b: |2V> -> |vac>
-    K01b_6d = np.zeros((6, 6), dtype=complex)
-    K01b_6d[0, 4] = np.sqrt(1 - (1 - eta)**2)
-
-    # K_01c: |HV> -> |H> (V被吸收，H留下)
-    K01c_6d = np.zeros((6, 6), dtype=complex)
-    K01c_6d[1, 5] = np.sqrt(eta * (1 - eta))
-
-    # K_11: H+V both click - only from |HV>
-    K11_6d = np.zeros((6, 6), dtype=complex)
-    K11_6d[0, 5] = eta
-
-    # 单端口Kraus（直接6x6，无需嵌入）
-    port_kraus = [K00_6d, K10a_6d, K10b_6d, K10c_6d, K01a_6d, K01b_6d, K01c_6d, K11_6d]
-    # 物理结果名称：none, H, H, H, V, V, V, H+V
-    port_names = ["none", "H", "H", "H", "V", "V", "V", "H+V"]
-
-    kraus_list = []
-    outcome_names = []
-
-    # 构建64个两端口Kraus算符 (36x36)
-    for i1, K1 in enumerate(port_kraus):
-        for i2, K2 in enumerate(port_kraus):
-            K_two = np.kron(K1, K2)
-            kraus_list.append(K_two)
-
-            # 从探测器click构建结果名称
-            clicks = []
-            name1 = port_names[i1]
-            name2 = port_names[i2]
-            if name1 != "none":
-                if "H" in name1:
-                    clicks.append("H1")
-                if "V" in name1:
-                    clicks.append("V1")
-            if name2 != "none":
-                if "H" in name2:
-                    clicks.append("H2")
-                if "V" in name2:
-                    clicks.append("V2")
-            outcome_names.append("+".join(clicks) if clicks else "none")
-
-    return kraus_list, outcome_names
+    return _build_detection_kraus(eta, p_dark, embed_780=False)
 
 
-def build_detection_kraus_18d(eta: float) -> Tuple[List[np.ndarray], List[str]]:
+def build_detection_kraus_18d(
+    eta: float,
+    p_dark: float = 0.0,
+) -> Tuple[List[np.ndarray], List[List[str]], List[List[str]]]:
     """
     构造探测 Kraus 算符（桶式SNSPD模型）。
 
@@ -146,7 +237,7 @@ def build_detection_kraus_18d(eta: float) -> Tuple[List[np.ndarray], List[str]]:
     - 每个端口有H/V两个独立的桶式探测器
     - 桶式探测器：不数分辨，破坏性探测
     - 单端口8个Kraus算符（分解以满足完备性）
-    - 两端口64个Kraus算符
+    - p_dark=0 时，两端口64个Kraus算符；p_dark>0 会进一步拆分
 
     完备性：∑ K_μ† K_μ = I 严格满足
 
@@ -159,91 +250,19 @@ def build_detection_kraus_18d(eta: float) -> Tuple[List[np.ndarray], List[str]]:
     ----------
     eta : float
         探测效率
+    p_dark : float
+        每个探测器每个bin的暗计数概率
 
     Returns
     -------
     kraus_list : List[np.ndarray]
-        64个324x324的Kraus算符
-    outcome_names : List[str]
-        64个结果名称（物理结果可能重复）
+        两端口Kraus算符列表
+    outcome_detectors : List[List[str]]
+        每个Kraus对应的探测器点击列表（如 ["H1", "V2"]）
+    outcome_dark : List[List[str]]
+        每个Kraus对应的暗计数点击列表（为空表示无暗计数）
     """
-    # 1517nm 基：vac=0, H=1, V=2, 2H=3, 2V=4, HV=5
-    I_780 = np.eye(3, dtype=complex)
-
-    # 构造8个单端口6x6 Kraus算符（分解以满足完备性）
-
-    # K_00: no click - 保留态但缩幅
-    K00_6d = np.diag([
-        1.0,                # |vac>: always no click
-        np.sqrt(1 - eta),   # |H>: H doesn't click
-        np.sqrt(1 - eta),   # |V>: V doesn't click
-        (1 - eta),          # |2H>: both H photons don't click
-        (1 - eta),          # |2V>: both V photons don't click
-        (1 - eta),          # |HV>: neither clicks
-    ]).astype(complex)
-
-    # H-only click 分解为3个正交Kraus
-    # K_10a: |H> -> |vac>
-    K10a_6d = np.zeros((6, 6), dtype=complex)
-    K10a_6d[0, 1] = np.sqrt(eta)
-
-    # K_10b: |2H> -> |vac> (桶式：所有H光子被吸收)
-    K10b_6d = np.zeros((6, 6), dtype=complex)
-    K10b_6d[0, 3] = np.sqrt(1 - (1 - eta)**2)
-
-    # K_10c: |HV> -> |V> (H被吸收，V留下)
-    K10c_6d = np.zeros((6, 6), dtype=complex)
-    K10c_6d[2, 5] = np.sqrt(eta * (1 - eta))
-
-    # V-only click 分解为3个正交Kraus
-    # K_01a: |V> -> |vac>
-    K01a_6d = np.zeros((6, 6), dtype=complex)
-    K01a_6d[0, 2] = np.sqrt(eta)
-
-    # K_01b: |2V> -> |vac>
-    K01b_6d = np.zeros((6, 6), dtype=complex)
-    K01b_6d[0, 4] = np.sqrt(1 - (1 - eta)**2)
-
-    # K_01c: |HV> -> |H> (V被吸收，H留下)
-    K01c_6d = np.zeros((6, 6), dtype=complex)
-    K01c_6d[1, 5] = np.sqrt(eta * (1 - eta))
-
-    # K_11: H+V both click - only from |HV>
-    K11_6d = np.zeros((6, 6), dtype=complex)
-    K11_6d[0, 5] = eta
-
-    # 嵌入到18D (780nm x 1517nm)
-    port_kraus_6d = [K00_6d, K10a_6d, K10b_6d, K10c_6d, K01a_6d, K01b_6d, K01c_6d, K11_6d]
-    port_kraus = [np.kron(I_780, K) for K in port_kraus_6d]
-    # 物理结果名称：none, H, H, H, V, V, V, H+V
-    port_names = ["none", "H", "H", "H", "V", "V", "V", "H+V"]
-
-    kraus_list = []
-    outcome_names = []
-
-    # 构建64个两端口Kraus算符 (324x324)
-    for i1, K1 in enumerate(port_kraus):
-        for i2, K2 in enumerate(port_kraus):
-            K_two = np.kron(K1, K2)
-            kraus_list.append(K_two)
-
-            # 从探测器click构建结果名称
-            clicks = []
-            name1 = port_names[i1]
-            name2 = port_names[i2]
-            if name1 != "none":
-                if "H" in name1:
-                    clicks.append("H1")
-                if "V" in name1:
-                    clicks.append("V1")
-            if name2 != "none":
-                if "H" in name2:
-                    clicks.append("H2")
-                if "V" in name2:
-                    clicks.append("V2")
-            outcome_names.append("+".join(clicks) if clicks else "none")
-
-    return kraus_list, outcome_names
+    return _build_detection_kraus(eta, p_dark, embed_780=True)
 
 
 def run_two_photon_detection(
@@ -252,6 +271,8 @@ def run_two_photon_detection(
     eta_det: float = 0.85,
     rng: Optional[np.random.Generator] = None,
     verbose: bool = True,
+    *,
+    p_dark: float = 0.0,
 ) -> TwoPhotonDetectionResult:
     """
     逐bin Kraus测量（方案1：遍历所有bins，无早停）。
@@ -269,6 +290,8 @@ def run_two_photon_detection(
         时间仓数量
     eta_det : float
         探测效率
+    p_dark : float
+        每个探测器每个bin的暗计数概率
     rng : np.random.Generator, optional
         随机数生成器
     verbose : bool
@@ -290,11 +313,11 @@ def run_two_photon_detection(
     # 检测bin维度并选择相应的Kraus算符
     bin_dim = mps.d[2]  # 第一个bin的维度
     if bin_dim == 6:
-        kraus_list, outcome_names = build_detection_kraus_6d(eta_det)
+        kraus_list, outcome_detectors, _ = build_detection_kraus_6d(eta_det, p_dark)
         if verbose:
             print(f"  Using 6D Kraus operators (36x36) - optimized!")
     elif bin_dim == 18:
-        kraus_list, outcome_names = build_detection_kraus_18d(eta_det)
+        kraus_list, outcome_detectors, _ = build_detection_kraus_18d(eta_det, p_dark)
         if verbose:
             print(f"  Using 18D Kraus operators (324x324)")
     else:
@@ -320,12 +343,12 @@ def run_two_photon_detection(
             rho=rho_AB,
         )
 
-        outcome = outcome_names[outcome_idx]
+        detectors = outcome_detectors[outcome_idx]
 
-        if outcome != "none":
+        if detectors:
             if verbose:
-                print(f"  bin {n}: {outcome}")
-            for det in outcome.split("+"):
+                print(f"  bin {n}: {'+'.join(detectors)}")
+            for det in detectors:
                 site = site_1 if det in ["H1", "V1"] else site_2
                 clicks.append(DetectionEvent(
                     detector=det, bin_index=n, site=site,
@@ -396,7 +419,10 @@ def extract_spin_state(mps: MPSState, n_bins: int) -> np.ndarray:
     return rho_qubit
 
 
-def check_bsm_success(clicks: List[DetectionEvent]) -> Tuple[bool, str]:
+def check_bsm_success(
+    clicks: List[DetectionEvent],
+    window_bins: Optional[int] = None,
+) -> Tuple[bool, str]:
     """
     检查BSM成功。
 
@@ -420,6 +446,10 @@ def check_bsm_success(clicks: List[DetectionEvent]) -> Tuple[bool, str]:
     """
     if len(clicks) != 2:
         return False, ""
+
+    if window_bins is not None:
+        if abs(clicks[0].bin_index - clicks[1].bin_index) > window_bins:
+            return False, ""
 
     # 注意：两个click可以在不同bin中，不要求同bin！
     detectors = {clicks[0].detector, clicks[1].detector}
@@ -461,6 +491,324 @@ def compute_fidelity_with_bell(spin_state: np.ndarray, target_bell: str) -> floa
         raise ValueError(f"未知的Bell态：{target_bell}")
     psi = bell_states[target_bell]
     return float(np.real(psi.conj() @ spin_state @ psi))
+
+
+def _infer_bin_start(mps: MPSState) -> int:
+    if len(mps.d) >= 2 and mps.d[0] == 3 and mps.d[1] == 3:
+        return 2
+    return 0
+
+
+def _get_bin_sites(mps: MPSState, n_bins: int) -> List[int]:
+    bin_start = _infer_bin_start(mps)
+    sites = []
+    for n in range(n_bins):
+        site_A = bin_start + 2 * n
+        site_B = bin_start + 2 * n + 1
+        if site_B >= mps.L:
+            raise ValueError(f"n_bins={n_bins} 超出MPS长度 {mps.L}")
+        sites.append(site_A)
+        sites.append(site_B)
+    return sites
+
+
+def _build_number_ops(bin_dim: int) -> Tuple[np.ndarray, np.ndarray]:
+    if bin_dim == 6:
+        n_vals = np.array([0, 1, 1, 2, 2, 2], dtype=float)
+        n_op = np.diag(n_vals)
+    elif bin_dim == 18:
+        n_780 = np.diag([0, 1, 1]).astype(float)
+        n_1517 = np.diag([0, 1, 1, 2, 2, 2]).astype(float)
+        n_op = np.kron(n_780, np.eye(6)) + np.kron(np.eye(3), n_1517)
+        n_vals = np.diag(n_op).real
+    else:
+        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6 or 18.")
+
+    n2_vals = 0.5 * n_vals * (n_vals - 1.0)
+    n2_op = np.diag(n2_vals)
+    return n_op, n2_op
+
+
+def compute_two_photon_arrival_prob(
+    mps: MPSState,
+    n_bins: int,
+    verbose: bool = False,
+) -> float:
+    """
+    计算双光子均到达探测器的概率（总光子数=2）。
+
+    通过计算 <N_total(N_total-1)/2> 得到精确的两光子概率。
+    """
+    mps._mps.canonical_form_finite(renormalize=True)
+    bin_start = _infer_bin_start(mps)
+    bin_dim = mps.d[bin_start]
+    n_op, n2_op = _build_number_ops(bin_dim)
+    n2_pair_op = np.kron(n_op, n_op)
+
+    sites = _get_bin_sites(mps, n_bins)
+
+    p2_local = 0.0
+    for site in sites:
+        rho = mps.get_reduced_density([site])
+        p2_local += np.trace(rho @ n2_op).real
+
+    p2_pair = 0.0
+    for i in range(len(sites)):
+        for j in range(i + 1, len(sites)):
+            site_i = sites[i]
+            site_j = sites[j]
+            rho_ij = mps.get_reduced_density([site_i, site_j])
+            if rho_ij.ndim == 4:
+                rho_ij = rho_ij.reshape(bin_dim * bin_dim, bin_dim * bin_dim)
+            p2_pair += np.trace(rho_ij @ n2_pair_op).real
+
+    p2 = p2_local + p2_pair
+    if verbose:
+        print(f"  两光子到达概率 p_arrive={p2:.6f}")
+    return float(max(0.0, p2))
+
+
+def _kraus_thetas_from_mps(
+    mps: MPSState,
+    site_left: int,
+    kraus_ops: List[np.ndarray],
+) -> Tuple[np.ndarray, List[Optional[np.ndarray]]]:
+    d1, d2 = mps.d[site_left], mps.d[site_left + 1]
+    theta = mps._mps.get_theta(site_left, n=2)
+    theta_np = theta.to_ndarray()
+
+    probs = np.zeros(len(kraus_ops), dtype=float)
+    thetas = [None] * len(kraus_ops)
+    for idx, K in enumerate(kraus_ops):
+        K_mat = np.asarray(K)
+        if K_mat.ndim == 2:
+            K_mat = K_mat.reshape(d1 * d2, d1 * d2)
+        K_4d = K_mat.reshape(d1, d2, d1, d2)
+        K_theta = np.einsum('ijkl,aklb->aijb', K_4d, theta_np)
+        p_mu = float(np.linalg.norm(K_theta) ** 2)
+        probs[idx] = max(p_mu, 0.0)
+        if p_mu > 1e-15:
+            thetas[idx] = K_theta / np.sqrt(p_mu)
+    return probs, thetas
+
+
+def _set_two_site_theta(
+    mps: MPSState,
+    site_left: int,
+    theta_selected: np.ndarray,
+) -> None:
+    theta_arr = Array.from_ndarray_trivial(theta_selected, labels=['vL', 'p0', 'p1', 'vR'])
+    theta_combined = theta_arr.combine_legs(
+        [['vL', 'p0'], ['p1', 'vR']],
+        new_axes=[0, 1],
+        qconj=[+1, -1],
+    )
+    mps._mps.set_svd_theta(
+        site_left,
+        theta_combined,
+        trunc_par={'chi_max': mps.max_bond, 'svd_min': 1e-13},
+    )
+    mps._mps.norm = 1.0
+
+
+def enumerate_success_events(
+    mps: MPSState,
+    n_bins: int,
+    eta_det: float = 0.85,
+    p_dark: float = 0.0,
+    window_bins: Optional[int] = None,
+    verbose: bool = False,
+) -> SuccessEnumerationResult:
+    """
+    枚举所有双点击成功事件，计算真实成功率与成功态。
+
+    该函数不做随机采样，仅枚举成功事件集合并严格求和。
+    """
+    p_arrive = compute_two_photon_arrival_prob(mps, n_bins, verbose=verbose)
+
+    bin_start = _infer_bin_start(mps)
+    bin_dim = mps.d[bin_start]
+    if bin_dim == 6:
+        kraus_list, outcome_detectors, outcome_dark = build_detection_kraus_6d(eta_det, p_dark)
+        if verbose:
+            print("  Using 6D Kraus operators (36x36) - deterministic")
+    elif bin_dim == 18:
+        kraus_list, outcome_detectors, outcome_dark = build_detection_kraus_18d(eta_det, p_dark)
+        if verbose:
+            print("  Using 18D Kraus operators (324x324) - deterministic")
+    else:
+        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6 or 18.")
+
+    detector_map = {}
+    for K, detectors, dark_detectors in zip(kraus_list, outcome_detectors, outcome_dark):
+        key = _order_two_port_detectors(detectors)
+        detector_map.setdefault(key, []).append((K, dark_detectors))
+
+    entry_cache = {}
+    for key, entries in detector_map.items():
+        entry_cache[key] = (entries, [K for K, _ in entries])
+
+    empty_key = _order_two_port_detectors([])
+    required_keys = [
+        empty_key,
+        _order_two_port_detectors(["H1"]),
+        _order_two_port_detectors(["V1"]),
+        _order_two_port_detectors(["H2"]),
+        _order_two_port_detectors(["V2"]),
+        _order_two_port_detectors(["H1", "V2"]),
+        _order_two_port_detectors(["V1", "H2"]),
+        _order_two_port_detectors(["H1", "V1"]),
+        _order_two_port_detectors(["H2", "V2"]),
+    ]
+    for key in required_keys:
+        if key not in entry_cache:
+            raise ValueError(f"Missing detection outcome for detectors={list(key)}")
+
+    mps._mps.canonical_form_finite(renormalize=True)
+
+    bin_sites = [
+        (bin_start + 2 * n, bin_start + 2 * n + 1)
+        for n in range(n_bins)
+    ]
+
+    p_success = 0.0
+    p_success_true = 0.0
+    p_success_false = 0.0
+    rho_accum = np.zeros((4, 4), dtype=complex)
+    rho_accum_true = np.zeros((4, 4), dtype=complex)
+    rho_accum_false = np.zeros((4, 4), dtype=complex)
+    fidelity_weighted = 0.0
+    fidelity_true_weighted = 0.0
+    fidelity_false_weighted = 0.0
+    bell_weights = Counter()
+    success_events = []
+
+    def _apply_event(det_by_bin: dict) -> List[Tuple[MPSState, float, bool]]:
+        branches = [(mps.copy(), 1.0, False)]
+        for n in range(n_bins):
+            req_key = det_by_bin.get(n, empty_key)
+            entries, ops = entry_cache[req_key]
+            site_1, site_2 = bin_sites[n]
+            if len(entries) == 1:
+                (_, dark_detectors) = entries[0]
+                new_branches = []
+                for mps_branch, weight, has_dark in branches:
+                    probs, thetas = _kraus_thetas_from_mps(mps_branch, site_1, ops)
+                    p_mu = probs[0]
+                    if p_mu <= 1e-15:
+                        continue
+                    _set_two_site_theta(mps_branch, site_1, thetas[0])
+                    new_branches.append((mps_branch, weight * p_mu, has_dark or bool(dark_detectors)))
+                branches = new_branches
+            else:
+                new_branches = []
+                for mps_branch, weight, has_dark in branches:
+                    probs, thetas = _kraus_thetas_from_mps(mps_branch, site_1, ops)
+                    for (entry, p_mu, theta_selected) in zip(entries, probs, thetas):
+                        if p_mu <= 1e-15:
+                            continue
+                        _, dark_detectors = entry
+                        mps_next = mps_branch.copy()
+                        _set_two_site_theta(mps_next, site_1, theta_selected)
+                        new_branches.append(
+                            (mps_next, weight * p_mu, has_dark or bool(dark_detectors))
+                        )
+                branches = new_branches
+            if not branches:
+                break
+        return branches
+
+    def _accumulate(
+        bell_state: str,
+        bin1: int,
+        bin2: int,
+        branches: List[Tuple[MPSState, float, bool]],
+    ) -> None:
+        nonlocal p_success, p_success_true, p_success_false
+        nonlocal rho_accum, rho_accum_true, rho_accum_false
+        nonlocal fidelity_weighted, fidelity_true_weighted, fidelity_false_weighted
+        for mps_branch, weight, has_dark in branches:
+            if weight <= 0:
+                continue
+            p_success += weight
+            bell_weights[bell_state] += weight
+            spin_state = extract_spin_state(mps_branch, n_bins)
+            rho_accum += weight * spin_state
+            fidelity = compute_fidelity_with_bell(spin_state, bell_state)
+            fidelity_weighted += weight * fidelity
+            success_events.append((bell_state, bin1, bin2, weight))
+            if has_dark:
+                p_success_false += weight
+                rho_accum_false += weight * spin_state
+                fidelity_false_weighted += weight * fidelity
+            else:
+                p_success_true += weight
+                rho_accum_true += weight * spin_state
+                fidelity_true_weighted += weight * fidelity
+
+    patterns = [
+        ("Psi-", ("H1", "V2")),
+        ("Psi-", ("V1", "H2")),
+        ("Psi+", ("H1", "V1")),
+        ("Psi+", ("H2", "V2")),
+    ]
+
+    for bell_state, (det_a, det_b) in patterns:
+        key_pair = _order_two_port_detectors([det_a, det_b])
+        key_a = _order_two_port_detectors([det_a])
+        key_b = _order_two_port_detectors([det_b])
+
+        for n in range(n_bins):
+            branches = _apply_event({n: key_pair})
+            _accumulate(bell_state, n, n, branches)
+
+        for i in range(n_bins - 1):
+            j_end = n_bins
+            if window_bins is not None:
+                j_end = min(n_bins, i + window_bins + 1)
+            for j in range(i + 1, j_end):
+                branches = _apply_event({i: key_a, j: key_b})
+                _accumulate(bell_state, i, j, branches)
+                branches = _apply_event({i: key_b, j: key_a})
+                _accumulate(bell_state, i, j, branches)
+
+    if p_success > 0:
+        rho_success = rho_accum / p_success
+        fidelity_declared = fidelity_weighted / p_success
+    else:
+        rho_success = np.zeros((4, 4), dtype=complex)
+        fidelity_declared = 0.0
+    if p_success_true > 0:
+        rho_success_true = rho_accum_true / p_success_true
+        fidelity_true = fidelity_true_weighted / p_success_true
+    else:
+        rho_success_true = np.zeros((4, 4), dtype=complex)
+        fidelity_true = 0.0
+
+    if p_success_false > 0:
+        rho_success_false = rho_accum_false / p_success_false
+        fidelity_false = fidelity_false_weighted / p_success_false
+    else:
+        rho_success_false = np.zeros((4, 4), dtype=complex)
+        fidelity_false = 0.0
+
+    p_success_given_arrival = (p_success_true / p_arrive) if p_arrive > 0 else 0.0
+
+    return SuccessEnumerationResult(
+        p_arrive=p_arrive,
+        p_success=p_success,
+        p_success_true=p_success_true,
+        p_success_false=p_success_false,
+        p_success_given_arrival=p_success_given_arrival,
+        fidelity_declared=fidelity_declared,
+        fidelity_true=fidelity_true,
+        fidelity_false=fidelity_false,
+        spin_state=rho_success,
+        spin_state_true=rho_success_true,
+        spin_state_false=rho_success_false,
+        bell_weights=bell_weights,
+        success_events=success_events,
+    )
 
 
 def _compute_photon_statistics_global(mps: MPSState, n_bins: int, bin_dim: int, verbose: bool) -> dict:

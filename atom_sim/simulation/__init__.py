@@ -21,7 +21,10 @@ from .trajectory import (
 from .detection import (
     DetectionEvent,
     TwoPhotonDetectionResult,
+    SuccessEnumerationResult,
     run_two_photon_detection,
+    enumerate_success_events,
+    compute_two_photon_arrival_prob,
     extract_spin_state,
     check_bsm_success,
     compute_fidelity_with_bell,
@@ -45,7 +48,10 @@ __all__ = [
     # detection (Kraus measurement)
     'DetectionEvent',
     'TwoPhotonDetectionResult',
+    'SuccessEnumerationResult',
     'run_two_photon_detection',
+    'enumerate_success_events',
+    'compute_two_photon_arrival_prob',
     'extract_spin_state',
     'check_bsm_success',
     'compute_fidelity_with_bell',
