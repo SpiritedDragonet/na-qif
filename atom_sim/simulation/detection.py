@@ -259,6 +259,7 @@ def run_two_photon_detection(
     物理语义：条件在完整观测记录（click + no-click）下的原子后验态。
 
     自动检测bin维度（6D或18D）并使用相应的Kraus算符。
+    Kraus概率由两站点约化密度矩阵计算，避免正交中心位置依赖。
 
     Parameters
     ----------
@@ -307,8 +308,16 @@ def run_two_photon_detection(
         site_1 = 2 + 2 * n  # A_n
         site_2 = 2 + 2 * n + 1  # B_n
 
+        # 先规一化到规范形式，再用rho计算Kraus概率（避免正交中心问题）
+        mps_work._mps.canonical_form_finite(renormalize=True)
+        rho_AB = mps_work.get_reduced_density([site_1, site_2])
+
         outcome_idx = mps_work.apply_two_site_kraus(
-            site_left=site_1, kraus_ops=kraus_list, rng=rng,
+            site_left=site_1,
+            kraus_ops=kraus_list,
+            rng=rng,
+            probs_from_rho=True,
+            rho=rho_AB,
         )
 
         outcome = outcome_names[outcome_idx]
@@ -326,6 +335,7 @@ def run_two_photon_detection(
 
     # 提取探测后的原子态
     # 所有bins已被测量，直接trace得到原子的后验态
+    mps_work._mps.canonical_form_finite(renormalize=True)
     spin_state = extract_spin_state(mps_work, n_bins)
 
     if verbose:

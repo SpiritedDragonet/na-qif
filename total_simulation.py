@@ -21,6 +21,7 @@ from pathlib import Path
 from datetime import datetime
 import numpy as np
 from typing import Optional, Tuple
+from collections import Counter
 
 # Add project root to path (for running as standalone script)
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -34,7 +35,52 @@ from atom_sim.simulation import (
     run_two_photon_detection, compute_fidelity_with_bell, compute_photon_statistics,
 )
 from atom_sim.visualization import plot_dual_arm_heatmap
+from atom_sim.visualization.wavepacket import plot_cross_bin_joint_heatmap
 from atom_sim.physics import FiberChannelParams
+
+
+class Tee:
+    """同时输出到多个流（用于日志与控制台同步）。"""
+    def __init__(self, *streams):
+        self._streams = streams
+
+    def write(self, data):
+        for stream in self._streams:
+            stream.write(data)
+
+    def flush(self):
+        for stream in self._streams:
+            stream.flush()
+
+    def isatty(self):
+        return False
+
+
+def _parse_run_params(argv) -> Tuple[int, int]:
+    if len(argv) < 2:
+        return 1, 1
+    if len(argv) > 3:
+        print("用法: python total_simulation.py [N_runs] [shots_per_run]")
+        sys.exit(1)
+    try:
+        n_runs = int(argv[1])
+    except ValueError:
+        print("用法: python total_simulation.py [N_runs] [shots_per_run]")
+        sys.exit(1)
+    if n_runs < 1:
+        print("N_runs 必须 >= 1")
+        sys.exit(1)
+    shots_per_run = 1
+    if len(argv) >= 3:
+        try:
+            shots_per_run = int(argv[2])
+        except ValueError:
+            print("用法: python total_simulation.py [N_runs] [shots_per_run]")
+            sys.exit(1)
+        if shots_per_run < 1:
+            print("shots_per_run 必须 >= 1")
+            sys.exit(1)
+    return n_runs, shots_per_run
 
 
 def save_debug_info(
@@ -43,6 +89,7 @@ def save_debug_info(
     stage: str,
     output_dir: Path,
     step_index: int,
+    run_tag: Optional[str] = None,
 ):
     """
     保存调试信息到文件。
@@ -91,7 +138,8 @@ def save_debug_info(
         info[f'fidelity_{bell.replace("+", "p").replace("-", "m")}'] = compute_fidelity_with_bell(spin_state, bell)
 
     # 保存到文件
-    info_file = output_dir / f'debug_step_{step_index:02d}_{stage.replace(" ", "_").lower()}.txt'
+    prefix = f"{run_tag}_" if run_tag else ""
+    info_file = output_dir / f'{prefix}debug_step_{step_index:02d}_{stage.replace(" ", "_").lower()}.txt'
     with open(info_file, 'w', encoding='utf-8') as f:
         f.write(f'调试信息 - {stage}\n')
         f.write('='*60 + '\n\n')
@@ -117,18 +165,141 @@ def save_debug_info(
     print(f'  调试信息已保存: {info_file.name}')
 
 
-def main():
-    """主函数：运行发射 + QFC + 分束器 + 探测仿真。"""
-    # 创建带时间戳的输出目录
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    output_dir = PROJECT_ROOT / "outputs" / timestamp
-    output_dir.mkdir(parents=True, exist_ok=True)
+def _append_click_summary(
+    summary_path: Path,
+    run_index: int,
+    shot_index: int,
+    det_result,
+):
+    clicks = [(c.detector, c.bin_index) for c in det_result.clicks]
+    with open(summary_path, 'a', encoding='utf-8') as file:
+        file.write(
+            f'{run_index}\t{shot_index}\t{det_result.success}\t'
+            f'{det_result.bell_state}\t{len(clicks)}\t{clicks}\n'
+        )
 
+
+def _init_stats() -> dict:
+    return {
+        "shots": 0,
+        "success": 0,
+        "bell": Counter(),
+        "clicks": Counter(),
+    }
+
+
+def _merge_stats(dst: dict, src: dict) -> None:
+    dst["shots"] += src["shots"]
+    dst["success"] += src["success"]
+    dst["bell"].update(src["bell"])
+    dst["clicks"].update(src["clicks"])
+
+
+def _format_counter(counter: Counter) -> str:
+    if not counter:
+        return "-"
+    parts = []
+    for key in sorted(counter.keys()):
+        parts.append(f"{key}:{counter[key]}")
+    return ",".join(parts)
+
+
+def _append_run_summary(
+    summary_path: Path,
+    run_id,
+    stats: dict,
+) -> None:
+    shots = stats["shots"]
+    success = stats["success"]
+    success_rate = (success / shots) if shots > 0 else 0.0
+    bell_str = _format_counter(stats["bell"])
+    click_str = _format_counter(stats["clicks"])
+    with open(summary_path, 'a', encoding='utf-8') as file:
+        file.write(
+            f'{run_id}\t{shots}\t{success}\t{success_rate:.4f}\t'
+            f'{bell_str}\t{click_str}\n'
+        )
+
+
+def _write_overall_summary(
+    summary_path: Path,
+    stats: dict,
+    n_runs: int,
+    shots_per_run: int,
+) -> None:
+    shots = stats["shots"]
+    success = stats["success"]
+    success_rate = (success / shots) if shots > 0 else 0.0
+    bell_str = _format_counter(stats["bell"])
+    click_str = _format_counter(stats["clicks"])
+    with open(summary_path, 'w', encoding='utf-8') as file:
+        file.write("Overall summary\n")
+        file.write("=" * 60 + "\n")
+        file.write(f"runs = {n_runs}\n")
+        file.write(f"shots_per_run = {shots_per_run}\n")
+        file.write(f"total_shots = {shots}\n")
+        file.write(f"success = {success}\n")
+        file.write(f"success_rate = {success_rate:.4f}\n")
+        file.write(f"bell_counts = {bell_str}\n")
+        file.write(f"click_count_dist = {click_str}\n")
+
+
+def _write_extra_data(
+    output_path: Path,
+    fiber_sample,
+    pre_bs_arm_a: np.ndarray,
+    pre_bs_arm_b: np.ndarray,
+    cross_bin_joint: np.ndarray,
+) -> None:
+    def _format_matrix(mat: np.ndarray) -> str:
+        return np.array2string(
+            mat,
+            precision=6,
+            suppress_small=True,
+            separator=", ",
+        )
+
+    with open(output_path, 'w', encoding='utf-8') as file:
+        file.write("fiber_sample\n")
+        if fiber_sample is not None:
+            U_A, U_B, eta, phase = fiber_sample
+            file.write(f"eta = {eta:.6f}\n")
+            file.write(f"phase = {phase:.6f}\n")
+            file.write(f"U_A = {_format_matrix(U_A)}\n")
+            file.write(f"U_B = {_format_matrix(U_B)}\n")
+        else:
+            file.write("fiber_sample = None\n")
+
+        file.write("\npre_bs_photon_per_bin\n")
+        file.write("bin\tarmA\tarmB\n")
+        for idx in range(len(pre_bs_arm_a)):
+            file.write(f"{idx}\t{pre_bs_arm_a[idx]:.6f}\t{pre_bs_arm_b[idx]:.6f}\n")
+
+        file.write("\ncross_bin_joint_after_bs\n")
+        file.write(f"shape = {cross_bin_joint.shape}\n")
+        np.savetxt(file, cross_bin_joint, fmt="%.6e")
+
+
+def _run_single_simulation(
+    output_dir: Path,
+    run_index: int,
+    n_runs: int,
+    clicks_summary_path: Path,
+    shots_per_run: int,
+):
+    run_tag = f"run{run_index:03d}"
+    print("\n" + "=" * 80)
+    print(f"Run {run_index}/{n_runs} ({run_tag})")
+    print("=" * 80)
     print(f"Output directory: {output_dir}")
     print("运行发射 + QFC + 分束器 + 探测仿真...")
 
+    run_rng = np.random.default_rng()
+    fiber_params = FiberChannelParams()
+
     # 运行发射
     # 使用合理的物理参数
+    delay_jitter_ns = 0.0  # 设置为 >0 可启用A/B延迟随机抖动（ns）
     result = run_dual_atom_emission(
         n_bins=30,  # 仓数
         dt_ns=0.2,   # 时间步长
@@ -137,6 +308,8 @@ def main():
         gamma_peak_B=0.5,
         sigma=10.0,  # 波包宽度（纳秒）
         delay_ns=5.0,  # B相对于A延迟5ns（半个波包宽度）
+        delay_jitter_ns=delay_jitter_ns,
+        rng=run_rng,
         verbose=True,
     )
 
@@ -144,7 +317,7 @@ def main():
     print("\n生成发射后的可视化图...")
     plot_dual_arm_heatmap(
         result,
-        save_path=str(output_dir / "1_after_emission.png"),
+        save_path=str(output_dir / f"{run_tag}_1_after_emission.png"),
         show_atomic=True,
         stage_name="After Emission"
     )
@@ -157,6 +330,7 @@ def main():
         stage='After Emission',
         output_dir=output_dir,
         step_index=1,
+        run_tag=run_tag,
     )
 
     # 应用QFC
@@ -189,7 +363,7 @@ def main():
     print("\n生成QFC+滤波后的可视化图...")
     plot_dual_arm_heatmap(
         result.mps,
-        save_path=str(output_dir / "2_after_qfc.png"),
+        save_path=str(output_dir / f"{run_tag}_2_after_qfc.png"),
         show_atomic=False,
         stage_name="After QFC + 780nm Filter",
         time_grid=result.time_grid,
@@ -202,13 +376,46 @@ def main():
         stage='After QFC + Filter',
         output_dir=output_dir,
         step_index=2,
+        run_tag=run_tag,
+    )
+
+    # 应用光纤信道（偏振漂移 + 损耗）
+    print("\n应用光纤信道...")
+    result.mps, fiber_sample = apply_fiber_channel(
+        mps=result.mps,
+        n_bins=result.get_n_bins(),
+        fiber_params=fiber_params,
+        rng=run_rng,
+        verbose=True,
+    )
+
+    # 保存光纤传输后的可视化
+    print("\n生成光纤传输后的可视化...")
+    plot_dual_arm_heatmap(
+        result.mps,
+        save_path=str(output_dir / f"{run_tag}_3_after_fiber.png"),
+        show_atomic=False,
+        stage_name="After Fiber Channel",
+        time_grid=result.time_grid,
+    )
+
+    # 保存光纤传输后的调试信息
+    save_debug_info(
+        mps=result.mps,
+        n_bins=result.get_n_bins(),
+        stage='After Fiber Channel',
+        output_dir=output_dir,
+        step_index=3,
+        run_tag=run_tag,
     )
 
     # 诊断：检查BS前每个arm的光子分布
-    print("\n诊断：检查BS前每个arm的光子分布...")
+    print("\n诊断：检查BS前（含光纤）每个arm的光子分布...")
     n_bins = result.get_n_bins()
     total_A = 0.0
     total_B = 0.0
+    pre_bs_arm_a = np.zeros(n_bins)
+    pre_bs_arm_b = np.zeros(n_bins)
     for n in range(n_bins):
         site_A = 2 + 2 * n  # Arm A的bin n
         site_B = 2 + 2 * n + 1  # Arm B的bin n
@@ -221,6 +428,8 @@ def main():
         photon_count = [0, 1, 1, 2, 2, 2]
         p_A = sum(rho_A[i, i].real * photon_count[i] for i in range(6))
         p_B = sum(rho_B[i, i].real * photon_count[i] for i in range(6))
+        pre_bs_arm_a[n] = p_A
+        pre_bs_arm_b[n] = p_B
         total_A += p_A
         total_B += p_B
 
@@ -244,10 +453,19 @@ def main():
     print("\n生成BS后的可视化...")
     plot_dual_arm_heatmap(
         result.mps,
-        save_path=str(output_dir / "3_after_bs.png"),
+        save_path=str(output_dir / f"{run_tag}_4_after_bs.png"),
         show_atomic=False,
         stage_name="After Beam Splitter",
         time_grid=result.time_grid,
+    )
+
+    print("\n生成BS后的跨bin联合分布热图...")
+    joint_after_bs = plot_cross_bin_joint_heatmap(
+        result.mps,
+        n_bins=result.get_n_bins(),
+        save_path=str(output_dir / f"{run_tag}_4b_after_bs_cross_bin_joint.png"),
+        arm_pair=("A", "B"),
+        normalize=False,
     )
 
     # 保存BS后的调试信息
@@ -256,8 +474,19 @@ def main():
         n_bins=result.get_n_bins(),
         stage='After BS',
         output_dir=output_dir,
-        step_index=3,
+        step_index=4,
+        run_tag=run_tag,
     )
+
+    extra_data_path = output_dir / f"{run_tag}_extra_data.txt"
+    _write_extra_data(
+        extra_data_path,
+        fiber_sample=fiber_sample,
+        pre_bs_arm_a=pre_bs_arm_a,
+        pre_bs_arm_b=pre_bs_arm_b,
+        cross_bin_joint=joint_after_bs,
+    )
+    print(f"  Extra data saved: {extra_data_path.name}")
 
     # =========================================================================
     # 【深入分析After BS】检查双光子态的分布和BS门的作用
@@ -375,32 +604,6 @@ def main():
         verbose=True,
     )
 
-    # 保存光纤传输后的可视化
-    print("\n生成光纤传输后的可视化...")
-    plot_dual_arm_heatmap(
-        result.mps,
-        save_path=str(output_dir / "4_after_fiber.png"),
-        show_atomic=False,
-        stage_name="After Fiber Channel",
-        time_grid=result.time_grid,
-    )
-
-    # 保存光纤传输后的调试信息
-    save_debug_info(
-        mps=result.mps,
-        n_bins=result.get_n_bins(),
-        stage='After Fiber Channel',
-        output_dir=output_dir,
-        step_index=4,
-    )
-
-    # 验证归一化后的光子统计
-    photon_stats_norm = compute_photon_statistics(
-        mps=result.mps,
-        n_bins=result.get_n_bins(),
-        verbose=True,
-    )
-
     # =========================================================================
     # 探测
     # =========================================================================
@@ -489,77 +692,148 @@ def main():
 
     print(f"\n  同bin总贡献: {same_bin_contribution:.6f}")
 
-    # 使用逐bin Kraus测量方法运行探测和BSM
+    # 使用逐bin Kraus测量方法运行探测和BSM（可多次采样）
     print("\n运行探测和BSM（逐bin Kraus测量）...")
-    det_result = run_two_photon_detection(
-        mps=result.mps,
-        n_bins=result.get_n_bins(),
-        eta_det=eta_det,
-        #rng=np.random.default_rng(seed=19),
-        rng=np.random.default_rng(),
-        verbose=True,
-    )
+    run_stats = _init_stats()
+    for shot_index in range(1, shots_per_run + 1):
+        print(f"\n[shot {shot_index}/{shots_per_run}]")
+        det_result = run_two_photon_detection(
+            mps=result.mps,
+            n_bins=result.get_n_bins(),
+            eta_det=eta_det,
+            #rng=np.random.default_rng(seed=19),
+            rng=np.random.default_rng(),
+            verbose=True,
+        )
 
-    # 打印结果
-    if det_result.success:
-        print(f"\n  BSM成功!")
-        print(f"  宣告的Bell态: {det_result.bell_state}")
-        print(f"  点击: {[(c.detector, c.bin_index) for c in det_result.clicks]}")
-
-        # 计算与期望Bell态的保真度
-        fidelity = compute_fidelity_with_bell(det_result.spin_state, det_result.bell_state)
-        print(f"  与|{det_result.bell_state}>的保真度: {fidelity:.4f}")
-
-        # 计算与所有Bell态的保真度以供参考
-        print(f"\n  与所有Bell态的保真度:")
-        for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
-            f = compute_fidelity_with_bell(det_result.spin_state, bell)
-            marker = " <-- 宣告的" if bell == det_result.bell_state else ""
-            print(f"    F(|{bell}>): {f:.4f}{marker}")
-
-        # 打印自旋态
-        print(f"\n  自旋密度矩阵（量子比特子空间）:")
-        rho = det_result.spin_state
-        print(f"    Tr(rho) = {np.trace(rho).real:.4f}")
-        print(f"    纯度 = {np.trace(rho @ rho).real:.4f}")
-    else:
-        print(f"\n  BSM失败 - 未找到成功模式")
-        print(f"  点击数量: {len(det_result.clicks)}")
-        if det_result.clicks:
+        # 打印结果
+        if det_result.success:
+            print(f"\n  BSM成功!")
+            print(f"  宣告的Bell态: {det_result.bell_state}")
             print(f"  点击: {[(c.detector, c.bin_index) for c in det_result.clicks]}")
 
-    # 保存探测后的调试信息
-    print("\n保存探测后调试信息...")
-    with open(output_dir / 'debug_detection_result.txt', 'w', encoding='utf-8') as file:
-        file.write(f'探测结果\n')
-        file.write('='*60 + '\n\n')
-        file.write(f'成功: {det_result.success}\n')
-        file.write(f'Bell态: {det_result.bell_state}\n')
-        file.write(f'点击次数: {len(det_result.clicks)}\n')
-        if det_result.clicks:
-            file.write(f'点击详情: {[(c.detector, c.bin_index) for c in det_result.clicks]}\n')
+            # 计算与期望Bell态的保真度
+            fidelity = compute_fidelity_with_bell(det_result.spin_state, det_result.bell_state)
+            print(f"  与|{det_result.bell_state}>的保真度: {fidelity:.4f}")
 
-        file.write(f'\n自旋密度矩阵:\n')
-        rho = det_result.spin_state
-        file.write(f'  基: |00>, |01>, |10>, |11>\n')
-        for i in range(4):
-            for j in range(4):
-                val = rho[i, j]
-                if abs(val) > 1e-10:
-                    file.write(f'  rho[{i},{j}] = {val:.4f}\n')
+            # 计算与所有Bell态的保真度以供参考
+            print(f"\n  与所有Bell态的保真度:")
+            for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
+                f = compute_fidelity_with_bell(det_result.spin_state, bell)
+                marker = " <-- 宣告的" if bell == det_result.bell_state else ""
+                print(f"    F(|{bell}>): {f:.4f}{marker}")
 
-        file.write(f'\n纯度: {np.trace(rho @ rho).real:.4f}\n')
+            # 打印自旋态
+            print(f"\n  自旋密度矩阵（量子比特子空间）:")
+            rho = det_result.spin_state
+            print(f"    Tr(rho) = {np.trace(rho).real:.4f}")
+            print(f"    纯度 = {np.trace(rho @ rho).real:.4f}")
+        else:
+            print(f"\n  BSM失败 - 未找到成功模式")
+            print(f"  点击数量: {len(det_result.clicks)}")
+            if det_result.clicks:
+                print(f"  点击: {[(c.detector, c.bin_index) for c in det_result.clicks]}")
 
-        file.write(f'\nBell态保真度:\n')
-        for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
-            fid = compute_fidelity_with_bell(rho, bell)
-            marker = " <-- 探测到的" if bell == det_result.bell_state else ""
-            file.write(f'  F({bell}) = {fid:.4f}{marker}\n')
+        # 保存探测后的调试信息
+        print("\n保存探测后调试信息...")
+        if shots_per_run == 1:
+            det_file = output_dir / f'{run_tag}_debug_detection_result.txt'
+        else:
+            det_file = output_dir / f'{run_tag}_shot{shot_index:03d}_debug_detection_result.txt'
+        with open(det_file, 'w', encoding='utf-8') as file:
+            file.write(f'探测结果\n')
+            file.write('='*60 + '\n\n')
+            file.write(f'成功: {det_result.success}\n')
+            file.write(f'Bell态: {det_result.bell_state}\n')
+            file.write(f'点击次数: {len(det_result.clicks)}\n')
+            if det_result.clicks:
+                file.write(f'点击详情: {[(c.detector, c.bin_index) for c in det_result.clicks]}\n')
 
-    print(f"  调试信息已保存: debug_detection_result.txt")
+            file.write(f'\n自旋密度矩阵:\n')
+            rho = det_result.spin_state
+            file.write(f'  基: |00>, |01>, |10>, |11>\n')
+            for i in range(4):
+                for j in range(4):
+                    val = rho[i, j]
+                    if abs(val) > 1e-10:
+                        file.write(f'  rho[{i},{j}] = {val:.4f}\n')
+
+            file.write(f'\n纯度: {np.trace(rho @ rho).real:.4f}\n')
+
+            file.write(f'\nBell态保真度:\n')
+            for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
+                fid = compute_fidelity_with_bell(rho, bell)
+                marker = " <-- 探测到的" if bell == det_result.bell_state else ""
+                file.write(f'  F({bell}) = {fid:.4f}{marker}\n')
+
+        print(f"  调试信息已保存: {det_file.name}")
+
+        run_stats["shots"] += 1
+        run_stats["clicks"][len(det_result.clicks)] += 1
+        if det_result.success:
+            run_stats["success"] += 1
+            if det_result.bell_state:
+                run_stats["bell"][det_result.bell_state] += 1
+
+        _append_click_summary(clicks_summary_path, run_index, shot_index, det_result)
 
     print(f"\n完成! 文件已保存至: {output_dir}/")
+    return run_stats
 
+
+def main():
+    """主函数：运行发射 + QFC + 分束器 + 探测仿真。"""
+    n_runs, shots_per_run = _parse_run_params(sys.argv)
+
+    # 创建带时间戳的输出目录
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    output_dir = PROJECT_ROOT / "outputs" / timestamp
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # 统一的点击结果汇总文件
+    clicks_summary_path = output_dir / "all_clicks_summary.txt"
+    with open(clicks_summary_path, 'w', encoding='utf-8') as file:
+        file.write("run\tshot\tsuccess\tbell\tclick_count\tevents\n")
+
+    runs_summary_path = output_dir / "runs_summary.txt"
+    with open(runs_summary_path, 'w', encoding='utf-8') as file:
+        file.write("run\tshots\tsuccess\tsuccess_rate\tbell_counts\tclick_count_dist\n")
+
+    print(f"Output directory: {output_dir}")
+    print(f"将运行 {n_runs} 次仿真，每次 {shots_per_run} 次探测采样...")
+
+    overall_stats = _init_stats()
+
+    for run_index in range(1, n_runs + 1):
+        run_tag = f"run{run_index:03d}"
+        log_path = output_dir / f"{run_tag}_console.log"
+        with open(log_path, 'w', encoding='utf-8') as log_file:
+            tee_out = Tee(sys.stdout, log_file)
+            tee_err = Tee(sys.stderr, log_file)
+            old_out, old_err = sys.stdout, sys.stderr
+            sys.stdout, sys.stderr = tee_out, tee_err
+            run_stats = None
+            try:
+                run_stats = _run_single_simulation(
+                    output_dir,
+                    run_index,
+                    n_runs,
+                    clicks_summary_path,
+                    shots_per_run,
+                )
+            finally:
+                sys.stdout, sys.stderr = old_out, old_err
+        if run_stats is not None:
+            _append_run_summary(runs_summary_path, run_index, run_stats)
+            _merge_stats(overall_stats, run_stats)
+
+    _append_run_summary(runs_summary_path, "TOTAL", overall_stats)
+    _write_overall_summary(
+        output_dir / "overall_summary.txt",
+        overall_stats,
+        n_runs,
+        shots_per_run,
+    )
 
 if __name__ == "__main__":
     main()

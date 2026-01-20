@@ -323,6 +323,8 @@ class MPSState:
         site_left: int,
         kraus_ops: List[np.ndarray],
         rng: Optional[np.random.Generator] = None,
+        probs_from_rho: bool = False,
+        rho: Optional[np.ndarray] = None,
     ) -> int:
         """
         通过量子轨迹（蒙特卡洛采样）应用Kraus信道。
@@ -343,6 +345,13 @@ class MPSState:
         rng : np.random.Generator, optional
             随机数生成器
 
+        probs_from_rho : bool
+            若为True，则使用两站点约化密度矩阵计算Kraus概率，
+            避免依赖正交中心位置。此模式下仍会用get_theta更新态。
+        rho : Optional[np.ndarray]
+            可选的两站点约化密度矩阵（site_left, site_left+1）。
+            仅在 probs_from_rho=True 时使用。
+
         Returns
         -------
         int
@@ -353,38 +362,82 @@ class MPSState:
 
         d1, d2 = self.d[site_left], self.d[site_left + 1]
 
-        # 获取当前theta
-        theta = self._mps.get_theta(site_left, n=2)
-        theta_np = theta.to_ndarray()  # Shape: (chiL, d1, d2, chiR)
+        if probs_from_rho:
+            if rho is None:
+                rho = self.get_reduced_density([site_left, site_left + 1])
 
-        # 计算每个Kraus算符的概率和结果态
-        probs = []
-        thetas_mu = []
+            if rho.ndim == 4:
+                rho_mat = rho.reshape(d1 * d2, d1 * d2)
+            else:
+                rho_mat = rho.reshape(d1 * d2, d1 * d2)
 
-        for K in kraus_ops:
-            K = np.asarray(K)
-            if K.ndim == 2:
-                K = K.reshape(d1 * d2, d1 * d2)
-            K_4d = K.reshape(d1, d2, d1, d2)
+            probs = np.zeros(len(kraus_ops), dtype=float)
+            for idx, K in enumerate(kraus_ops):
+                K_mat = np.asarray(K)
+                if K_mat.ndim == 4:
+                    K_mat = K_mat.reshape(d1 * d2, d1 * d2)
+                else:
+                    K_mat = K_mat.reshape(d1 * d2, d1 * d2)
+                K_rho = K_mat @ rho_mat
+                p_mu = np.trace(K_rho @ K_mat.conj().T).real
+                probs[idx] = max(p_mu, 0.0)
 
-            # 应用K: 将K的输入腿与theta的物理腿收缩
+            p_total = np.sum(probs)
+            if p_total < 1e-15:
+                raise ValueError("总概率接近零 - Kraus算符可能无效")
+
+            probs = probs / p_total
+            mu = rng.choice(len(kraus_ops), p=probs)
+
+            # 获取当前theta并应用选中的Kraus
+            theta = self._mps.get_theta(site_left, n=2)
+            theta_np = theta.to_ndarray()  # Shape: (chiL, d1, d2, chiR)
+
+            K_sel = np.asarray(kraus_ops[mu])
+            if K_sel.ndim == 2:
+                K_sel = K_sel.reshape(d1 * d2, d1 * d2)
+            K_4d = K_sel.reshape(d1, d2, d1, d2)
+
             K_theta = np.einsum('ijkl,aklb->aijb', K_4d, theta_np)
-            p_mu = np.linalg.norm(K_theta) ** 2
-            probs.append(p_mu)
-            thetas_mu.append(K_theta)
+            p_mu = probs[mu] * p_total
+            if p_mu < 1e-15:
+                raise ValueError("选中的Kraus概率过小，无法归一化")
 
-        # 归一化并采样
-        probs = np.array(probs)
-        p_total = np.sum(probs)
+            theta_selected = K_theta / np.sqrt(p_mu)
 
-        if p_total < 1e-15:
-            raise ValueError("总概率接近零 - Kraus算符可能无效")
+        else:
+            # 获取当前theta
+            theta = self._mps.get_theta(site_left, n=2)
+            theta_np = theta.to_ndarray()  # Shape: (chiL, d1, d2, chiR)
 
-        probs = probs / p_total
-        mu = rng.choice(len(kraus_ops), p=probs)
+            # 计算每个Kraus算符的概率和结果态
+            probs = []
+            thetas_mu = []
 
-        # 从选中分支创建归一化的theta
-        theta_selected = thetas_mu[mu] / np.sqrt(probs[mu] * p_total)
+            for K in kraus_ops:
+                K = np.asarray(K)
+                if K.ndim == 2:
+                    K = K.reshape(d1 * d2, d1 * d2)
+                K_4d = K.reshape(d1, d2, d1, d2)
+
+                # 应用K: 将K的输入腿与theta的物理腿收缩
+                K_theta = np.einsum('ijkl,aklb->aijb', K_4d, theta_np)
+                p_mu = np.linalg.norm(K_theta) ** 2
+                probs.append(p_mu)
+                thetas_mu.append(K_theta)
+
+            # 归一化并采样
+            probs = np.array(probs)
+            p_total = np.sum(probs)
+
+            if p_total < 1e-15:
+                raise ValueError("总概率接近零 - Kraus算符可能无效")
+
+            probs = probs / p_total
+            mu = rng.choice(len(kraus_ops), p=probs)
+
+            # 从选中分支创建归一化的theta
+            theta_selected = thetas_mu[mu] / np.sqrt(probs[mu] * p_total)
 
         # 转换为TeNPy Array并写回
         theta_arr = Array.from_ndarray_trivial(theta_selected, labels=['vL', 'p0', 'p1', 'vR'])

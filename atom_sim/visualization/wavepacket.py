@@ -469,6 +469,38 @@ def _get_bin3_state_labels() -> List[str]:
     return ['|vac>', '|H>', '|V>']
 
 
+def _infer_first_bin_site(mps: MPSState) -> int:
+    """Infer the first bin site index based on 3D atom sites."""
+    n_3d_sites = sum(1 for d in mps.d if d == 3)
+    return 2 if n_3d_sites >= 2 else 0
+
+
+def _validate_bin_rho_traces(
+    mps: MPSState,
+    n_bins: int,
+    tol: float = 1e-6,
+) -> None:
+    """Check that per-bin reduced density matrices are properly normalized."""
+    first_bin_site = _infer_first_bin_site(mps)
+    issues = []
+    for n in range(n_bins):
+        for offset, arm in ((0, "A"), (1, "B")):
+            site = first_bin_site + 2 * n + offset
+            if site >= mps.L:
+                continue
+            rho = mps.get_reduced_density([site])
+            tr = np.trace(rho).real
+            if abs(tr - 1.0) > tol:
+                issues.append((arm, n, tr))
+
+    if issues:
+        print("Warning: bin reduced density traces deviate from 1.0")
+        for arm, n, tr in issues[:8]:
+            print(f"  Arm {arm} bin {n}: Tr={tr:.6f}")
+        if len(issues) > 8:
+            print(f"  ... {len(issues) - 8} more bins")
+
+
 def extract_bin_state_probabilities(
     mps: MPSState,
     arm: str = 'A',
@@ -758,6 +790,8 @@ def plot_dual_arm_heatmap(
     stage_name: str = "",
     time_grid: Optional[TimeGrid] = None,
     vmax_scale_factor: float = 1.5,
+    validate: bool = True,
+    trace_tol: float = 1e-6,
 ) -> None:
     """
     可视化双臂仓状态概率，可选显示原子状态。
@@ -791,6 +825,10 @@ def plot_dual_arm_heatmap(
         使用result.time_grid。
     vmax_scale_factor : float
         缩放vmax的因子（相对于最大仓概率）
+    validate : bool
+        若为 True，先检查单 bin 约化密度矩阵的归一化
+    trace_tol : float
+        归一化检查的误差阈值
     """
     import matplotlib as mpl
     from matplotlib.colors import Normalize
@@ -822,9 +860,12 @@ def plot_dual_arm_heatmap(
 
     # 确定first_bin_site
     if has_atomic_sites:
-        first_bin_site = 2  # 前两个站点是原子
+        first_bin_site = 2  #前两个站点是原子
     else:
-        first_bin_site = 0  # 没有原子站点
+        first_bin_site = 0  #没有原子站点
+
+    if validate:
+        _validate_bin_rho_traces(mps, n_bins, tol=trace_tol)
 
     # 决定是否显示原子态行
     # show_atomic=True: 显示原子态时间演化（仅emission阶段，需要has_atom_evol）
@@ -1234,5 +1275,145 @@ def plot_dual_arm_heatmap(
     plt.pause(5)  # 显示5秒
     plt.close()  # 自动关闭
     print(f"  Saved dual-arm heatmaps to: {save_path}")
+
+
+# ============================================================================
+# 跨 bin 联合分布热图
+# ============================================================================
+
+def plot_cross_bin_joint_heatmap(
+    mps: MPSState,
+    n_bins: int,
+    save_path: str = "cross_bin_joint_heatmap.png",
+    arm_pair: Tuple[str, str] = ("A", "B"),
+    normalize: bool = False,
+    vmax: Optional[float] = None,
+    validate: bool = True,
+    trace_tol: float = 1e-6,
+) -> np.ndarray:
+    """
+    绘制跨 bin 的联合分布热图（两端口/两臂）。
+
+    joint[i, j] 表示：臂 arm_pair[0] 的第 i 个 bin 与
+    臂 arm_pair[1] 的第 j 个 bin 同时处于“单光子子空间”的概率
+    （H/V 均算单光子）。这是两站点约化密度矩阵的对角边缘分布，
+    能显式显示“不同 bin 的两光子”相关性。
+
+    Parameters
+    ----------
+    mps : MPSState
+        MPS态（布局：atomA, atomB, A1, B1, ...）
+    n_bins : int
+        时间仓数量
+    save_path : str
+        保存图像路径
+    arm_pair : Tuple[str, str]
+        选择的两臂/端口，默认 ("A", "B")
+    normalize : bool
+        若为 True，归一化 joint 使其总和为 1
+    vmax : float, optional
+        色标上限，None 则自动
+    validate : bool
+        若为 True，先检查单 bin 约化密度矩阵的归一化
+    trace_tol : float
+        归一化检查的误差阈值
+
+    Returns
+    -------
+    np.ndarray
+        joint 分布矩阵，形状 (n_bins, n_bins)
+    """
+    arm_left = arm_pair[0].upper()
+    arm_right = arm_pair[1].upper()
+    if arm_left not in ("A", "B") or arm_right not in ("A", "B"):
+        raise ValueError(f"arm_pair must be ('A','B') or ('B','A'), got {arm_pair}")
+
+    # Validate per-bin reduced density traces before heavy pair extraction
+    if validate:
+        _validate_bin_rho_traces(mps, n_bins, tol=trace_tol)
+
+    first_bin_site = _infer_first_bin_site(mps)
+
+    def _site_index(arm: str, n: int) -> int:
+        return first_bin_site + 2 * n + (0 if arm == "A" else 1)
+
+    # 识别 bin 维度并构造单光子索引
+    if first_bin_site >= len(mps.d):
+        raise ValueError("Cannot find bin sites in MPS.")
+    bin_dim = mps.d[first_bin_site]
+    if bin_dim == 6:
+        n_diag = np.array([0, 1, 1, 2, 2, 2], dtype=float)
+    elif bin_dim == 18:
+        _, n_bin, _, _, _, _ = telecom_ops_bin18()
+        n_diag = np.real(np.diag(n_bin))
+    else:
+        raise ValueError(f"Unsupported bin dimension: {bin_dim}. Expected 6 or 18.")
+
+    single_photon_idx = [i for i, n in enumerate(n_diag) if np.isclose(n, 1.0)]
+    if not single_photon_idx:
+        raise ValueError("No single-photon indices found for the bin basis.")
+
+    joint = np.zeros((n_bins, n_bins), dtype=float)
+
+    for i in range(n_bins):
+        site_i = _site_index(arm_left, i)
+        if site_i >= mps.L:
+            continue
+        for j in range(n_bins):
+            site_j = _site_index(arm_right, j)
+            if site_j >= mps.L:
+                continue
+            if site_i == site_j:
+                raise ValueError("arm_pair refers to the same site; choose different arms.")
+
+            sites = [site_i, site_j]
+            if site_i > site_j:
+                sites = [site_j, site_i]
+            rho_ij = mps.get_reduced_density(sites)
+            prob = 0.0
+            for a in single_photon_idx:
+                for b in single_photon_idx:
+                    prob += rho_ij[a, b, a, b].real
+            joint[i, j] = prob
+
+    if normalize:
+        total = joint.sum()
+        if total > 0:
+            joint = joint / total
+
+    fig, ax = plt.subplots(figsize=(6.8, 5.8))
+    im = ax.imshow(
+        joint,
+        origin='lower',
+        aspect='auto',
+        cmap='magma',
+        vmin=0,
+        vmax=vmax,
+    )
+
+    n_ticks = min(10, n_bins)
+    tick_indices = np.linspace(0, n_bins - 1, n_ticks, dtype=int)
+    ax.set_xticks(tick_indices)
+    ax.set_yticks(tick_indices)
+    ax.set_xticklabels([str(i) for i in tick_indices])
+    ax.set_yticklabels([str(i) for i in tick_indices])
+
+    ax.set_xlabel(f"Bin index (Arm {arm_left})")
+    ax.set_ylabel(f"Bin index (Arm {arm_right})")
+    title = "Cross-bin joint single-photon distribution"
+    if normalize:
+        title += " (normalized)"
+    ax.set_title(title)
+
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label("Probability" if not normalize else "Normalized probability")
+
+    fig.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.show(block=False)
+    plt.pause(5)
+    plt.close(fig)
+    print(f"  Saved cross-bin joint heatmap to: {save_path}")
+
+    return joint
 
 

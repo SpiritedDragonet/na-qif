@@ -178,7 +178,8 @@ def _bs_gate_1517() -> np.ndarray:
         c_dag_B = np.kron(np.eye(6, dtype=complex), c_dag)
 
         # BS生成元：G = θ * (c_A^† c_B - c_A c_B^†)
-        theta = np.pi / 4
+        # For 50:50 beam splitter, theta = π/8
+        theta = np.pi / 8
         G = theta * (c_dag_A @ c_B - c_A @ c_dag_B)
         return G
 

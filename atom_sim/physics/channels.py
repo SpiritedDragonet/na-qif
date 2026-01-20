@@ -111,6 +111,25 @@ def _loss_channel_1517_raw(eta_H: float, eta_V: float) -> List[np.ndarray]:
     return K_list_1517
 
 
+def loss_channel_1517_raw(eta_H: float, eta_V: float) -> List[np.ndarray]:
+    """
+    1517nm通信子空间（6D）的振幅阻尼Kraus算符（不嵌入18D）。
+
+    Parameters
+    ----------
+    eta_H : float
+        H偏振的透过率
+    eta_V : float
+        V偏振的透过率
+
+    Returns
+    -------
+    List[np.ndarray]
+        仅作用于1517子空间的6x6 Kraus算符列表
+    """
+    return _loss_channel_1517_raw(eta_H, eta_V)
+
+
 def loss_channel_780_general(eta: float) -> List[np.ndarray]:
     """
     780nm子空间的通用损耗信道（每个模式最多1个光子）。

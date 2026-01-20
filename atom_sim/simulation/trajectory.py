@@ -14,10 +14,10 @@ from ..core.mps import MPSState
 from ..config import TimeGrid, EmitParams, QFCParams, FiberParams, DetParams
 from ..hilbert.basis import BIN_SPACE, SUBSPACE_780, SUBSPACE_1517
 from ..physics.gates import (
-    emission_gate, qfc_gate, jones_gate_from_array
+    emission_gate, qfc_gate, jones_gate_from_array, jones_gate
 )
 from ..physics.channels import (
-    loss_channel_1517, loss_channel_both_subspaces,
+    loss_channel_1517, loss_channel_both_subspaces, loss_channel_1517_raw,
     detection_channel_two_mode, detection_povm_single_site,
     dephasing_channel_from_rate
 )
@@ -100,6 +100,14 @@ class EmissionResult:
         原子B的状态演化（形状：3 x 2*n_bins）
         行：P(|0>), P(|1>), P(|e>)
         列：每次SWAP后的记录
+    delay_ns_base : float
+        设定的A-B时间延迟（纳秒）
+    delay_jitter_ns : float
+        延迟随机抖动范围（纳秒，均匀分布的半宽）
+    delay_jitter_actual_ns : float
+        本次采样的延迟抖动（纳秒）
+    delay_ns_used : float
+        实际使用的A-B时间延迟（纳秒）
     """
     mps: MPSState
     time_grid: TimeGrid
@@ -108,6 +116,10 @@ class EmissionResult:
     atom_states: dict
     atom_A_state_evolution: np.ndarray = field(default_factory=lambda: np.zeros((3, 1)))
     atom_B_state_evolution: np.ndarray = field(default_factory=lambda: np.zeros((3, 1)))
+    delay_ns_base: float = 0.0
+    delay_jitter_ns: float = 0.0
+    delay_jitter_actual_ns: float = 0.0
+    delay_ns_used: float = 0.0
 
     def get_bin_indices(self, n: int) -> Tuple[int, int]:
         """
@@ -363,7 +375,7 @@ def project_to_1517(
 
         _print_progress(n + 1, n_bins, verbose)
 
-    # 重新规范化
+    # 投影后需要恢复规范形式，否则后续的测量/约化密度会不可靠
     mps._mps.canonical_form_finite(renormalize=True)
 
     _print_footer(mps, verbose, stage="Project to 1517nm")
@@ -608,17 +620,19 @@ def apply_fiber_channel(
     fiber_params,
     rng: np.random.Generator,
     verbose: bool = True,
+    bin_start: Optional[int] = None,
 ) -> tuple:
     """
     应用光纤信道效应：琼斯旋转 + 损耗（含随机采样）。
 
     这结合了 apply_jones 和 apply_loss_combined，但从
     FiberChannelParams 为每次轨迹采样参数（模拟光纤漂移）。
+    支持18D（780x1517）或6D（1517-only）bin空间。
 
     Parameters
     ----------
     mps : MPSState
-        MPS态（布局：A1, B1, A2, B2, ..., AN, BN, atomA, atomB）
+        MPS态（布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN）
     n_bins : int
         时间仓数量
     fiber_params : FiberChannelParams
@@ -627,14 +641,14 @@ def apply_fiber_channel(
         随机数生成器
     verbose : bool
         是否打印进度
+    bin_start : Optional[int]
+        bin起始索引（默认自动推断：若前两个站点为原子则为2，否则为0）
 
     Returns
     -------
     tuple
         (mps, sampled_params) 其中 sampled_params = (U_A, U_B, eta, phase)
     """
-    from ..physics.channels import FiberChannelParams
-
     _print_header("Fiber Channel", verbose)
 
     # 为本次轨迹采样参数
@@ -646,26 +660,50 @@ def apply_fiber_channel(
         print(f"  Phase drift: {phase:.4f} rad")
         print(f"  Sampled eta: {eta:.4f}")
 
+    if bin_start is None:
+        if len(mps.d) >= 2 and mps.d[0] == DIM_ATOM and mps.d[1] == DIM_ATOM:
+            bin_start = 2
+        else:
+            bin_start = 0
+
+    if bin_start >= mps.L:
+        raise ValueError(f"bin_start={bin_start} 超出MPS长度 {mps.L}")
+
+    bin_dim = mps.d[bin_start]
+
+    def _to_tuple(U: np.ndarray) -> Tuple[Tuple[complex, complex], Tuple[complex, complex]]:
+        return (
+            (complex(U[0, 0]), complex(U[0, 1])),
+            (complex(U[1, 0]), complex(U[1, 1])),
+        )
+
     # 应用琼斯旋转
-    from ..physics.gates import jones_gate_from_array
-    U_J_A = jones_gate_from_array(U_A)
-    U_J_B = jones_gate_from_array(U_B)
+    if bin_dim == DIM_BIN:
+        U_J_A = jones_gate_from_array(U_A)
+        U_J_B = jones_gate_from_array(U_B)
+    elif bin_dim == DIM_1517:
+        U_J_A = jones_gate(_to_tuple(U_A))
+        U_J_B = jones_gate(_to_tuple(U_B))
+    else:
+        raise ValueError(f"Unsupported bin dimension: {bin_dim}. Expected 18 or 6.")
 
     for n in range(n_bins):
-        site_A = 2 * n
-        site_B = 2 * n + 1
+        site_A = bin_start + 2 * n
+        site_B = bin_start + 2 * n + 1
         mps.apply_one_site_gate(site_A, U_J_A)
         mps.apply_one_site_gate(site_B, U_J_B)
 
         _print_progress(n + 1, n_bins, verbose)
 
-    # 应用损耗（780滤波，1517使用采样的eta）
-    from ..physics.channels import loss_channel_both_subspaces
-    K_list = loss_channel_both_subspaces(eta_780=0.0, eta_H_1517=eta, eta_V_1517=eta)
+    # 应用损耗（18D包含780滤波；6D只作用于1517）
+    if bin_dim == DIM_BIN:
+        K_list = loss_channel_both_subspaces(eta_780=0.0, eta_H_1517=eta, eta_V_1517=eta)
+    else:
+        K_list = loss_channel_1517_raw(eta, eta)
 
     for n in range(n_bins):
-        site_A = 2 * n
-        site_B = 2 * n + 1
+        site_A = bin_start + 2 * n
+        site_B = bin_start + 2 * n + 1
         mps.apply_kraus_one_site(site_A, K_list, rng)
         mps.apply_kraus_one_site(site_B, K_list, rng)
 
@@ -695,6 +733,8 @@ def run_dual_atom_emission(
     t0_B: Optional[float] = None,
     sigma: float = 12.0,
     delay_ns: float = 0.0,
+    delay_jitter_ns: float = 0.0,
+    rng: Optional[np.random.Generator] = None,
     verbose: bool = True,
 ) -> EmissionResult:
     """
@@ -733,6 +773,10 @@ def run_dual_atom_emission(
         原子B相对于A的时间延迟（纳秒）
         正值表示B的高斯峰晚于A，负值表示B早于A
         注意：这是时间延迟，不改变bin索引
+    delay_jitter_ns : float
+        延迟随机抖动范围（纳秒，均匀分布的半宽）
+    rng : np.random.Generator, optional
+        随机数生成器（用于延迟抖动）
     verbose : bool
         是否打印进度信息
 
@@ -759,8 +803,17 @@ def run_dual_atom_emission(
     if t0_B is None:
         t0_B = (n_bins - 1) * dt_ns / 2
 
+    # 延迟抖动（一次采样，作用于整个波包）
+    delay_jitter_actual_ns = 0.0
+    delay_ns_used = delay_ns
+    if delay_jitter_ns > 0.0:
+        if rng is None:
+            rng = np.random.default_rng()
+        delay_jitter_actual_ns = rng.uniform(-delay_jitter_ns, delay_jitter_ns)
+        delay_ns_used = delay_ns + delay_jitter_actual_ns
+
     # 应用时间延迟到B的峰值时间
-    t0_B = t0_B + delay_ns
+    t0_B = t0_B + delay_ns_used
 
     # 计算每个仓的发射率（高斯轮廓）
     gamma_A_values = gamma_peak_A * np.exp(-0.5 * ((t_ns - t0_A) / sigma) ** 2)
@@ -780,7 +833,15 @@ def run_dual_atom_emission(
         print(f"\n发射参数:")
         print(f"  原子A: gamma_peak={gamma_peak_A:.4f}, t0={t0_A:.1f} ns, sigma={sigma:.1f} ns")
         print(f"  原子B: gamma_peak={gamma_peak_B:.4f}, t0={t0_B:.1f} ns, sigma={sigma:.1f} ns")
-        print(f"  时间延迟: delay_ns={delay_ns:.1f} ns")
+        if delay_jitter_ns > 0.0:
+            print(
+                f"  时间延迟: base={delay_ns:.1f} ns, "
+                f"jitter_range=+/-{delay_jitter_ns:.1f} ns, "
+                f"jitter={delay_jitter_actual_ns:.2f} ns, "
+                f"used={delay_ns_used:.2f} ns"
+            )
+        else:
+            print(f"  时间延迟: delay_ns={delay_ns:.1f} ns")
 
     # ========================================================================
     # 初始化 MPS: 交错布局 A1, B1, A2, B2, ..., AN, BN, atomA, atomB
@@ -997,6 +1058,10 @@ def run_dual_atom_emission(
         atom_states=atom_states,
         atom_A_state_evolution=atom_A_evolution_array,
         atom_B_state_evolution=atom_B_evolution_array,
+        delay_ns_base=delay_ns,
+        delay_jitter_ns=delay_jitter_ns,
+        delay_jitter_actual_ns=delay_jitter_actual_ns,
+        delay_ns_used=delay_ns_used,
     )
 
     if verbose:
