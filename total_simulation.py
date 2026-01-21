@@ -18,6 +18,9 @@
 
 import sys
 import os
+import csv
+import time
+from contextlib import contextmanager
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from datetime import datetime
@@ -40,6 +43,29 @@ from atom_sim.simulation import (
 from atom_sim.visualization import plot_dual_arm_heatmap
 from atom_sim.visualization.wavepacket import plot_cross_bin_joint_heatmap
 from atom_sim.physics import FiberChannelParams
+
+SUMMARY_HEADER = [
+    "run",
+    "shot",
+    "success",
+    "bell",
+    "click_count",
+    "events",
+    "p_arrive",
+    "p_success_given_arrival",
+    "fidelity_true",
+    "fidelity_shot",
+    "runs",
+    "shots_per_run",
+    "total_shots",
+    "success",
+    "success_rate",
+    "bell_counts",
+    "click_count_dist",
+    "p_arrive",
+    "p_success_given_arrival",
+    "avg_fidelity_true",
+]
 
 
 class Tee:
@@ -185,16 +211,33 @@ def save_debug_info(
 
 def _append_click_summary(
     summary_path: Path,
+    lock_path: Path,
     run_index: int,
     shot_index: int,
     det_result,
+    metrics: Optional[dict],
 ):
     clicks = [(c.detector, c.bin_index) for c in det_result.clicks]
-    with open(summary_path, 'a', encoding='utf-8') as file:
-        file.write(
-            f'{run_index}\t{shot_index}\t{det_result.success}\t'
-            f'{det_result.bell_state}\t{len(clicks)}\t{clicks}\n'
-        )
+    fidelity_shot = ""
+    if det_result.success and det_result.bell_state:
+        fidelity = compute_fidelity_with_bell(det_result.spin_state, det_result.bell_state)
+        fidelity_shot = format(fidelity, ".6f")
+    row = [
+        run_index,
+        shot_index,
+        det_result.success,
+        det_result.bell_state,
+        len(clicks),
+        clicks,
+        _format_metric(metrics, "p_arrive", ".8f"),
+        _format_metric(metrics, "p_success_given_arrival", ".8f"),
+        _format_metric(metrics, "fidelity_true", ".6f"),
+        fidelity_shot,
+    ]
+    if len(row) < len(SUMMARY_HEADER):
+        row += [""] * (len(SUMMARY_HEADER) - len(row))
+    with _file_lock(lock_path):
+        _append_csv_row(summary_path, row)
 
 
 def _init_stats() -> dict:
@@ -222,44 +265,138 @@ def _format_counter(counter: Counter) -> str:
     return ",".join(parts)
 
 
+def _write_csv_header(path: Path, header: list) -> None:
+    with open(path, 'w', encoding='utf-8', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(header)
+
+
+def _append_csv_row(path: Path, row: list) -> None:
+    with open(path, 'a', encoding='utf-8', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(row)
+
+
+def _format_metric(metrics: Optional[dict], key: str, fmt: str) -> str:
+    if not metrics or key not in metrics:
+        return ""
+    value = metrics.get(key)
+    if value is None:
+        return ""
+    return format(value, fmt)
+
+
+@contextmanager
+def _file_lock(lock_path: Path, stale_s: float = 120.0) -> None:
+    lock_fd = None
+    while True:
+        try:
+            lock_fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(lock_fd, f"{os.getpid()} {time.time()}".encode("utf-8"))
+            break
+        except FileExistsError:
+            try:
+                age = time.time() - lock_path.stat().st_mtime
+                if age > stale_s:
+                    lock_path.unlink()
+                    continue
+            except FileNotFoundError:
+                continue
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        if lock_fd is not None:
+            os.close(lock_fd)
+        try:
+            lock_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _init_combined_summary(summary_path: Path) -> None:
+    _write_csv_header(summary_path, SUMMARY_HEADER)
+    _append_csv_row(summary_path, [""] * len(SUMMARY_HEADER))
+
+
 def _append_run_summary(
     summary_path: Path,
     run_id,
     stats: dict,
+    metrics: Optional[dict] = None,
 ) -> None:
     shots = stats["shots"]
     success = stats["success"]
     success_rate = (success / shots) if shots > 0 else 0.0
     bell_str = _format_counter(stats["bell"])
     click_str = _format_counter(stats["clicks"])
-    with open(summary_path, 'a', encoding='utf-8') as file:
-        file.write(
-            f'{run_id}\t{shots}\t{success}\t{success_rate:.4f}\t'
-            f'{bell_str}\t{click_str}\n'
-        )
+    row = [
+        run_id,
+        shots,
+        success,
+        f"{success_rate:.4f}",
+        bell_str,
+        click_str,
+        _format_metric(metrics, "p_arrive", ".8f"),
+        _format_metric(metrics, "p_success_given_arrival", ".8f"),
+        _format_metric(metrics, "fidelity_true", ".6f"),
+    ]
+    _append_csv_row(summary_path, row)
 
 
-def _write_overall_summary(
+def _finalize_combined_summary(
     summary_path: Path,
+    lock_path: Path,
     stats: dict,
     n_runs: int,
     shots_per_run: int,
+    metrics: Optional[dict],
 ) -> None:
     shots = stats["shots"]
     success = stats["success"]
     success_rate = (success / shots) if shots > 0 else 0.0
     bell_str = _format_counter(stats["bell"])
     click_str = _format_counter(stats["clicks"])
-    with open(summary_path, 'w', encoding='utf-8') as file:
-        file.write("Overall summary\n")
-        file.write("=" * 60 + "\n")
-        file.write(f"runs = {n_runs}\n")
-        file.write(f"shots_per_run = {shots_per_run}\n")
-        file.write(f"total_shots = {shots}\n")
-        file.write(f"success = {success}\n")
-        file.write(f"success_rate = {success_rate:.4f}\n")
-        file.write(f"bell_counts = {bell_str}\n")
-        file.write(f"click_count_dist = {click_str}\n")
+    summary_values = [
+        n_runs,
+        shots_per_run,
+        shots,
+        success,
+        f"{success_rate:.4f}",
+        bell_str,
+        click_str,
+        _format_metric(metrics, "p_arrive", ".8f"),
+        _format_metric(metrics, "p_success_given_arrival", ".8f"),
+        _format_metric(metrics, "fidelity_true", ".6f"),
+    ]
+    with _file_lock(lock_path):
+        with open(summary_path, 'r', encoding='utf-8', newline='') as file:
+            rows = list(csv.reader(file))
+        if not rows:
+            _init_combined_summary(summary_path)
+            with open(summary_path, 'r', encoding='utf-8', newline='') as file:
+                rows = list(csv.reader(file))
+        header = rows[0] if rows else SUMMARY_HEADER
+        if len(rows) < 2:
+            rows = [header, [""] * len(header)]
+        summary_row = [""] * len(header)
+        start_idx = header.index("runs") if "runs" in header else SUMMARY_HEADER.index("runs")
+        for offset, value in enumerate(summary_values):
+            if start_idx + offset < len(summary_row):
+                summary_row[start_idx + offset] = value
+        data_rows = rows[2:] if len(rows) > 2 else []
+        def _sort_key(row):
+            try:
+                run_id = int(row[0])
+                shot_id = int(row[1])
+            except (ValueError, TypeError, IndexError):
+                return (10**9, 10**9)
+            return (run_id, shot_id)
+        data_rows.sort(key=_sort_key)
+        final_rows = [header, summary_row] + data_rows
+        with open(summary_path, 'w', encoding='utf-8', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerows(final_rows)
 
 
 def _write_extra_data(
@@ -335,16 +472,23 @@ def _append_success_metrics_summary(
     run_id,
     metrics: dict,
 ) -> None:
-    with open(summary_path, 'a', encoding='utf-8') as file:
-        file.write(
-            f"{run_id}\t{metrics['p_arrive']:.8f}\t{metrics['p_success_all']:.8f}\t"
-            f"{metrics['p_success_true']:.8f}\t{metrics['p_success_false']:.8f}\t"
-            f"{metrics['p_success_given_arrival']:.8f}\t{metrics['fidelity_all']:.6f}\t"
-            f"{metrics['fidelity_true']:.6f}\t{metrics['fidelity_false']:.6f}\t"
-            f"{metrics['p_success_no_dark']:.8f}\t{metrics['fidelity_no_dark']:.6f}\t"
-            f"{metrics['p_false_approx']:.8f}\t{metrics['false_fraction']:.6f}\t"
-            f"{metrics['false_fraction_approx']:.6f}\n"
-        )
+    row = [
+        run_id,
+        f"{metrics['p_arrive']:.8f}",
+        f"{metrics['p_success_all']:.8f}",
+        f"{metrics['p_success_true']:.8f}",
+        f"{metrics['p_success_false']:.8f}",
+        f"{metrics['p_success_given_arrival']:.8f}",
+        f"{metrics['fidelity_all']:.6f}",
+        f"{metrics['fidelity_true']:.6f}",
+        f"{metrics['fidelity_false']:.6f}",
+        f"{metrics['p_success_no_dark']:.8f}",
+        f"{metrics['fidelity_no_dark']:.6f}",
+        f"{metrics['p_false_approx']:.8f}",
+        f"{metrics['false_fraction']:.6f}",
+        f"{metrics['false_fraction_approx']:.6f}",
+    ]
+    _append_csv_row(summary_path, row)
 
 
 def _init_success_metrics_accumulator() -> dict:
@@ -409,25 +553,12 @@ def _finalize_success_metrics(acc: dict) -> dict:
         "false_fraction_approx": false_fraction_approx,
     }
 
-def _append_clicks_file(
-    target_path: Path,
-    run_clicks_path: Path,
-) -> None:
-    if not run_clicks_path.exists():
-        return
-    with open(target_path, 'a', encoding='utf-8') as dst:
-        with open(run_clicks_path, 'r', encoding='utf-8') as src:
-            for idx, line in enumerate(src):
-                if idx == 0 and line.startswith("run\t"):
-                    continue
-                dst.write(line)
-
-
 def _run_single_simulation_core(
     output_dir: Path,
     run_index: int,
     n_runs: int,
-    run_clicks_path: Path,
+    summary_path: Path,
+    summary_lock_path: Path,
     shots_per_run: int,
     show_plots: bool,
 ):
@@ -836,8 +967,6 @@ def _run_single_simulation_core(
     _stage(6, "逐bin测量采样")
     print("\n运行探测和BSM（逐bin Kraus测量）...")
     run_stats = _init_stats()
-    with open(run_clicks_path, 'w', encoding='utf-8') as file:
-        file.write("run\tshot\tsuccess\tbell\tclick_count\tevents\n")
     for shot_index in range(1, shots_per_run + 1):
         print(f"\n[shot {shot_index}/{shots_per_run}]")
         det_result = run_two_photon_detection(
@@ -919,7 +1048,14 @@ def _run_single_simulation_core(
             if det_result.bell_state:
                 run_stats["bell"][det_result.bell_state] += 1
 
-        _append_click_summary(run_clicks_path, run_index, shot_index, det_result)
+        _append_click_summary(
+            summary_path,
+            summary_lock_path,
+            run_index,
+            shot_index,
+            det_result,
+            success_metrics,
+        )
 
     print(f"\n完成! 文件已保存至: {output_dir}/")
     return run_stats, success_metrics
@@ -929,7 +1065,8 @@ def _run_single_simulation(
     output_dir: Path,
     run_index: int,
     n_runs: int,
-    run_clicks_path: Path,
+    summary_path: Path,
+    summary_lock_path: Path,
     shots_per_run: int,
     log_path: Optional[Path] = None,
     mirror_console: bool = True,
@@ -937,12 +1074,13 @@ def _run_single_simulation(
 ):
     run_tag = f"run{run_index:03d}"
     if log_path is None:
-        print(f"正在处理: {run_tag} | clicks: {run_clicks_path.name}")
+        print(f"正在处理: {run_tag} | summary: {summary_path.name}")
         return _run_single_simulation_core(
             output_dir,
             run_index,
             n_runs,
-            run_clicks_path,
+            summary_path,
+            summary_lock_path,
             shots_per_run,
             show_plots,
         )
@@ -956,12 +1094,13 @@ def _run_single_simulation(
         old_out, old_err = sys.stdout, sys.stderr
         sys.stdout, sys.stderr = tee_out, tee_err
         try:
-            print(f"正在处理: {run_tag} | log: {log_path.name} | clicks: {run_clicks_path.name}")
+            print(f"正在处理: {run_tag} | log: {log_path.name} | summary: {summary_path.name}")
             return _run_single_simulation_core(
                 output_dir,
                 run_index,
                 n_runs,
-                run_clicks_path,
+                summary_path,
+                summary_lock_path,
                 shots_per_run,
                 show_plots,
             )
@@ -970,21 +1109,30 @@ def _run_single_simulation(
 
 
 def _run_single_simulation_task(args):
-    output_dir, run_index, n_runs, shots_per_run, mirror_console, show_plots = args
+    (
+        output_dir,
+        run_index,
+        n_runs,
+        summary_path,
+        summary_lock_path,
+        shots_per_run,
+        mirror_console,
+        show_plots,
+    ) = args
     run_tag = f"run{run_index:03d}"
     log_path = output_dir / f"{run_tag}_console.log"
-    run_clicks_path = output_dir / f"{run_tag}_clicks.txt"
     run_stats, success_metrics = _run_single_simulation(
         output_dir,
         run_index,
         n_runs,
-        run_clicks_path,
+        summary_path,
+        summary_lock_path,
         shots_per_run,
         log_path=log_path,
         mirror_console=mirror_console,
         show_plots=show_plots,
     )
-    return run_index, run_clicks_path, run_stats, success_metrics
+    return run_index, run_stats, success_metrics
 
 
 def main():
@@ -997,21 +1145,46 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # 统一的点击结果汇总文件
-    clicks_summary_path = output_dir / "all_clicks_summary.txt"
-    with open(clicks_summary_path, 'w', encoding='utf-8') as file:
-        file.write("run\tshot\tsuccess\tbell\tclick_count\tevents\n")
+    clicks_summary_path = output_dir / "all_clicks_summary.csv"
+    clicks_lock_path = output_dir / ".all_clicks_summary.lock"
+    _init_combined_summary(clicks_summary_path)
 
-    runs_summary_path = output_dir / "runs_summary.txt"
-    with open(runs_summary_path, 'w', encoding='utf-8') as file:
-        file.write("run\tshots\tsuccess\tsuccess_rate\tbell_counts\tclick_count_dist\n")
+    runs_summary_path = output_dir / "runs_summary.csv"
+    _write_csv_header(
+        runs_summary_path,
+        [
+            "run",
+            "shots",
+            "success",
+            "success_rate",
+            "bell_counts",
+            "click_count_dist",
+            "p_arrive",
+            "p_success_given_arrival",
+            "fidelity_true",
+        ],
+    )
 
-    success_summary_path = output_dir / "success_metrics_summary.txt"
-    with open(success_summary_path, 'w', encoding='utf-8') as file:
-        file.write(
-            "run\tp_arrive\tp_success_all\tp_success_true\tp_success_false\t"
-            "p_success_given_arrival\tfidelity_all\tfidelity_true\tfidelity_false\t"
-            "p_success_no_dark\tfidelity_no_dark\tp_false_approx\tfalse_fraction\tfalse_fraction_approx\n"
-        )
+    success_summary_path = output_dir / "success_metrics_summary.csv"
+    _write_csv_header(
+        success_summary_path,
+        [
+            "run",
+            "p_arrive",
+            "p_success_all",
+            "p_success_true",
+            "p_success_false",
+            "p_success_given_arrival",
+            "fidelity_all",
+            "fidelity_true",
+            "fidelity_false",
+            "p_success_no_dark",
+            "fidelity_no_dark",
+            "p_false_approx",
+            "false_fraction",
+            "false_fraction_approx",
+        ],
+    )
 
     print(f"Output directory: {output_dir}")
     print(f"将运行 {n_runs} 次仿真，每次 {shots_per_run} 次探测采样...")
@@ -1042,22 +1215,40 @@ def main():
 
     if jobs == 1:
         for run_index in focus_runs:
-            run_index, run_clicks_path, run_stats, success_metrics = _run_single_simulation_task(
-                (output_dir, run_index, n_runs, shots_per_run, True, True)
+            run_index, run_stats, success_metrics = _run_single_simulation_task(
+                (
+                    output_dir,
+                    run_index,
+                    n_runs,
+                    clicks_summary_path,
+                    clicks_lock_path,
+                    shots_per_run,
+                    True,
+                    True,
+                )
             )
             if run_stats is not None:
-                _append_run_summary(runs_summary_path, run_index, run_stats)
+                _append_run_summary(runs_summary_path, run_index, run_stats, success_metrics)
                 _merge_stats(overall_stats, run_stats)
             if success_metrics is not None:
                 _append_success_metrics_summary(success_summary_path, run_index, success_metrics)
                 _accumulate_success_metrics(overall_success, success_metrics)
-            if run_clicks_path is not None:
-                _append_clicks_file(clicks_summary_path, run_clicks_path)
             print(f"[完成] run{run_index:03d}", flush=True)
     else:
         tasks = []
         for run_index in bg_runs:
-            tasks.append((output_dir, run_index, n_runs, shots_per_run, False, False))
+            tasks.append(
+                (
+                    output_dir,
+                    run_index,
+                    n_runs,
+                    clicks_summary_path,
+                    clicks_lock_path,
+                    shots_per_run,
+                    False,
+                    False,
+                )
+            )
         if tasks:
             print("已提交后台并行任务，前台队列将顺序输出。")
         futures = []
@@ -1071,52 +1262,57 @@ def main():
                 done = [f for f in list(pending) if f.done()]
                 for f in done:
                     pending.remove(f)
-                    run_index, run_clicks_path, run_stats, success_metrics = f.result()
+                    run_index, run_stats, success_metrics = f.result()
                     if run_stats is not None:
-                        _append_run_summary(runs_summary_path, run_index, run_stats)
+                        _append_run_summary(runs_summary_path, run_index, run_stats, success_metrics)
                         _merge_stats(overall_stats, run_stats)
                     if success_metrics is not None:
                         _append_success_metrics_summary(success_summary_path, run_index, success_metrics)
                         _accumulate_success_metrics(overall_success, success_metrics)
-                    if run_clicks_path is not None:
-                        _append_clicks_file(clicks_summary_path, run_clicks_path)
                     print(f"[完成] run{run_index:03d}", flush=True)
 
             for run_index in focus_runs:
-                run_index, run_clicks_path, run_stats, success_metrics = _run_single_simulation_task(
-                    (output_dir, run_index, n_runs, shots_per_run, True, True)
+                run_index, run_stats, success_metrics = _run_single_simulation_task(
+                    (
+                        output_dir,
+                        run_index,
+                        n_runs,
+                        clicks_summary_path,
+                        clicks_lock_path,
+                        shots_per_run,
+                        True,
+                        True,
+                    )
                 )
                 if run_stats is not None:
-                    _append_run_summary(runs_summary_path, run_index, run_stats)
+                    _append_run_summary(runs_summary_path, run_index, run_stats, success_metrics)
                     _merge_stats(overall_stats, run_stats)
                 if success_metrics is not None:
                     _append_success_metrics_summary(success_summary_path, run_index, success_metrics)
                     _accumulate_success_metrics(overall_success, success_metrics)
-                if run_clicks_path is not None:
-                    _append_clicks_file(clicks_summary_path, run_clicks_path)
                 print(f"[完成] run{run_index:03d}", flush=True)
                 _drain_done()
 
             for future in as_completed(pending):
-                run_index, run_clicks_path, run_stats, success_metrics = future.result()
+                run_index, run_stats, success_metrics = future.result()
                 if run_stats is not None:
-                    _append_run_summary(runs_summary_path, run_index, run_stats)
+                    _append_run_summary(runs_summary_path, run_index, run_stats, success_metrics)
                     _merge_stats(overall_stats, run_stats)
                 if success_metrics is not None:
                     _append_success_metrics_summary(success_summary_path, run_index, success_metrics)
                     _accumulate_success_metrics(overall_success, success_metrics)
-                if run_clicks_path is not None:
-                    _append_clicks_file(clicks_summary_path, run_clicks_path)
                 print(f"[完成] run{run_index:03d}", flush=True)
 
-    _append_run_summary(runs_summary_path, "TOTAL", overall_stats)
-    _write_overall_summary(
-        output_dir / "overall_summary.txt",
+    total_success_metrics = _finalize_success_metrics(overall_success)
+    _append_run_summary(runs_summary_path, "TOTAL", overall_stats, total_success_metrics)
+    _finalize_combined_summary(
+        clicks_summary_path,
+        clicks_lock_path,
         overall_stats,
         n_runs,
         shots_per_run,
+        total_success_metrics,
     )
-    total_success_metrics = _finalize_success_metrics(overall_success)
     _append_success_metrics_summary(success_summary_path, "TOTAL", total_success_metrics)
 
 if __name__ == "__main__":
