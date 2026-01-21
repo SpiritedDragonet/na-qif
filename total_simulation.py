@@ -1017,13 +1017,20 @@ def main():
     overall_stats = _init_stats()
     overall_success = _init_success_metrics_accumulator()
 
-    results = {}
     if jobs == 1:
         for run_index in range(1, n_runs + 1):
             run_index, run_clicks_path, run_stats, success_metrics = _run_single_simulation_task(
                 (output_dir, run_index, n_runs, shots_per_run, True, True)
             )
-            results[run_index] = (run_clicks_path, run_stats, success_metrics)
+            if run_stats is not None:
+                _append_run_summary(runs_summary_path, run_index, run_stats)
+                _merge_stats(overall_stats, run_stats)
+            if success_metrics is not None:
+                _append_success_metrics_summary(success_summary_path, run_index, success_metrics)
+                _accumulate_success_metrics(overall_success, success_metrics)
+            if run_clicks_path is not None:
+                _append_clicks_file(clicks_summary_path, run_clicks_path)
+            print(f"[完成] run{run_index:03d}", flush=True)
     else:
         tasks = []
         for run_index in run_order:
@@ -1035,19 +1042,15 @@ def main():
             future_map = {executor.submit(_run_single_simulation_task, task): task[1] for task in tasks}
             for future in as_completed(future_map):
                 run_index, run_clicks_path, run_stats, success_metrics = future.result()
-                results[run_index] = (run_clicks_path, run_stats, success_metrics)
+                if run_stats is not None:
+                    _append_run_summary(runs_summary_path, run_index, run_stats)
+                    _merge_stats(overall_stats, run_stats)
+                if success_metrics is not None:
+                    _append_success_metrics_summary(success_summary_path, run_index, success_metrics)
+                    _accumulate_success_metrics(overall_success, success_metrics)
+                if run_clicks_path is not None:
+                    _append_clicks_file(clicks_summary_path, run_clicks_path)
                 print(f"[完成] run{run_index:03d}", flush=True)
-
-    for run_index in sorted(results.keys()):
-        run_clicks_path, run_stats, success_metrics = results[run_index]
-        if run_stats is not None:
-            _append_run_summary(runs_summary_path, run_index, run_stats)
-            _merge_stats(overall_stats, run_stats)
-        if success_metrics is not None:
-            _append_success_metrics_summary(success_summary_path, run_index, success_metrics)
-            _accumulate_success_metrics(overall_success, success_metrics)
-        if run_clicks_path is not None:
-            _append_clicks_file(clicks_summary_path, run_clicks_path)
 
     _append_run_summary(runs_summary_path, "TOTAL", overall_stats)
     _write_overall_summary(

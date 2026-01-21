@@ -611,6 +611,104 @@ def _set_two_site_theta(
     mps._mps.norm = 1.0
 
 
+def _build_detection_effects(
+    kraus_list: List[np.ndarray],
+    outcome_detectors: List[List[str]],
+    outcome_dark: List[List[str]],
+) -> Tuple[dict, dict]:
+    effects_all = {}
+    effects_true = {}
+    for K, detectors, dark_detectors in zip(kraus_list, outcome_detectors, outcome_dark):
+        key = _order_two_port_detectors(detectors)
+        K_mat = np.asarray(K)
+        E = K_mat.conj().T @ K_mat
+        effects_all[key] = effects_all.get(key, 0) + E
+        if not dark_detectors:
+            effects_true[key] = effects_true.get(key, 0) + E
+    return effects_all, effects_true
+
+
+def _bell_projector_full(target_bell: str) -> np.ndarray:
+    bell_states = {
+        "Phi+": np.array([1, 0, 0, 1]) / np.sqrt(2),
+        "Phi-": np.array([1, 0, 0, -1]) / np.sqrt(2),
+        "Psi+": np.array([0, 1, 1, 0]) / np.sqrt(2),
+        "Psi-": np.array([0, 1, -1, 0]) / np.sqrt(2),
+    }
+    if target_bell not in bell_states:
+        raise ValueError(f"未知的Bell态：{target_bell}")
+    psi = bell_states[target_bell]
+    proj_qubit = np.outer(psi, psi.conj())
+    proj_full = np.zeros((9, 9), dtype=complex)
+    qubit_indices = [0, 1, 3, 4]
+    for i, qi in enumerate(qubit_indices):
+        for j, qj in enumerate(qubit_indices):
+            proj_full[qi, qj] = proj_qubit[i, j]
+    return proj_full
+
+
+def _prepare_grouped_mps_pairs(mps: MPSState) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+    psi = mps._mps.copy()
+    if psi.L % 2 != 0:
+        raise ValueError("MPS sites 数量必须为偶数，才能按 (atomA,atomB),(A1,B1),... 分组")
+    psi.group_sites(n=2)
+    psi.canonical_form_finite(renormalize=True)
+    psi.norm = 1.0
+    B_list = []
+    Bc_list = []
+    for i in range(psi.L):
+        B = psi.get_B(i, form='B').to_ndarray()
+        B_list.append(B)
+        Bc_list.append(B.conj())
+    return B_list, Bc_list
+
+
+def _apply_env_left(
+    B: np.ndarray,
+    Bc: np.ndarray,
+    op: np.ndarray,
+    env_left: np.ndarray,
+) -> np.ndarray:
+    return np.einsum('ij,ipk,jql,pq->kl', env_left, B, Bc, op, optimize=True)
+
+
+def _apply_env_right(
+    B: np.ndarray,
+    Bc: np.ndarray,
+    op: np.ndarray,
+    env_right: np.ndarray,
+) -> np.ndarray:
+    return np.einsum('ipk,jql,pq,kl->ij', B, Bc, op, env_right, optimize=True)
+
+
+def _build_left_envs(
+    B_list: List[np.ndarray],
+    Bc_list: List[np.ndarray],
+    atom_op: np.ndarray,
+    bin_no_op: np.ndarray,
+) -> List[np.ndarray]:
+    L = len(B_list)
+    left_envs = [None] * (L + 1)
+    left_envs[0] = np.array([[1.0 + 0.0j]])
+    left_envs[1] = _apply_env_left(B_list[0], Bc_list[0], atom_op, left_envs[0])
+    for s in range(1, L):
+        left_envs[s + 1] = _apply_env_left(B_list[s], Bc_list[s], bin_no_op, left_envs[s])
+    return left_envs
+
+
+def _build_right_envs(
+    B_list: List[np.ndarray],
+    Bc_list: List[np.ndarray],
+    bin_no_op: np.ndarray,
+) -> List[np.ndarray]:
+    L = len(B_list)
+    right_envs = [None] * (L + 1)
+    right_envs[L] = np.array([[1.0 + 0.0j]])
+    for s in range(L - 1, 0, -1):
+        right_envs[s] = _apply_env_right(B_list[s], Bc_list[s], bin_no_op, right_envs[s + 1])
+    return right_envs
+
+
 def enumerate_success_events(
     mps: MPSState,
     n_bins: int,
@@ -625,9 +723,10 @@ def enumerate_success_events(
     该函数不做随机采样，仅枚举成功事件集合并严格求和。
     """
     p_arrive = compute_two_photon_arrival_prob(mps, n_bins, verbose=verbose)
-    if p_arrive <= 0.0:
+    p_arrive_eps = 1e-12
+    if p_arrive <= p_arrive_eps and p_dark <= 0.0:
         if verbose:
-            print("  p_arrive≈0，跳过成功事件枚举")
+            print(f"  p_arrive<{p_arrive_eps:.1e} 且 p_dark=0，跳过成功事件枚举")
         zero_spin = np.zeros((4, 4), dtype=complex)
         return SuccessEnumerationResult(
             p_arrive=p_arrive,
@@ -650,23 +749,15 @@ def enumerate_success_events(
     if bin_dim == 6:
         kraus_list, outcome_detectors, outcome_dark = build_detection_kraus_6d(eta_det, p_dark)
         if verbose:
-            print("  Using 6D Kraus operators (36x36) - deterministic")
+            print("  Using 6D Kraus operators (36x36) - POVM contraction")
     elif bin_dim == 18:
         kraus_list, outcome_detectors, outcome_dark = build_detection_kraus_18d(eta_det, p_dark)
         if verbose:
-            print("  Using 18D Kraus operators (324x324) - deterministic")
+            print("  Using 18D Kraus operators (324x324) - POVM contraction")
     else:
         raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6 or 18.")
 
-    detector_map = {}
-    for K, detectors, dark_detectors in zip(kraus_list, outcome_detectors, outcome_dark):
-        key = _order_two_port_detectors(detectors)
-        detector_map.setdefault(key, []).append((K, dark_detectors))
-
-    entry_cache = {}
-    for key, entries in detector_map.items():
-        entry_cache[key] = (entries, [K for K, _ in entries])
-
+    effects_all, effects_true = _build_detection_effects(kraus_list, outcome_detectors, outcome_dark)
     empty_key = _order_two_port_detectors([])
     required_keys = [
         empty_key,
@@ -680,90 +771,79 @@ def enumerate_success_events(
         _order_two_port_detectors(["H2", "V2"]),
     ]
     for key in required_keys:
-        if key not in entry_cache:
+        if key not in effects_all:
             raise ValueError(f"Missing detection outcome for detectors={list(key)}")
 
-    mps._mps.canonical_form_finite(renormalize=True)
+    B_list, Bc_list = _prepare_grouped_mps_pairs(mps)
+    grouped_bins = len(B_list) - 1
+    if grouped_bins != n_bins:
+        raise ValueError(f"n_bins={n_bins} 与分组后bin数量 {grouped_bins} 不一致")
 
-    bin_sites = [
-        (bin_start + 2 * n, bin_start + 2 * n + 1)
-        for n in range(n_bins)
-    ]
+    dim_atom = B_list[0].shape[1]
+    if dim_atom != 9:
+        raise ValueError(f"Atom pair site dimension {dim_atom} != 9")
 
-    p_success = 0.0
-    p_success_true = 0.0
-    p_success_false = 0.0
-    rho_accum = np.zeros((4, 4), dtype=complex)
-    rho_accum_true = np.zeros((4, 4), dtype=complex)
-    rho_accum_false = np.zeros((4, 4), dtype=complex)
-    fidelity_weighted = 0.0
-    fidelity_true_weighted = 0.0
-    fidelity_false_weighted = 0.0
-    bell_weights = Counter()
+    def _get_effect(effects: dict, key: Tuple[str, ...], dim: int) -> np.ndarray:
+        if key in effects:
+            return effects[key]
+        return np.zeros((dim, dim), dtype=complex)
+
+    dim_pair = kraus_list[0].shape[0]
+    E_no = _get_effect(effects_all, empty_key, dim_pair)
+
+    atom_I = np.eye(dim_atom, dtype=complex)
+    right_envs = _build_right_envs(B_list, Bc_list, E_no)
+    left_envs_id = _build_left_envs(B_list, Bc_list, atom_I, E_no)
+
+    bell_projectors = {bell: _bell_projector_full(bell) for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]}
+    left_envs_bell = {
+        bell: _build_left_envs(B_list, Bc_list, proj, E_no)
+        for bell, proj in bell_projectors.items()
+    }
+
+    def _contract_env(env_mid: np.ndarray, env_right: np.ndarray) -> float:
+        return float(np.einsum('ij,ij->', env_mid, env_right).real)
+
     success_events = []
+    bell_weights = Counter()
 
-    def _apply_event(det_by_bin: dict) -> List[Tuple[MPSState, float, bool]]:
-        branches = [(mps.copy(), 1.0, False)]
-        for n in range(n_bins):
-            req_key = det_by_bin.get(n, empty_key)
-            entries, ops = entry_cache[req_key]
-            site_1, site_2 = bin_sites[n]
-            if len(entries) == 1:
-                (_, dark_detectors) = entries[0]
-                new_branches = []
-                for mps_branch, weight, has_dark in branches:
-                    probs, thetas = _kraus_thetas_from_mps(mps_branch, site_1, ops)
-                    p_mu = probs[0]
-                    if p_mu <= 1e-15:
-                        continue
-                    _set_two_site_theta(mps_branch, site_1, thetas[0])
-                    new_branches.append((mps_branch, weight * p_mu, has_dark or bool(dark_detectors)))
-                branches = new_branches
-            else:
-                new_branches = []
-                for mps_branch, weight, has_dark in branches:
-                    probs, thetas = _kraus_thetas_from_mps(mps_branch, site_1, ops)
-                    for (entry, p_mu, theta_selected) in zip(entries, probs, thetas):
-                        if p_mu <= 1e-15:
-                            continue
-                        _, dark_detectors = entry
-                        mps_next = mps_branch.copy()
-                        _set_two_site_theta(mps_next, site_1, theta_selected)
-                        new_branches.append(
-                            (mps_next, weight * p_mu, has_dark or bool(dark_detectors))
-                        )
-                branches = new_branches
-            if not branches:
-                break
-        return branches
+    def _sum_same_bin(
+        left_envs: List[np.ndarray],
+        op_pair: np.ndarray,
+        bell_state: Optional[str] = None,
+        record: bool = False,
+    ) -> float:
+        total = 0.0
+        for s in range(1, n_bins + 1):
+            env_mid = _apply_env_left(B_list[s], Bc_list[s], op_pair, left_envs[s])
+            weight = _contract_env(env_mid, right_envs[s + 1])
+            total += weight
+            if record and bell_state is not None:
+                success_events.append((bell_state, s - 1, s - 1, weight))
+        return total
 
-    def _accumulate(
-        bell_state: str,
-        bin1: int,
-        bin2: int,
-        branches: List[Tuple[MPSState, float, bool]],
-    ) -> None:
-        nonlocal p_success, p_success_true, p_success_false
-        nonlocal rho_accum, rho_accum_true, rho_accum_false
-        nonlocal fidelity_weighted, fidelity_true_weighted, fidelity_false_weighted
-        for mps_branch, weight, has_dark in branches:
-            if weight <= 0:
-                continue
-            p_success += weight
-            bell_weights[bell_state] += weight
-            spin_state = extract_spin_state(mps_branch, n_bins)
-            rho_accum += weight * spin_state
-            fidelity = compute_fidelity_with_bell(spin_state, bell_state)
-            fidelity_weighted += weight * fidelity
-            success_events.append((bell_state, bin1, bin2, weight))
-            if has_dark:
-                p_success_false += weight
-                rho_accum_false += weight * spin_state
-                fidelity_false_weighted += weight * fidelity
-            else:
-                p_success_true += weight
-                rho_accum_true += weight * spin_state
-                fidelity_true_weighted += weight * fidelity
+    def _sum_diff_bins(
+        left_envs: List[np.ndarray],
+        op_a: np.ndarray,
+        op_b: np.ndarray,
+        bell_state: Optional[str] = None,
+        record: bool = False,
+    ) -> float:
+        total = 0.0
+        for i in range(1, n_bins):
+            env_mid = _apply_env_left(B_list[i], Bc_list[i], op_a, left_envs[i])
+            j_end = n_bins
+            if window_bins is not None:
+                j_end = min(n_bins, i + window_bins)
+            for j in range(i + 1, j_end + 1):
+                env_j = _apply_env_left(B_list[j], Bc_list[j], op_b, env_mid)
+                weight = _contract_env(env_j, right_envs[j + 1])
+                total += weight
+                if record and bell_state is not None:
+                    success_events.append((bell_state, i - 1, j - 1, weight))
+                if j < j_end:
+                    env_mid = _apply_env_left(B_list[j], Bc_list[j], E_no, env_mid)
+        return total
 
     patterns = [
         ("Psi-", ("H1", "V2")),
@@ -772,59 +852,70 @@ def enumerate_success_events(
         ("Psi+", ("H2", "V2")),
     ]
 
+    p_success_all = 0.0
+    p_success_true = 0.0
+    fidelity_weighted_all = 0.0
+    fidelity_weighted_true = 0.0
+
     for bell_state, (det_a, det_b) in patterns:
         key_pair = _order_two_port_detectors([det_a, det_b])
         key_a = _order_two_port_detectors([det_a])
         key_b = _order_two_port_detectors([det_b])
 
-        for n in range(n_bins):
-            branches = _apply_event({n: key_pair})
-            _accumulate(bell_state, n, n, branches)
+        E_pair_all = _get_effect(effects_all, key_pair, dim_pair)
+        E_pair_true = _get_effect(effects_true, key_pair, dim_pair)
+        E_a_all = _get_effect(effects_all, key_a, dim_pair)
+        E_b_all = _get_effect(effects_all, key_b, dim_pair)
+        E_a_true = _get_effect(effects_true, key_a, dim_pair)
+        E_b_true = _get_effect(effects_true, key_b, dim_pair)
 
-        for i in range(n_bins - 1):
-            j_end = n_bins
-            if window_bins is not None:
-                j_end = min(n_bins, i + window_bins + 1)
-            for j in range(i + 1, j_end):
-                branches = _apply_event({i: key_a, j: key_b})
-                _accumulate(bell_state, i, j, branches)
-                branches = _apply_event({i: key_b, j: key_a})
-                _accumulate(bell_state, i, j, branches)
+        weight_same_all = _sum_same_bin(left_envs_id, E_pair_all, bell_state, record=True)
+        weight_same_true = _sum_same_bin(left_envs_id, E_pair_true)
 
-    if p_success > 0:
-        rho_success = rho_accum / p_success
-        fidelity_declared = fidelity_weighted / p_success
-    else:
-        rho_success = np.zeros((4, 4), dtype=complex)
-        fidelity_declared = 0.0
-    if p_success_true > 0:
-        rho_success_true = rho_accum_true / p_success_true
-        fidelity_true = fidelity_true_weighted / p_success_true
-    else:
-        rho_success_true = np.zeros((4, 4), dtype=complex)
-        fidelity_true = 0.0
+        weight_diff_all = _sum_diff_bins(left_envs_id, E_a_all, E_b_all, bell_state, record=True)
+        weight_diff_all += _sum_diff_bins(left_envs_id, E_b_all, E_a_all, bell_state, record=True)
+        weight_diff_true = _sum_diff_bins(left_envs_id, E_a_true, E_b_true)
+        weight_diff_true += _sum_diff_bins(left_envs_id, E_b_true, E_a_true)
 
-    if p_success_false > 0:
-        rho_success_false = rho_accum_false / p_success_false
-        fidelity_false = fidelity_false_weighted / p_success_false
-    else:
-        rho_success_false = np.zeros((4, 4), dtype=complex)
-        fidelity_false = 0.0
+        p_success_all += weight_same_all + weight_diff_all
+        p_success_true += weight_same_true + weight_diff_true
+        bell_weights[bell_state] += weight_same_all + weight_diff_all
+
+        fidelity_weighted_all += _sum_same_bin(left_envs_bell[bell_state], E_pair_all)
+        fidelity_weighted_all += _sum_diff_bins(left_envs_bell[bell_state], E_a_all, E_b_all)
+        fidelity_weighted_all += _sum_diff_bins(left_envs_bell[bell_state], E_b_all, E_a_all)
+
+        fidelity_weighted_true += _sum_same_bin(left_envs_bell[bell_state], E_pair_true)
+        fidelity_weighted_true += _sum_diff_bins(left_envs_bell[bell_state], E_a_true, E_b_true)
+        fidelity_weighted_true += _sum_diff_bins(left_envs_bell[bell_state], E_b_true, E_a_true)
+
+    p_success_all = float(max(0.0, p_success_all))
+    p_success_true = float(max(0.0, p_success_true))
+    p_success_false = float(max(0.0, p_success_all - p_success_true))
+
+    fidelity_declared = (fidelity_weighted_all / p_success_all) if p_success_all > 0 else 0.0
+    fidelity_true = (fidelity_weighted_true / p_success_true) if p_success_true > 0 else 0.0
+    fidelity_false = (
+        (fidelity_weighted_all - fidelity_weighted_true) / p_success_false
+        if p_success_false > 0
+        else 0.0
+    )
 
     p_success_given_arrival = (p_success_true / p_arrive) if p_arrive > 0 else 0.0
 
+    zero_spin = np.zeros((4, 4), dtype=complex)
     return SuccessEnumerationResult(
         p_arrive=p_arrive,
-        p_success=p_success,
+        p_success=p_success_all,
         p_success_true=p_success_true,
         p_success_false=p_success_false,
         p_success_given_arrival=p_success_given_arrival,
         fidelity_declared=fidelity_declared,
         fidelity_true=fidelity_true,
         fidelity_false=fidelity_false,
-        spin_state=rho_success,
-        spin_state_true=rho_success_true,
-        spin_state_false=rho_success_false,
+        spin_state=zero_spin,
+        spin_state_true=zero_spin,
+        spin_state_false=zero_spin,
         bell_weights=bell_weights,
         success_events=success_events,
     )
