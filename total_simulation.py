@@ -1019,18 +1019,29 @@ def main():
     print(f"并行进程数: {jobs}")
 
     if jobs > 1:
-        focus_run = int(np.random.default_rng().integers(1, n_runs + 1))
-        print(f"并行模式: 仅显示 run{focus_run:03d} 的实时输出（若非无屏幕环境将显示图像）")
-        run_order = [focus_run] + [i for i in range(1, n_runs + 1) if i != focus_run]
+        rng = np.random.default_rng()
+        groups = [[] for _ in range(jobs)]
+        for idx, run_index in enumerate(range(1, n_runs + 1)):
+            groups[idx % jobs].append(run_index)
+        focus_group = int(rng.integers(0, jobs))
+        focus_runs = groups[focus_group]
+        bg_runs = [run for gi, group in enumerate(groups) if gi != focus_group for run in group]
+        preview = ",".join(f"{r:03d}" for r in focus_runs[:6])
+        if len(focus_runs) > 6:
+            preview += ",..."
+        print(
+            "并行模式: 绑定前台输出到单个进程队列，"
+            f"组 {focus_group + 1}/{jobs}，runs={preview}"
+        )
     else:
-        focus_run = 1
-        run_order = list(range(1, n_runs + 1))
+        focus_runs = list(range(1, n_runs + 1))
+        bg_runs = []
 
     overall_stats = _init_stats()
     overall_success = _init_success_metrics_accumulator()
 
     if jobs == 1:
-        for run_index in range(1, n_runs + 1):
+        for run_index in focus_runs:
             run_index, run_clicks_path, run_stats, success_metrics = _run_single_simulation_task(
                 (output_dir, run_index, n_runs, shots_per_run, True, True)
             )
@@ -1045,14 +1056,48 @@ def main():
             print(f"[完成] run{run_index:03d}", flush=True)
     else:
         tasks = []
-        for run_index in run_order:
-            mirror_console = run_index == focus_run
-            show_plots = mirror_console
-            tasks.append((output_dir, run_index, n_runs, shots_per_run, mirror_console, show_plots))
-        print("已提交全部并行任务，非前台 run 的输出写入各自日志。")
-        with ProcessPoolExecutor(max_workers=jobs) as executor:
-            future_map = {executor.submit(_run_single_simulation_task, task): task[1] for task in tasks}
-            for future in as_completed(future_map):
+        for run_index in bg_runs:
+            tasks.append((output_dir, run_index, n_runs, shots_per_run, False, False))
+        if tasks:
+            print("已提交后台并行任务，前台队列将顺序输出。")
+        futures = []
+        with ProcessPoolExecutor(max_workers=max(1, jobs - 1)) as executor:
+            for task in tasks:
+                futures.append(executor.submit(_run_single_simulation_task, task))
+
+            pending = set(futures)
+
+            def _drain_done():
+                done = [f for f in list(pending) if f.done()]
+                for f in done:
+                    pending.remove(f)
+                    run_index, run_clicks_path, run_stats, success_metrics = f.result()
+                    if run_stats is not None:
+                        _append_run_summary(runs_summary_path, run_index, run_stats)
+                        _merge_stats(overall_stats, run_stats)
+                    if success_metrics is not None:
+                        _append_success_metrics_summary(success_summary_path, run_index, success_metrics)
+                        _accumulate_success_metrics(overall_success, success_metrics)
+                    if run_clicks_path is not None:
+                        _append_clicks_file(clicks_summary_path, run_clicks_path)
+                    print(f"[完成] run{run_index:03d}", flush=True)
+
+            for run_index in focus_runs:
+                run_index, run_clicks_path, run_stats, success_metrics = _run_single_simulation_task(
+                    (output_dir, run_index, n_runs, shots_per_run, True, True)
+                )
+                if run_stats is not None:
+                    _append_run_summary(runs_summary_path, run_index, run_stats)
+                    _merge_stats(overall_stats, run_stats)
+                if success_metrics is not None:
+                    _append_success_metrics_summary(success_summary_path, run_index, success_metrics)
+                    _accumulate_success_metrics(overall_success, success_metrics)
+                if run_clicks_path is not None:
+                    _append_clicks_file(clicks_summary_path, run_clicks_path)
+                print(f"[完成] run{run_index:03d}", flush=True)
+                _drain_done()
+
+            for future in as_completed(pending):
                 run_index, run_clicks_path, run_stats, success_metrics = future.result()
                 if run_stats is not None:
                     _append_run_summary(runs_summary_path, run_index, run_stats)
