@@ -51,9 +51,27 @@ SUMMARY_HEADER = [
     "bell",
     "click_count",
     "events",
+    "n_total",
+    "n_780_total",
+    "n_780_H",
+    "n_780_V",
+    "n_1517_total",
+    "n_1517_H",
+    "n_1517_V",
+    "loss_prob",
     "p_arrive",
     "p_success_given_arrival",
+    "p_success_all",
+    "p_success_true",
+    "p_success_false",
+    "p_success_no_dark",
+    "p_false_approx",
+    "false_fraction",
+    "false_fraction_approx",
     "fidelity_true",
+    "fidelity_false",
+    "fidelity_all",
+    "fidelity_no_dark",
     "fidelity_shot",
     "runs",
     "shots_per_run",
@@ -64,7 +82,17 @@ SUMMARY_HEADER = [
     "click_count_dist",
     "p_arrive",
     "p_success_given_arrival",
+    "p_success_all",
+    "p_success_true",
+    "p_success_false",
+    "p_success_no_dark",
+    "p_false_approx",
+    "false_fraction",
+    "false_fraction_approx",
     "avg_fidelity_true",
+    "avg_fidelity_false",
+    "avg_fidelity_all",
+    "avg_fidelity_no_dark",
 ]
 
 
@@ -216,6 +244,7 @@ def _append_click_summary(
     shot_index: int,
     det_result,
     metrics: Optional[dict],
+    photon_stats: Optional[dict],
 ):
     clicks = [(c.detector, c.bin_index) for c in det_result.clicks]
     fidelity_shot = ""
@@ -229,9 +258,27 @@ def _append_click_summary(
         det_result.bell_state,
         len(clicks),
         clicks,
+        _format_stat(photon_stats, "n_total", ".4f"),
+        _format_stat(photon_stats, "n_780_total", ".4f"),
+        _format_stat(photon_stats, "n_780_H", ".4f"),
+        _format_stat(photon_stats, "n_780_V", ".4f"),
+        _format_stat(photon_stats, "n_1517_total", ".4f"),
+        _format_stat(photon_stats, "n_1517_H", ".4f"),
+        _format_stat(photon_stats, "n_1517_V", ".4f"),
+        _format_stat(photon_stats, "loss_prob", ".4f"),
         _format_metric(metrics, "p_arrive", ".8f"),
         _format_metric(metrics, "p_success_given_arrival", ".8f"),
+        _format_metric(metrics, "p_success_all", ".8f"),
+        _format_metric(metrics, "p_success_true", ".8f"),
+        _format_metric(metrics, "p_success_false", ".8f"),
+        _format_metric(metrics, "p_success_no_dark", ".8f"),
+        _format_metric(metrics, "p_false_approx", ".8f"),
+        _format_metric(metrics, "false_fraction", ".6f"),
+        _format_metric(metrics, "false_fraction_approx", ".6f"),
         _format_metric(metrics, "fidelity_true", ".6f"),
+        _format_metric(metrics, "fidelity_false", ".6f"),
+        _format_metric(metrics, "fidelity_all", ".6f"),
+        _format_metric(metrics, "fidelity_no_dark", ".6f"),
         fidelity_shot,
     ]
     if len(row) < len(SUMMARY_HEADER):
@@ -286,6 +333,15 @@ def _format_metric(metrics: Optional[dict], key: str, fmt: str) -> str:
     return format(value, fmt)
 
 
+def _format_stat(stats: Optional[dict], key: str, fmt: str) -> str:
+    if not stats or key not in stats:
+        return ""
+    value = stats.get(key)
+    if value is None:
+        return ""
+    return format(value, fmt)
+
+
 @contextmanager
 def _file_lock(lock_path: Path, stale_s: float = 120.0) -> None:
     lock_fd = None
@@ -319,31 +375,6 @@ def _init_combined_summary(summary_path: Path) -> None:
     _append_csv_row(summary_path, [""] * len(SUMMARY_HEADER))
 
 
-def _append_run_summary(
-    summary_path: Path,
-    run_id,
-    stats: dict,
-    metrics: Optional[dict] = None,
-) -> None:
-    shots = stats["shots"]
-    success = stats["success"]
-    success_rate = (success / shots) if shots > 0 else 0.0
-    bell_str = _format_counter(stats["bell"])
-    click_str = _format_counter(stats["clicks"])
-    row = [
-        run_id,
-        shots,
-        success,
-        f"{success_rate:.4f}",
-        bell_str,
-        click_str,
-        _format_metric(metrics, "p_arrive", ".8f"),
-        _format_metric(metrics, "p_success_given_arrival", ".8f"),
-        _format_metric(metrics, "fidelity_true", ".6f"),
-    ]
-    _append_csv_row(summary_path, row)
-
-
 def _finalize_combined_summary(
     summary_path: Path,
     lock_path: Path,
@@ -367,7 +398,17 @@ def _finalize_combined_summary(
         click_str,
         _format_metric(metrics, "p_arrive", ".8f"),
         _format_metric(metrics, "p_success_given_arrival", ".8f"),
+        _format_metric(metrics, "p_success_all", ".8f"),
+        _format_metric(metrics, "p_success_true", ".8f"),
+        _format_metric(metrics, "p_success_false", ".8f"),
+        _format_metric(metrics, "p_success_no_dark", ".8f"),
+        _format_metric(metrics, "p_false_approx", ".8f"),
+        _format_metric(metrics, "false_fraction", ".6f"),
+        _format_metric(metrics, "false_fraction_approx", ".6f"),
         _format_metric(metrics, "fidelity_true", ".6f"),
+        _format_metric(metrics, "fidelity_false", ".6f"),
+        _format_metric(metrics, "fidelity_all", ".6f"),
+        _format_metric(metrics, "fidelity_no_dark", ".6f"),
     ]
     with _file_lock(lock_path):
         with open(summary_path, 'r', encoding='utf-8', newline='') as file:
@@ -380,7 +421,10 @@ def _finalize_combined_summary(
         if len(rows) < 2:
             rows = [header, [""] * len(header)]
         summary_row = [""] * len(header)
-        start_idx = header.index("runs") if "runs" in header else SUMMARY_HEADER.index("runs")
+        try:
+            start_idx = header.index("runs")
+        except ValueError:
+            start_idx = SUMMARY_HEADER.index("runs")
         for offset, value in enumerate(summary_values):
             if start_idx + offset < len(summary_row):
                 summary_row[start_idx + offset] = value
@@ -388,9 +432,12 @@ def _finalize_combined_summary(
         def _sort_key(row):
             try:
                 run_id = int(row[0])
+            except (ValueError, TypeError, IndexError):
+                run_id = 10**9
+            try:
                 shot_id = int(row[1])
             except (ValueError, TypeError, IndexError):
-                return (10**9, 10**9)
+                shot_id = 10**9
             return (run_id, shot_id)
         data_rows.sort(key=_sort_key)
         final_rows = [header, summary_row] + data_rows
@@ -465,30 +512,6 @@ def _write_success_metrics_detail(
         file.write(f"fidelity_true = {metrics['fidelity_true']:.6f}\n")
         file.write(f"fidelity_false = {metrics['fidelity_false']:.6f}\n")
     return output_path
-
-
-def _append_success_metrics_summary(
-    summary_path: Path,
-    run_id,
-    metrics: dict,
-) -> None:
-    row = [
-        run_id,
-        f"{metrics['p_arrive']:.8f}",
-        f"{metrics['p_success_all']:.8f}",
-        f"{metrics['p_success_true']:.8f}",
-        f"{metrics['p_success_false']:.8f}",
-        f"{metrics['p_success_given_arrival']:.8f}",
-        f"{metrics['fidelity_all']:.6f}",
-        f"{metrics['fidelity_true']:.6f}",
-        f"{metrics['fidelity_false']:.6f}",
-        f"{metrics['p_success_no_dark']:.8f}",
-        f"{metrics['fidelity_no_dark']:.6f}",
-        f"{metrics['p_false_approx']:.8f}",
-        f"{metrics['false_fraction']:.6f}",
-        f"{metrics['false_fraction_approx']:.6f}",
-    ]
-    _append_csv_row(summary_path, row)
 
 
 def _init_success_metrics_accumulator() -> dict:
@@ -1055,6 +1078,7 @@ def _run_single_simulation_core(
             shot_index,
             det_result,
             success_metrics,
+            photon_stats,
         )
 
     print(f"\n完成! 文件已保存至: {output_dir}/")
@@ -1149,43 +1173,6 @@ def main():
     clicks_lock_path = output_dir / ".all_clicks_summary.lock"
     _init_combined_summary(clicks_summary_path)
 
-    runs_summary_path = output_dir / "runs_summary.csv"
-    _write_csv_header(
-        runs_summary_path,
-        [
-            "run",
-            "shots",
-            "success",
-            "success_rate",
-            "bell_counts",
-            "click_count_dist",
-            "p_arrive",
-            "p_success_given_arrival",
-            "fidelity_true",
-        ],
-    )
-
-    success_summary_path = output_dir / "success_metrics_summary.csv"
-    _write_csv_header(
-        success_summary_path,
-        [
-            "run",
-            "p_arrive",
-            "p_success_all",
-            "p_success_true",
-            "p_success_false",
-            "p_success_given_arrival",
-            "fidelity_all",
-            "fidelity_true",
-            "fidelity_false",
-            "p_success_no_dark",
-            "fidelity_no_dark",
-            "p_false_approx",
-            "false_fraction",
-            "false_fraction_approx",
-        ],
-    )
-
     print(f"Output directory: {output_dir}")
     print(f"将运行 {n_runs} 次仿真，每次 {shots_per_run} 次探测采样...")
     jobs = max(1, min(jobs, n_runs, os.cpu_count() or 1))
@@ -1228,10 +1215,8 @@ def main():
                 )
             )
             if run_stats is not None:
-                _append_run_summary(runs_summary_path, run_index, run_stats, success_metrics)
                 _merge_stats(overall_stats, run_stats)
             if success_metrics is not None:
-                _append_success_metrics_summary(success_summary_path, run_index, success_metrics)
                 _accumulate_success_metrics(overall_success, success_metrics)
             print(f"[完成] run{run_index:03d}", flush=True)
     else:
@@ -1264,10 +1249,8 @@ def main():
                     pending.remove(f)
                     run_index, run_stats, success_metrics = f.result()
                     if run_stats is not None:
-                        _append_run_summary(runs_summary_path, run_index, run_stats, success_metrics)
                         _merge_stats(overall_stats, run_stats)
                     if success_metrics is not None:
-                        _append_success_metrics_summary(success_summary_path, run_index, success_metrics)
                         _accumulate_success_metrics(overall_success, success_metrics)
                     print(f"[完成] run{run_index:03d}", flush=True)
 
@@ -1285,10 +1268,8 @@ def main():
                     )
                 )
                 if run_stats is not None:
-                    _append_run_summary(runs_summary_path, run_index, run_stats, success_metrics)
                     _merge_stats(overall_stats, run_stats)
                 if success_metrics is not None:
-                    _append_success_metrics_summary(success_summary_path, run_index, success_metrics)
                     _accumulate_success_metrics(overall_success, success_metrics)
                 print(f"[完成] run{run_index:03d}", flush=True)
                 _drain_done()
@@ -1296,15 +1277,12 @@ def main():
             for future in as_completed(pending):
                 run_index, run_stats, success_metrics = future.result()
                 if run_stats is not None:
-                    _append_run_summary(runs_summary_path, run_index, run_stats, success_metrics)
                     _merge_stats(overall_stats, run_stats)
                 if success_metrics is not None:
-                    _append_success_metrics_summary(success_summary_path, run_index, success_metrics)
                     _accumulate_success_metrics(overall_success, success_metrics)
                 print(f"[完成] run{run_index:03d}", flush=True)
 
     total_success_metrics = _finalize_success_metrics(overall_success)
-    _append_run_summary(runs_summary_path, "TOTAL", overall_stats, total_success_metrics)
     _finalize_combined_summary(
         clicks_summary_path,
         clicks_lock_path,
@@ -1313,7 +1291,6 @@ def main():
         shots_per_run,
         total_success_metrics,
     )
-    _append_success_metrics_summary(success_summary_path, "TOTAL", total_success_metrics)
 
 if __name__ == "__main__":
     main()
