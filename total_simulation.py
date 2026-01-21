@@ -46,17 +46,22 @@ class Tee:
     """同时输出到多个流（用于日志与控制台同步）。"""
     def __init__(self, *streams):
         self._streams = streams
+        self._tty_streams = [
+            s for s in streams if getattr(s, "isatty", lambda: False)()
+        ]
 
     def write(self, data):
         for stream in self._streams:
             stream.write(data)
+        for stream in self._tty_streams:
+            stream.flush()
 
     def flush(self):
         for stream in self._streams:
             stream.flush()
 
     def isatty(self):
-        return False
+        return bool(self._tty_streams)
 
 
 def _parse_run_params(argv) -> Tuple[int, int, int]:
@@ -165,7 +170,7 @@ def save_debug_info(
         f.write(f'  总期望光子数 = {stats["n_total"]:.4f}\n')
         f.write(f'  780nm: H={stats.get("n_780_H", 0):.4f}, V={stats.get("n_780_V", 0):.4f}, total={stats.get("n_780_total", 0):.4f}\n')
         f.write(f'  1517nm: H={stats.get("n_1517_H", 0):.4f}, V={stats.get("n_1517_V", 0):.4f}, total={stats.get("n_1517_total", 0):.4f}\n')
-        f.write(f'  损耗概率 = {stats["loss_prob"]:.4f}\n\n')
+        f.write(f'  期望损耗光子数 = {stats["loss_prob"]:.4f}\n\n')
         f.write(f'原子态信息:\n')
         f.write(f'  对角元: {info["spin_state_diag"]}\n')
         f.write(f'  纯度: {info["spin_purity"]:.4f}\n\n')
@@ -873,25 +878,25 @@ def _run_single_simulation_core(
             file.write(f'成功: {det_result.success}\n')
             file.write(f'Bell态: {det_result.bell_state}\n')
             file.write(f'点击次数: {len(det_result.clicks)}\n')
-        if det_result.clicks:
-            file.write(f'点击详情: {[(c.detector, c.bin_index) for c in det_result.clicks]}\n')
+            if det_result.clicks:
+                file.write(f'点击详情: {[(c.detector, c.bin_index) for c in det_result.clicks]}\n')
 
-            file.write(f'\n自旋密度矩阵:\n')
-            rho = det_result.spin_state
-            file.write(f'  基: |00>, |01>, |10>, |11>\n')
-            for i in range(4):
-                for j in range(4):
-                    val = rho[i, j]
-                    if abs(val) > 1e-10:
-                        file.write(f'  rho[{i},{j}] = {val:.4f}\n')
+                file.write(f'\n自旋密度矩阵:\n')
+                rho = det_result.spin_state
+                file.write(f'  基: |00>, |01>, |10>, |11>\n')
+                for i in range(4):
+                    for j in range(4):
+                        val = rho[i, j]
+                        if abs(val) > 1e-10:
+                            file.write(f'  rho[{i},{j}] = {val:.4f}\n')
 
-            file.write(f'\n纯度: {np.trace(rho @ rho).real:.4f}\n')
+                file.write(f'\n纯度: {np.trace(rho @ rho).real:.4f}\n')
 
-            file.write(f'\nBell态保真度:\n')
-            for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
-                fid = compute_fidelity_with_bell(rho, bell)
-                marker = " <-- 探测到的" if bell == det_result.bell_state else ""
-                file.write(f'  F({bell}) = {fid:.4f}{marker}\n')
+                file.write(f'\nBell态保真度:\n')
+                for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
+                    fid = compute_fidelity_with_bell(rho, bell)
+                    marker = " <-- 探测到的" if bell == det_result.bell_state else ""
+                    file.write(f'  F({bell}) = {fid:.4f}{marker}\n')
 
         print(f"  调试信息已保存: {det_file.name}")
 
@@ -1004,8 +1009,10 @@ def main():
     if jobs > 1:
         focus_run = int(np.random.default_rng().integers(1, n_runs + 1))
         print(f"并行模式: 仅显示 run{focus_run:03d} 的实时输出（若非无屏幕环境将显示图像）")
+        run_order = [focus_run] + [i for i in range(1, n_runs + 1) if i != focus_run]
     else:
         focus_run = 1
+        run_order = list(range(1, n_runs + 1))
 
     overall_stats = _init_stats()
     overall_success = _init_success_metrics_accumulator()
@@ -1019,15 +1026,17 @@ def main():
             results[run_index] = (run_clicks_path, run_stats, success_metrics)
     else:
         tasks = []
-        for run_index in range(1, n_runs + 1):
+        for run_index in run_order:
             mirror_console = run_index == focus_run
             show_plots = mirror_console
             tasks.append((output_dir, run_index, n_runs, shots_per_run, mirror_console, show_plots))
+        print("已提交全部并行任务，非前台 run 的输出写入各自日志。")
         with ProcessPoolExecutor(max_workers=jobs) as executor:
             future_map = {executor.submit(_run_single_simulation_task, task): task[1] for task in tasks}
             for future in as_completed(future_map):
                 run_index, run_clicks_path, run_stats, success_metrics = future.result()
                 results[run_index] = (run_clicks_path, run_stats, success_metrics)
+                print(f"[完成] run{run_index:03d}", flush=True)
 
     for run_index in sorted(results.keys()):
         run_clicks_path, run_stats, success_metrics = results[run_index]

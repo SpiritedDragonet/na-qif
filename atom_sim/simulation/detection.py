@@ -625,6 +625,25 @@ def enumerate_success_events(
     该函数不做随机采样，仅枚举成功事件集合并严格求和。
     """
     p_arrive = compute_two_photon_arrival_prob(mps, n_bins, verbose=verbose)
+    if p_arrive <= 0.0:
+        if verbose:
+            print("  p_arrive≈0，跳过成功事件枚举")
+        zero_spin = np.zeros((4, 4), dtype=complex)
+        return SuccessEnumerationResult(
+            p_arrive=p_arrive,
+            p_success=0.0,
+            p_success_true=0.0,
+            p_success_false=0.0,
+            p_success_given_arrival=0.0,
+            fidelity_declared=0.0,
+            fidelity_true=0.0,
+            fidelity_false=0.0,
+            spin_state=zero_spin,
+            spin_state_true=zero_spin,
+            spin_state_false=zero_spin,
+            bell_weights=Counter(),
+            success_events=[],
+        )
 
     bin_start = _infer_bin_start(mps)
     bin_dim = mps.d[bin_start]
@@ -898,7 +917,7 @@ def _compute_photon_statistics_global(mps: MPSState, n_bins: int, bin_dim: int, 
         print(f"    总期望光子数：{stats['n_total']:.4f}")
         print(f"    780nm: H={stats['n_780_H']:.4f}, V={stats['n_780_V']:.4f}, total={stats['n_780_total']:.4f}")
         print(f"    1517nm: H={stats['n_1517_H']:.4f}, V={stats['n_1517_V']:.4f}, total={stats['n_1517_total']:.4f}")
-        print(f"    损耗概率：{stats['loss_prob']:.4f}")
+        print(f"    期望损耗光子数：{stats['loss_prob']:.4f}")
 
     return stats
 
@@ -1030,7 +1049,7 @@ def compute_photon_statistics(mps: MPSState, n_bins: int, verbose: bool = False)
     Returns
     -------
     dict
-        包含 'n_total', 'n_H', 'n_V', 'loss_prob',
+        包含 'n_total', 'n_H', 'n_V', 'loss_prob'(期望损耗光子数),
         以及 'n_780_H', 'n_780_V', 'n_1517_H', 'n_1517_V'
     """
     # 检测bin维度
