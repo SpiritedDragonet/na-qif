@@ -774,6 +774,8 @@ def enumerate_success_events(
         if key not in effects_all:
             raise ValueError(f"Missing detection outcome for detectors={list(key)}")
 
+    if verbose:
+        print("  POVM准备: 分组MPS并构建环境")
     B_list, Bc_list = _prepare_grouped_mps_pairs(mps)
     grouped_bins = len(B_list) - 1
     if grouped_bins != n_bins:
@@ -857,7 +859,9 @@ def enumerate_success_events(
     fidelity_weighted_all = 0.0
     fidelity_weighted_true = 0.0
 
-    for bell_state, (det_a, det_b) in patterns:
+    for idx, (bell_state, (det_a, det_b)) in enumerate(patterns, start=1):
+        if verbose:
+            print(f"  POVM累加: {bell_state} ({idx}/{len(patterns)})")
         key_pair = _order_two_port_detectors([det_a, det_b])
         key_a = _order_two_port_detectors([det_a])
         key_b = _order_two_port_detectors([det_b])

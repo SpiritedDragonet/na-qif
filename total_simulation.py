@@ -433,6 +433,12 @@ def _run_single_simulation_core(
 ):
     run_tag = f"run{run_index:03d}"
     success_metrics = None
+    stage_total = 6
+
+    def _stage(idx: int, label: str) -> None:
+        ts = datetime.now().strftime("%H:%M:%S")
+        print(f"[{run_tag} {ts}] [阶段 {idx}/{stage_total}] {label}")
+
     print("\n" + "=" * 80)
     print(f"Run {run_index}/{n_runs} ({run_tag})")
     print("=" * 80)
@@ -443,6 +449,7 @@ def _run_single_simulation_core(
     fiber_params = FiberChannelParams()
 
     # 运行发射
+    _stage(1, "发射")
     # 使用合理的物理参数
     delay_jitter_ns = 0.0  # 设置为 >0 可启用A/B延迟随机抖动（ns）
     result = run_dual_atom_emission(
@@ -480,6 +487,7 @@ def _run_single_simulation_core(
     )
 
     # 应用QFC
+    _stage(2, "QFC + 780滤波 + 1517投影")
     print("\n应用QFC...")
     apply_qfc(
         mps=result.mps,
@@ -527,6 +535,7 @@ def _run_single_simulation_core(
     )
 
     # 应用光纤信道（偏振漂移 + 损耗）
+    _stage(3, "光纤信道")
     print("\n应用光纤信道...")
     result.mps, fiber_sample = apply_fiber_channel(
         mps=result.mps,
@@ -590,6 +599,7 @@ def _run_single_simulation_core(
     # =========================================================================
     # 应用分束器（BS），使A_n与B_n在每个仓处干涉
     # =========================================================================
+    _stage(4, "分束器 + 诊断/可视化")
     print("\n应用分束器（BS）...")
     apply_bs(
         mps=result.mps,
@@ -770,6 +780,7 @@ def _run_single_simulation_core(
     site_B = 3
     rho_AB = result.mps.get_reduced_density([site_A, site_B])
     print(f"  rho_AB shape: {rho_AB.shape}")
+    _stage(5, "成功事件统计 (POVM)")
     print("\n枚举成功事件（无暗计数）...")
     enum_no_dark = enumerate_success_events(
         mps=result.mps,
@@ -822,6 +833,7 @@ def _run_single_simulation_core(
     print(f"  Success metrics saved: {success_path.name}")
 
     # 使用逐bin Kraus测量方法运行探测和BSM（可多次采样）
+    _stage(6, "逐bin测量采样")
     print("\n运行探测和BSM（逐bin Kraus测量）...")
     run_stats = _init_stats()
     with open(run_clicks_path, 'w', encoding='utf-8') as file:
