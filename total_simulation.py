@@ -85,7 +85,13 @@ SUMMARY_HEADER = [
     "fidelity_false",
     "fidelity_all",
     "fidelity_no_dark",
-    "fidelity_shot",
+    "p_qubit_true",
+    "p_qubit_all",
+    "fidelity_cond_true",
+    "fidelity_cond_all",
+    "p_qubit_shot",
+    "fidelity_shot_full",
+    "fidelity_shot_cond",
     "runs",
     "shots_per_run",
     "total_shots",
@@ -107,6 +113,10 @@ SUMMARY_HEADER = [
     "p_false_approx",
     "false_fraction",
     "false_fraction_approx",
+    "avg_p_qubit_true",
+    "avg_p_qubit_all",
+    "avg_fidelity_cond_true",
+    "avg_fidelity_cond_all",
     "avg_fidelity_true",
     "avg_fidelity_false",
     "avg_fidelity_all",
@@ -255,13 +265,21 @@ def save_debug_info(
     info['photon_stats'] = stats
 
     # 原子态信息
-    spin_state = extract_spin_state(mps, n_bins)
+    spin_state, p_qubit = extract_spin_state(mps, n_bins)
     info['spin_state_diag'] = np.diag(spin_state).real.tolist()
-    info['spin_purity'] = float(np.real(np.trace(spin_state @ spin_state)))
+    info['p_qubit'] = p_qubit
+    if p_qubit > 0:
+        spin_state_cond = spin_state / p_qubit
+        info['spin_purity'] = float(np.real(np.trace(spin_state_cond @ spin_state_cond)))
+    else:
+        info['spin_purity'] = 0.0
 
     # Bell态保真度
     for bell in ['Psi+', 'Psi-', 'Phi+', 'Phi-']:
-        info[f'fidelity_{bell.replace("+", "p").replace("-", "m")}'] = compute_fidelity_with_bell(spin_state, bell)
+        f_full = compute_fidelity_with_bell(spin_state, bell)
+        f_cond = f_full / p_qubit if p_qubit > 0 else 0.0
+        info[f'fidelity_{bell.replace("+", "p").replace("-", "m")}_full'] = f_full
+        info[f'fidelity_{bell.replace("+", "p").replace("-", "m")}_cond'] = f_cond
 
     # 保存到文件
     prefix = f"{run_tag}_" if run_tag else ""
@@ -281,12 +299,13 @@ def save_debug_info(
         f.write(f'  期望损耗光子数 = {stats["loss_expected"]:.4f}\n\n')
         f.write(f'原子态信息:\n')
         f.write(f'  对角元: {info["spin_state_diag"]}\n')
-        f.write(f'  纯度: {info["spin_purity"]:.4f}\n\n')
+        f.write(f'  p_qubit: {info["p_qubit"]:.4f}\n')
+        f.write(f'  纯度(条件化): {info["spin_purity"]:.4f}\n\n')
         f.write(f'Bell态保真度:\n')
-        f.write(f'  Psi+ = {info["fidelity_Psip"]:.4f}\n')
-        f.write(f'  Psi- = {info["fidelity_Psim"]:.4f}\n')
-        f.write(f'  Phi+ = {info["fidelity_Phip"]:.4f}\n')
-        f.write(f'  Phi- = {info["fidelity_Phim"]:.4f}\n')
+        f.write(f'  Psi+ (full/cond) = {info["fidelity_Psip_full"]:.4f} / {info["fidelity_Psip_cond"]:.4f}\n')
+        f.write(f'  Psi- (full/cond) = {info["fidelity_Psim_full"]:.4f} / {info["fidelity_Psim_cond"]:.4f}\n')
+        f.write(f'  Phi+ (full/cond) = {info["fidelity_Phip_full"]:.4f} / {info["fidelity_Phip_cond"]:.4f}\n')
+        f.write(f'  Phi- (full/cond) = {info["fidelity_Phim_full"]:.4f} / {info["fidelity_Phim_cond"]:.4f}\n')
 
     print(f'  调试信息已保存: {info_file.name}')
 
@@ -301,10 +320,16 @@ def _append_click_summary(
     photon_stats: Optional[dict],
 ):
     clicks = [(c.detector, c.bin_index) for c in det_result.clicks]
-    fidelity_shot = ""
+    p_qubit_shot = ""
+    fidelity_shot_full = ""
+    fidelity_shot_cond = ""
+    if det_result.p_qubit is not None:
+        p_qubit_shot = format(det_result.p_qubit, ".6f")
     if det_result.success and det_result.bell_state:
-        fidelity = compute_fidelity_with_bell(det_result.spin_state, det_result.bell_state)
-        fidelity_shot = format(fidelity, ".6f")
+        fidelity_full = compute_fidelity_with_bell(det_result.spin_state, det_result.bell_state)
+        fidelity_cond = fidelity_full / det_result.p_qubit if det_result.p_qubit > 0 else 0.0
+        fidelity_shot_full = format(fidelity_full, ".6f")
+        fidelity_shot_cond = format(fidelity_cond, ".6f")
     row = [
         run_index,
         shot_index,
@@ -338,7 +363,13 @@ def _append_click_summary(
         _format_metric(metrics, "fidelity_false", ".6f"),
         _format_metric(metrics, "fidelity_all", ".6f"),
         _format_metric(metrics, "fidelity_no_dark", ".6f"),
-        fidelity_shot,
+        _format_metric(metrics, "p_qubit_true", ".6f"),
+        _format_metric(metrics, "p_qubit_all", ".6f"),
+        _format_metric(metrics, "fidelity_cond_true", ".6f"),
+        _format_metric(metrics, "fidelity_cond_all", ".6f"),
+        p_qubit_shot,
+        fidelity_shot_full,
+        fidelity_shot_cond,
     ]
     if len(row) < len(SUMMARY_HEADER):
         row += [""] * (len(SUMMARY_HEADER) - len(row))
@@ -469,6 +500,10 @@ def _finalize_combined_summary(
         _format_metric(metrics, "p_false_approx", ".8f"),
         _format_metric(metrics, "false_fraction", ".6f"),
         _format_metric(metrics, "false_fraction_approx", ".6f"),
+        _format_metric(metrics, "p_qubit_true", ".6f"),
+        _format_metric(metrics, "p_qubit_all", ".6f"),
+        _format_metric(metrics, "fidelity_cond_true", ".6f"),
+        _format_metric(metrics, "fidelity_cond_all", ".6f"),
         _format_metric(metrics, "fidelity_true", ".6f"),
         _format_metric(metrics, "fidelity_false", ".6f"),
         _format_metric(metrics, "fidelity_all", ".6f"),
@@ -591,6 +626,8 @@ def _write_success_metrics_detail(
         file.write(f"fidelity_no_dark = {metrics['fidelity_no_dark']:.6f}\n")
         file.write(f"p_success_all = {metrics['p_success_all']:.8f}\n")
         file.write(f"fidelity_all = {metrics['fidelity_all']:.6f}\n")
+        file.write(f"p_qubit_all = {metrics['p_qubit_all']:.6f}\n")
+        file.write(f"fidelity_cond_all = {metrics['fidelity_cond_all']:.6f}\n")
         file.write(f"p_false_approx = {metrics['p_false_approx']:.8f}\n")
         file.write(f"false_fraction_approx = {metrics['false_fraction_approx']:.6f}\n")
 
@@ -600,6 +637,8 @@ def _write_success_metrics_detail(
         file.write(f"p_success_given_arrival = {metrics['p_success_given_arrival']:.8f}\n")
         file.write(f"false_fraction = {metrics['false_fraction']:.6f}\n")
         file.write(f"fidelity_true = {metrics['fidelity_true']:.6f}\n")
+        file.write(f"p_qubit_true = {metrics['p_qubit_true']:.6f}\n")
+        file.write(f"fidelity_cond_true = {metrics['fidelity_cond_true']:.6f}\n")
         file.write(f"fidelity_false = {metrics['fidelity_false']:.6f}\n")
     return output_path
 
@@ -651,6 +690,8 @@ def _init_success_metrics_accumulator() -> dict:
         "p_dark_intrinsic_sum": 0.0,
         "p_bg_sum": 0.0,
         "p_noise_sum": 0.0,
+        "p_qubit_all_weighted_sum": 0.0,
+        "p_qubit_true_weighted_sum": 0.0,
         "fidelity_weighted_sum": 0.0,
         "fidelity_true_weighted_sum": 0.0,
         "fidelity_false_weighted_sum": 0.0,
@@ -670,6 +711,8 @@ def _accumulate_success_metrics(acc: dict, metrics: dict) -> None:
     acc["p_dark_intrinsic_sum"] += metrics.get("p_dark_intrinsic", 0.0)
     acc["p_bg_sum"] += metrics.get("p_bg", 0.0)
     acc["p_noise_sum"] += metrics.get("p_noise", 0.0)
+    acc["p_qubit_all_weighted_sum"] += metrics.get("p_qubit_all", 0.0) * metrics["p_success_all"]
+    acc["p_qubit_true_weighted_sum"] += metrics.get("p_qubit_true", 0.0) * metrics["p_success_true"]
     acc["fidelity_weighted_sum"] += metrics["p_success_all"] * metrics["fidelity_all"]
     acc["fidelity_true_weighted_sum"] += metrics["p_success_true"] * metrics["fidelity_true"]
     acc["fidelity_false_weighted_sum"] += metrics["p_success_false"] * metrics["fidelity_false"]
@@ -689,11 +732,19 @@ def _finalize_success_metrics(acc: dict) -> dict:
     p_dark_intrinsic = acc["p_dark_intrinsic_sum"] / runs
     p_bg = acc["p_bg_sum"] / runs
     p_noise = acc["p_noise_sum"] / runs
+    p_qubit_all = acc["p_qubit_all_weighted_sum"] / acc["p_success_sum"] if acc["p_success_sum"] > 0 else 0.0
+    p_qubit_true = (
+        acc["p_qubit_true_weighted_sum"] / acc["p_success_true_sum"]
+        if acc["p_success_true_sum"] > 0
+        else 0.0
+    )
 
     fidelity_all = acc["fidelity_weighted_sum"] / acc["p_success_sum"] if acc["p_success_sum"] > 0 else 0.0
     fidelity_true = acc["fidelity_true_weighted_sum"] / acc["p_success_true_sum"] if acc["p_success_true_sum"] > 0 else 0.0
     fidelity_false = acc["fidelity_false_weighted_sum"] / acc["p_success_false_sum"] if acc["p_success_false_sum"] > 0 else 0.0
     fidelity_no_dark = acc["fidelity_no_dark_weighted_sum"] / acc["p_success_no_dark_sum"] if acc["p_success_no_dark_sum"] > 0 else 0.0
+    fidelity_cond_all = (fidelity_all / p_qubit_all) if p_qubit_all > 0 else 0.0
+    fidelity_cond_true = (fidelity_true / p_qubit_true) if p_qubit_true > 0 else 0.0
 
     p_false_approx = max(0.0, p_success_all - p_success_no_dark)
     false_fraction = (p_success_false / p_success_all) if p_success_all > 0 else 0.0
@@ -710,6 +761,10 @@ def _finalize_success_metrics(acc: dict) -> dict:
         "p_dark_intrinsic": p_dark_intrinsic,
         "p_bg": p_bg,
         "p_noise": p_noise,
+        "p_qubit_all": p_qubit_all,
+        "p_qubit_true": p_qubit_true,
+        "fidelity_cond_all": fidelity_cond_all,
+        "fidelity_cond_true": fidelity_cond_true,
         "fidelity_all": fidelity_all,
         "fidelity_true": fidelity_true,
         "fidelity_false": fidelity_false,
@@ -911,7 +966,7 @@ def _run_single_simulation_core(
     t_wait_us = 80.0
     t2_us = 1000.0
     if t2_us > 0.0:
-        p_dephase = 1.0 - np.exp(-t_wait_us / t2_us)
+        p_dephase = 0.5 * (1.0 - np.exp(-t_wait_us / t2_us))
     else:
         p_dephase = 0.0
     print(f"\n原子等待退相干: T_wait={t_wait_us:.1f} us, T2={t2_us:.1f} us, p={p_dephase:.4e}")
@@ -1155,6 +1210,10 @@ def _run_single_simulation_core(
             "fidelity_false": 0.0,
             "p_success_no_dark": 0.0,
             "fidelity_no_dark": 0.0,
+            "p_qubit_all": 0.0,
+            "p_qubit_true": 0.0,
+            "fidelity_cond_all": 0.0,
+            "fidelity_cond_true": 0.0,
             "p_false_approx": 0.0,
             "false_fraction": 0.0,
             "false_fraction_approx": 0.0,
@@ -1234,6 +1293,10 @@ def _run_single_simulation_core(
         "fidelity_false": enum_with_dark.fidelity_false,
         "p_success_no_dark": enum_no_dark.p_success,
         "fidelity_no_dark": enum_no_dark.fidelity_declared,
+        "p_qubit_all": enum_with_dark.p_qubit_all,
+        "p_qubit_true": enum_with_dark.p_qubit_true,
+        "fidelity_cond_all": enum_with_dark.fidelity_cond_all,
+        "fidelity_cond_true": enum_with_dark.fidelity_cond_true,
     }
     success_metrics["p_false_approx"] = max(
         0.0, success_metrics["p_success_all"] - success_metrics["p_success_no_dark"]
@@ -1265,7 +1328,7 @@ def _run_single_simulation_core(
             window_bins=window_bins,
             p_dark=p_noise,
             #rng=np.random.default_rng(seed=19),
-            rng=np.random.default_rng(),
+            rng=run_rng,
             verbose=True,
         )
 
@@ -1275,22 +1338,31 @@ def _run_single_simulation_core(
             print(f"  宣告的Bell态: {det_result.bell_state}")
             print(f"  点击: {[(c.detector, c.bin_index) for c in det_result.clicks]}")
 
-            # 计算与期望Bell态的保真度
-            fidelity = compute_fidelity_with_bell(det_result.spin_state, det_result.bell_state)
-            print(f"  与|{det_result.bell_state}>的保真度: {fidelity:.4f}")
+            # 计算与期望Bell态的保真度（full/cond）
+            p_qubit = det_result.p_qubit
+            fidelity_full = compute_fidelity_with_bell(det_result.spin_state, det_result.bell_state)
+            fidelity_cond = fidelity_full / p_qubit if p_qubit > 0 else 0.0
+            print(f"  p_qubit = {p_qubit:.4f}")
+            print(f"  F_full(|{det_result.bell_state}>): {fidelity_full:.4f}")
+            print(f"  F_cond(|{det_result.bell_state}>): {fidelity_cond:.4f}")
 
             # 计算与所有Bell态的保真度以供参考
             print(f"\n  与所有Bell态的保真度:")
             for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
-                f = compute_fidelity_with_bell(det_result.spin_state, bell)
+                f_full = compute_fidelity_with_bell(det_result.spin_state, bell)
+                f_cond = f_full / p_qubit if p_qubit > 0 else 0.0
                 marker = " <-- 宣告的" if bell == det_result.bell_state else ""
-                print(f"    F(|{bell}>): {f:.4f}{marker}")
+                print(f"    F_full(|{bell}>): {f_full:.4f}, F_cond: {f_cond:.4f}{marker}")
 
             # 打印自旋态
             print(f"\n  自旋密度矩阵（量子比特子空间）:")
             rho = det_result.spin_state
             print(f"    Tr(rho) = {np.trace(rho).real:.4f}")
-            print(f"    纯度 = {np.trace(rho @ rho).real:.4f}")
+            if p_qubit > 0:
+                rho_cond = rho / p_qubit
+                print(f"    纯度(条件化) = {np.trace(rho_cond @ rho_cond).real:.4f}")
+            else:
+                print(f"    纯度(条件化) = 0.0000")
         else:
             print(f"\n  BSM失败 - 未找到成功模式")
             print(f"  点击数量: {len(det_result.clicks)}")
