@@ -225,6 +225,10 @@ class FiberChannelParams:
         PDL强度（H/V透过率相对差异的标准差，线性）
     phase_drift_std : float
         两臂之间相位漂移的标准差（弧度）
+    phase_slope_std : float
+        相位斜率的标准差（弧度/每个bin），用于模拟频率失配
+    phase_jitter_std : float
+        单个bin相位噪声的标准差（弧度），用于模拟时间相关相位噪声
     pmd_enabled : bool
         是否包含PMD效应
     pmd_delay_bins : int
@@ -250,6 +254,8 @@ class FiberChannelParams:
         eta_std: float = 0.02,
         pdl_sigma: float = 0.0,
         phase_drift_std: float = 0.2,
+        phase_slope_std: float = 0.0,
+        phase_jitter_std: float = 0.0,
         pmd_enabled: bool = False,
         pmd_delay_bins: int = 0,
     ):
@@ -266,6 +272,8 @@ class FiberChannelParams:
         self.eta_std = eta_std
         self.pdl_sigma = pdl_sigma
         self.phase_drift_std = phase_drift_std
+        self.phase_slope_std = phase_slope_std
+        self.phase_jitter_std = phase_jitter_std
         self.pmd_enabled = pmd_enabled
         self.pmd_delay_bins = pmd_delay_bins
 
@@ -360,6 +368,10 @@ class FiberChannelParams:
     def sample_phase_drift(self, rng: np.random.Generator) -> float:
         """采样两臂之间的相位漂移（弧度）。"""
         return rng.normal(0, self.phase_drift_std)
+
+    def sample_phase_slope(self, rng: np.random.Generator) -> float:
+        """采样相位斜率（弧度/每个bin）。"""
+        return rng.normal(0, self.phase_slope_std)
 
     def sample_all(self, rng: np.random.Generator) -> tuple:
         """

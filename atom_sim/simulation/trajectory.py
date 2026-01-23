@@ -461,6 +461,10 @@ def apply_fiber_channel(
 
     # 为本次轨迹采样参数（残余Jones旋转 + 小PDL）
     U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase = fiber_params.sample_all(rng)
+    phase_slope = 0.0
+    phase_jitter_std = float(getattr(fiber_params, "phase_jitter_std", 0.0))
+    if hasattr(fiber_params, "sample_phase_slope"):
+        phase_slope = fiber_params.sample_phase_slope(rng)
 
     if verbose:
         print(f"  Sampled Jones_A:\n{U_A}")
@@ -470,6 +474,9 @@ def apply_fiber_channel(
         print(f"  Sampled eta_B(H/V): {eta_H_B:.4f} / {eta_V_B:.4f}")
         print(f"  PDL_A (H-V): {eta_H_A - eta_V_A:+.4f}")
         print(f"  PDL_B (H-V): {eta_H_B - eta_V_B:+.4f}")
+        if abs(phase_slope) > 0.0 or phase_jitter_std > 0.0:
+            print(f"  Phase slope: {phase_slope:+.4e} rad/bin")
+            print(f"  Phase jitter std: {phase_jitter_std:.4e} rad")
 
     if bin_start is None:
         if len(mps.d) >= 2 and mps.d[0] == DIM_ATOM and mps.d[1] == DIM_ATOM:
@@ -498,11 +505,28 @@ def apply_fiber_channel(
     else:
         raise ValueError(f"Unsupported bin dimension: {bin_dim}. Expected 18 or 6.")
 
+    phase_center = 0.5 * (n_bins - 1)
+    apply_phase_profile = abs(phase_slope) > 0.0 or phase_jitter_std > 0.0
     for n in range(n_bins):
         site_A = bin_start + 2 * n
         site_B = bin_start + 2 * n + 1
         mps.apply_one_site_gate(site_A, U_J_A)
         mps.apply_one_site_gate(site_B, U_J_B)
+
+        if apply_phase_profile:
+            phase_n = phase_slope * (n - phase_center)
+            if phase_jitter_std > 0.0:
+                phase_n += rng.normal(0.0, phase_jitter_std)
+            if abs(phase_n) > 0.0:
+                phase_factor = np.exp(1j * phase_n)
+                if bin_dim == DIM_BIN:
+                    U_phase = jones_gate_from_array(
+                        np.array([[phase_factor, 0.0], [0.0, phase_factor]], dtype=complex)
+                    )
+                else:
+                    U_phase = jones_gate(((phase_factor, 0.0), (0.0, phase_factor)))
+                # 只对B臂施加时间相关相位，形成相对失配
+                mps.apply_one_site_gate(site_B, U_phase)
 
         _print_progress(n + 1, n_bins, verbose)
 
@@ -532,7 +556,7 @@ def apply_fiber_channel(
 
     _print_footer(mps, verbose, stage="Fiber Channel")
 
-    return mps, (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase)
+    return mps, (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std)
 
 
 
@@ -636,9 +660,38 @@ def run_dual_atom_emission(
     # 应用时间延迟到B的峰值时间
     t0_B = t0_B + delay_ns_used
 
-    # 计算每个仓的发射率（高斯轮廓）
-    gamma_A_values = gamma_peak_A * np.exp(-0.5 * ((t_ns - t0_A) / sigma) ** 2)
-    gamma_B_values = gamma_peak_B * np.exp(-0.5 * ((t_ns - t0_B) / sigma) ** 2)
+    # 计算目标波包（高斯包络），并反推出每个bin的发射率 gamma_n
+    # 目标：让每个bin释放的概率遵循高斯包络，同时避免前几个bin过早耗尽激发态
+    emission_eps = 1e-6
+
+    def _compute_gamma_from_envelope(t0_ns: float, gamma_peak: float) -> np.ndarray:
+        envelope = np.exp(-0.5 * ((t_ns - t0_ns) / sigma) ** 2)
+        envelope_sum = float(np.sum(envelope))
+        if envelope_sum <= 0:
+            return np.zeros_like(envelope)
+
+        # 用 gamma_peak 控制总发射概率（单调映射到 [0,1)）
+        total_emission = 1.0 - np.exp(-max(gamma_peak, 0.0) * envelope_sum * dt_ns)
+        total_emission = min(max(total_emission, 0.0), 1.0 - emission_eps)
+
+        # 目标每个bin的发射概率
+        p_bins = total_emission * envelope / envelope_sum
+
+        # 反解得到每个bin的发射率 gamma_n（1/ns）
+        gamma_values = np.zeros_like(p_bins)
+        remain = 1.0
+        for i, p_bin in enumerate(p_bins):
+            if remain <= emission_eps:
+                gamma_values[i] = 0.0
+                continue
+            p_bin = min(p_bin, remain * (1.0 - emission_eps))
+            ratio = p_bin / remain
+            gamma_values[i] = -np.log(1.0 - ratio) / dt_ns
+            remain -= p_bin
+        return gamma_values
+
+    gamma_A_values = _compute_gamma_from_envelope(t0_A, gamma_peak_A)
+    gamma_B_values = _compute_gamma_from_envelope(t0_B, gamma_peak_B)
 
     # 设置默认Alpha矩阵
     if Alpha_A is None:

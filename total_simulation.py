@@ -563,7 +563,12 @@ def _write_extra_data(
     with open(output_path, 'w', encoding='utf-8') as file:
         file.write("fiber_sample\n")
         if fiber_sample is not None:
-            U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase = fiber_sample
+            if len(fiber_sample) >= 9:
+                U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std = fiber_sample[:9]
+            else:
+                U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase = fiber_sample
+                phase_slope = 0.0
+                phase_jitter_std = 0.0
             eta_mean_A = 0.5 * (eta_H_A + eta_V_A)
             eta_mean_B = 0.5 * (eta_H_B + eta_V_B)
             file.write(f"eta_mean_A = {eta_mean_A:.6f}\n")
@@ -575,6 +580,8 @@ def _write_extra_data(
             file.write(f"pdl_A = {eta_H_A - eta_V_A:+.6f}\n")
             file.write(f"pdl_B = {eta_H_B - eta_V_B:+.6f}\n")
             file.write(f"phase = {phase:.6f}\n")
+            file.write(f"phase_slope = {phase_slope:.6e}\n")
+            file.write(f"phase_jitter_std = {phase_jitter_std:.6e}\n")
             file.write(f"U_A = {_format_matrix(U_A)}\n")
             file.write(f"U_B = {_format_matrix(U_B)}\n")
         else:
@@ -802,24 +809,26 @@ def _run_single_simulation_core(
     run_rng = np.random.default_rng()
     compensation_sigma = 0.1  # 补偿后的残差旋转（弧度，可调）
     pdl_sigma = 0.02  # 小PDL：H/V透过率相对差异的标准差（线性）
+    phase_slope_std = 0.05  # 相位斜率标准差（rad/bin），用于模拟频率失配
     fiber_params = FiberChannelParams(
         polarization_model="perturb",
         polarization_sigma=compensation_sigma,
         pdl_sigma=pdl_sigma,
+        phase_slope_std=phase_slope_std,
     )
 
     # 运行发射
     _stage(1, "发射")
     # 使用合理的物理参数
-    delay_jitter_ns = 0.0  # 设置为 >0 可启用A/B延迟随机抖动（ns）
+    delay_jitter_ns = 0.5  # A/B延迟随机抖动（ns）
     result = run_dual_atom_emission(
-        n_bins=30,  # 仓数
-        dt_ns=0.2,   # 时间步长
+        n_bins=100,  # 仓数
+        dt_ns=0.5,   # 时间步长
         chi_max=50,
         gamma_peak_A=0.5,  # 发射率
         gamma_peak_B=0.5,
         sigma=10.0,  # 波包宽度（纳秒）
-        delay_ns=5.0,  # B相对于A延迟5ns（半个波包宽度）
+        delay_ns=1.5,  # B相对于A延迟1.5ns
         delay_jitter_ns=delay_jitter_ns,
         rng=run_rng,
         verbose=True,
