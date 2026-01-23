@@ -6,14 +6,10 @@
 """
 
 from .trajectory import (
-    TrajectoryResult,
     EmissionResult,
     run_dual_atom_emission,
     apply_qfc,
     apply_780_filter,
-    apply_jones,
-    apply_loss,
-    apply_loss_combined,
     apply_bs,
     apply_fiber_channel,
     project_to_1517,
@@ -33,15 +29,11 @@ from .detection import (
 
 __all__ = [
     # trajectory
-    'TrajectoryResult',
     'EmissionResult',
     'run_dual_atom_emission',
     # apply_* functions
     'apply_qfc',
     'apply_780_filter',
-    'apply_jones',
-    'apply_loss',
-    'apply_loss_combined',
     'apply_bs',
     'apply_fiber_channel',
     'project_to_1517',

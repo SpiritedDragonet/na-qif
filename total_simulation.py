@@ -27,12 +27,15 @@ from datetime import datetime
 import numpy as np
 from typing import Optional, Tuple
 from collections import Counter
+from types import SimpleNamespace
 
 # Add project root to path (for running as standalone script)
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from atom_sim.config import TimeGrid, EmitParams
+# 调试开关：默认 False（非调试模式）
+DEBUG_MODE = False
+
 from atom_sim.simulation import (
     run_dual_atom_emission, EmissionResult, apply_qfc, apply_780_filter, apply_fiber_channel,
     apply_bs, project_to_1517,
@@ -464,8 +467,17 @@ def _write_extra_data(
     with open(output_path, 'w', encoding='utf-8') as file:
         file.write("fiber_sample\n")
         if fiber_sample is not None:
-            U_A, U_B, eta, phase = fiber_sample
-            file.write(f"eta = {eta:.6f}\n")
+            U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase = fiber_sample
+            eta_mean_A = 0.5 * (eta_H_A + eta_V_A)
+            eta_mean_B = 0.5 * (eta_H_B + eta_V_B)
+            file.write(f"eta_mean_A = {eta_mean_A:.6f}\n")
+            file.write(f"eta_mean_B = {eta_mean_B:.6f}\n")
+            file.write(f"eta_H_A = {eta_H_A:.6f}\n")
+            file.write(f"eta_V_A = {eta_V_A:.6f}\n")
+            file.write(f"eta_H_B = {eta_H_B:.6f}\n")
+            file.write(f"eta_V_B = {eta_V_B:.6f}\n")
+            file.write(f"pdl_A = {eta_H_A - eta_V_A:+.6f}\n")
+            file.write(f"pdl_B = {eta_H_B - eta_V_B:+.6f}\n")
             file.write(f"phase = {phase:.6f}\n")
             file.write(f"U_A = {_format_matrix(U_A)}\n")
             file.write(f"U_B = {_format_matrix(U_B)}\n")
@@ -493,8 +505,19 @@ def _write_success_metrics_detail(
         file.write("=" * 60 + "\n")
         if "eta_det" in metrics:
             file.write(f"eta_det = {metrics['eta_det']:.6f}\n")
+        if "window_bins" in metrics:
+            file.write(f"window_bins = {metrics['window_bins']}\n")
         if "p_dark" in metrics:
             file.write(f"p_dark = {metrics['p_dark']:.6f}\n")
+        if "dark_rate_hz" in metrics:
+            file.write(f"dark_rate_hz = {metrics['dark_rate_hz']:.3f}\n")
+        if "t_wait_us" in metrics:
+            file.write(f"t_wait_us = {metrics['t_wait_us']:.3f}\n")
+        if "t2_us" in metrics:
+            file.write(f"t2_us = {metrics['t2_us']:.3f}\n")
+        if "p_dephase" in metrics:
+            file.write(f"p_dephase = {metrics['p_dephase']:.6f}\n")
+
         file.write(f"p_arrive = {metrics['p_arrive']:.8f}\n")
         file.write("\nmethod_1_two_runs\n")
         file.write(f"p_success_no_dark = {metrics['p_success_no_dark']:.8f}\n")
@@ -512,6 +535,40 @@ def _write_success_metrics_detail(
         file.write(f"fidelity_true = {metrics['fidelity_true']:.6f}\n")
         file.write(f"fidelity_false = {metrics['fidelity_false']:.6f}\n")
     return output_path
+
+
+def _apply_atomic_dephasing(
+    mps: "MPSState",
+    p_dephase: float,
+    rng: Optional[np.random.Generator] = None,
+    verbose: bool = True,
+) -> None:
+    """
+    对两原子施加纯退相干（相位翻转）通道。
+
+    通道模型：rho -> (1-p) rho + p Z rho Z，其中 Z=diag(1,-1,1)
+    |e> 分量保持不变（等效于只对 |0>/<1| 相位退相干）。
+    """
+    if p_dephase <= 0.0:
+        if verbose:
+            print("原子退相干：p_dephase=0，跳过。")
+        return
+
+    p_dephase = min(max(p_dephase, 0.0), 1.0)
+    if rng is None:
+        rng = np.random.default_rng()
+
+    K0 = np.sqrt(1.0 - p_dephase) * np.eye(3, dtype=complex)
+    Z = np.diag([1.0, -1.0, 1.0]).astype(complex)
+    K1 = np.sqrt(p_dephase) * Z
+    kraus_list = [K0, K1]
+
+    # 原子位于链最左端：atomA(0), atomB(1)
+    for site in (0, 1):
+        mps.apply_kraus_one_site(site, kraus_list, rng=rng)
+
+    if verbose:
+        print(f"原子退相干：已应用 p_dephase={p_dephase:.4e}")
 
 
 def _init_success_metrics_accumulator() -> dict:
@@ -600,7 +657,13 @@ def _run_single_simulation_core(
     print("运行发射 + QFC + 分束器 + 探测仿真...")
 
     run_rng = np.random.default_rng()
-    fiber_params = FiberChannelParams()
+    compensation_sigma = 0.1  # 补偿后的残差旋转（弧度，可调）
+    pdl_sigma = 0.02  # 小PDL：H/V透过率相对差异的标准差（线性）
+    fiber_params = FiberChannelParams(
+        polarization_model="perturb",
+        polarization_sigma=compensation_sigma,
+        pdl_sigma=pdl_sigma,
+    )
 
     # 运行发射
     _stage(1, "发射")
@@ -630,15 +693,16 @@ def _run_single_simulation_core(
     )
 
     # 保存调试信息
-    print("\n保存调试信息...")
-    save_debug_info(
-        mps=result.mps,
-        n_bins=result.get_n_bins(),
-        stage='After Emission',
-        output_dir=output_dir,
-        step_index=1,
-        run_tag=run_tag,
-    )
+    if DEBUG_MODE:
+        print("\n保存调试信息...")
+        save_debug_info(
+            mps=result.mps,
+            n_bins=result.get_n_bins(),
+            stage='After Emission',
+            output_dir=output_dir,
+            step_index=1,
+            run_tag=run_tag,
+        )
 
     # 应用QFC
     _stage(2, "QFC + 780滤波 + 1517投影")
@@ -657,6 +721,7 @@ def _run_single_simulation_core(
         mps=result.mps,
         n_bins=result.get_n_bins(),
         verbose=True,
+        rng=run_rng,
     )
 
     # 投影到纯1517nm子空间（18D -> 6D），大幅加速后续计算
@@ -679,14 +744,15 @@ def _run_single_simulation_core(
     )
 
     # 保存调试信息
-    save_debug_info(
-        mps=result.mps,
-        n_bins=result.get_n_bins(),
-        stage='After QFC + Filter',
-        output_dir=output_dir,
-        step_index=2,
-        run_tag=run_tag,
-    )
+    if DEBUG_MODE:
+        save_debug_info(
+            mps=result.mps,
+            n_bins=result.get_n_bins(),
+            stage='After QFC + Filter',
+            output_dir=output_dir,
+            step_index=2,
+            run_tag=run_tag,
+        )
 
     # 应用光纤信道（偏振漂移 + 损耗）
     _stage(3, "光纤信道")
@@ -711,43 +777,57 @@ def _run_single_simulation_core(
     )
 
     # 保存光纤传输后的调试信息
-    save_debug_info(
-        mps=result.mps,
-        n_bins=result.get_n_bins(),
-        stage='After Fiber Channel',
-        output_dir=output_dir,
-        step_index=3,
-        run_tag=run_tag,
-    )
+    if DEBUG_MODE:
+        save_debug_info(
+            mps=result.mps,
+            n_bins=result.get_n_bins(),
+            stage='After Fiber Channel',
+            output_dir=output_dir,
+            step_index=3,
+            run_tag=run_tag,
+        )
 
-    # 诊断：检查BS前每个arm的光子分布
-    print("\n诊断：检查BS前（含光纤）每个arm的光子分布...")
-    n_bins = result.get_n_bins()
-    total_A = 0.0
-    total_B = 0.0
-    pre_bs_arm_a = np.zeros(n_bins)
-    pre_bs_arm_b = np.zeros(n_bins)
-    for n in range(n_bins):
-        site_A = 2 + 2 * n  # Arm A的bin n
-        site_B = 2 + 2 * n + 1  # Arm B的bin n
+    # 诊断：检查BS前每个arm的光子分布（调试用）
+    if DEBUG_MODE:
+        print("\n诊断：检查BS前（含光纤）每个arm的光子分布...")
+        n_bins = result.get_n_bins()
+        total_A = 0.0
+        total_B = 0.0
+        pre_bs_arm_a = np.zeros(n_bins)
+        pre_bs_arm_b = np.zeros(n_bins)
+        for n in range(n_bins):
+            site_A = 2 + 2 * n  # Arm A的bin n
+            site_B = 2 + 2 * n + 1  # Arm B的bin n
 
-        # 获取单个site的约化密度矩阵
-        rho_A = result.mps.get_reduced_density([site_A])
-        rho_B = result.mps.get_reduced_density([site_B])
+            # 获取单个site的约化密度矩阵
+            rho_A = result.mps.get_reduced_density([site_A])
+            rho_B = result.mps.get_reduced_density([site_B])
 
-        # 6D基: vac=0, H=1, V=2, 2H=3, 2V=4, HV=5
-        photon_count = [0, 1, 1, 2, 2, 2]
-        p_A = sum(rho_A[i, i].real * photon_count[i] for i in range(6))
-        p_B = sum(rho_B[i, i].real * photon_count[i] for i in range(6))
-        pre_bs_arm_a[n] = p_A
-        pre_bs_arm_b[n] = p_B
-        total_A += p_A
-        total_B += p_B
+            # 6D基: vac=0, H=1, V=2, 2H=3, 2V=4, HV=5
+            photon_count = [0, 1, 1, 2, 2, 2]
+            p_A = sum(rho_A[i, i].real * photon_count[i] for i in range(6))
+            p_B = sum(rho_B[i, i].real * photon_count[i] for i in range(6))
+            pre_bs_arm_a[n] = p_A
+            pre_bs_arm_b[n] = p_B
+            total_A += p_A
+            total_B += p_B
 
-        if p_A > 0.01 or p_B > 0.01:
-            print(f"  bin {n}: Arm_A={p_A:.4f}, Arm_B={p_B:.4f}")
+            if p_A > 0.01 or p_B > 0.01:
+                print(f"  bin {n}: Arm_A={p_A:.4f}, Arm_B={p_B:.4f}")
 
-    print(f"  总计: Arm_A={total_A:.4f}, Arm_B={total_B:.4f}")
+        print(f"  总计: Arm_A={total_A:.4f}, Arm_B={total_B:.4f}")
+
+
+    # 原子等待退相干：在中心站测量前施加纯退相干通道
+    # 16 km 单程传播时间量级 ~80 us，可按实验参数调整 T2
+    t_wait_us = 80.0
+    t2_us = 1000.0
+    if t2_us > 0.0:
+        p_dephase = 1.0 - np.exp(-t_wait_us / t2_us)
+    else:
+        p_dephase = 0.0
+    print(f"\n原子等待退相干: T_wait={t_wait_us:.1f} us, T2={t2_us:.1f} us, p={p_dephase:.4e}")
+    _apply_atomic_dephasing(result.mps, p_dephase, rng=run_rng, verbose=True)
 
 
     # =========================================================================
@@ -772,145 +852,151 @@ def _run_single_simulation_core(
         show=show_plots,
     )
 
-    print("\n生成BS后的跨bin联合分布热图...")
-    joint_after_bs = plot_cross_bin_joint_heatmap(
-        result.mps,
-        n_bins=result.get_n_bins(),
-        save_path=str(output_dir / f"{run_tag}_4b_after_bs_cross_bin_joint.png"),
-        arm_pair=("A", "B"),
-        normalize=False,
-        show=show_plots,
-    )
+    joint_after_bs = None
+    if DEBUG_MODE:
+        print("\n生成BS后的跨bin联合分布热图...")
+        joint_after_bs = plot_cross_bin_joint_heatmap(
+            result.mps,
+            n_bins=result.get_n_bins(),
+            save_path=str(output_dir / f"{run_tag}_4b_after_bs_cross_bin_joint.png"),
+            arm_pair=("A", "B"),
+            normalize=False,
+            show=show_plots,
+        )
 
     # 保存BS后的调试信息
-    save_debug_info(
-        mps=result.mps,
-        n_bins=result.get_n_bins(),
-        stage='After BS',
-        output_dir=output_dir,
-        step_index=4,
-        run_tag=run_tag,
-    )
+    if DEBUG_MODE:
+        save_debug_info(
+            mps=result.mps,
+            n_bins=result.get_n_bins(),
+            stage='After BS',
+            output_dir=output_dir,
+            step_index=4,
+            run_tag=run_tag,
+        )
 
-    extra_data_path = output_dir / f"{run_tag}_extra_data.txt"
-    _write_extra_data(
-        extra_data_path,
-        fiber_sample=fiber_sample,
-        pre_bs_arm_a=pre_bs_arm_a,
-        pre_bs_arm_b=pre_bs_arm_b,
-        cross_bin_joint=joint_after_bs,
-    )
-    print(f"  Extra data saved: {extra_data_path.name}")
+    if DEBUG_MODE:
+        extra_data_path = output_dir / f"{run_tag}_extra_data.txt"
+        _write_extra_data(
+            extra_data_path,
+            fiber_sample=fiber_sample,
+            pre_bs_arm_a=pre_bs_arm_a,
+            pre_bs_arm_b=pre_bs_arm_b,
+            cross_bin_joint=joint_after_bs,
+        )
+        print(f"  Extra data saved: {extra_data_path.name}")
 
     # =========================================================================
-    # 【深入分析After BS】检查双光子态的分布和BS门的作用
-    # =========================================================================
-    print("\n" + "="*80)
-    print("【深入分析After BS】检查双光子态的分布")
-    print("="*80)
+    if DEBUG_MODE:
+        # 【深入分析After BS】检查双光子态的分布和BS门的作用
+        # =========================================================================
+        print("\n" + "="*80)
+        print("【深入分析After BS】检查双光子态的分布")
+        print("="*80)
 
-    n_bins = result.get_n_bins()
+        n_bins = result.get_n_bins()
 
-    # 统计全局光子数
-    total_photons_global = 0.0
-    total_two_photon_states = 0.0  # 双光子态总概率
+        # 统计全局光子数
+        total_photons_global = 0.0
+        total_two_photon_states = 0.0  # 双光子态总概率
 
-    # 1517子空间基：vac=0, H=1, V=2, 2H=3, 2V=4, HV=5
-    state_names = ['vac', 'H', 'V', '2H', '2V', 'HV']
+        # 1517子空间基：vac=0, H=1, V=2, 2H=3, 2V=4, HV=5
+        state_names = ['vac', 'H', 'V', '2H', '2V', 'HV']
 
-    print("\n【逐bin分析】")
-    for n in range(n_bins):
-        site_A = 2 + 2 * n
-        site_B = 2 + 2 * n + 1
-        rho_AB = result.mps.get_reduced_density([site_A, site_B])
+        print("\n【逐bin分析】")
+        for n in range(n_bins):
+            site_A = 2 + 2 * n
+            site_B = 2 + 2 * n + 1
+            rho_AB = result.mps.get_reduced_density([site_A, site_B])
 
-        # 计算这个bin的总光子数
-        bin_photons = 0.0
-        bin_two_photon = 0.0
+            # 计算这个bin的总光子数
+            bin_photons = 0.0
+            bin_two_photon = 0.0
 
-        # 遍历所有36个基态
-        for i_A in range(6):
-            for i_B in range(6):
-                prob = rho_AB[i_A, i_B, i_A, i_B].real
-
-                # 计算光子数
-                n_A = 0 if i_A == 0 else (1 if i_A in [1, 2] else 2)
-                n_B = 0 if i_B == 0 else (1 if i_B in [1, 2] else 2)
-
-                bin_photons += prob * (n_A + n_B)
-
-                # 统计双光子态
-                if n_A + n_B == 2:
-                    bin_two_photon += prob
-
-        total_photons_global += bin_photons
-        total_two_photon_states += bin_two_photon
-
-        # 只打印有意义的bin
-        if bin_photons > 0.01:
-            print(f"\nBin {n}:")
-            print(f"  总光子数: {bin_photons:.6f}")
-            print(f"  双光子态概率: {bin_two_photon:.6f}")
-
-            # 打印主要的态分量
-            print(f"  主要态分量:")
+            # 遍历所有36个基态
             for i_A in range(6):
                 for i_B in range(6):
                     prob = rho_AB[i_A, i_B, i_A, i_B].real
-                    if prob > 0.001:
-                        print(f"    |{state_names[i_A]},{state_names[i_B]}>: {prob:.6f}")
 
-    print(f"\n【全局统计】")
-    print(f"  总光子数（所有bin）: {total_photons_global:.6f}")
-    print(f"  双光子态总概率: {total_two_photon_states:.6f}")
-    print(f"  非双光子态概率: {1.0 - total_two_photon_states:.6f}")
+                    # 计算光子数
+                    n_A = 0 if i_A == 0 else (1 if i_A in [1, 2] else 2)
+                    n_B = 0 if i_B == 0 else (1 if i_B in [1, 2] else 2)
 
-    # 检查是否有多光子态或单光子态
-    if total_two_photon_states < 0.95:
-        print(f"警告：双光子态概率 < 95%，存在单光子或多光子分量")
+                    bin_photons += prob * (n_A + n_B)
 
-    print("="*80)
+                    # 统计双光子态
+                    if n_A + n_B == 2:
+                        bin_two_photon += prob
 
-    # 诊断：检查BS后每个bin的两端口关联
-    print("\n诊断：检查BS后的两端口关联...")
-    n_bins = result.get_n_bins()
-    for n in range(n_bins):
-        site_A = 2 + 2 * n
-        site_B = 2 + 2 * n + 1
-        rho_AB = result.mps.get_reduced_density([site_A, site_B])
+            total_photons_global += bin_photons
+            total_two_photon_states += bin_two_photon
 
-        # 检查各种双光子态的概率
-        # 6D基: vac=0, H=1, V=2, 2H=3, 2V=4, HV=5
-        p_vac_vac = rho_AB[0, 0, 0, 0].real
-        p_H_vac = rho_AB[1, 0, 1, 0].real
-        p_V_vac = rho_AB[2, 0, 2, 0].real
-        p_vac_H = rho_AB[0, 1, 0, 1].real
-        p_vac_V = rho_AB[0, 2, 0, 2].real
-        p_H_H = rho_AB[1, 1, 1, 1].real
-        p_V_V = rho_AB[2, 2, 2, 2].real
-        p_H_V = rho_AB[1, 2, 1, 2].real
-        p_V_H = rho_AB[2, 1, 2, 1].real
-        p_2H_vac = rho_AB[3, 0, 3, 0].real
-        p_2V_vac = rho_AB[4, 0, 4, 0].real
-        p_HV_vac = rho_AB[5, 0, 5, 0].real
-        p_vac_2H = rho_AB[0, 3, 0, 3].real
-        p_vac_2V = rho_AB[0, 4, 0, 4].real
-        p_vac_HV = rho_AB[0, 5, 0, 5].real
+            # 只打印有意义的bin
+            if bin_photons > 0.01:
+                print(f"\nBin {n}:")
+                print(f"  总光子数: {bin_photons:.6f}")
+                print(f"  双光子态概率: {bin_two_photon:.6f}")
 
-        # 只打印有意义的bin
-        total_nonvac = 1 - p_vac_vac
-        if total_nonvac > 0.01:
-            print(f"  bin {n}: P(non-vac)={total_nonvac:.4f}")
-            if p_H_V + p_V_H > 1e-6:
-                print(f"    BSM成功态: P(H,V)={p_H_V:.6f}, P(V,H)={p_V_H:.6f}")
-            if p_H_H + p_V_V > 1e-6:
-                print(f"    同极化: P(H,H)={p_H_H:.6f}, P(V,V)={p_V_V:.6f}")
-            if p_2H_vac + p_2V_vac + p_HV_vac > 1e-6:
-                print(f"    bunching port1: P(2H,0)={p_2H_vac:.6f}, P(2V,0)={p_2V_vac:.6f}, P(HV,0)={p_HV_vac:.6f}")
-            if p_vac_2H + p_vac_2V + p_vac_HV > 1e-6:
-                print(f"    bunching port2: P(0,2H)={p_vac_2H:.6f}, P(0,2V)={p_vac_2V:.6f}, P(0,HV)={p_vac_HV:.6f}")
+                # 打印主要的态分量
+                print(f"  主要态分量:")
+                for i_A in range(6):
+                    for i_B in range(6):
+                        prob = rho_AB[i_A, i_B, i_A, i_B].real
+                        if prob > 0.001:
+                            print(f"    |{state_names[i_A]},{state_names[i_B]}>: {prob:.6f}")
 
-    # 计算归一化前的光子统计
+        print(f"\n【全局统计】")
+        print(f"  总光子数（所有bin）: {total_photons_global:.6f}")
+        print(f"  双光子态总概率: {total_two_photon_states:.6f}")
+        print(f"  非双光子态概率: {1.0 - total_two_photon_states:.6f}")
+
+        # 检查是否有多光子态或单光子态
+        if total_two_photon_states < 0.95:
+            print(f"警告：双光子态概率 < 95%，存在单光子或多光子分量")
+
+        print("="*80)
+
+    if DEBUG_MODE:
+        # 诊断：检查BS后每个bin的两端口关联
+        print("\n诊断：检查BS后的两端口关联...")
+        n_bins = result.get_n_bins()
+        for n in range(n_bins):
+            site_A = 2 + 2 * n
+            site_B = 2 + 2 * n + 1
+            rho_AB = result.mps.get_reduced_density([site_A, site_B])
+
+            # 检查各种双光子态的概率
+            # 6D基: vac=0, H=1, V=2, 2H=3, 2V=4, HV=5
+            p_vac_vac = rho_AB[0, 0, 0, 0].real
+            p_H_vac = rho_AB[1, 0, 1, 0].real
+            p_V_vac = rho_AB[2, 0, 2, 0].real
+            p_vac_H = rho_AB[0, 1, 0, 1].real
+            p_vac_V = rho_AB[0, 2, 0, 2].real
+            p_H_H = rho_AB[1, 1, 1, 1].real
+            p_V_V = rho_AB[2, 2, 2, 2].real
+            p_H_V = rho_AB[1, 2, 1, 2].real
+            p_V_H = rho_AB[2, 1, 2, 1].real
+            p_2H_vac = rho_AB[3, 0, 3, 0].real
+            p_2V_vac = rho_AB[4, 0, 4, 0].real
+            p_HV_vac = rho_AB[5, 0, 5, 0].real
+            p_vac_2H = rho_AB[0, 3, 0, 3].real
+            p_vac_2V = rho_AB[0, 4, 0, 4].real
+            p_vac_HV = rho_AB[0, 5, 0, 5].real
+
+            # 只打印有意义的bin
+            total_nonvac = 1 - p_vac_vac
+            if total_nonvac > 0.01:
+                print(f"  bin {n}: P(non-vac)={total_nonvac:.4f}")
+                if p_H_V + p_V_H > 1e-6:
+                    print(f"    BSM成功态: P(H,V)={p_H_V:.6f}, P(V,H)={p_V_H:.6f}")
+                if p_H_H + p_V_V > 1e-6:
+                    print(f"    同极化: P(H,H)={p_H_H:.6f}, P(V,V)={p_V_V:.6f}")
+                if p_2H_vac + p_2V_vac + p_HV_vac > 1e-6:
+                    print(f"    bunching port1: P(2H,0)={p_2H_vac:.6f}, P(2V,0)={p_2V_vac:.6f}, P(HV,0)={p_HV_vac:.6f}")
+                if p_vac_2H + p_vac_2V + p_vac_HV > 1e-6:
+                    print(f"    bunching port2: P(0,2H)={p_vac_2H:.6f}, P(0,2V)={p_vac_2V:.6f}, P(0,HV)={p_vac_HV:.6f}")
+
+        # 计算归一化前的光子统计
     print("\n计算BS后的光子统计...")
     photon_stats = compute_photon_statistics(
         mps=result.mps,
@@ -921,19 +1007,77 @@ def _run_single_simulation_core(
     # =========================================================================
     # 探测
     # =========================================================================
-    # 探测参数
-    eta_det = 1.0
-    p_dark = 0.0
+    # 探测参数（基于Nature 2022实验）
+    eta_det = 0.85
+    window_bins = 0  # 点击时间窗（bin差阈值）；None表示不限制
+    # 暗计数率按run随机波动：均值165 Hz，方差5（Hz^2）
+    dark_rate_mean_hz = 165.0
+    dark_rate_var_hz = 5.0
+    dark_rate_std_hz = np.sqrt(dark_rate_var_hz)
+    dark_rate_hz = max(0.0, run_rng.normal(dark_rate_mean_hz, dark_rate_std_hz))
+    bin_dt_s = result.time_grid.dt
+    p_dark = 1.0 - np.exp(-dark_rate_hz * bin_dt_s)
+    print(f"\n探测器暗计数率: {dark_rate_hz:.3f} Hz -> p_dark={p_dark:.3e}")
+    print(f"点击时间窗 window_bins = {window_bins}")
 
-    # 诊断：检查每个bin的光子分布
-    print("\n诊断：检查每个bin的光子分布...")
-    n_bins = result.get_n_bins()
+    # 预判失败：无光子且无暗计数时，后续必然无点击
+    n_total = float(photon_stats.get("n_total", 0.0))
+    if p_dark <= 0.0 and n_total < 1e-9:
+        print("\n检测到无光子且无暗计数：跳过成功事件枚举与逐bin探测。")
+        zero_spin = np.zeros((4, 4), dtype=complex)
+        success_metrics = {
+            "eta_det": eta_det,
+            "window_bins": window_bins,
+            "p_dark": p_dark,
+            "dark_rate_hz": dark_rate_hz,
+            "t_wait_us": t_wait_us,
+            "t2_us": t2_us,
+            "p_dephase": p_dephase,
+            "p_arrive": 0.0,
+            "p_success_all": 0.0,
+            "p_success_true": 0.0,
+            "p_success_false": 0.0,
+            "p_success_given_arrival": 0.0,
+            "fidelity_all": 0.0,
+            "fidelity_true": 0.0,
+            "fidelity_false": 0.0,
+            "p_success_no_dark": 0.0,
+            "fidelity_no_dark": 0.0,
+            "p_false_approx": 0.0,
+            "false_fraction": 0.0,
+            "false_fraction_approx": 0.0,
+        }
+        run_stats = _init_stats()
+        for shot_index in range(1, shots_per_run + 1):
+            det_result = SimpleNamespace(
+                clicks=[],
+                success=False,
+                bell_state="",
+                spin_state=zero_spin,
+            )
+            _append_click_summary(
+                summary_path,
+                summary_lock_path,
+                run_index,
+                shot_index,
+                det_result,
+                success_metrics,
+                photon_stats,
+            )
+            run_stats["shots"] += 1
+            run_stats["clicks"][0] += 1
+        return run_stats, success_metrics
 
-    # 先检查第一个bin的rho形状
-    site_A = 2
-    site_B = 3
-    rho_AB = result.mps.get_reduced_density([site_A, site_B])
-    print(f"  rho_AB shape: {rho_AB.shape}")
+    if DEBUG_MODE:
+        # 诊断：检查每个bin的光子分布
+        print("\n诊断：检查每个bin的光子分布...")
+        n_bins = result.get_n_bins()
+
+        # 先检查第一个bin的rho形状
+        site_A = 2
+        site_B = 3
+        rho_AB = result.mps.get_reduced_density([site_A, site_B])
+        print(f"  rho_AB shape: {rho_AB.shape}")
     _stage(5, "成功事件统计 (POVM)")
     print("\n枚举成功事件（无暗计数）...")
     enum_no_dark = enumerate_success_events(
@@ -941,6 +1085,7 @@ def _run_single_simulation_core(
         n_bins=result.get_n_bins(),
         eta_det=eta_det,
         p_dark=0.0,
+        window_bins=window_bins,
         verbose=True,
     )
     if p_dark > 0.0:
@@ -950,6 +1095,7 @@ def _run_single_simulation_core(
             n_bins=result.get_n_bins(),
             eta_det=eta_det,
             p_dark=p_dark,
+            window_bins=window_bins,
             verbose=True,
         )
     else:
@@ -957,7 +1103,12 @@ def _run_single_simulation_core(
 
     success_metrics = {
         "eta_det": eta_det,
+        "window_bins": window_bins,
         "p_dark": p_dark,
+        "dark_rate_hz": dark_rate_hz,
+        "t_wait_us": t_wait_us,
+        "t2_us": t2_us,
+        "p_dephase": p_dephase,
         "p_arrive": enum_with_dark.p_arrive,
         "p_success_all": enum_with_dark.p_success,
         "p_success_true": enum_with_dark.p_success_true,
@@ -996,6 +1147,7 @@ def _run_single_simulation_core(
             mps=result.mps,
             n_bins=result.get_n_bins(),
             eta_det=eta_det,
+            window_bins=window_bins,
             p_dark=p_dark,
             #rng=np.random.default_rng(seed=19),
             rng=np.random.default_rng(),
@@ -1031,38 +1183,39 @@ def _run_single_simulation_core(
                 print(f"  点击: {[(c.detector, c.bin_index) for c in det_result.clicks]}")
 
         # 保存探测后的调试信息
-        print("\n保存探测后调试信息...")
-        if shots_per_run == 1:
-            det_file = output_dir / f'{run_tag}_debug_detection_result.txt'
-        else:
-            det_file = output_dir / f'{run_tag}_shot{shot_index:03d}_debug_detection_result.txt'
-        with open(det_file, 'w', encoding='utf-8') as file:
-            file.write(f'探测结果\n')
-            file.write('='*60 + '\n\n')
-            file.write(f'成功: {det_result.success}\n')
-            file.write(f'Bell态: {det_result.bell_state}\n')
-            file.write(f'点击次数: {len(det_result.clicks)}\n')
-            if det_result.clicks:
-                file.write(f'点击详情: {[(c.detector, c.bin_index) for c in det_result.clicks]}\n')
+        if DEBUG_MODE:
+            print("\n保存探测后调试信息...")
+            if shots_per_run == 1:
+                det_file = output_dir / f'{run_tag}_debug_detection_result.txt'
+            else:
+                det_file = output_dir / f'{run_tag}_shot{shot_index:03d}_debug_detection_result.txt'
+            with open(det_file, 'w', encoding='utf-8') as file:
+                file.write('探测结果\n')
+                file.write('='*60 + '\n\n')
+                file.write(f'成功: {det_result.success}\n')
+                file.write(f'Bell态: {det_result.bell_state}\n')
+                file.write(f'点击次数: {len(det_result.clicks)}\n')
+                if det_result.clicks:
+                    file.write(f'点击详情: {[(c.detector, c.bin_index) for c in det_result.clicks]}\n')
 
-                file.write(f'\n自旋密度矩阵:\n')
-                rho = det_result.spin_state
-                file.write(f'  基: |00>, |01>, |10>, |11>\n')
-                for i in range(4):
-                    for j in range(4):
-                        val = rho[i, j]
-                        if abs(val) > 1e-10:
-                            file.write(f'  rho[{i},{j}] = {val:.4f}\n')
+                    file.write('\n自旋密度矩阵:\n')
+                    rho = det_result.spin_state
+                    file.write('  基: |00>, |01>, |10>, |11>\n')
+                    for i in range(4):
+                        for j in range(4):
+                            val = rho[i, j]
+                            if abs(val) > 1e-10:
+                                file.write(f'  rho[{i},{j}] = {val:.4f}\n')
 
-                file.write(f'\n纯度: {np.trace(rho @ rho).real:.4f}\n')
+                    file.write(f'\n纯度: {np.trace(rho @ rho).real:.4f}\n')
 
-                file.write(f'\nBell态保真度:\n')
-                for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
-                    fid = compute_fidelity_with_bell(rho, bell)
-                    marker = " <-- 探测到的" if bell == det_result.bell_state else ""
-                    file.write(f'  F({bell}) = {fid:.4f}{marker}\n')
+                    file.write('\nBell态保真度:\n')
+                    for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
+                        fid = compute_fidelity_with_bell(rho, bell)
+                        marker = " <-- 探测到的" if bell == det_result.bell_state else ""
+                        file.write(f'  F({bell}) = {fid:.4f}{marker}\n')
 
-        print(f"  调试信息已保存: {det_file.name}")
+            print(f"  调试信息已保存: {det_file.name}")
 
         run_stats["shots"] += 1
         run_stats["clicks"][len(det_result.clicks)] += 1

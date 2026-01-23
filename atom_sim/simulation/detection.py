@@ -269,6 +269,7 @@ def run_two_photon_detection(
     mps: MPSState,
     n_bins: int,
     eta_det: float = 0.85,
+    window_bins: Optional[int] = None,
     rng: Optional[np.random.Generator] = None,
     verbose: bool = True,
     *,
@@ -290,6 +291,8 @@ def run_two_photon_detection(
         时间仓数量
     eta_det : float
         探测效率
+    window_bins : int, optional
+        点击时间窗（bin差阈值）。None表示不限制。
     p_dark : float
         每个探测器每个bin的暗计数概率
     rng : np.random.Generator, optional
@@ -354,7 +357,7 @@ def run_two_photon_detection(
                     detector=det, bin_index=n, site=site,
                 ))
 
-    success, bell_state = check_bsm_success(clicks)
+    success, bell_state = check_bsm_success(clicks, window_bins=window_bins)
 
     # 提取探测后的原子态
     # 所有bins已被测量，直接trace得到原子的后验态

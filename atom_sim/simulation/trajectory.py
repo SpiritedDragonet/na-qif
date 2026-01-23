@@ -6,20 +6,18 @@
 每个时间仓按顺序处理：发射、QFC、损耗、琼斯旋转、分束器、探测。
 """
 
-from typing import Optional, Tuple, List, Dict
+from typing import Optional, Tuple
 from dataclasses import dataclass, field
 import numpy as np
 
 from ..core.mps import MPSState
-from ..config import TimeGrid, EmitParams, QFCParams, FiberParams, DetParams
+from ..time_grid import TimeGrid
 from ..hilbert.basis import BIN_SPACE, SUBSPACE_780, SUBSPACE_1517
 from ..physics.gates import (
     emission_gate, qfc_gate, jones_gate_from_array, jones_gate
 )
 from ..physics.channels import (
-    loss_channel_1517, loss_channel_both_subspaces, loss_channel_1517_raw,
-    detection_channel_two_mode, detection_povm_single_site,
-    dephasing_channel_from_rate
+    loss_channel_both_subspaces, loss_channel_1517_raw,
 )
 
 
@@ -42,31 +40,6 @@ IDX_BIN_780H_END = DIM_1517 * (IDX_780_H + 1)  # 12
 # 18维仓空间中的780V块
 IDX_BIN_780V_START = DIM_1517 * IDX_780_V  # 12
 IDX_BIN_780V_END = DIM_1517 * (IDX_780_V + 1)  # 18
-
-
-@dataclass
-class TrajectoryResult:
-    """
-    单次轨迹运行的结果。
-
-    Attributes
-    ----------
-    success : bool
-        轨迹是否产生成功模式
-    rho_atom : np.ndarray
-        末态原子密度矩阵（两原子为9x9矩阵）
-    outcome : Optional[Tuple[int, int, int, int]]
-        探测器点击模式 (d1_H, d1_V, d2_H, d2_V)
-    success_bin : Optional[int]
-        产生成功的仓索引（无成功则为None）
-    record : List[Tuple[int, int, int, int]]
-        所有仓的探测器结果完整记录
-    """
-    success: bool
-    rho_atom: np.ndarray
-    outcome: Optional[Tuple[int, int, int, int]] = None
-    success_bin: Optional[int] = None
-    record: List[Tuple[int, int, int, int]] = field(default_factory=list)
 
 
 @dataclass
@@ -245,13 +218,14 @@ def apply_780_filter(
     mps: MPSState,
     n_bins: int,
     verbose: bool = True,
+    rng: Optional[np.random.Generator] = None,
 ) -> MPSState:
     """
     应用100%损耗滤波器从所有仓中移除780nm光子。
 
     QFC之后，任何剩余的780nm光子（|H,vac>, |V,vac>）无法在光纤中
-    传播，必须被滤除。这应用投影：
-        P_filter = |vac><vac|_780 ⊗ I_1517
+    传播，必须被滤除。这里使用Kraus信道实现“物理损耗”，
+    而不是投影后选择的归一化。
 
     Parameters
     ----------
@@ -267,35 +241,32 @@ def apply_780_filter(
     MPSState
         移除了780nm光子的MPS态（原地修改）
     """
-    from ..physics.gates import filter_780_gate
-    from tenpy.linalg.np_conserved import Array
-
     _print_header("780nm Filter", verbose)
 
-    # 获取780nm滤波器投影（18x18）
-    P_filter = filter_780_gate()
+    if rng is None:
+        rng = np.random.default_rng()
+
+    # 780nm子空间完全损耗，1517nm子空间无损耗
+    K_list = loss_channel_both_subspaces(
+        eta_780=0.0,
+        eta_H_1517=1.0,
+        eta_V_1517=1.0,
+    )
 
     if verbose:
-        print(f"  P_filter shape: {P_filter.shape}")
-        print(f"  This projects 780nm photon states to vacuum")
+        print(f"  Kraus ops: {len(K_list)} (18x18)")
+        print(f"  This absorbs 780nm photons into vacuum without post-selection")
 
-    # 转换为带适当标签的TeNPy Array
-    P_arr = Array.from_ndarray_trivial(P_filter, labels=['p', 'p*'])
-
-    # 应用到所有仓，每个之后不归一化
+    # 应用到所有仓：量子轨迹采样，保持每条轨迹归一化
     # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
     for n in range(n_bins):
         site_A = 2 + 2 * n
         site_B = 2 + 2 * n + 1
 
-        # 应用投影（非酉，暂不重新归一化）
-        mps._mps.apply_local_op(site_A, P_arr, unitary=False, renormalize=False)
-        mps._mps.apply_local_op(site_B, P_arr, unitary=False, renormalize=False)
+        mps.apply_kraus_one_site(site_A, K_list, rng=rng)
+        mps.apply_kraus_one_site(site_B, K_list, rng=rng)
 
         _print_progress(n + 1, n_bins, verbose)
-
-    # 最后的单一归一化
-    mps._mps.canonical_form_finite(renormalize=True)
 
     _print_footer(mps, verbose, stage="780nm Filter")
     return mps
@@ -382,170 +353,6 @@ def project_to_1517(
     return mps
 
 
-def apply_jones(
-    mps: MPSState,
-    n_bins: int,
-    Jones_A: np.ndarray,
-    Jones_B: np.ndarray,
-    verbose: bool = True,
-) -> MPSState:
-    """
-    对所有仓应用琼斯偏振旋转。
-
-    Parameters
-    ----------
-    mps : MPSState
-        MPS态（布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN）
-    n_bins : int
-        时间仓数量
-    Jones_A : np.ndarray
-        A臂的2x2琼斯矩阵
-    Jones_B : np.ndarray
-        B臂的2x2琼斯矩阵
-    verbose : bool
-        是否打印进度
-
-    Returns
-    -------
-    MPSState
-        应用了琼斯旋转的MPS态（原地修改）
-    """
-    from ..physics.gates import jones_gate_from_array
-
-    _print_header("Jones", verbose)
-    if verbose:
-        print(f"  Jones_A: {Jones_A}")
-        print(f"  Jones_B: {Jones_B}")
-
-    # 获取琼斯门（18x18，已嵌入）
-    U_J_A = jones_gate_from_array(Jones_A)
-    U_J_B = jones_gate_from_array(Jones_B)
-
-    # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
-    for n in range(n_bins):
-        site_A = 2 + 2 * n
-        site_B = 2 + 2 * n + 1
-        mps.apply_one_site_gate(site_A, U_J_A)
-        mps.apply_one_site_gate(site_B, U_J_B)
-
-        _print_progress(n + 1, n_bins, verbose)
-
-    _print_footer(mps, verbose, stage="Jones")
-    return mps
-
-
-def apply_loss(
-    mps: MPSState,
-    n_bins: int,
-    eta_H_A: float,
-    eta_V_A: float,
-    eta_H_B: float,
-    eta_V_B: float,
-    rng: np.random.Generator,
-    verbose: bool = True,
-) -> MPSState:
-    """
-    对所有仓应用损耗通道。
-
-    Parameters
-    ----------
-    mps : MPSState
-        MPS态（布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN）
-    n_bins : int
-        时间仓数量
-    eta_H_A, eta_V_A : float
-        A臂的透过率（H, V偏振）
-    eta_H_B, eta_V_B : float
-        B臂的透过率（H, V偏振）
-    rng : np.random.Generator
-        用于Kraus采样的随机数生成器
-    verbose : bool
-        是否打印进度
-
-    Returns
-    -------
-    MPSState
-        应用了损耗的MPS态（原地修改）
-    """
-    _print_header("Loss", verbose)
-    if verbose:
-        print(f"  Arm A: eta_H={eta_H_A:.3f}, eta_V={eta_V_A:.3f}")
-        print(f"  Arm B: eta_H={eta_H_B:.3f}, eta_V={eta_V_B:.3f}")
-
-    # 获取损耗Kraus算符（18x18，已嵌入）
-    K_loss_A = loss_channel_1517(eta_H_A, eta_V_A)
-    K_loss_B = loss_channel_1517(eta_H_B, eta_V_B)
-
-    # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
-    for n in range(n_bins):
-        site_A = 2 + 2 * n
-        site_B = 2 + 2 * n + 1
-        mps.apply_kraus_one_site(site_A, K_loss_A, rng)
-        mps.apply_kraus_one_site(site_B, K_loss_B, rng)
-
-        _print_progress(n + 1, n_bins, verbose)
-
-    _print_footer(mps, verbose, stage="Loss")
-    return mps
-
-
-def apply_loss_combined(
-    mps: MPSState,
-    n_bins: int,
-    eta_780: float,
-    eta_H_1517: float,
-    eta_V_1517: float,
-    rng: np.random.Generator,
-    verbose: bool = True,
-) -> MPSState:
-    """
-    对所有仓应用组合损耗通道（780和1517子空间）。
-
-    对于QFC应用：通常 eta_780=0（100%滤波），
-    eta_1517=0.5~0.8（正常传输损耗）。
-
-    Parameters
-    ----------
-    mps : MPSState
-        MPS态（布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN）
-    n_bins : int
-        时间仓数量
-    eta_780 : float
-        780nm子空间的透过率（0 = 100%损耗/滤波）
-    eta_H_1517 : float
-        1517nm H偏振的透过率
-    eta_V_1517 : float
-        1517nm V偏振的透过率
-    rng : np.random.Generator
-        用于Kraus采样的随机数生成器
-    verbose : bool
-        是否打印进度
-
-    Returns
-    -------
-    MPSState
-        应用了损耗的MPS态（原地修改）
-    """
-    _print_header("Loss", verbose)
-    if verbose:
-        print(f"  780nm: eta={eta_780:.3f} ({'100% filtered' if eta_780==0 else 'partial loss'})")
-        print(f"  1517nm: eta_H={eta_H_1517:.3f}, eta_V={eta_V_1517:.3f}")
-
-    # 获取组合Kraus算符（18x18，两个子空间）
-    K_list = loss_channel_both_subspaces(eta_780, eta_H_1517, eta_V_1517)
-
-    # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
-    for n in range(n_bins):
-        site_A = 2 + 2 * n
-        site_B = 2 + 2 * n + 1
-        mps.apply_kraus_one_site(site_A, K_list, rng)
-        mps.apply_kraus_one_site(site_B, K_list, rng)
-
-        _print_progress(n + 1, n_bins, verbose)
-
-    _print_footer(mps, verbose, stage="Loss")
-    return mps
-
 
 def apply_bs(
     mps: MPSState,
@@ -625,8 +432,8 @@ def apply_fiber_channel(
     """
     应用光纤信道效应：琼斯旋转 + 损耗（含随机采样）。
 
-    这结合了 apply_jones 和 apply_loss_combined，但从
-    FiberChannelParams 为每次轨迹采样参数（模拟光纤漂移）。
+    这一步同时处理琼斯旋转与损耗，并从 FiberChannelParams
+    为每次轨迹采样参数（模拟光纤漂移）。
     支持18D（780x1517）或6D（1517-only）bin空间。
 
     Parameters
@@ -647,18 +454,22 @@ def apply_fiber_channel(
     Returns
     -------
     tuple
-        (mps, sampled_params) 其中 sampled_params = (U_A, U_B, eta, phase)
+        (mps, sampled_params) 其中 sampled_params =
+        (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase)
     """
     _print_header("Fiber Channel", verbose)
 
-    # 为本次轨迹采样参数
-    U_A, U_B, eta, phase = fiber_params.sample_all(rng)
+    # 为本次轨迹采样参数（残余Jones旋转 + 小PDL）
+    U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase = fiber_params.sample_all(rng)
 
     if verbose:
         print(f"  Sampled Jones_A:\n{U_A}")
         print(f"  Sampled Jones_B:\n{U_B}")
         print(f"  Phase drift: {phase:.4f} rad")
-        print(f"  Sampled eta: {eta:.4f}")
+        print(f"  Sampled eta_A(H/V): {eta_H_A:.4f} / {eta_V_A:.4f}")
+        print(f"  Sampled eta_B(H/V): {eta_H_B:.4f} / {eta_V_B:.4f}")
+        print(f"  PDL_A (H-V): {eta_H_A - eta_V_A:+.4f}")
+        print(f"  PDL_B (H-V): {eta_H_B - eta_V_B:+.4f}")
 
     if bin_start is None:
         if len(mps.d) >= 2 and mps.d[0] == DIM_ATOM and mps.d[1] == DIM_ATOM:
@@ -697,21 +508,31 @@ def apply_fiber_channel(
 
     # 应用损耗（18D包含780滤波；6D只作用于1517）
     if bin_dim == DIM_BIN:
-        K_list = loss_channel_both_subspaces(eta_780=0.0, eta_H_1517=eta, eta_V_1517=eta)
+        K_list_A = loss_channel_both_subspaces(
+            eta_780=0.0,
+            eta_H_1517=eta_H_A,
+            eta_V_1517=eta_V_A,
+        )
+        K_list_B = loss_channel_both_subspaces(
+            eta_780=0.0,
+            eta_H_1517=eta_H_B,
+            eta_V_1517=eta_V_B,
+        )
     else:
-        K_list = loss_channel_1517_raw(eta, eta)
+        K_list_A = loss_channel_1517_raw(eta_H_A, eta_V_A)
+        K_list_B = loss_channel_1517_raw(eta_H_B, eta_V_B)
 
     for n in range(n_bins):
         site_A = bin_start + 2 * n
         site_B = bin_start + 2 * n + 1
-        mps.apply_kraus_one_site(site_A, K_list, rng)
-        mps.apply_kraus_one_site(site_B, K_list, rng)
+        mps.apply_kraus_one_site(site_A, K_list_A, rng)
+        mps.apply_kraus_one_site(site_B, K_list_B, rng)
 
         _print_progress(n + 1, n_bins, verbose)
 
     _print_footer(mps, verbose, stage="Fiber Channel")
 
-    return mps, (U_A, U_B, eta, phase)
+    return mps, (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase)
 
 
 
@@ -906,10 +727,17 @@ def run_dual_atom_emission(
     atom_A_evolution = []
     atom_B_evolution = []
 
+    def _bin_to_time_index(bin_index: int) -> int:
+        """
+        时间索引映射：
+        - n_bins-1 是最早发射的 bin
+        - 0 是最晚发射的 bin
+        """
+        return (n_bins - 1) - bin_index
+
     for n in range(n_bins-1, -1, -1):  # 从 n_bins-1 到 0（空间索引）
-        # 时间索引：Bin n 对应时间索引 n（最后的 Bin 对应最早发射）
         # 物理图景：先发射的光子先到达 QFC/BS，存储在空间上靠后的 bin
-        time_idx = n
+        time_idx = _bin_to_time_index(n)
         gamma_A_n = gamma_A_values[time_idx]
         gamma_B_n = gamma_B_values[time_idx]
 

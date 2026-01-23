@@ -105,38 +105,6 @@ def qfc_gate(theta_H: float = 0.0, theta_V: float = 0.0) -> np.ndarray:
     return U
 
 
-def filter_780_gate() -> np.ndarray:
-    """
-    780nm滤波器投影算符：移除所有780nm光子同时保持1517nm完整。
-
-    这是一个投影算符（非幺正），作用于18D bin空间：
-        P_filter = |vac><vac|_780 ⊗ I_1517
-
-    它有效地将任何780nm光子态投影到真空，保持1517nm态。
-    由于这是投影算符，不保持模长 - 应用后必须重新归一化态。
-
-    Returns
-    -------
-    np.ndarray
-        18x18投影矩阵
-    """
-    from ..hilbert.basis import SUBSPACE_780, SUBSPACE_1517
-
-    dim_780 = SUBSPACE_780.dim  # 3: vac, H, V
-    dim_1517 = SUBSPACE_1517.dim  # 6: vac, H, V, 2H, 2V, HV
-
-    # 780子空���中的|vac><vac|
-    P_vac_780 = np.zeros((dim_780, dim_780), dtype=complex)
-    P_vac_780[0, 0] = 1.0  # 只有|vac><vac|存活
-
-    # 1517子空间中的单位矩阵
-    I_1517 = np.eye(dim_1517, dtype=complex)
-
-    # 张量积：|vac><vac|_780 ⊗ I_1517
-    P_filter = np.kron(P_vac_780, I_1517)
-
-    return P_filter
-
 
 @lru_cache(maxsize=4)
 def bs_gate_6d() -> np.ndarray:
@@ -178,8 +146,8 @@ def _bs_gate_1517() -> np.ndarray:
         c_dag_B = np.kron(np.eye(6, dtype=complex), c_dag)
 
         # BS生成元：G = θ * (c_A^† c_B - c_A c_B^†)
-        # For 50:50 beam splitter, theta = π/8
-        theta = np.pi / 8
+        # For a 50:50 beam splitter, sin^2(theta) = 0.5 -> theta = pi/4
+        theta = np.pi / 4
         G = theta * (c_dag_A @ c_B - c_A @ c_dag_B)
         return G
 
@@ -246,21 +214,24 @@ def jones_gate(U: Tuple[Tuple[complex, complex], Tuple[complex, complex]]) -> np
     # = u00²|HH> + u00*u10|HV> + u10*u00|VH> + u10²|VV>
     # 但由于我们有不可区分光子，|HV> = |VH>
 
-    # |2H> -> u00²|2H> + 2*u00*u10|HV> + u10²|2V>
+    # sqrt(2) factors are required for the normalized |HV> basis.
+    s = np.sqrt(2.0)
+
+    # |2H> -> u00^2|2H> + sqrt(2)*u00*u10|HV> + u10^2|2V>
     op[3, 3] = u00 * u00  # |2H>
-    op[5, 3] = 2 * u00 * u10  # |HV>
+    op[5, 3] = s * u00 * u10  # |HV>
     op[4, 3] = u10 * u10  # |2V>
 
-    # |2V> -> u01²|2H> + 2*u01*u11|HV> + u11²|2V>
+    # |2V> -> u01^2|2H> + sqrt(2)*u01*u11|HV> + u11^2|2V>
     op[3, 4] = u01 * u01
-    op[5, 4] = 2 * u01 * u11
+    op[5, 4] = s * u01 * u11
     op[4, 4] = u11 * u11
 
     # |HV> -> (u00*H + u10*V) ⊗ (u01*H + u11*V)
-    # = u00*u01|HH> + (u00*u11 + u10*u01)|HV> + u10*u11|VV>
-    op[3, 5] = u00 * u01
+    # = sqrt(2) u00*u01|2H> + (u00*u11 + u10*u01)|HV> + sqrt(2) u10*u11|2V>
+    op[3, 5] = s * u00 * u01
     op[5, 5] = u00 * u11 + u10 * u01
-    op[4, 5] = u10 * u11
+    op[4, 5] = s * u10 * u11
 
     return op
 
@@ -289,45 +260,6 @@ def jones_gate_from_array(U_array: np.ndarray) -> np.ndarray:
     # 嵌入18D bin空间：I_780 ⊗ U_1517
     I_780 = np.eye(3, dtype=complex)
     return np.kron(I_780, U_1517)  # 18x18
-
-
-@lru_cache(maxsize=2)
-def swap_gate(d1: int, d2: int) -> np.ndarray:
-    """
-    用于交换两个站点的SWAP门。
-
-    W |s> ⊗ |t> = |t> ⊗ |s>
-
-    用于"传送带"协议以沿链移动系统站点。
-
-    Parameters
-    ----------
-    d1 : int
-        第一个站点的维度
-    d2 : int
-        第二个站点的维度
-
-    Returns
-    -------
-    np.ndarray
-        (d1*d2, d1*d2)置换矩阵
-
-    Examples
-    --------
-    >>> W = swap_gate(9, 18)  # 交换系统（9D）与bin（18D）
-    """
-    # 显式构造SWAP矩阵
-    dim = d1 * d2
-    W = np.zeros((dim, dim), dtype=complex)
-
-    for i in range(d1):
-        for j in range(d2):
-            # |i> ⊗ |j> -> |j> ⊗ |i>
-            row_idx = i * d2 + j
-            col_idx = j * d1 + i
-            W[row_idx, col_idx] = 1.0
-
-    return W
 
 
 def emission_gate(

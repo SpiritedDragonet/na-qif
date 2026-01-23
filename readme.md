@@ -5,26 +5,71 @@
 ## 项目结构
 
 ```
+total_simulation.py               # CLI 主入口（全流程仿真 + 汇总输出）
+├── _parse_run_params()
+├── save_debug_info()
+├── _append_click_summary()
+├── _init_stats()
+├── _merge_stats()
+├── _format_counter()
+├── _write_csv_header()
+├── _append_csv_row()
+├── _format_metric()
+├── _format_stat()
+├── _file_lock()
+├── _init_combined_summary()
+├── _finalize_combined_summary()
+├── _write_extra_data()
+├── _write_success_metrics_detail()
+├── _init_success_metrics_accumulator()
+├── _accumulate_success_metrics()
+├── _finalize_success_metrics()
+├── _run_single_simulation_core()
+├── _run_single_simulation()
+├── _run_single_simulation_task()
+└── main()
+
 atom_sim/
-├── __init__.py
+├── __init__.py                    # 包导出
+│   ├── MPSState, create_timebin_mps
+│   ├── TimeGrid
+│   └── run_dual_atom_emission
+│
+├── time_grid.py                   # 时间网格
+│   └── TimeGrid
 │
 ├── core/                          # 数值核心层
 │   ├── __init__.py
 │   └── mps.py                     # MPSState 容器（TeNPy 后端）
-│                                   # - apply_bond_op() : 双格点局域更新
-│                                   # - apply_one_site_gate() : 单格点酉门
-│                                   # - apply_kraus_one_site() : 单格点 Kraus 轨迹
-│                                   # - apply_kraus_two_site() : 双格点 Kraus
-│                                   # - swap_sites() : SWAP 门（交换两个格点）
-│                                   # - get_reduced_density() : 约化密度矩阵
-│                                   # - chi 属性 : 键维度列表
+│       ├── class MPSState
+│       │   ├── __init__()
+│       │   ├── _apply_two_site_op_local()
+│       │   ├── apply_bond_op()
+│       │   ├── apply_kraus_one_site()
+│       │   ├── finalize_bin_pair()
+│       │   ├── apply_one_site_gate()
+│       │   ├── apply_two_site_kraus()
+│       │   ├── swap_sites()
+│       │   ├── find_sites_by_dim()
+│       │   ├── get_reduced_density()
+│       │   ├── get_atom_state()
+│       │   ├── expectation_value()
+│       │   ├── chi
+│       │   ├── norm()
+│       │   ├── get_bond_dimensions()
+│       │   ├── test_sanity()
+│       │   ├── copy()
+│       │   └── __repr__()
+│       └── create_timebin_mps()
 │
 ├── hilbert/                       # 希尔伯特空间层（物理抽象）
 │   ├── __init__.py
 │   ├── basis.py                   # 空间定义和张量积
-│   │   ├── SubSpace               # 单子空间（780, 1517, atom）
-│   │   ├── ProductSpace           # 张量积空间 [s1, s2, ...]
-│   │   └── subspace_gate()        # 将子空间门嵌入到积空间
+│   │   ├── class SubSpace          # 单子空间（780, 1517, atom）
+│   │   ├── class ProductSpace      # 张量积空间 [s1, s2, ...]
+│   │   ├── subspace_gate()         # 将子空间门嵌入到积空间
+│   │   ├── get_bin_space()
+│   │   └── get_system_space()
 │   │
 │   └── operators.py               # 基本算符工厂
 │       ├── annihilation_op()      # 湮灭算符 a[i]（复用实现）
@@ -35,85 +80,104 @@ atom_sim/
 ├── physics/                       # 物理过程层（门和通道）
 │   ├── __init__.py
 │   ├── gates.py                   # 所有酉门工厂
-│   │   ├── emission_gate()        # U_emit: 原子-光子耦合 (54x54)
 │   │   ├── qfc_gate()             # U_qfc: 780→1517 频率转换 (18x18)
 │   │   ├── bs_gate_6d()           # U_BS: 50/50 分束器 (36x36, 仅1517nm)
+│   │   ├── _bs_gate_1517()
 │   │   ├── jones_gate()           # U_pol: 琼斯旋转 (6x6)
 │   │   ├── jones_gate_from_array() # 从 2x2 琼斯矩阵构造门
-│   │   └── swap_gate()            # W_swap: SWAP 门 (324x324)
+│   │   └── emission_gate()        # U_emit: 原子-光子耦合 (54x54)
 │   │
 │   └── channels.py                # 所有 Kraus 通道
-│       ├── loss_channel_1517()           # 1517nm 振幅阻尼
 │       ├── loss_channel_both_subspaces() # 780+1517 联合损耗
-│       ├── loss_channel_780_general()    # 780nm 损耗（内部）
-│       ├── detection_channel()           # 单模 on/off POVM
-│       ├── detection_povm_single_site()  # 每格点 H+V 探测（4结果）
-│       ├── detection_channel_two_mode()  # 双端口探测（16结果）
-│       ├── dephasing_channel()           # 原子退相位
+│       ├── loss_channel_780_general()    # 780nm 损耗
+│       ├── _loss_channel_1517_raw()
+│       ├── loss_channel_1517_raw()       # 1517nm 振幅阻尼（6D）
 │       └── FiberChannelParams            # 光纤漂移模型（琼斯+损耗）
-│
-├── config.py                      # 所有参数类
-│   ├── TimeGrid                   # dt, N, t[n]
-│   ├── EmitParams                 # gamma(t), Alpha 矩阵
-│   ├── QFCParams                  # theta_H, theta_V
-│   ├── FiberParams                # 琼斯矩阵, PMD 参数
-│   └── DetParams                  # eta_det, p_dark, success_patterns
 │
 ├── simulation/                    # 仿真流程层（编排）
 │   ├── __init__.py
 │   ├── trajectory.py              # 单轨迹执行
-│   │   ├── TrajectoryRunner       # 主循环
-│   │   │   ├── initialize_mps()
-│   │   │   ├── run_emission()     # 发射流程
-│   │   │   └── run_bin(n)         # 单个时间仓的完整流程
-│   │   │
-│   │   ├── EmissionResult         # 发射阶段结果容器
-│   │   │
-│   │   └── apply_* 函数:          # 统一处理接口
-│   │       ├── apply_qfc()        # 对所有 bins 应用 QFC
-│   │       ├── apply_780_filter() # 过滤未转换的 780nm 光子
-│   │       ├── apply_jones()      # 对所有 bins 应用琼斯旋转
-│   │       ├── apply_loss()       # 损耗通道（仅 1517）
-│   │       ├── apply_loss_combined() # 损耗通道（780+1517）
-│   │       ├── apply_fiber_channel() # 琼斯+损耗（随机采样）
-│   │       └── apply_bs()         # 对所有 bin 对应用分束器
-│   │
-│   ├── simulator.py               # 多轨迹统计
-│   │   └── run_simulation()       # 返回 p_succ ± stderr, F_cond ± stderr
+│   │   ├── EmissionResult
+│   │   ├── run_dual_atom_emission()
+│   │   ├── apply_qfc()
+│   │   ├── apply_780_filter()
+│   │   ├── project_to_1517()
+│   │   ├── apply_bs()
+│   │   ├── _print_header()
+│   │   ├── _print_progress()
+│   │   ├── _print_footer()
+│   │   └── apply_fiber_channel()
 │   │
 │   └── detection.py               # 探测和分析
-│       ├── run_two_photon_detection()   # 量子跃迁方法
-│       ├── compute_photon_statistics()  # 光子统计
-│       ├── compute_fidelity_with_bell() # Bell 态保真度
-│       └── extract_spin_state()         # 提取原子自旋态
+│       ├── DetectionEvent
+│       ├── TwoPhotonDetectionResult
+│       ├── SuccessEnumerationResult
+│       ├── _order_detectors()
+│       ├── _order_two_port_detectors()
+│       ├── _split_with_dark()
+│       ├── _build_port_kraus_entries_6d()
+│       ├── _build_detection_kraus()
+│       ├── build_detection_kraus_6d()
+│       ├── build_detection_kraus_18d()
+│       ├── run_two_photon_detection()   # 量子跃迁采样
+│       ├── extract_spin_state()
+│       ├── check_bsm_success()
+│       ├── compute_fidelity_with_bell()
+│       ├── _infer_bin_start()
+│       ├── _get_bin_sites()
+│       ├── _build_number_ops()
+│       ├── compute_two_photon_arrival_prob()
+│       ├── _kraus_thetas_from_mps()
+│       ├── _set_two_site_theta()
+│       ├── _build_detection_effects()
+│       ├── _bell_projector_full()
+│       ├── _prepare_grouped_mps_pairs()
+│       ├── _apply_env_left()
+│       ├── _apply_env_right()
+│       ├── _build_left_envs()
+│       ├── _build_right_envs()
+│       ├── enumerate_success_events()   # POVM 枚举
+│       ├── _compute_photon_statistics_global()
+│       ├── _build_sum_mpo()
+│       ├── _compute_global_expectation()
+│       └── compute_photon_statistics()
 │
 ├── visualization/                 # 可视化层
 │   ├── __init__.py
 │   └── wavepacket.py              # 波包可视化
-│       ├── telecom_ops_bin18()           # 1517nm 光场算符
+│       ├── _is_headless()
+│       ├── _maybe_show()
+│       ├── _telecom_ops_1517()
+│       ├── telecom_ops_bin18()
 │       ├── extract_wavepacket()          # 提取波包复振幅
 │       ├── extract_intensity_envelope()  # 提取强度包络
 │       ├── extract_single_photon_prob()  # 提取单光子概率
-│       ├── plot_wavepacket()            # 绘制波包图
+│       ├── plot_wavepacket()             # 绘制波包图
 │       ├── plot_intensity_envelope()     # 绘制强度包络
 │       ├── plot_single_photon_prob()     # 绘制单光子概率
+│       ├── _get_bin18_state_labels()
+│       ├── _get_bin6_state_labels()
+│       ├── _get_bin3_state_labels()
+│       ├── _infer_first_bin_site()
+│       ├── _validate_bin_rho_traces()
 │       ├── extract_bin_state_probabilities()  # 提取 bin 态概率
 │       ├── plot_bin_state_heatmap()      # 绘制 bin 态热图
 │       ├── plot_dual_arm_heatmap()       # 绘制双臂热图
-│       ├── extract_bin_state_coherences()    # 提取 bin 态相干
-│       ├── plot_dual_arm_heatmap_phase()     # 绘制相位感知热图
-│       └── extract_first_order_coherence()   # 提取一阶相干函数
+│       └── plot_cross_bin_joint_heatmap()# 跨 bin 联合分布热图
 │
-└── tests/                         # 单元测试（正确性检查）
-    ├── test_bs_closure.py         # |1>|1> 保持在截断空间内
-    ├── test_kraus_completeness.py # sum(K^† K) = I
-    └── ...
+├── docs/                          # 设计文档与讨论
+├── notebooks/                     # 交互式实验
+└── thesis/                        # 论文材料
 
-outputs/                           # 仿真输出目录
+outputs/                           # 仿真输出目录（已 gitignore）
 └── <YYYYMMDD_HHMM>/               # 时间戳输出文件夹
-    ├── 1_after_emission.png
-    ├── 2_after_qfc.png
-    └── 3_after_fiber.png
+    ├── runXXX_1_after_emission.png
+    ├── runXXX_2_after_qfc.png
+    ├── runXXX_3_after_fiber.png
+    ├── runXXX_4_after_bs.png
+    ├── runXXX_4b_after_bs_cross_bin_joint.png
+    ├── runXXX_extra_data.txt
+    └── all_clicks_summary.csv
 ```
 
 ## 层次职责
@@ -123,15 +187,14 @@ outputs/                           # 仿真输出目录
 | `core/mps.py` | 张量网络存储、局域 TEBD 更新、SVD | 物理意义 |
 | `hilbert/` | 线性代数：空间、基、算符 | 门做什么 |
 | `physics/` | 物理：门矩阵、Kraus 通道 | MPS 更新 |
-| `config.py` | 数据：参数存储 | 计算 |
+| `time_grid.py` | 时间网格参数 | 计算 |
 | `simulation/` | 编排：调用顺序、条件 | 矩阵如何计算 |
 | `visualization/` | 结果可视化、数据提取 | - |
-| `tests/` | 正确性验证 | - |
 
 ## 数据流
 
 ```
-config.py → physics/gates.py → hilbert/basis.py → numpy 矩阵
+time_grid.py → physics/gates.py → hilbert/basis.py → numpy 矩阵
                                                ↓
 simulation/trajectory.py → core/mps.py → 张量网络更新（仅局域！）
 ```
@@ -142,7 +205,7 @@ simulation/trajectory.py → core/mps.py → 张量网络更新（仅局域！�
 所有 Kraus 和测量操作必须使用局域 theta + SVD 更新以避免 canonical sweep。使用：
 - `apply_bond_op(i, op)` 用于双格点门
 - `apply_kraus_one_site(i, {Kμ}, rng)` 用于单格点 Kraus
-- `apply_kraus_two_site(i, {Kμ}, rng)` 用于双格点测量
+- `apply_two_site_kraus(i, {Kμ}, rng)` 用于双格点测量
 
 ### 2. Bin 废弃机制
 测量后，bins 被冻结（键维度=1）且不再被访问。使用 `finalize_bin_pair(n)` 确保线性复杂度。
@@ -151,7 +214,7 @@ simulation/trajectory.py → core/mps.py → 张量网络更新（仅局域！�
 使用自定义的 `FiniteDimSite(d)` 配合算符字典，而非 TeNPy 的 `BosonSite`（语义不兼容）。
 
 ### 4. 密度矩阵提取
-始终使用 `get_rho_segment([i])`（TeNPy 的方法），绝不直接收缩 `_B[i]`。
+始终使用 `get_reduced_density([i])`，绝不直接收缩 `_B[i]`。
 
 ## 物理模型
 
@@ -223,11 +286,12 @@ fiber_params = FiberChannelParams(
     polarization_sigma=0.1,        # 旋转角度标准差 (rad)
     eta_mean=0.57,                 # 平均透过率
     eta_std=0.02,                  # 透过率波动
+    pdl_sigma=0.02,                # 小PDL：H/V透过率相对差异
     phase_drift_std=0.2,           # 臂间相位漂移 (rad)
 )
 
 # 为单次轨迹采样参数
-U_A, U_B, eta, phase = fiber_params.sample_all(rng)
+U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase = fiber_params.sample_all(rng)
 ```
 
 ## 波包提取

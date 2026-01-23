@@ -28,7 +28,7 @@ if _is_headless():
 import matplotlib.pyplot as plt
 
 from ..core.mps import MPSState
-from ..config import TimeGrid
+from ..time_grid import TimeGrid
 from ..simulation.trajectory import EmissionResult
 
 
