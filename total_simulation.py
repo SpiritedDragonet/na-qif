@@ -61,7 +61,7 @@ SUMMARY_HEADER = [
     "n_1517_total",
     "n_1517_H",
     "n_1517_V",
-    "loss_prob",
+    "loss_expected",
     "p_arrive",
     "p_success_given_arrival",
     "p_success_all",
@@ -227,7 +227,7 @@ def save_debug_info(
         f.write(f'  总期望光子数 = {stats["n_total"]:.4f}\n')
         f.write(f'  780nm: H={stats.get("n_780_H", 0):.4f}, V={stats.get("n_780_V", 0):.4f}, total={stats.get("n_780_total", 0):.4f}\n')
         f.write(f'  1517nm: H={stats.get("n_1517_H", 0):.4f}, V={stats.get("n_1517_V", 0):.4f}, total={stats.get("n_1517_total", 0):.4f}\n')
-        f.write(f'  期望损耗光子数 = {stats["loss_prob"]:.4f}\n\n')
+        f.write(f'  期望损耗光子数 = {stats["loss_expected"]:.4f}\n\n')
         f.write(f'原子态信息:\n')
         f.write(f'  对角元: {info["spin_state_diag"]}\n')
         f.write(f'  纯度: {info["spin_purity"]:.4f}\n\n')
@@ -268,7 +268,7 @@ def _append_click_summary(
         _format_stat(photon_stats, "n_1517_total", ".4f"),
         _format_stat(photon_stats, "n_1517_H", ".4f"),
         _format_stat(photon_stats, "n_1517_V", ".4f"),
-        _format_stat(photon_stats, "loss_prob", ".4f"),
+        _format_stat(photon_stats, "loss_expected", ".4f"),
         _format_metric(metrics, "p_arrive", ".8f"),
         _format_metric(metrics, "p_success_given_arrival", ".8f"),
         _format_metric(metrics, "p_success_all", ".8f"),

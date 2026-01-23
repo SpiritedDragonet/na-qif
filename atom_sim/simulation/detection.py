@@ -56,6 +56,9 @@ class SuccessEnumerationResult:
     bell_weights: Counter
     success_events: List[Tuple[str, int, int, float]]  # (bell, bin1, bin2, weight)
 
+# 条件量在此阈值以下视为无效，避免数值噪声放大。
+P_ARRIVE_EPS = 1e-8
+
 
 def _order_detectors(detectors: List[str]) -> List[str]:
     order = {"H": 0, "V": 1}
@@ -725,8 +728,10 @@ def enumerate_success_events(
 
     该函数不做随机采样，仅枚举成功事件集合并严格求和。
     """
+    p_arrive_eps = P_ARRIVE_EPS
     p_arrive = compute_two_photon_arrival_prob(mps, n_bins, verbose=verbose)
-    p_arrive_eps = 1e-12
+    if p_arrive < p_arrive_eps:
+        p_arrive = 0.0
     if p_arrive <= p_arrive_eps and p_dark <= 0.0:
         if verbose:
             print(f"  p_arrive<{p_arrive_eps:.1e} 且 p_dark=0，跳过成功事件枚举")
@@ -908,7 +913,7 @@ def enumerate_success_events(
         else 0.0
     )
 
-    p_success_given_arrival = (p_success_true / p_arrive) if p_arrive > 0 else 0.0
+    p_success_given_arrival = (p_success_true / p_arrive) if p_arrive > p_arrive_eps else 0.0
 
     zero_spin = np.zeros((4, 4), dtype=complex)
     return SuccessEnumerationResult(
@@ -1007,7 +1012,7 @@ def _compute_photon_statistics_global(mps: MPSState, n_bins: int, bin_dim: int, 
         'n_1517_H': n_1517_H,
         'n_1517_V': n_1517_V,
         'n_1517_total': n_1517_H + n_1517_V,
-        'loss_prob': max(0.0, 2.0 - n_total),
+        'loss_expected': max(0.0, 2.0 - n_total),
     }
 
     if verbose:
@@ -1015,7 +1020,7 @@ def _compute_photon_statistics_global(mps: MPSState, n_bins: int, bin_dim: int, 
         print(f"    总期望光子数：{stats['n_total']:.4f}")
         print(f"    780nm: H={stats['n_780_H']:.4f}, V={stats['n_780_V']:.4f}, total={stats['n_780_total']:.4f}")
         print(f"    1517nm: H={stats['n_1517_H']:.4f}, V={stats['n_1517_V']:.4f}, total={stats['n_1517_total']:.4f}")
-        print(f"    期望损耗光子数：{stats['loss_prob']:.4f}")
+        print(f"    期望损耗光子数：{stats['loss_expected']:.4f}")
 
     return stats
 
@@ -1147,7 +1152,7 @@ def compute_photon_statistics(mps: MPSState, n_bins: int, verbose: bool = False)
     Returns
     -------
     dict
-        包含 'n_total', 'n_H', 'n_V', 'loss_prob'(期望损耗光子数),
+        包含 'n_total', 'n_H', 'n_V', 'loss_expected'(期望损耗光子数),
         以及 'n_780_H', 'n_780_V', 'n_1517_H', 'n_1517_V'
     """
     # 检测bin维度
