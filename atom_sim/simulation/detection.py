@@ -37,7 +37,6 @@ class TwoPhotonDetectionResult:
     success: bool
     bell_state: str  # "Psi+", "Psi-", "" (if not success)
     spin_state: np.ndarray  # 4x4 qubit-block density matrix (unnormalized)
-    p_qubit: float          # qubit-block population Tr(rho_qubit)
 
 
 @dataclass
@@ -51,10 +50,6 @@ class SuccessEnumerationResult:
     fidelity_declared: float
     fidelity_true: float
     fidelity_false: float
-    p_qubit_all: float
-    p_qubit_true: float
-    fidelity_cond_all: float
-    fidelity_cond_true: float
     spin_state: np.ndarray  # success条件下的4x4密度矩阵
     spin_state_true: np.ndarray
     spin_state_false: np.ndarray
@@ -370,7 +365,7 @@ def run_two_photon_detection(
     # 提取探测后的原子态
     # 所有bins已被测量，直接trace得到原子的后验态
     mps_work._mps.canonical_form_finite(renormalize=True)
-    spin_state, p_qubit = extract_spin_state(mps_work, n_bins)
+    spin_state, _ = extract_spin_state(mps_work, n_bins)
 
     if verbose:
         print(f"\n  结果：")
@@ -386,7 +381,6 @@ def run_two_photon_detection(
         success=success,
         bell_state=bell_state,
         spin_state=spin_state,
-        p_qubit=p_qubit,
     )
 
 
@@ -751,10 +745,6 @@ def enumerate_success_events(
             fidelity_declared=0.0,
             fidelity_true=0.0,
             fidelity_false=0.0,
-            p_qubit_all=0.0,
-            p_qubit_true=0.0,
-            fidelity_cond_all=0.0,
-            fidelity_cond_true=0.0,
             spin_state=zero_spin,
             spin_state_true=zero_spin,
             spin_state_false=zero_spin,
@@ -820,10 +810,6 @@ def enumerate_success_events(
         bell: _build_left_envs(B_list, Bc_list, proj, E_no)
         for bell, proj in bell_projectors.items()
     }
-    qubit_proj = np.zeros((9, 9), dtype=complex)
-    for idx in [0, 1, 3, 4]:
-        qubit_proj[idx, idx] = 1.0
-    left_envs_qubit = _build_left_envs(B_list, Bc_list, qubit_proj, E_no)
 
     def _contract_env(env_mid: np.ndarray, env_right: np.ndarray) -> float:
         return float(np.einsum('ij,ij->', env_mid, env_right).real)
@@ -880,8 +866,6 @@ def enumerate_success_events(
     p_success_true = 0.0
     fidelity_weighted_all = 0.0
     fidelity_weighted_true = 0.0
-    qubit_weighted_all = 0.0
-    qubit_weighted_true = 0.0
 
     for idx, (bell_state, (det_a, det_b)) in enumerate(patterns, start=1):
         if verbose:
@@ -917,13 +901,6 @@ def enumerate_success_events(
         fidelity_weighted_true += _sum_diff_bins(left_envs_bell[bell_state], E_a_true, E_b_true)
         fidelity_weighted_true += _sum_diff_bins(left_envs_bell[bell_state], E_b_true, E_a_true)
 
-        qubit_weighted_all += _sum_same_bin(left_envs_qubit, E_pair_all)
-        qubit_weighted_all += _sum_diff_bins(left_envs_qubit, E_a_all, E_b_all)
-        qubit_weighted_all += _sum_diff_bins(left_envs_qubit, E_b_all, E_a_all)
-
-        qubit_weighted_true += _sum_same_bin(left_envs_qubit, E_pair_true)
-        qubit_weighted_true += _sum_diff_bins(left_envs_qubit, E_a_true, E_b_true)
-        qubit_weighted_true += _sum_diff_bins(left_envs_qubit, E_b_true, E_a_true)
 
     p_success_all = float(max(0.0, p_success_all))
     p_success_true = float(max(0.0, p_success_true))
@@ -936,10 +913,6 @@ def enumerate_success_events(
         if p_success_false > 0
         else 0.0
     )
-    p_qubit_all = (qubit_weighted_all / p_success_all) if p_success_all > 0 else 0.0
-    p_qubit_true = (qubit_weighted_true / p_success_true) if p_success_true > 0 else 0.0
-    fidelity_cond_all = (fidelity_declared / p_qubit_all) if p_qubit_all > 0 else 0.0
-    fidelity_cond_true = (fidelity_true / p_qubit_true) if p_qubit_true > 0 else 0.0
 
     p_success_given_arrival = (p_success_true / p_arrive) if p_arrive > p_arrive_eps else 0.0
 
@@ -953,10 +926,6 @@ def enumerate_success_events(
         fidelity_declared=fidelity_declared,
         fidelity_true=fidelity_true,
         fidelity_false=fidelity_false,
-        p_qubit_all=p_qubit_all,
-        p_qubit_true=p_qubit_true,
-        fidelity_cond_all=fidelity_cond_all,
-        fidelity_cond_true=fidelity_cond_true,
         spin_state=zero_spin,
         spin_state_true=zero_spin,
         spin_state_false=zero_spin,

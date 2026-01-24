@@ -20,6 +20,7 @@ import sys
 import os
 import csv
 import time
+import argparse
 from contextlib import contextmanager
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
@@ -36,21 +37,28 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # 调试开关：默认 False（非调试模式）
 DEBUG_MODE = False
 
-# 探测噪声默认参数（可用CLI覆盖）
-DEFAULT_DARK_RATE_INTRINSIC_HZ = 65.0
-DEFAULT_BG_RATE_MEAN_HZ = 165.0
-DEFAULT_BG_RATE_STD_HZ = float(np.sqrt(5.0))
-
 from atom_sim.simulation import (
     run_dual_atom_emission, EmissionResult, apply_qfc, apply_780_filter, apply_fiber_channel,
     apply_bs, project_to_1517,
     # 探测
     run_two_photon_detection, enumerate_success_events,
-    compute_fidelity_with_bell, compute_photon_statistics,
+    compute_fidelity_with_bell, compute_photon_statistics, extract_spin_state,
 )
 from atom_sim.visualization import plot_dual_arm_heatmap
 from atom_sim.visualization.wavepacket import plot_cross_bin_joint_heatmap
-from atom_sim.physics import FiberChannelParams
+from atom_sim.experiment.common import (
+    DEFAULT_DARK_RATE_INTRINSIC_HZ,
+    DEFAULT_BG_RATE_MEAN_HZ,
+    DEFAULT_BG_RATE_STD_HZ,
+    ATOM_EXTREME_EPS,
+    _get_emission_params,
+    _make_fiber_params,
+    _compute_window_bins,
+    _compute_noise_params,
+    _apply_atomic_dephasing,
+    _atom_extreme_state,
+)
+from atom_sim.experiment.hom import run_hom_experiment
 
 SUMMARY_HEADER = [
     "run",
@@ -59,14 +67,6 @@ SUMMARY_HEADER = [
     "bell",
     "click_count",
     "events",
-    "n_total",
-    "n_780_total",
-    "n_780_H",
-    "n_780_V",
-    "n_1517_total",
-    "n_1517_H",
-    "n_1517_V",
-    "loss_expected",
     "dark_rate_intrinsic_hz",
     "dark_rate_bg_hz",
     "p_dark_intrinsic",
@@ -85,13 +85,8 @@ SUMMARY_HEADER = [
     "fidelity_false",
     "fidelity_all",
     "fidelity_no_dark",
-    "p_qubit_true",
-    "p_qubit_all",
-    "fidelity_cond_true",
-    "fidelity_cond_all",
-    "p_qubit_shot",
+    "p_qubit_emit",
     "fidelity_shot_full",
-    "fidelity_shot_cond",
     "runs",
     "shots_per_run",
     "total_shots",
@@ -113,10 +108,7 @@ SUMMARY_HEADER = [
     "p_false_approx",
     "false_fraction",
     "false_fraction_approx",
-    "avg_p_qubit_true",
-    "avg_p_qubit_all",
-    "avg_fidelity_cond_true",
-    "avg_fidelity_cond_all",
+    "avg_p_qubit_emit",
     "avg_fidelity_true",
     "avg_fidelity_false",
     "avg_fidelity_all",
@@ -146,77 +138,159 @@ class Tee:
         return bool(self._tty_streams)
 
 
-def _parse_run_params(argv) -> Tuple[int, int, int, dict]:
-    def _usage() -> None:
-        print(
-            "用法: python total_simulation.py [N_runs] [shots_per_run] [jobs] "
-            "[--dark-hz HZ] [--bg-mean-hz HZ] [--bg-std-hz HZ]"
-        )
+def _parse_run_params(argv) -> Tuple[int, int, int, dict, str, str, dict]:
+    parser = argparse.ArgumentParser(
+        prog="python total_simulation.py",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    parser.add_argument("--runs", "--n-runs", dest="n_runs", type=int)
+    parser.add_argument("--shots", "--shots-per-run", dest="shots_per_run", type=int)
+    parser.add_argument("--jobs", dest="jobs", type=int)
+    parser.add_argument("--mode", "--trial-type", dest="mode")
 
-    args = list(argv[1:])
+    parser.add_argument("--tau", dest="tau", type=float)
+    parser.add_argument("--tau-start", dest="tau_start", type=float)
+    parser.add_argument("--tau-end", dest="tau_end", type=float)
+    parser.add_argument("--tau-step", dest="tau_step", type=float)
+    parser.add_argument("--tau-points", dest="tau_points", type=int)
+    parser.add_argument("--window-ns", dest="window_ns", type=float)
+    parser.add_argument("--criterion", dest="criterion")
+    parser.add_argument("--valid-only", dest="valid_only", action="store_true")
+    parser.add_argument("--max-attempts", dest="max_attempts", type=int)
+
+    parser.add_argument("--dark-hz", dest="dark_rate_intrinsic_hz", type=float)
+    parser.add_argument("--bg-mean-hz", dest="bg_rate_mean_hz", type=float)
+    parser.add_argument("--bg-std-hz", dest="bg_rate_std_hz", type=float)
+    parser.add_argument("--enum-mode", dest="enum_mode", type=str)
+
+    parser.add_argument("positional", nargs="*", help=argparse.SUPPRESS)
+    args = parser.parse_args(argv[1:])
+
     noise_cfg = {
         "dark_rate_intrinsic_hz": DEFAULT_DARK_RATE_INTRINSIC_HZ,
         "bg_rate_mean_hz": DEFAULT_BG_RATE_MEAN_HZ,
         "bg_rate_std_hz": DEFAULT_BG_RATE_STD_HZ,
     }
+    if args.dark_rate_intrinsic_hz is not None:
+        noise_cfg["dark_rate_intrinsic_hz"] = args.dark_rate_intrinsic_hz
+    if args.bg_rate_mean_hz is not None:
+        noise_cfg["bg_rate_mean_hz"] = args.bg_rate_mean_hz
+    if args.bg_rate_std_hz is not None:
+        noise_cfg["bg_rate_std_hz"] = args.bg_rate_std_hz
 
-    def _pop_float_flag(flag: str, key: str) -> None:
-        if flag not in args:
+    positional = list(args.positional)
+
+    def _consume(name: str, cast):
+        if getattr(args, name) is not None:
             return
-        idx = args.index(flag)
-        if idx + 1 >= len(args):
-            _usage()
-            sys.exit(1)
+        if not positional:
+            return
+        token = positional.pop(0)
         try:
-            value = float(args[idx + 1])
+            value = cast(token)
         except ValueError:
-            _usage()
-            sys.exit(1)
-        noise_cfg[key] = value
-        del args[idx:idx + 2]
+            parser.error(f"参数 {name} 需要 {cast.__name__}，得到 {token}")
+        setattr(args, name, value)
 
-    _pop_float_flag("--dark-hz", "dark_rate_intrinsic_hz")
-    _pop_float_flag("--bg-mean-hz", "bg_rate_mean_hz")
-    _pop_float_flag("--bg-std-hz", "bg_rate_std_hz")
+    _consume("n_runs", int)
+    _consume("shots_per_run", int)
+    _consume("jobs", int)
+    _consume("mode", str)
 
-    if len(args) == 0:
-        return 1, 1, 1, noise_cfg
-    if len(args) > 3:
-        _usage()
-        sys.exit(1)
+    n_runs = args.n_runs if args.n_runs is not None else 1
+    shots_per_run = args.shots_per_run if args.shots_per_run is not None else 1
+    jobs = args.jobs if args.jobs is not None else 1
+    mode = (args.mode or "SIM").upper()
 
-    try:
-        n_runs = int(args[0])
-    except ValueError:
-        _usage()
-        sys.exit(1)
     if n_runs < 1:
-        print("N_runs 必须 >= 1")
-        sys.exit(1)
+        parser.error("N_runs 必须 >= 1")
+    if shots_per_run < 1:
+        parser.error("shots_per_run 必须 >= 1")
+    if jobs < 1:
+        parser.error("jobs 必须 >= 1")
 
-    shots_per_run = 1
-    if len(args) >= 2:
-        try:
-            shots_per_run = int(args[1])
-        except ValueError:
-            _usage()
-            sys.exit(1)
-        if shots_per_run < 1:
-            print("shots_per_run 必须 >= 1")
-            sys.exit(1)
+    enum_mode = (args.enum_mode or "dark").strip().lower()
+    enum_mode_map = {
+        "dark": "dark",
+        "with-dark": "dark",
+        "with_dark": "dark",
+        "both": "both",
+        "all": "both",
+        "no-dark": "no-dark",
+        "no_dark": "no-dark",
+        "nodark": "no-dark",
+    }
+    if enum_mode not in enum_mode_map:
+        parser.error("enum-mode 仅支持 dark / both / no-dark")
+    enum_mode = enum_mode_map[enum_mode]
 
-    jobs = 1
-    if len(args) >= 3:
-        try:
-            jobs = int(args[2])
-        except ValueError:
-            _usage()
-            sys.exit(1)
-        if jobs < 1:
-            print("jobs 必须 >= 1")
-            sys.exit(1)
+    hom_cfg = {}
+    if mode == "HOM":
+        if args.tau is None:
+            _consume("tau_start", float)
+            _consume("tau_end", float)
+            if args.tau_step is not None and args.tau_points is not None:
+                parser.error("HOM 的 tau-step 与 tau-points 只能选其一")
+            if args.tau_step is None and args.tau_points is None:
+                _consume("tau_step", float)
+        _consume("window_ns", float)
+        _consume("criterion", str)
 
-    return n_runs, shots_per_run, jobs, noise_cfg
+        if positional:
+            parser.error(f"未识别的参数: {' '.join(positional)}")
+
+        tau = args.tau
+        tau_start = args.tau_start
+        tau_end = args.tau_end
+        tau_step = args.tau_step
+        tau_points = args.tau_points
+        if tau is not None:
+            if (
+                tau_start is not None
+                or tau_end is not None
+                or tau_step is not None
+                or tau_points is not None
+            ):
+                parser.error("HOM 使用 --tau 时不能再提供 tau-start/tau-end/tau-step/tau-points")
+        else:
+            if tau_start is None or tau_end is None:
+                parser.error("HOM 需要 tau-start 与 tau-end")
+            if tau_step is None and tau_points is None:
+                parser.error("HOM 需要 tau-step 或 tau-points")
+            if tau_step is not None and tau_points is not None:
+                parser.error("HOM 的 tau-step 与 tau-points 只能选其一")
+        window_ns = args.window_ns if args.window_ns is not None else 70.0
+        criterion = (args.criterion or "port").lower()
+        if criterion not in ("port", "bsm"):
+            parser.error("criterion 仅支持 port 或 bsm")
+        hom_cfg = {
+            "tau": tau,
+            "tau_start": tau_start,
+            "tau_end": tau_end,
+            "tau_step": tau_step,
+            "tau_points": tau_points,
+            "window_ns": window_ns,
+            "criterion": criterion,
+            "valid_only": bool(args.valid_only),
+            "max_attempts": args.max_attempts,
+        }
+    else:
+        if positional:
+            parser.error(f"未识别的参数: {' '.join(positional)}")
+        if (
+            args.tau is not None
+            or args.tau_start is not None
+            or args.tau_end is not None
+            or args.tau_step is not None
+            or args.tau_points is not None
+            or args.window_ns is not None
+            or args.criterion is not None
+            or args.valid_only
+            or args.max_attempts is not None
+        ):
+            parser.error("非 HOM 模式不接受 HOM 参数")
+
+    return n_runs, shots_per_run, jobs, noise_cfg, enum_mode, mode, hom_cfg
 
 
 def save_debug_info(
@@ -317,19 +391,12 @@ def _append_click_summary(
     shot_index: int,
     det_result,
     metrics: Optional[dict],
-    photon_stats: Optional[dict],
 ):
     clicks = [(c.detector, c.bin_index) for c in det_result.clicks]
-    p_qubit_shot = ""
     fidelity_shot_full = ""
-    fidelity_shot_cond = ""
-    if det_result.p_qubit is not None:
-        p_qubit_shot = format(det_result.p_qubit, ".6f")
     if det_result.success and det_result.bell_state:
         fidelity_full = compute_fidelity_with_bell(det_result.spin_state, det_result.bell_state)
-        fidelity_cond = fidelity_full / det_result.p_qubit if det_result.p_qubit > 0 else 0.0
         fidelity_shot_full = format(fidelity_full, ".6f")
-        fidelity_shot_cond = format(fidelity_cond, ".6f")
     row = [
         run_index,
         shot_index,
@@ -337,14 +404,6 @@ def _append_click_summary(
         det_result.bell_state,
         len(clicks),
         clicks,
-        _format_stat(photon_stats, "n_total", ".4f"),
-        _format_stat(photon_stats, "n_780_total", ".4f"),
-        _format_stat(photon_stats, "n_780_H", ".4f"),
-        _format_stat(photon_stats, "n_780_V", ".4f"),
-        _format_stat(photon_stats, "n_1517_total", ".4f"),
-        _format_stat(photon_stats, "n_1517_H", ".4f"),
-        _format_stat(photon_stats, "n_1517_V", ".4f"),
-        _format_stat(photon_stats, "loss_expected", ".4f"),
         _format_metric(metrics, "dark_rate_intrinsic_hz", ".3f"),
         _format_metric(metrics, "dark_rate_bg_hz", ".3f"),
         _format_metric(metrics, "p_dark_intrinsic", ".8f"),
@@ -363,18 +422,68 @@ def _append_click_summary(
         _format_metric(metrics, "fidelity_false", ".6f"),
         _format_metric(metrics, "fidelity_all", ".6f"),
         _format_metric(metrics, "fidelity_no_dark", ".6f"),
-        _format_metric(metrics, "p_qubit_true", ".6f"),
-        _format_metric(metrics, "p_qubit_all", ".6f"),
-        _format_metric(metrics, "fidelity_cond_true", ".6f"),
-        _format_metric(metrics, "fidelity_cond_all", ".6f"),
-        p_qubit_shot,
+        _format_metric(metrics, "p_qubit_emit", ".6f"),
         fidelity_shot_full,
-        fidelity_shot_cond,
     ]
     if len(row) < len(SUMMARY_HEADER):
         row += [""] * (len(SUMMARY_HEADER) - len(row))
     with _file_lock(lock_path):
         _append_csv_row(summary_path, row)
+
+
+def _make_zero_success_metrics(include_no_dark: bool = True) -> dict:
+    metrics = {
+        "p_arrive": 0.0,
+        "p_success_all": 0.0,
+        "p_success_true": 0.0,
+        "p_success_false": 0.0,
+        "p_success_given_arrival": 0.0,
+        "fidelity_all": 0.0,
+        "fidelity_true": 0.0,
+        "fidelity_false": 0.0,
+        "p_success_no_dark": 0.0 if include_no_dark else None,
+        "fidelity_no_dark": 0.0 if include_no_dark else None,
+        "p_qubit_emit": 0.0,
+        "p_false_approx": 0.0 if include_no_dark else None,
+        "false_fraction": 0.0,
+        "false_fraction_approx": 0.0 if include_no_dark else None,
+    }
+    return metrics
+
+
+def _make_empty_det_result() -> SimpleNamespace:
+    zero_spin = np.zeros((4, 4), dtype=complex)
+    return SimpleNamespace(
+        clicks=[],
+        success=False,
+        bell_state="",
+        spin_state=zero_spin,
+    )
+
+
+def _early_abort_run(
+    summary_path: Path,
+    lock_path: Path,
+    run_index: int,
+    shots_per_run: int,
+    success_metrics: Optional[dict],
+    reason: str,
+) -> tuple:
+    print(f"\n[早停] {reason}")
+    run_stats = _init_stats()
+    det_result = _make_empty_det_result()
+    for shot_index in range(1, shots_per_run + 1):
+        _append_click_summary(
+            summary_path,
+            lock_path,
+            run_index,
+            shot_index,
+            det_result,
+            success_metrics,
+        )
+        run_stats["shots"] += 1
+        run_stats["clicks"][0] += 1
+    return run_stats, success_metrics
 
 
 def _init_stats() -> dict:
@@ -418,15 +527,6 @@ def _format_metric(metrics: Optional[dict], key: str, fmt: str) -> str:
     if not metrics or key not in metrics:
         return ""
     value = metrics.get(key)
-    if value is None:
-        return ""
-    return format(value, fmt)
-
-
-def _format_stat(stats: Optional[dict], key: str, fmt: str) -> str:
-    if not stats or key not in stats:
-        return ""
-    value = stats.get(key)
     if value is None:
         return ""
     return format(value, fmt)
@@ -500,10 +600,7 @@ def _finalize_combined_summary(
         _format_metric(metrics, "p_false_approx", ".8f"),
         _format_metric(metrics, "false_fraction", ".6f"),
         _format_metric(metrics, "false_fraction_approx", ".6f"),
-        _format_metric(metrics, "p_qubit_true", ".6f"),
-        _format_metric(metrics, "p_qubit_all", ".6f"),
-        _format_metric(metrics, "fidelity_cond_true", ".6f"),
-        _format_metric(metrics, "fidelity_cond_all", ".6f"),
+        _format_metric(metrics, "p_qubit_emit", ".6f"),
         _format_metric(metrics, "fidelity_true", ".6f"),
         _format_metric(metrics, "fidelity_false", ".6f"),
         _format_metric(metrics, "fidelity_all", ".6f"),
@@ -626,17 +723,25 @@ def _write_success_metrics_detail(
             file.write(f"t2_us = {metrics['t2_us']:.3f}\n")
         if "p_dephase" in metrics:
             file.write(f"p_dephase = {metrics['p_dephase']:.6f}\n")
+        if "p_qubit_emit" in metrics:
+            file.write(f"p_qubit_emit = {metrics['p_qubit_emit']:.6f}\n")
 
         file.write(f"p_arrive = {metrics['p_arrive']:.8f}\n")
         file.write("\nmethod_1_two_runs\n")
-        file.write(f"p_success_no_dark = {metrics['p_success_no_dark']:.8f}\n")
-        file.write(f"fidelity_no_dark = {metrics['fidelity_no_dark']:.6f}\n")
+        if metrics.get("p_success_no_dark") is not None:
+            file.write(f"p_success_no_dark = {metrics['p_success_no_dark']:.8f}\n")
+            file.write(f"fidelity_no_dark = {metrics['fidelity_no_dark']:.6f}\n")
+        else:
+            file.write("p_success_no_dark = N/A\n")
+            file.write("fidelity_no_dark = N/A\n")
         file.write(f"p_success_all = {metrics['p_success_all']:.8f}\n")
         file.write(f"fidelity_all = {metrics['fidelity_all']:.6f}\n")
-        file.write(f"p_qubit_all = {metrics['p_qubit_all']:.6f}\n")
-        file.write(f"fidelity_cond_all = {metrics['fidelity_cond_all']:.6f}\n")
-        file.write(f"p_false_approx = {metrics['p_false_approx']:.8f}\n")
-        file.write(f"false_fraction_approx = {metrics['false_fraction_approx']:.6f}\n")
+        if metrics.get("p_false_approx") is not None:
+            file.write(f"p_false_approx = {metrics['p_false_approx']:.8f}\n")
+            file.write(f"false_fraction_approx = {metrics['false_fraction_approx']:.6f}\n")
+        else:
+            file.write("p_false_approx = N/A\n")
+            file.write("false_fraction_approx = N/A\n")
 
         file.write("\nmethod_2_kraus_tag\n")
         file.write(f"p_success_true = {metrics['p_success_true']:.8f}\n")
@@ -644,49 +749,14 @@ def _write_success_metrics_detail(
         file.write(f"p_success_given_arrival = {metrics['p_success_given_arrival']:.8f}\n")
         file.write(f"false_fraction = {metrics['false_fraction']:.6f}\n")
         file.write(f"fidelity_true = {metrics['fidelity_true']:.6f}\n")
-        file.write(f"p_qubit_true = {metrics['p_qubit_true']:.6f}\n")
-        file.write(f"fidelity_cond_true = {metrics['fidelity_cond_true']:.6f}\n")
         file.write(f"fidelity_false = {metrics['fidelity_false']:.6f}\n")
     return output_path
-
-
-def _apply_atomic_dephasing(
-    mps: "MPSState",
-    p_dephase: float,
-    rng: Optional[np.random.Generator] = None,
-    verbose: bool = True,
-) -> None:
-    """
-    对两原子施加纯退相干（相位翻转）通道。
-
-    通道模型：rho -> (1-p) rho + p Z rho Z，其中 Z=diag(1,-1,1)
-    |e> 分量保持不变（等效于只对 |0>/<1| 相位退相干）。
-    """
-    if p_dephase <= 0.0:
-        if verbose:
-            print("原子退相干：p_dephase=0，跳过。")
-        return
-
-    p_dephase = min(max(p_dephase, 0.0), 1.0)
-    if rng is None:
-        rng = np.random.default_rng()
-
-    K0 = np.sqrt(1.0 - p_dephase) * np.eye(3, dtype=complex)
-    Z = np.diag([1.0, -1.0, 1.0]).astype(complex)
-    K1 = np.sqrt(p_dephase) * Z
-    kraus_list = [K0, K1]
-
-    # 原子位于链最左端：atomA(0), atomB(1)
-    for site in (0, 1):
-        mps.apply_kraus_one_site(site, kraus_list, rng=rng)
-
-    if verbose:
-        print(f"原子退相干：已应用 p_dephase={p_dephase:.4e}")
 
 
 def _init_success_metrics_accumulator() -> dict:
     return {
         "runs": 0,
+        "no_dark_runs": 0,
         "p_arrive_sum": 0.0,
         "p_success_sum": 0.0,
         "p_success_true_sum": 0.0,
@@ -697,8 +767,7 @@ def _init_success_metrics_accumulator() -> dict:
         "p_dark_intrinsic_sum": 0.0,
         "p_bg_sum": 0.0,
         "p_noise_sum": 0.0,
-        "p_qubit_all_weighted_sum": 0.0,
-        "p_qubit_true_weighted_sum": 0.0,
+        "p_qubit_emit_sum": 0.0,
         "fidelity_weighted_sum": 0.0,
         "fidelity_true_weighted_sum": 0.0,
         "fidelity_false_weighted_sum": 0.0,
@@ -712,50 +781,57 @@ def _accumulate_success_metrics(acc: dict, metrics: dict) -> None:
     acc["p_success_sum"] += metrics["p_success_all"]
     acc["p_success_true_sum"] += metrics["p_success_true"]
     acc["p_success_false_sum"] += metrics["p_success_false"]
-    acc["p_success_no_dark_sum"] += metrics["p_success_no_dark"]
+    p_success_no_dark = metrics.get("p_success_no_dark")
+    fidelity_no_dark = metrics.get("fidelity_no_dark")
+    if p_success_no_dark is not None and fidelity_no_dark is not None:
+        acc["no_dark_runs"] += 1
+        acc["p_success_no_dark_sum"] += p_success_no_dark
+        acc["fidelity_no_dark_weighted_sum"] += p_success_no_dark * fidelity_no_dark
     acc["dark_rate_intrinsic_sum"] += metrics.get("dark_rate_intrinsic_hz", 0.0)
     acc["dark_rate_bg_sum"] += metrics.get("dark_rate_bg_hz", 0.0)
     acc["p_dark_intrinsic_sum"] += metrics.get("p_dark_intrinsic", 0.0)
     acc["p_bg_sum"] += metrics.get("p_bg", 0.0)
     acc["p_noise_sum"] += metrics.get("p_noise", 0.0)
-    acc["p_qubit_all_weighted_sum"] += metrics.get("p_qubit_all", 0.0) * metrics["p_success_all"]
-    acc["p_qubit_true_weighted_sum"] += metrics.get("p_qubit_true", 0.0) * metrics["p_success_true"]
+    acc["p_qubit_emit_sum"] += metrics.get("p_qubit_emit", 0.0)
     acc["fidelity_weighted_sum"] += metrics["p_success_all"] * metrics["fidelity_all"]
     acc["fidelity_true_weighted_sum"] += metrics["p_success_true"] * metrics["fidelity_true"]
     acc["fidelity_false_weighted_sum"] += metrics["p_success_false"] * metrics["fidelity_false"]
-    acc["fidelity_no_dark_weighted_sum"] += metrics["p_success_no_dark"] * metrics["fidelity_no_dark"]
 
 
 def _finalize_success_metrics(acc: dict) -> dict:
     runs = max(acc["runs"], 1)
+    no_dark_runs = acc.get("no_dark_runs", 0)
     p_arrive = acc["p_arrive_sum"] / runs
     p_success_all = acc["p_success_sum"] / runs
     p_success_true = acc["p_success_true_sum"] / runs
     p_success_false = acc["p_success_false_sum"] / runs
-    p_success_no_dark = acc["p_success_no_dark_sum"] / runs
+    p_success_no_dark = (
+        acc["p_success_no_dark_sum"] / no_dark_runs
+        if no_dark_runs > 0
+        else None
+    )
     p_success_given_arrival = (acc["p_success_true_sum"] / acc["p_arrive_sum"]) if acc["p_arrive_sum"] > 0 else 0.0
     dark_rate_intrinsic_hz = acc["dark_rate_intrinsic_sum"] / runs
     dark_rate_bg_hz = acc["dark_rate_bg_sum"] / runs
     p_dark_intrinsic = acc["p_dark_intrinsic_sum"] / runs
     p_bg = acc["p_bg_sum"] / runs
     p_noise = acc["p_noise_sum"] / runs
-    p_qubit_all = acc["p_qubit_all_weighted_sum"] / acc["p_success_sum"] if acc["p_success_sum"] > 0 else 0.0
-    p_qubit_true = (
-        acc["p_qubit_true_weighted_sum"] / acc["p_success_true_sum"]
-        if acc["p_success_true_sum"] > 0
-        else 0.0
-    )
+    p_qubit_emit = acc["p_qubit_emit_sum"] / runs
 
     fidelity_all = acc["fidelity_weighted_sum"] / acc["p_success_sum"] if acc["p_success_sum"] > 0 else 0.0
     fidelity_true = acc["fidelity_true_weighted_sum"] / acc["p_success_true_sum"] if acc["p_success_true_sum"] > 0 else 0.0
     fidelity_false = acc["fidelity_false_weighted_sum"] / acc["p_success_false_sum"] if acc["p_success_false_sum"] > 0 else 0.0
-    fidelity_no_dark = acc["fidelity_no_dark_weighted_sum"] / acc["p_success_no_dark_sum"] if acc["p_success_no_dark_sum"] > 0 else 0.0
-    fidelity_cond_all = (fidelity_all / p_qubit_all) if p_qubit_all > 0 else 0.0
-    fidelity_cond_true = (fidelity_true / p_qubit_true) if p_qubit_true > 0 else 0.0
+    fidelity_no_dark = None
+    if no_dark_runs > 0 and acc["p_success_no_dark_sum"] > 0:
+        fidelity_no_dark = acc["fidelity_no_dark_weighted_sum"] / acc["p_success_no_dark_sum"]
 
-    p_false_approx = max(0.0, p_success_all - p_success_no_dark)
+    p_false_approx = None
+    if p_success_no_dark is not None:
+        p_false_approx = max(0.0, p_success_all - p_success_no_dark)
     false_fraction = (p_success_false / p_success_all) if p_success_all > 0 else 0.0
-    false_fraction_approx = (p_false_approx / p_success_all) if p_success_all > 0 else 0.0
+    false_fraction_approx = None
+    if p_false_approx is not None:
+        false_fraction_approx = (p_false_approx / p_success_all) if p_success_all > 0 else 0.0
 
     return {
         "p_arrive": p_arrive,
@@ -768,10 +844,7 @@ def _finalize_success_metrics(acc: dict) -> dict:
         "p_dark_intrinsic": p_dark_intrinsic,
         "p_bg": p_bg,
         "p_noise": p_noise,
-        "p_qubit_all": p_qubit_all,
-        "p_qubit_true": p_qubit_true,
-        "fidelity_cond_all": fidelity_cond_all,
-        "fidelity_cond_true": fidelity_cond_true,
+        "p_qubit_emit": p_qubit_emit,
         "fidelity_all": fidelity_all,
         "fidelity_true": fidelity_true,
         "fidelity_false": fidelity_false,
@@ -791,6 +864,7 @@ def _run_single_simulation_core(
     shots_per_run: int,
     show_plots: bool,
     noise_cfg: Optional[dict],
+    enum_mode: str,
 ):
     run_tag = f"run{run_index:03d}"
     success_metrics = None
@@ -800,6 +874,27 @@ def _run_single_simulation_core(
         ts = datetime.now().strftime("%H:%M:%S")
         print(f"[{run_tag} {ts}] [阶段 {idx}/{stage_total}] {label}")
 
+    def _abort_if_atom_extreme(stage_label: str) -> Optional[tuple]:
+        extreme, probs = _atom_extreme_state(result.mps, eps=ATOM_EXTREME_EPS)
+        if not extreme:
+            return None
+        pA0, pA1, pAe, pB0, pB1, pBe = probs
+        reason = (
+            f"{stage_label} 原子态接近基态 |0>/<1| 极端值，"
+            f"A(p0={pA0:.3f}, p1={pA1:.3f}, pe={pAe:.3f}) "
+            f"B(p0={pB0:.3f}, p1={pB1:.3f}, pe={pBe:.3f})"
+        )
+        metrics = _make_zero_success_metrics(include_no_dark=(enum_mode in ("both", "no-dark")))
+        metrics["p_qubit_emit"] = p_qubit_emit
+        return _early_abort_run(
+            summary_path,
+            summary_lock_path,
+            run_index,
+            shots_per_run,
+            metrics,
+            reason=reason,
+        )
+
     print("\n" + "=" * 80)
     print(f"Run {run_index}/{n_runs} ({run_tag})")
     print("=" * 80)
@@ -807,29 +902,21 @@ def _run_single_simulation_core(
     print("运行发射 + QFC + 分束器 + 探测仿真...")
 
     run_rng = np.random.default_rng()
-    compensation_sigma = 0.1  # 补偿后的残差旋转（弧度，可调）
-    pdl_sigma = 0.02  # 小PDL：H/V透过率相对差异的标准差（线性）
-    phase_slope_std = 0.05  # 相位斜率标准差（rad/bin），用于模拟频率失配
-    fiber_params = FiberChannelParams(
-        polarization_model="perturb",
-        polarization_sigma=compensation_sigma,
-        pdl_sigma=pdl_sigma,
-        phase_slope_std=phase_slope_std,
-    )
+    fiber_params = _make_fiber_params()
 
     # 运行发射
     _stage(1, "发射")
     # 使用合理的物理参数
-    delay_jitter_ns = 0.5  # A/B延迟随机抖动（ns）
+    emission_cfg = _get_emission_params(delay_ns=5.0)
     result = run_dual_atom_emission(
-        n_bins=100,  # 仓数
-        dt_ns=0.5,   # 时间步长
-        chi_max=50,
-        gamma_peak_A=0.5,  # 发射率
-        gamma_peak_B=0.5,
-        sigma=10.0,  # 波包宽度（纳秒）
-        delay_ns=1.5,  # B相对于A延迟1.5ns
-        delay_jitter_ns=delay_jitter_ns,
+        n_bins=emission_cfg["n_bins"],
+        dt_ns=emission_cfg["dt_ns"],
+        chi_max=emission_cfg["chi_max"],
+        gamma_peak_A=emission_cfg["gamma_peak_A"],
+        gamma_peak_B=emission_cfg["gamma_peak_B"],
+        sigma=emission_cfg["sigma"],
+        delay_ns=emission_cfg["delay_ns"],
+        delay_jitter_ns=emission_cfg["delay_jitter_ns"],
         rng=run_rng,
         verbose=True,
     )
@@ -855,6 +942,8 @@ def _run_single_simulation_core(
             step_index=1,
             run_tag=run_tag,
         )
+
+    _, p_qubit_emit = extract_spin_state(result.mps, result.get_n_bins())
 
     # 应用QFC
     _stage(2, "QFC + 780滤波 + 1517投影")
@@ -906,6 +995,10 @@ def _run_single_simulation_core(
             run_tag=run_tag,
         )
 
+    abort_result = _abort_if_atom_extreme("After QFC + Filter")
+    if abort_result is not None:
+        return abort_result
+
     # 应用光纤信道（偏振漂移 + 损耗）
     _stage(3, "光纤信道")
     print("\n应用光纤信道...")
@@ -938,6 +1031,10 @@ def _run_single_simulation_core(
             step_index=3,
             run_tag=run_tag,
         )
+
+    abort_result = _abort_if_atom_extreme("After Fiber Channel")
+    if abort_result is not None:
+        return abort_result
 
     # 诊断：检查BS前每个arm的光子分布（调试用）
     if DEBUG_MODE:
@@ -1003,6 +1100,10 @@ def _run_single_simulation_core(
         time_grid=result.time_grid,
         show=show_plots,
     )
+
+    abort_result = _abort_if_atom_extreme("After BS")
+    if abort_result is not None:
+        return abort_result
 
     joint_after_bs = None
     if DEBUG_MODE:
@@ -1148,14 +1249,6 @@ def _run_single_simulation_core(
                 if p_vac_2H + p_vac_2V + p_vac_HV > 1e-6:
                     print(f"    bunching port2: P(0,2H)={p_vac_2H:.6f}, P(0,2V)={p_vac_2V:.6f}, P(0,HV)={p_vac_HV:.6f}")
 
-        # 计算归一化前的光子统计
-    print("\n计算BS后的光子统计...")
-    photon_stats = compute_photon_statistics(
-        mps=result.mps,
-        n_bins=result.get_n_bins(),
-        verbose=True,
-    )
-
     # =========================================================================
     # 探测
     # =========================================================================
@@ -1165,88 +1258,22 @@ def _run_single_simulation_core(
     coincidence_window_ns = 70.0
     bin_dt_s = result.time_grid.dt
     bin_dt_ns = bin_dt_s * 1e9
-    if bin_dt_ns <= 0:
-        window_bins = 0
-    else:
-        window_bins = int(round(coincidence_window_ns / bin_dt_ns))
+    window_bins = _compute_window_bins(coincidence_window_ns, bin_dt_ns)
 
     # QFC 背景噪声 + 探测器本底暗计数（两者独立）
-    if noise_cfg is None:
-        noise_cfg = {}
-    dark_rate_intrinsic_hz = max(
-        0.0, float(noise_cfg.get("dark_rate_intrinsic_hz", DEFAULT_DARK_RATE_INTRINSIC_HZ))
-    )
-    bg_rate_mean_hz = max(
-        0.0, float(noise_cfg.get("bg_rate_mean_hz", DEFAULT_BG_RATE_MEAN_HZ))
-    )
-    bg_rate_std_hz = max(
-        0.0, float(noise_cfg.get("bg_rate_std_hz", DEFAULT_BG_RATE_STD_HZ))
-    )
-    dark_rate_bg_hz = max(0.0, run_rng.normal(bg_rate_mean_hz, bg_rate_std_hz))
-    p_dark_intrinsic = 1.0 - np.exp(-dark_rate_intrinsic_hz * bin_dt_s)
-    p_bg = 1.0 - np.exp(-dark_rate_bg_hz * bin_dt_s)
-    p_noise = 1.0 - (1.0 - p_dark_intrinsic) * (1.0 - p_bg)
-    p_noise = min(max(p_noise, 0.0), 1.0)
+    noise = _compute_noise_params(noise_cfg, bin_dt_s, run_rng)
+    dark_rate_intrinsic_hz = noise["dark_rate_intrinsic_hz"]
+    bg_rate_mean_hz = noise["bg_rate_mean_hz"]
+    bg_rate_std_hz = noise["bg_rate_std_hz"]
+    dark_rate_bg_hz = noise["dark_rate_bg_hz"]
+    p_dark_intrinsic = noise["p_dark_intrinsic"]
+    p_bg = noise["p_bg"]
+    p_noise = noise["p_noise"]
     print(f"\n探测器本底暗计数率: {dark_rate_intrinsic_hz:.3f} Hz -> p_dark={p_dark_intrinsic:.3e}")
     print(f"背景噪声参数: mean={bg_rate_mean_hz:.3f} Hz, std={bg_rate_std_hz:.3f} Hz")
     print(f"QFC 背景噪声率: {dark_rate_bg_hz:.3f} Hz -> p_bg={p_bg:.3e}")
     print(f"合并噪声概率 p_noise={p_noise:.3e}")
     print(f"点击时间窗 window_bins = {window_bins} (~{window_bins * bin_dt_ns:.1f} ns)")
-
-    # 预判失败：无光子且无暗计数时，后续必然无点击
-    n_total = float(photon_stats.get("n_total", 0.0))
-    if p_noise <= 0.0 and n_total < 1e-9:
-        print("\n检测到无光子且噪声概率为0：跳过成功事件枚举与逐bin探测。")
-        zero_spin = np.zeros((4, 4), dtype=complex)
-        success_metrics = {
-            "eta_det": eta_det,
-            "window_bins": window_bins,
-            "dark_rate_intrinsic_hz": dark_rate_intrinsic_hz,
-            "dark_rate_bg_hz": dark_rate_bg_hz,
-            "p_dark_intrinsic": p_dark_intrinsic,
-            "p_bg": p_bg,
-            "p_noise": p_noise,
-            "t_wait_us": t_wait_us,
-            "t2_us": t2_us,
-            "p_dephase": p_dephase,
-            "p_arrive": 0.0,
-            "p_success_all": 0.0,
-            "p_success_true": 0.0,
-            "p_success_false": 0.0,
-            "p_success_given_arrival": 0.0,
-            "fidelity_all": 0.0,
-            "fidelity_true": 0.0,
-            "fidelity_false": 0.0,
-            "p_success_no_dark": 0.0,
-            "fidelity_no_dark": 0.0,
-            "p_qubit_all": 0.0,
-            "p_qubit_true": 0.0,
-            "fidelity_cond_all": 0.0,
-            "fidelity_cond_true": 0.0,
-            "p_false_approx": 0.0,
-            "false_fraction": 0.0,
-            "false_fraction_approx": 0.0,
-        }
-        run_stats = _init_stats()
-        for shot_index in range(1, shots_per_run + 1):
-            det_result = SimpleNamespace(
-                clicks=[],
-                success=False,
-                bell_state="",
-                spin_state=zero_spin,
-            )
-            _append_click_summary(
-                summary_path,
-                summary_lock_path,
-                run_index,
-                shot_index,
-                det_result,
-                success_metrics,
-                photon_stats,
-            )
-            run_stats["shots"] += 1
-            run_stats["clicks"][0] += 1
-        return run_stats, success_metrics
 
     if DEBUG_MODE:
         # 诊断：检查每个bin的光子分布
@@ -1259,16 +1286,21 @@ def _run_single_simulation_core(
         rho_AB = result.mps.get_reduced_density([site_A, site_B])
         print(f"  rho_AB shape: {rho_AB.shape}")
     _stage(5, "成功事件统计 (POVM)")
-    print("\n枚举成功事件（无暗计数）...")
-    enum_no_dark = enumerate_success_events(
-        mps=result.mps,
-        n_bins=result.get_n_bins(),
-        eta_det=eta_det,
-        p_dark=0.0,
-        window_bins=window_bins,
-        verbose=True,
-    )
-    if p_noise > 0.0:
+    print(f"\n成功事件枚举模式: {enum_mode}")
+    enum_no_dark = None
+    enum_with_dark = None
+    enum_main = None
+
+    if enum_mode == "both":
+        print("\n枚举成功事件（无暗计数）...")
+        enum_no_dark = enumerate_success_events(
+            mps=result.mps,
+            n_bins=result.get_n_bins(),
+            eta_det=eta_det,
+            p_dark=0.0,
+            window_bins=window_bins,
+            verbose=True,
+        )
         print("\n枚举成功事件（含暗计数）...")
         enum_with_dark = enumerate_success_events(
             mps=result.mps,
@@ -1278,8 +1310,31 @@ def _run_single_simulation_core(
             window_bins=window_bins,
             verbose=True,
         )
+        enum_main = enum_with_dark
+    elif enum_mode == "no-dark":
+        print("\n枚举成功事件（无暗计数）...")
+        enum_no_dark = enumerate_success_events(
+            mps=result.mps,
+            n_bins=result.get_n_bins(),
+            eta_det=eta_det,
+            p_dark=0.0,
+            window_bins=window_bins,
+            verbose=True,
+        )
+        if p_noise > 0.0:
+            print("  注意：枚举模式为 no-dark，将忽略暗计数，仅用于基线对比。")
+        enum_main = enum_no_dark
     else:
-        enum_with_dark = enum_no_dark
+        print("\n枚举成功事件（含暗计数）...")
+        enum_with_dark = enumerate_success_events(
+            mps=result.mps,
+            n_bins=result.get_n_bins(),
+            eta_det=eta_det,
+            p_dark=p_noise,
+            window_bins=window_bins,
+            verbose=True,
+        )
+        enum_main = enum_with_dark
 
     success_metrics = {
         "eta_det": eta_det,
@@ -1292,34 +1347,35 @@ def _run_single_simulation_core(
         "t_wait_us": t_wait_us,
         "t2_us": t2_us,
         "p_dephase": p_dephase,
-        "p_arrive": enum_with_dark.p_arrive,
-        "p_success_all": enum_with_dark.p_success,
-        "p_success_true": enum_with_dark.p_success_true,
-        "p_success_false": enum_with_dark.p_success_false,
-        "p_success_given_arrival": enum_with_dark.p_success_given_arrival,
-        "fidelity_all": enum_with_dark.fidelity_declared,
-        "fidelity_true": enum_with_dark.fidelity_true,
-        "fidelity_false": enum_with_dark.fidelity_false,
-        "p_success_no_dark": enum_no_dark.p_success,
-        "fidelity_no_dark": enum_no_dark.fidelity_declared,
-        "p_qubit_all": enum_with_dark.p_qubit_all,
-        "p_qubit_true": enum_with_dark.p_qubit_true,
-        "fidelity_cond_all": enum_with_dark.fidelity_cond_all,
-        "fidelity_cond_true": enum_with_dark.fidelity_cond_true,
+        "p_qubit_emit": p_qubit_emit,
+        "p_arrive": enum_main.p_arrive,
+        "p_success_all": enum_main.p_success,
+        "p_success_true": enum_main.p_success_true,
+        "p_success_false": enum_main.p_success_false,
+        "p_success_given_arrival": enum_main.p_success_given_arrival,
+        "fidelity_all": enum_main.fidelity_declared,
+        "fidelity_true": enum_main.fidelity_true,
+        "fidelity_false": enum_main.fidelity_false,
+        "p_success_no_dark": enum_no_dark.p_success if enum_no_dark is not None else None,
+        "fidelity_no_dark": enum_no_dark.fidelity_declared if enum_no_dark is not None else None,
     }
-    success_metrics["p_false_approx"] = max(
-        0.0, success_metrics["p_success_all"] - success_metrics["p_success_no_dark"]
-    )
     success_metrics["false_fraction"] = (
         success_metrics["p_success_false"] / success_metrics["p_success_all"]
         if success_metrics["p_success_all"] > 0
         else 0.0
     )
-    success_metrics["false_fraction_approx"] = (
-        success_metrics["p_false_approx"] / success_metrics["p_success_all"]
-        if success_metrics["p_success_all"] > 0
-        else 0.0
-    )
+    if enum_no_dark is not None:
+        success_metrics["p_false_approx"] = max(
+            0.0, success_metrics["p_success_all"] - success_metrics["p_success_no_dark"]
+        )
+        success_metrics["false_fraction_approx"] = (
+            success_metrics["p_false_approx"] / success_metrics["p_success_all"]
+            if success_metrics["p_success_all"] > 0
+            else 0.0
+        )
+    else:
+        success_metrics["p_false_approx"] = None
+        success_metrics["false_fraction_approx"] = None
 
     success_path = _write_success_metrics_detail(output_dir, run_tag, success_metrics)
     print(f"  Success metrics saved: {success_path.name}")
@@ -1347,31 +1403,22 @@ def _run_single_simulation_core(
             print(f"  宣告的Bell态: {det_result.bell_state}")
             print(f"  点击: {[(c.detector, c.bin_index) for c in det_result.clicks]}")
 
-            # 计算与期望Bell态的保真度（full/cond）
-            p_qubit = det_result.p_qubit
+            # 计算与期望Bell态的保真度（未归一化）
             fidelity_full = compute_fidelity_with_bell(det_result.spin_state, det_result.bell_state)
-            fidelity_cond = fidelity_full / p_qubit if p_qubit > 0 else 0.0
-            print(f"  p_qubit = {p_qubit:.4f}")
             print(f"  F_full(|{det_result.bell_state}>): {fidelity_full:.4f}")
-            print(f"  F_cond(|{det_result.bell_state}>): {fidelity_cond:.4f}")
 
             # 计算与所有Bell态的保真度以供参考
             print(f"\n  与所有Bell态的保真度:")
             for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
                 f_full = compute_fidelity_with_bell(det_result.spin_state, bell)
-                f_cond = f_full / p_qubit if p_qubit > 0 else 0.0
                 marker = " <-- 宣告的" if bell == det_result.bell_state else ""
-                print(f"    F_full(|{bell}>): {f_full:.4f}, F_cond: {f_cond:.4f}{marker}")
+                print(f"    F_full(|{bell}>): {f_full:.4f}{marker}")
 
             # 打印自旋态
             print(f"\n  自旋密度矩阵（量子比特子空间）:")
             rho = det_result.spin_state
             print(f"    Tr(rho) = {np.trace(rho).real:.4f}")
-            if p_qubit > 0:
-                rho_cond = rho / p_qubit
-                print(f"    纯度(条件化) = {np.trace(rho_cond @ rho_cond).real:.4f}")
-            else:
-                print(f"    纯度(条件化) = 0.0000")
+            print(f"    纯度(未归一化) = {np.trace(rho @ rho).real:.4f}")
         else:
             print(f"\n  BSM失败 - 未找到成功模式")
             print(f"  点击数量: {len(det_result.clicks)}")
@@ -1427,7 +1474,6 @@ def _run_single_simulation_core(
             shot_index,
             det_result,
             success_metrics,
-            photon_stats,
         )
 
     print(f"\n完成! 文件已保存至: {output_dir}/")
@@ -1442,6 +1488,7 @@ def _run_single_simulation(
     summary_lock_path: Path,
     shots_per_run: int,
     noise_cfg: Optional[dict],
+    enum_mode: str,
     log_path: Optional[Path] = None,
     mirror_console: bool = True,
     show_plots: bool = True,
@@ -1458,6 +1505,7 @@ def _run_single_simulation(
             shots_per_run,
             show_plots,
             noise_cfg,
+            enum_mode,
         )
     with open(log_path, 'w', encoding='utf-8') as log_file:
         if mirror_console:
@@ -1479,6 +1527,7 @@ def _run_single_simulation(
                 shots_per_run,
                 show_plots,
                 noise_cfg,
+                enum_mode,
             )
         finally:
             sys.stdout, sys.stderr = old_out, old_err
@@ -1493,6 +1542,7 @@ def _run_single_simulation_task(args):
         summary_lock_path,
         shots_per_run,
         noise_cfg,
+        enum_mode,
         mirror_console,
         show_plots,
     ) = args
@@ -1506,6 +1556,7 @@ def _run_single_simulation_task(args):
         summary_lock_path,
         shots_per_run,
         noise_cfg,
+        enum_mode,
         log_path=log_path,
         mirror_console=mirror_console,
         show_plots=show_plots,
@@ -1515,12 +1566,28 @@ def _run_single_simulation_task(args):
 
 def main():
     """主函数：运行发射 + QFC + 分束器 + 探测仿真。"""
-    n_runs, shots_per_run, jobs, noise_cfg = _parse_run_params(sys.argv)
+    n_runs, shots_per_run, jobs, noise_cfg, enum_mode, mode, hom_cfg = _parse_run_params(sys.argv)
 
     # 创建带时间戳的输出目录
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     output_dir = PROJECT_ROOT / "outputs" / timestamp
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    if mode == "HOM":
+        print(f"Output directory: {output_dir}")
+        print(
+            f"HOM 模式: runs={n_runs}, shots_per_run={shots_per_run}, jobs={jobs}, "
+            f"criterion={hom_cfg.get('criterion')}, window_ns={hom_cfg.get('window_ns')}"
+        )
+        run_hom_experiment(
+            output_dir=output_dir,
+            n_runs=n_runs,
+            shots_per_run=shots_per_run,
+            jobs=jobs,
+            hom_cfg=hom_cfg,
+            noise_cfg=noise_cfg,
+        )
+        return
 
     # 统一的点击结果汇总文件
     clicks_summary_path = output_dir / "all_clicks_summary.csv"
@@ -1531,6 +1598,7 @@ def main():
     print(f"将运行 {n_runs} 次仿真，每次 {shots_per_run} 次探测采样...")
     jobs = max(1, min(jobs, n_runs, os.cpu_count() or 1))
     print(f"并行进程数: {jobs}")
+    print(f"成功事件枚举模式: {enum_mode}")
 
     if jobs > 1:
         rng = np.random.default_rng()
@@ -1565,6 +1633,7 @@ def main():
                     clicks_lock_path,
                     shots_per_run,
                     noise_cfg,
+                    enum_mode,
                     True,
                     True,
                 )
@@ -1586,6 +1655,7 @@ def main():
                     clicks_lock_path,
                     shots_per_run,
                     noise_cfg,
+                    enum_mode,
                     False,
                     False,
                 )
@@ -1620,6 +1690,7 @@ def main():
                         clicks_lock_path,
                         shots_per_run,
                         noise_cfg,
+                        enum_mode,
                         True,
                         True,
                     )

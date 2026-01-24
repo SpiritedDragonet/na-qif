@@ -811,10 +811,6 @@ def run_dual_atom_emission(
             # atomA 应该在 site_A_n 的右边（site_A_n + 1）
             # 但实际位置是 site_atomA，所以发射门作用在 bond(site_atomA-1, site_atomA)
             # 其中 site_atomA-1 应该是 A_n 仓
-            if verbose:
-                print(f"  [n={n}] atomA在位置{site_atomA}，左边仓在{site_atomA-1}，期望A_{n}在{site_A_n}")
-                print(f"    维度检查: d[{site_atomA-1}]={mps.d[site_atomA-1]}, d[{site_atomA}]={mps.d[site_atomA]}")
-
             U_emit_A = emission_gate(
                 gamma=gamma_A_n * 1e9,  # 转换 1/ns -> 1/s
                 dt=dt_ns * 1e-9,
@@ -830,10 +826,6 @@ def run_dual_atom_emission(
         if gamma_B_n > 1e-8:
             # atomB 应该在 site_B_n 的右边
             # 但实际位置是 site_atomB，所以发射门作用在 bond(site_atomB-1, site_atomB)
-            if verbose:
-                print(f"  [n={n}] atomB在位置{site_atomB}，左边仓在{site_atomB-1}，期望B_{n}在{site_B_n}")
-                print(f"    维度检查: d[{site_atomB-1}]={mps.d[site_atomB-1]}, d[{site_atomB}]={mps.d[site_atomB]}")
-
             U_emit_B = emission_gate(
                 gamma=gamma_B_n * 1e9,  # 转换 1/ns -> 1/s
                 dt=dt_ns * 1e-9,
