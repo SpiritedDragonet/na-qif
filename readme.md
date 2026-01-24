@@ -118,7 +118,6 @@ atom_sim/
 │       ├── _build_port_kraus_entries_6d()
 │       ├── _build_detection_kraus()
 │       ├── build_detection_kraus_6d()
-│       ├── build_detection_kraus_18d()
 │       ├── run_two_photon_detection()   # 量子跃迁采样
 │       ├── extract_spin_state()
 │       ├── check_bsm_success()
@@ -127,8 +126,6 @@ atom_sim/
 │       ├── _get_bin_sites()
 │       ├── _build_number_ops()
 │       ├── compute_two_photon_arrival_prob()
-│       ├── _kraus_thetas_from_mps()
-│       ├── _set_two_site_theta()
 │       ├── _build_detection_effects()
 │       ├── _bell_projector_full()
 │       ├── _prepare_grouped_mps_pairs()
@@ -139,7 +136,6 @@ atom_sim/
 │       ├── enumerate_success_events()   # POVM 枚举
 │       ├── _compute_photon_statistics_global()
 │       ├── _build_sum_mpo()
-│       ├── _compute_global_expectation()
 │       └── compute_photon_statistics()
 │
 ├── visualization/                 # 可视化层

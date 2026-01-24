@@ -16,8 +16,6 @@ from typing import Tuple, List, Optional
 from dataclasses import dataclass
 from collections import Counter
 
-from tenpy.linalg.np_conserved import Array
-
 from ..core.mps import MPSState
 from ..hilbert.basis import SUBSPACE_780, SUBSPACE_1517
 
@@ -103,7 +101,6 @@ def _split_with_dark(
 def _build_port_kraus_entries_6d(
     eta: float,
     p_dark: float,
-    embed_780: bool = False,
 ) -> List[Tuple[np.ndarray, List[str], List[str]]]:
     # 1517nm 基：vac=0, H=1, V=2, 2H=3, 2V=4, HV=5
     K00_6d = np.diag([
@@ -150,9 +147,6 @@ def _build_port_kraus_entries_6d(
     entries = []
     for K, detectors in base_entries:
         for K_split, det_split, dark_split in _split_with_dark(K, detectors, p_dark):
-            if embed_780:
-                I_780 = np.eye(3, dtype=complex)
-                K_split = np.kron(I_780, K_split)
             entries.append((K_split, det_split, dark_split))
     return entries
 
@@ -160,9 +154,8 @@ def _build_port_kraus_entries_6d(
 def _build_detection_kraus(
     eta: float,
     p_dark: float,
-    embed_780: bool,
 ) -> Tuple[List[np.ndarray], List[List[str]], List[List[str]]]:
-    port_entries = _build_port_kraus_entries_6d(eta, p_dark, embed_780=embed_780)
+    port_entries = _build_port_kraus_entries_6d(eta, p_dark)
 
     kraus_list = []
     outcome_detectors = []
@@ -200,7 +193,6 @@ def build_detection_kraus_6d(
     构造6D探测 Kraus 算符（桶式SNSPD模型）。
 
     这是优化版本，用于project_to_1517后的6D bin空间。
-    比18D版本快9倍（36x36 vs 324x324）。
 
     物理模型：
     - 每个端口有H/V两个独立的桶式探测器
@@ -226,46 +218,7 @@ def build_detection_kraus_6d(
     outcome_dark : List[List[str]]
         每个Kraus对应的暗计数点击列表（为空表示无暗计数）
     """
-    return _build_detection_kraus(eta, p_dark, embed_780=False)
-
-
-def build_detection_kraus_18d(
-    eta: float,
-    p_dark: float = 0.0,
-) -> Tuple[List[np.ndarray], List[List[str]], List[List[str]]]:
-    """
-    构造探测 Kraus 算符（桶式SNSPD模型）。
-
-    物理模型：
-    - 每个端口有H/V两个独立的桶式探测器
-    - 桶式探测器：不数分辨，破坏性探测
-    - 单端口8个Kraus算符（分解以满足完备性）
-    - p_dark=0 时，两端口64个Kraus算符；p_dark>0 会进一步拆分
-
-    完备性：∑ K_μ† K_μ = I 严格满足
-
-    关键修正：
-    - click Kraus必须分解成正交部分，避免不同输入态映射到同一输出态
-    - |HV> 在 H-only click 时应映射到 |V>（而非|vac>）
-    - |HV> 在 V-only click 时应映射到 |H>（而非|vac>）
-
-    Parameters
-    ----------
-    eta : float
-        探测效率
-    p_dark : float
-        每个探测器每个bin的暗计数概率
-
-    Returns
-    -------
-    kraus_list : List[np.ndarray]
-        两端口Kraus算符列表
-    outcome_detectors : List[List[str]]
-        每个Kraus对应的探测器点击列表（如 ["H1", "V2"]）
-    outcome_dark : List[List[str]]
-        每个Kraus对应的暗计数点击列表（为空表示无暗计数）
-    """
-    return _build_detection_kraus(eta, p_dark, embed_780=True)
+    return _build_detection_kraus(eta, p_dark)
 
 
 def run_two_photon_detection(
@@ -283,7 +236,7 @@ def run_two_photon_detection(
 
     物理语义：条件在完整观测记录（click + no-click）下的原子后验态。
 
-    自动检测bin维度（6D或18D）并使用相应的Kraus算符。
+    当前仅支持6D bin空间（project_to_1517之后）。
     Kraus概率由两站点约化密度矩阵计算，避免正交中心位置依赖。
 
     Parameters
@@ -316,18 +269,13 @@ def run_two_photon_detection(
         print("双光子探测（逐bin扫描）")
         print("=" * 60)
 
-    # 检测bin维度并选择相应的Kraus算符
+    # 当前仅支持投影到1517后的6D bin空间
     bin_dim = mps.d[2]  # 第一个bin的维度
-    if bin_dim == 6:
-        kraus_list, outcome_detectors, _ = build_detection_kraus_6d(eta_det, p_dark)
-        if verbose:
-            print(f"  Using 6D Kraus operators (36x36) - optimized!")
-    elif bin_dim == 18:
-        kraus_list, outcome_detectors, _ = build_detection_kraus_18d(eta_det, p_dark)
-        if verbose:
-            print(f"  Using 18D Kraus operators (324x324)")
-    else:
-        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6 or 18.")
+    if bin_dim != 6:
+        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6.")
+    kraus_list, outcome_detectors, _ = build_detection_kraus_6d(eta_det, p_dark)
+    if verbose:
+        print("  Using 6D Kraus operators (36x36) - optimized!")
 
     mps_work = mps.copy()
     clicks = []
@@ -522,13 +470,8 @@ def _build_number_ops(bin_dim: int) -> Tuple[np.ndarray, np.ndarray]:
     if bin_dim == 6:
         n_vals = np.array([0, 1, 1, 2, 2, 2], dtype=float)
         n_op = np.diag(n_vals)
-    elif bin_dim == 18:
-        n_780 = np.diag([0, 1, 1]).astype(float)
-        n_1517 = np.diag([0, 1, 1, 2, 2, 2]).astype(float)
-        n_op = np.kron(n_780, np.eye(6)) + np.kron(np.eye(3), n_1517)
-        n_vals = np.diag(n_op).real
     else:
-        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6 or 18.")
+        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6.")
 
     n2_vals = 0.5 * n_vals * (n_vals - 1.0)
     n2_op = np.diag(n2_vals)
@@ -572,49 +515,6 @@ def compute_two_photon_arrival_prob(
     if verbose:
         print(f"  两光子到达概率 p_arrive={p2:.6f}")
     return float(max(0.0, p2))
-
-
-def _kraus_thetas_from_mps(
-    mps: MPSState,
-    site_left: int,
-    kraus_ops: List[np.ndarray],
-) -> Tuple[np.ndarray, List[Optional[np.ndarray]]]:
-    d1, d2 = mps.d[site_left], mps.d[site_left + 1]
-    theta = mps._mps.get_theta(site_left, n=2)
-    theta_np = theta.to_ndarray()
-
-    probs = np.zeros(len(kraus_ops), dtype=float)
-    thetas = [None] * len(kraus_ops)
-    for idx, K in enumerate(kraus_ops):
-        K_mat = np.asarray(K)
-        if K_mat.ndim == 2:
-            K_mat = K_mat.reshape(d1 * d2, d1 * d2)
-        K_4d = K_mat.reshape(d1, d2, d1, d2)
-        K_theta = np.einsum('ijkl,aklb->aijb', K_4d, theta_np)
-        p_mu = float(np.linalg.norm(K_theta) ** 2)
-        probs[idx] = max(p_mu, 0.0)
-        if p_mu > 1e-15:
-            thetas[idx] = K_theta / np.sqrt(p_mu)
-    return probs, thetas
-
-
-def _set_two_site_theta(
-    mps: MPSState,
-    site_left: int,
-    theta_selected: np.ndarray,
-) -> None:
-    theta_arr = Array.from_ndarray_trivial(theta_selected, labels=['vL', 'p0', 'p1', 'vR'])
-    theta_combined = theta_arr.combine_legs(
-        [['vL', 'p0'], ['p1', 'vR']],
-        new_axes=[0, 1],
-        qconj=[+1, -1],
-    )
-    mps._mps.set_svd_theta(
-        site_left,
-        theta_combined,
-        trunc_par={'chi_max': mps.max_bond, 'svd_min': 1e-13},
-    )
-    mps._mps.norm = 1.0
 
 
 def _build_detection_effects(
@@ -754,16 +654,11 @@ def enumerate_success_events(
 
     bin_start = _infer_bin_start(mps)
     bin_dim = mps.d[bin_start]
-    if bin_dim == 6:
-        kraus_list, outcome_detectors, outcome_dark = build_detection_kraus_6d(eta_det, p_dark)
-        if verbose:
-            print("  Using 6D Kraus operators (36x36) - POVM contraction")
-    elif bin_dim == 18:
-        kraus_list, outcome_detectors, outcome_dark = build_detection_kraus_18d(eta_det, p_dark)
-        if verbose:
-            print("  Using 18D Kraus operators (324x324) - POVM contraction")
-    else:
-        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6 or 18.")
+    if bin_dim != 6:
+        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6.")
+    kraus_list, outcome_detectors, outcome_dark = build_detection_kraus_6d(eta_det, p_dark)
+    if verbose:
+        print("  Using 6D Kraus operators (36x36) - POVM contraction")
 
     effects_all, effects_true = _build_detection_effects(kraus_list, outcome_detectors, outcome_dark)
     empty_key = _order_two_port_detectors([])
@@ -1082,57 +977,6 @@ def _build_sum_mpo(mps: MPSState, n_bins: int, local_op: np.ndarray, is_6d: bool
         total += np.real(expectation)
 
     return total
-
-
-def _compute_global_expectation(mps: MPSState, operators: list) -> float:
-    """
-    计算全局算符的期望值 <psi|O_0 ⊗ O_1 ⊗ ... ⊗ O_n|psi>。
-
-    Parameters
-    ----------
-    mps : MPSState
-        MPS态
-    operators : list of np.ndarray
-        每个站点上的算符列表
-
-    Returns
-    -------
-    float
-        期望值
-    """
-    # 使用MPS收缩技术计算期望值
-    # <psi|O|psi> = sum_{s,s'} conj(A[s]) * O[s,s'] * A[s']
-
-    n_sites = len(operators)
-
-    # 从左到右收缩
-    # L[i] 表示从左边收缩到第i个站点的结果
-    L = np.array([[1.0]], dtype=complex)  # 初始：标量1
-
-    for i in range(n_sites):
-        # 获取第i个站点的MPS张量
-        A_tenpy = mps._mps.get_B(i, form=None)  # TeNPy Array
-        A = A_tenpy.to_ndarray()  # 转换为numpy数组: shape (chi_left, d, chi_right)
-        O = operators[i]  # shape: (d, d)
-
-        # 收缩：L_new = sum_{s,s'} L * conj(A[:, s, :]) * O[s, s'] * A[:, s', :]
-        # L: (chi_L_prev, chi_L_prev)
-        # A: (chi_L, d, chi_R)
-        # O: (d, d)
-        # 结果: (chi_R, chi_R)
-        chi_left, d, chi_right = A.shape
-
-        L_new = np.zeros((chi_right, chi_right), dtype=complex)
-        for s in range(d):
-            for s_prime in range(d):
-                # L_new += conj(A[:, s, :]).T @ L @ A[:, s_prime, :] * O[s, s_prime]
-                L_new += A[:, s_prime, :].T @ L @ A[:, s, :].conj() * O[s, s_prime]
-
-        L = L_new
-
-    # 最后L应该是一个标量（或1x1矩阵）
-    result = np.trace(L)
-    return float(np.real(result))
 
 
 def compute_photon_statistics(mps: MPSState, n_bins: int, verbose: bool = False) -> dict:

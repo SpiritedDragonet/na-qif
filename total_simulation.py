@@ -38,7 +38,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 DEBUG_MODE = False
 
 from atom_sim.simulation import (
-    run_dual_atom_emission, EmissionResult, apply_qfc, apply_780_filter, apply_fiber_channel,
+    run_dual_atom_emission, apply_qfc, apply_780_filter, apply_fiber_channel,
     apply_bs, project_to_1517,
     # 探测
     run_two_photon_detection, enumerate_success_events,
