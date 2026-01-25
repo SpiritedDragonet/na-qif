@@ -58,7 +58,11 @@ from atom_sim.experiment.common import (
     _apply_atomic_dephasing,
     _atom_extreme_state,
 )
-from atom_sim.experiment.hom import run_hom_experiment
+from atom_sim.experiment.hom import (
+    run_hom_experiment,
+    parse_hom_cli,
+    validate_no_hom_args,
+)
 
 SUMMARY_HEADER = [
     "run",
@@ -226,69 +230,9 @@ def _parse_run_params(argv) -> Tuple[int, int, int, dict, str, str, dict]:
 
     hom_cfg = {}
     if mode == "HOM":
-        if args.tau is None:
-            _consume("tau_start", float)
-            _consume("tau_end", float)
-            if args.tau_step is not None and args.tau_points is not None:
-                parser.error("HOM 的 tau-step 与 tau-points 只能选其一")
-            if args.tau_step is None and args.tau_points is None:
-                _consume("tau_step", float)
-        _consume("window_ns", float)
-        _consume("criterion", str)
-
-        if positional:
-            parser.error(f"未识别的参数: {' '.join(positional)}")
-
-        tau = args.tau
-        tau_start = args.tau_start
-        tau_end = args.tau_end
-        tau_step = args.tau_step
-        tau_points = args.tau_points
-        if tau is not None:
-            if (
-                tau_start is not None
-                or tau_end is not None
-                or tau_step is not None
-                or tau_points is not None
-            ):
-                parser.error("HOM 使用 --tau 时不能再提供 tau-start/tau-end/tau-step/tau-points")
-        else:
-            if tau_start is None or tau_end is None:
-                parser.error("HOM 需要 tau-start 与 tau-end")
-            if tau_step is None and tau_points is None:
-                parser.error("HOM 需要 tau-step 或 tau-points")
-            if tau_step is not None and tau_points is not None:
-                parser.error("HOM 的 tau-step 与 tau-points 只能选其一")
-        window_ns = args.window_ns if args.window_ns is not None else 70.0
-        criterion = (args.criterion or "port").lower()
-        if criterion not in ("port", "bsm"):
-            parser.error("criterion 仅支持 port 或 bsm")
-        hom_cfg = {
-            "tau": tau,
-            "tau_start": tau_start,
-            "tau_end": tau_end,
-            "tau_step": tau_step,
-            "tau_points": tau_points,
-            "window_ns": window_ns,
-            "criterion": criterion,
-            "valid_only": bool(args.valid_only),
-            "max_attempts": args.max_attempts,
-        }
+        hom_cfg = parse_hom_cli(args, positional, parser, _consume)
     else:
-        if positional:
-            parser.error(f"未识别的参数: {' '.join(positional)}")
-        if (
-            args.tau is not None
-            or args.tau_start is not None
-            or args.tau_end is not None
-            or args.tau_step is not None
-            or args.tau_points is not None
-            or args.window_ns is not None
-            or args.criterion is not None
-            or args.valid_only
-            or args.max_attempts is not None
-        ):
-            parser.error("非 HOM 模式不接受 HOM 参数")
+        validate_no_hom_args(args, positional, parser)
 
     return n_runs, shots_per_run, jobs, noise_cfg, enum_mode, mode, hom_cfg
 
