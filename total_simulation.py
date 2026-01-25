@@ -41,7 +41,7 @@ from atom_sim.simulation import (
     run_dual_atom_emission, apply_qfc, apply_780_filter, apply_fiber_channel,
     apply_bs, project_to_1517,
     # 探测
-    run_two_photon_detection, enumerate_success_events,
+    run_two_photon_detection, enumerate_success_events, build_detection_kraus_6d,
     compute_fidelity_with_bell, compute_photon_statistics, extract_spin_state,
 )
 from atom_sim.visualization import plot_dual_arm_heatmap
@@ -76,6 +76,7 @@ SUMMARY_HEADER = [
     "p_dark_intrinsic",
     "p_bg",
     "p_noise",
+    "p_no_loss",
     "p_arrive",
     "p_success_given_arrival",
     "p_success_all",
@@ -103,6 +104,7 @@ SUMMARY_HEADER = [
     "p_dark_intrinsic",
     "p_bg",
     "p_noise",
+    "p_no_loss",
     "p_arrive",
     "p_success_given_arrival",
     "p_success_all",
@@ -158,14 +160,13 @@ def _parse_run_params(argv) -> Tuple[int, int, int, dict, str, str, dict]:
     parser.add_argument("--tau-step", dest="tau_step", type=float)
     parser.add_argument("--tau-points", dest="tau_points", type=int)
     parser.add_argument("--window-ns", dest="window_ns", type=float)
-    parser.add_argument("--criterion", dest="criterion")
-    parser.add_argument("--valid-only", dest="valid_only", action="store_true")
     parser.add_argument("--max-attempts", dest="max_attempts", type=int)
 
     parser.add_argument("--dark-hz", dest="dark_rate_intrinsic_hz", type=float)
     parser.add_argument("--bg-mean-hz", dest="bg_rate_mean_hz", type=float)
     parser.add_argument("--bg-std-hz", dest="bg_rate_std_hz", type=float)
     parser.add_argument("--enum-mode", dest="enum_mode", type=str)
+    parser.add_argument("--plot-all", dest="plot_all", action="store_true")
 
     parser.add_argument("positional", nargs="*", help=argparse.SUPPRESS)
     args = parser.parse_args(argv[1:])
@@ -234,7 +235,8 @@ def _parse_run_params(argv) -> Tuple[int, int, int, dict, str, str, dict]:
     else:
         validate_no_hom_args(args, positional, parser)
 
-    return n_runs, shots_per_run, jobs, noise_cfg, enum_mode, mode, hom_cfg
+    plot_all = bool(args.plot_all)
+    return n_runs, shots_per_run, jobs, noise_cfg, enum_mode, mode, hom_cfg, plot_all
 
 
 def save_debug_info(
@@ -353,6 +355,7 @@ def _append_click_summary(
         _format_metric(metrics, "p_dark_intrinsic", ".8f"),
         _format_metric(metrics, "p_bg", ".8f"),
         _format_metric(metrics, "p_noise", ".8f"),
+        _format_metric(metrics, "p_no_loss", ".8f"),
         _format_metric(metrics, "p_arrive", ".8f"),
         _format_metric(metrics, "p_success_given_arrival", ".8f"),
         _format_metric(metrics, "p_success_all", ".8f"),
@@ -377,6 +380,7 @@ def _append_click_summary(
 
 def _make_zero_success_metrics(include_no_dark: bool = True) -> dict:
     metrics = {
+        "p_no_loss": 0.0,
         "p_arrive": 0.0,
         "p_success_all": 0.0,
         "p_success_true": 0.0,
@@ -504,6 +508,27 @@ def _file_lock(lock_path: Path, stale_s: float = 120.0) -> None:
             pass
 
 
+def _claim_plot_slot(output_dir: Path, run_tag: str) -> bool:
+    marker_path = output_dir / ".plot_run_claimed"
+    lock_path = output_dir / ".plot_run_claimed.lock"
+    with _file_lock(lock_path):
+        if marker_path.exists():
+            return False
+        marker_path.write_text(run_tag, encoding="utf-8")
+    return True
+
+
+def _release_plot_slot(output_dir: Path, run_tag: str) -> None:
+    marker_path = output_dir / ".plot_run_claimed"
+    lock_path = output_dir / ".plot_run_claimed.lock"
+    with _file_lock(lock_path):
+        if not marker_path.exists():
+            return
+        current = marker_path.read_text(encoding="utf-8").strip()
+        if current == run_tag:
+            marker_path.unlink()
+
+
 def _init_combined_summary(summary_path: Path) -> None:
     _write_csv_header(summary_path, SUMMARY_HEADER)
     _append_csv_row(summary_path, [""] * len(SUMMARY_HEADER))
@@ -535,6 +560,7 @@ def _finalize_combined_summary(
         _format_metric(metrics, "p_dark_intrinsic", ".8f"),
         _format_metric(metrics, "p_bg", ".8f"),
         _format_metric(metrics, "p_noise", ".8f"),
+        _format_metric(metrics, "p_no_loss", ".8f"),
         _format_metric(metrics, "p_arrive", ".8f"),
         _format_metric(metrics, "p_success_given_arrival", ".8f"),
         _format_metric(metrics, "p_success_all", ".8f"),
@@ -669,6 +695,8 @@ def _write_success_metrics_detail(
             file.write(f"p_dephase = {metrics['p_dephase']:.6f}\n")
         if "p_qubit_emit" in metrics:
             file.write(f"p_qubit_emit = {metrics['p_qubit_emit']:.6f}\n")
+        if "p_no_loss" in metrics:
+            file.write(f"p_no_loss = {metrics['p_no_loss']:.8f}\n")
 
         file.write(f"p_arrive = {metrics['p_arrive']:.8f}\n")
         file.write("\nmethod_1_two_runs\n")
@@ -701,6 +729,7 @@ def _init_success_metrics_accumulator() -> dict:
     return {
         "runs": 0,
         "no_dark_runs": 0,
+        "p_no_loss_sum": 0.0,
         "p_arrive_sum": 0.0,
         "p_success_sum": 0.0,
         "p_success_true_sum": 0.0,
@@ -721,6 +750,7 @@ def _init_success_metrics_accumulator() -> dict:
 
 def _accumulate_success_metrics(acc: dict, metrics: dict) -> None:
     acc["runs"] += 1
+    acc["p_no_loss_sum"] += metrics.get("p_no_loss", 0.0)
     acc["p_arrive_sum"] += metrics["p_arrive"]
     acc["p_success_sum"] += metrics["p_success_all"]
     acc["p_success_true_sum"] += metrics["p_success_true"]
@@ -745,6 +775,7 @@ def _accumulate_success_metrics(acc: dict, metrics: dict) -> None:
 def _finalize_success_metrics(acc: dict) -> dict:
     runs = max(acc["runs"], 1)
     no_dark_runs = acc.get("no_dark_runs", 0)
+    p_no_loss = acc["p_no_loss_sum"] / runs
     p_arrive = acc["p_arrive_sum"] / runs
     p_success_all = acc["p_success_sum"] / runs
     p_success_true = acc["p_success_true_sum"] / runs
@@ -778,6 +809,7 @@ def _finalize_success_metrics(acc: dict) -> dict:
         false_fraction_approx = (p_false_approx / p_success_all) if p_success_all > 0 else 0.0
 
     return {
+        "p_no_loss": p_no_loss,
         "p_arrive": p_arrive,
         "p_success_all": p_success_all,
         "p_success_true": p_success_true,
@@ -807,16 +839,43 @@ def _run_single_simulation_core(
     summary_lock_path: Path,
     shots_per_run: int,
     show_plots: bool,
+    plot_all: bool,
     noise_cfg: Optional[dict],
     enum_mode: str,
 ):
     run_tag = f"run{run_index:03d}"
     success_metrics = None
     stage_total = 6
+    plot_paths = []
+    plot_claimed = False
 
     def _stage(idx: int, label: str) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
         print(f"[{run_tag} {ts}] [阶段 {idx}/{stage_total}] {label}")
+
+    def _should_plot() -> bool:
+        nonlocal plot_claimed
+        if plot_all:
+            return True
+        if plot_claimed:
+            return True
+        plot_claimed = _claim_plot_slot(output_dir, run_tag)
+        return plot_claimed
+
+    def _record_plot(path: Path) -> None:
+        if plot_all or not plot_claimed:
+            return
+        plot_paths.append(path)
+
+    def _cleanup_plots() -> None:
+        if plot_all or not plot_claimed:
+            return
+        for path in plot_paths:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                continue
+        _release_plot_slot(output_dir, run_tag)
 
     def _abort_if_atom_extreme(stage_label: str) -> Optional[tuple]:
         extreme, probs = _atom_extreme_state(result.mps, eps=ATOM_EXTREME_EPS)
@@ -830,6 +889,8 @@ def _run_single_simulation_core(
         )
         metrics = _make_zero_success_metrics(include_no_dark=(enum_mode in ("both", "no-dark")))
         metrics["p_qubit_emit"] = p_qubit_emit
+        metrics["p_no_loss"] = p_no_loss
+        _cleanup_plots()
         return _early_abort_run(
             summary_path,
             summary_lock_path,
@@ -847,6 +908,7 @@ def _run_single_simulation_core(
 
     run_rng = np.random.default_rng()
     fiber_params = _make_fiber_params()
+    p_no_loss = 0.0
 
     # 运行发射
     _stage(1, "发射")
@@ -866,14 +928,17 @@ def _run_single_simulation_core(
     )
 
     # 保存发射后的可视化
-    print("\n生成发射后的可视化图...")
-    plot_dual_arm_heatmap(
-        result,
-        save_path=str(output_dir / f"{run_tag}_1_after_emission.png"),
-        show_atomic=True,
-        stage_name="After Emission",
-        show=show_plots,
-    )
+    if _should_plot():
+        print("\n生成发射后的可视化图...")
+        emission_plot_path = output_dir / f"{run_tag}_1_after_emission.png"
+        plot_dual_arm_heatmap(
+            result,
+            save_path=str(emission_plot_path),
+            show_atomic=True,
+            stage_name="After Emission",
+            show=show_plots,
+        )
+        _record_plot(emission_plot_path)
 
     # 保存调试信息
     if DEBUG_MODE:
@@ -902,12 +967,26 @@ def _run_single_simulation_core(
 
     # 应用780nm滤波器（滤除未转换的780nm光子）
     print("\n应用780nm滤波器...")
-    apply_780_filter(
+    result.mps, p_no_loss_780 = apply_780_filter(
         mps=result.mps,
         n_bins=result.get_n_bins(),
         verbose=True,
         rng=run_rng,
     )
+    p_no_loss = p_no_loss_780
+    if p_no_loss_780 <= 0.0:
+        metrics = _make_zero_success_metrics(include_no_dark=(enum_mode in ("both", "no-dark")))
+        metrics["p_qubit_emit"] = p_qubit_emit
+        metrics["p_no_loss"] = 0.0
+        _cleanup_plots()
+        return _early_abort_run(
+            summary_path,
+            summary_lock_path,
+            run_index,
+            shots_per_run,
+            metrics,
+            reason="780nm滤波后选概率为0，跳过后续计算",
+        )
 
     # 投影到纯1517nm子空间（18D -> 6D），大幅加速后续计算
     print("\n投影到1517nm子空间...")
@@ -917,16 +996,23 @@ def _run_single_simulation_core(
         verbose=True,
     )
 
+    abort_result = _abort_if_atom_extreme("After QFC + Filter")
+    if abort_result is not None:
+        return abort_result
+
     # 保存QFC+滤波后的可视化
-    print("\n生成QFC+滤波后的可视化图...")
-    plot_dual_arm_heatmap(
-        result.mps,
-        save_path=str(output_dir / f"{run_tag}_2_after_qfc.png"),
-        show_atomic=False,
-        stage_name="After QFC + 780nm Filter",
-        time_grid=result.time_grid,
-        show=show_plots,
-    )
+    if _should_plot():
+        print("\n生成QFC+滤波后的可视化图...")
+        qfc_plot_path = output_dir / f"{run_tag}_2_after_qfc.png"
+        plot_dual_arm_heatmap(
+            result.mps,
+            save_path=str(qfc_plot_path),
+            show_atomic=False,
+            stage_name="After QFC + 780nm Filter",
+            time_grid=result.time_grid,
+            show=show_plots,
+        )
+        _record_plot(qfc_plot_path)
 
     # 保存调试信息
     if DEBUG_MODE:
@@ -939,31 +1025,48 @@ def _run_single_simulation_core(
             run_tag=run_tag,
         )
 
-    abort_result = _abort_if_atom_extreme("After QFC + Filter")
-    if abort_result is not None:
-        return abort_result
-
     # 应用光纤信道（偏振漂移 + 损耗）
     _stage(3, "光纤信道")
     print("\n应用光纤信道...")
-    result.mps, fiber_sample = apply_fiber_channel(
+    result.mps, fiber_sample, p_no_loss_fiber = apply_fiber_channel(
         mps=result.mps,
         n_bins=result.get_n_bins(),
         fiber_params=fiber_params,
         rng=run_rng,
         verbose=True,
     )
+    p_no_loss = p_no_loss_780 * p_no_loss_fiber
+    if p_no_loss <= 0.0:
+        metrics = _make_zero_success_metrics(include_no_dark=(enum_mode in ("both", "no-dark")))
+        metrics["p_qubit_emit"] = p_qubit_emit
+        metrics["p_no_loss"] = 0.0
+        _cleanup_plots()
+        return _early_abort_run(
+            summary_path,
+            summary_lock_path,
+            run_index,
+            shots_per_run,
+            metrics,
+            reason="光纤无损耗后选概率为0，跳过后续计算",
+        )
+
+    abort_result = _abort_if_atom_extreme("After Fiber Channel")
+    if abort_result is not None:
+        return abort_result
 
     # 保存光纤传输后的可视化
-    print("\n生成光纤传输后的可视化...")
-    plot_dual_arm_heatmap(
-        result.mps,
-        save_path=str(output_dir / f"{run_tag}_3_after_fiber.png"),
-        show_atomic=False,
-        stage_name="After Fiber Channel",
-        time_grid=result.time_grid,
-        show=show_plots,
-    )
+    if _should_plot():
+        print("\n生成光纤传输后的可视化...")
+        fiber_plot_path = output_dir / f"{run_tag}_3_after_fiber.png"
+        plot_dual_arm_heatmap(
+            result.mps,
+            save_path=str(fiber_plot_path),
+            show_atomic=False,
+            stage_name="After Fiber Channel",
+            time_grid=result.time_grid,
+            show=show_plots,
+        )
+        _record_plot(fiber_plot_path)
 
     # 保存光纤传输后的调试信息
     if DEBUG_MODE:
@@ -975,10 +1078,6 @@ def _run_single_simulation_core(
             step_index=3,
             run_tag=run_tag,
         )
-
-    abort_result = _abort_if_atom_extreme("After Fiber Channel")
-    if abort_result is not None:
-        return abort_result
 
     # 诊断：检查BS前每个arm的光子分布（调试用）
     if DEBUG_MODE:
@@ -1035,31 +1134,33 @@ def _run_single_simulation_core(
     )
 
     # 保存BS后的可视化
-    print("\n生成BS后的可视化...")
-    plot_dual_arm_heatmap(
-        result.mps,
-        save_path=str(output_dir / f"{run_tag}_4_after_bs.png"),
-        show_atomic=False,
-        stage_name="After Beam Splitter",
-        time_grid=result.time_grid,
-        show=show_plots,
-    )
-
-    abort_result = _abort_if_atom_extreme("After BS")
-    if abort_result is not None:
-        return abort_result
+    if _should_plot():
+        print("\n生成BS后的可视化...")
+        bs_plot_path = output_dir / f"{run_tag}_4_after_bs.png"
+        plot_dual_arm_heatmap(
+            result.mps,
+            save_path=str(bs_plot_path),
+            show_atomic=False,
+            stage_name="After Beam Splitter",
+            time_grid=result.time_grid,
+            show=show_plots,
+        )
+        _record_plot(bs_plot_path)
 
     joint_after_bs = None
     if DEBUG_MODE:
         print("\n生成BS后的跨bin联合分布热图...")
-        joint_after_bs = plot_cross_bin_joint_heatmap(
-            result.mps,
-            n_bins=result.get_n_bins(),
-            save_path=str(output_dir / f"{run_tag}_4b_after_bs_cross_bin_joint.png"),
-            arm_pair=("A", "B"),
-            normalize=False,
-            show=show_plots,
-        )
+        if _should_plot():
+            joint_plot_path = output_dir / f"{run_tag}_4b_after_bs_cross_bin_joint.png"
+            joint_after_bs = plot_cross_bin_joint_heatmap(
+                result.mps,
+                n_bins=result.get_n_bins(),
+                save_path=str(joint_plot_path),
+                arm_pair=("A", "B"),
+                normalize=False,
+                show=show_plots,
+            )
+            _record_plot(joint_plot_path)
 
     # 保存BS后的调试信息
     if DEBUG_MODE:
@@ -1292,6 +1393,7 @@ def _run_single_simulation_core(
         "t2_us": t2_us,
         "p_dephase": p_dephase,
         "p_qubit_emit": p_qubit_emit,
+        "p_no_loss": p_no_loss,
         "p_arrive": enum_main.p_arrive,
         "p_success_all": enum_main.p_success,
         "p_success_true": enum_main.p_success_true,
@@ -1328,6 +1430,8 @@ def _run_single_simulation_core(
     _stage(6, "逐bin测量采样")
     print("\n运行探测和BSM（逐bin Kraus测量）...")
     run_stats = _init_stats()
+    kraus_list, outcome_detectors, _ = build_detection_kraus_6d(eta_det, p_noise)
+    det_kraus_cache = (kraus_list, outcome_detectors)
     for shot_index in range(1, shots_per_run + 1):
         print(f"\n[shot {shot_index}/{shots_per_run}]")
         det_result = run_two_photon_detection(
@@ -1336,6 +1440,7 @@ def _run_single_simulation_core(
             eta_det=eta_det,
             window_bins=window_bins,
             p_dark=p_noise,
+            kraus_cache=det_kraus_cache,
             #rng=np.random.default_rng(seed=19),
             rng=run_rng,
             verbose=True,
@@ -1436,6 +1541,7 @@ def _run_single_simulation(
     log_path: Optional[Path] = None,
     mirror_console: bool = True,
     show_plots: bool = True,
+    plot_all: bool = False,
 ):
     run_tag = f"run{run_index:03d}"
     if log_path is None:
@@ -1448,6 +1554,7 @@ def _run_single_simulation(
             summary_lock_path,
             shots_per_run,
             show_plots,
+            plot_all,
             noise_cfg,
             enum_mode,
         )
@@ -1470,6 +1577,7 @@ def _run_single_simulation(
                 summary_lock_path,
                 shots_per_run,
                 show_plots,
+                plot_all,
                 noise_cfg,
                 enum_mode,
             )
@@ -1489,6 +1597,7 @@ def _run_single_simulation_task(args):
         enum_mode,
         mirror_console,
         show_plots,
+        plot_all,
     ) = args
     run_tag = f"run{run_index:03d}"
     log_path = output_dir / f"{run_tag}_console.log"
@@ -1504,13 +1613,14 @@ def _run_single_simulation_task(args):
         log_path=log_path,
         mirror_console=mirror_console,
         show_plots=show_plots,
+        plot_all=plot_all,
     )
     return run_index, run_stats, success_metrics
 
 
 def main():
     """主函数：运行发射 + QFC + 分束器 + 探测仿真。"""
-    n_runs, shots_per_run, jobs, noise_cfg, enum_mode, mode, hom_cfg = _parse_run_params(sys.argv)
+    n_runs, shots_per_run, jobs, noise_cfg, enum_mode, mode, hom_cfg, plot_all = _parse_run_params(sys.argv)
 
     # 创建带时间戳的输出目录
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
@@ -1543,6 +1653,7 @@ def main():
     jobs = max(1, min(jobs, n_runs, os.cpu_count() or 1))
     print(f"并行进程数: {jobs}")
     print(f"成功事件枚举模式: {enum_mode}")
+    print(f"绘图模式: {'全部run' if plot_all else '仅单run'}")
 
     if jobs > 1:
         rng = np.random.default_rng()
@@ -1580,6 +1691,7 @@ def main():
                     enum_mode,
                     True,
                     True,
+                    plot_all,
                 )
             )
             if run_stats is not None:
@@ -1602,6 +1714,7 @@ def main():
                     enum_mode,
                     False,
                     False,
+                    plot_all,
                 )
             )
         if tasks:
@@ -1637,6 +1750,7 @@ def main():
                         enum_mode,
                         True,
                         True,
+                        plot_all,
                     )
                 )
                 if run_stats is not None:

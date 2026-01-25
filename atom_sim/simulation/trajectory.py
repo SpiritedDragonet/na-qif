@@ -8,6 +8,7 @@
 
 from typing import Optional, Tuple
 from dataclasses import dataclass, field
+import math
 import numpy as np
 
 from ..core.mps import MPSState
@@ -40,6 +41,28 @@ IDX_BIN_780H_END = DIM_1517 * (IDX_780_H + 1)  # 12
 # 18维仓空间中的780V块
 IDX_BIN_780V_START = DIM_1517 * IDX_780_V  # 12
 IDX_BIN_780V_END = DIM_1517 * (IDX_780_V + 1)  # 18
+
+
+class LossBranchWeight:
+    """记录后选分支权重（用log概率避免下溢）。"""
+    def __init__(self) -> None:
+        self._log_p = 0.0
+        self._is_zero = False
+
+    def update(self, p_mu: float) -> None:
+        if p_mu <= 0.0:
+            self._is_zero = True
+            return
+        self._log_p += math.log(p_mu)
+
+    def mark_zero(self) -> None:
+        self._is_zero = True
+
+    @property
+    def value(self) -> float:
+        if self._is_zero:
+            return 0.0
+        return float(math.exp(self._log_p))
 
 
 @dataclass
@@ -219,13 +242,13 @@ def apply_780_filter(
     n_bins: int,
     verbose: bool = True,
     rng: Optional[np.random.Generator] = None,
-) -> MPSState:
+) -> tuple:
     """
-    应用100%损耗滤波器从所有仓中移除780nm光子。
+    应用100%损耗滤波器从所有仓中移除780nm光子（no-loss 后选）。
 
     QFC之后，任何剩余的780nm光子（|H,vac>, |V,vac>）无法在光纤中
-    传播，必须被滤除。这里使用Kraus信道实现“物理损耗”，
-    而不是投影后选择的归一化。
+    传播，必须被滤除。这里使用固定的“无780残留”Kraus分支进行
+    后选，并记录对应的后选概率。
 
     Parameters
     ----------
@@ -238,8 +261,8 @@ def apply_780_filter(
 
     Returns
     -------
-    MPSState
-        移除了780nm光子的MPS态（原地修改）
+    tuple
+        (mps, p_no_loss_780) - 后选后的MPS态与对应概率
     """
     _print_header("780nm Filter", verbose)
 
@@ -255,21 +278,35 @@ def apply_780_filter(
 
     if verbose:
         print(f"  Kraus ops: {len(K_list)} (18x18)")
-        print(f"  This absorbs 780nm photons into vacuum without post-selection")
+        print("  仅保留无780nm残留的分支（后选）")
 
-    # 应用到所有仓：量子轨迹采样，保持每条轨迹归一化
+    # 固定选择无780残留Kraus分支，记录后选概率
+    K_noloss = K_list[0]
+    no_loss_weight = LossBranchWeight()
+
+    # 应用到所有仓：后选无780残留分支
     # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
     for n in range(n_bins):
         site_A = 2 + 2 * n
         site_B = 2 + 2 * n + 1
 
-        mps.apply_kraus_one_site(site_A, K_list, rng=rng)
-        mps.apply_kraus_one_site(site_B, K_list, rng=rng)
+        try:
+            pA = mps.apply_kraus_one_site_fixed(site_A, K_noloss, canonicalize=False)
+            pB = mps.apply_kraus_one_site_fixed(site_B, K_noloss, canonicalize=False)
+            no_loss_weight.update(pA)
+            no_loss_weight.update(pB)
+        except ValueError:
+            no_loss_weight.mark_zero()
+            break
 
         _print_progress(n + 1, n_bins, verbose)
 
+    if no_loss_weight.value > 0.0:
+        # 只在完成后做一次规范化，避免每bin扫链
+        mps._mps.canonical_form_finite(renormalize=True)
+
     _print_footer(mps, verbose, stage="780nm Filter")
-    return mps
+    return mps, no_loss_weight.value
 
 
 def project_to_1517(
@@ -454,8 +491,8 @@ def apply_fiber_channel(
     Returns
     -------
     tuple
-        (mps, sampled_params) 其中 sampled_params =
-        (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase)
+        (mps, sampled_params, p_no_loss) 其中 sampled_params =
+        (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std)
     """
     _print_header("Fiber Channel", verbose)
 
@@ -546,17 +583,31 @@ def apply_fiber_channel(
         K_list_A = loss_channel_1517_raw(eta_H_A, eta_V_A)
         K_list_B = loss_channel_1517_raw(eta_H_B, eta_V_B)
 
+    # 固定选择无损耗Kraus分支，记录后选概率 p_no_loss
+    K_noloss_A = K_list_A[0]
+    K_noloss_B = K_list_B[0]
+    no_loss_weight = LossBranchWeight()
     for n in range(n_bins):
         site_A = bin_start + 2 * n
         site_B = bin_start + 2 * n + 1
-        mps.apply_kraus_one_site(site_A, K_list_A, rng)
-        mps.apply_kraus_one_site(site_B, K_list_B, rng)
+        try:
+            pA = mps.apply_kraus_one_site_fixed(site_A, K_noloss_A, canonicalize=False)
+            pB = mps.apply_kraus_one_site_fixed(site_B, K_noloss_B, canonicalize=False)
+            no_loss_weight.update(pA)
+            no_loss_weight.update(pB)
+        except ValueError:
+            no_loss_weight.mark_zero()
+            break
 
         _print_progress(n + 1, n_bins, verbose)
 
+    if no_loss_weight.value > 0.0:
+        # 只在完成后做一次规范化，避免每bin扫链
+        mps._mps.canonical_form_finite(renormalize=True)
+
     _print_footer(mps, verbose, stage="Fiber Channel")
 
-    return mps, (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std)
+    return mps, (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std), no_loss_weight.value
 
 
 

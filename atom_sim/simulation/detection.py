@@ -228,6 +228,7 @@ def run_two_photon_detection(
     window_bins: Optional[int] = None,
     rng: Optional[np.random.Generator] = None,
     verbose: bool = True,
+    kraus_cache: Optional[Tuple[List[np.ndarray], List[List[str]]]] = None,
     *,
     p_dark: float = 0.0,
 ) -> TwoPhotonDetectionResult:
@@ -251,6 +252,8 @@ def run_two_photon_detection(
         点击时间窗（bin差阈值）。None表示不限制。
     p_dark : float
         每个探测器每个bin的暗计数概率
+    kraus_cache : Optional[Tuple[List[np.ndarray], List[List[str]]]]
+        预构建的Kraus列表与点击映射（用于同一run内复用以节省算力）。
     rng : np.random.Generator, optional
         随机数生成器
     verbose : bool
@@ -273,7 +276,10 @@ def run_two_photon_detection(
     bin_dim = mps.d[2]  # 第一个bin的维度
     if bin_dim != 6:
         raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6.")
-    kraus_list, outcome_detectors, _ = build_detection_kraus_6d(eta_det, p_dark)
+    if kraus_cache is None:
+        kraus_list, outcome_detectors, _ = build_detection_kraus_6d(eta_det, p_dark)
+    else:
+        kraus_list, outcome_detectors = kraus_cache
     if verbose:
         print("  Using 6D Kraus operators (36x36) - optimized!")
 
