@@ -466,16 +466,43 @@ def _get_bin_sites(mps: MPSState, n_bins: int) -> List[int]:
     return sites
 
 
-def _build_number_ops(bin_dim: int) -> Tuple[np.ndarray, np.ndarray]:
+def _build_photon_number_projectors(bin_dim: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     if bin_dim == 6:
-        n_vals = np.array([0, 1, 1, 2, 2, 2], dtype=float)
-        n_op = np.diag(n_vals)
-    else:
-        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6.")
+        pi0 = np.diag([1, 0, 0, 0, 0, 0]).astype(complex)
+        pi1 = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)
+        pi2 = np.diag([0, 0, 0, 1, 1, 1]).astype(complex)
+        return pi0, pi1, pi2
+    if bin_dim == 18:
+        pi0_6 = np.diag([1, 0, 0, 0, 0, 0]).astype(complex)
+        pi1_6 = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)
+        pi2_6 = np.diag([0, 0, 0, 1, 1, 1]).astype(complex)
+        i_780 = np.eye(3, dtype=complex)
+        pi0 = np.kron(i_780, pi0_6)
+        pi1 = np.kron(i_780, pi1_6)
+        pi2 = np.kron(i_780, pi2_6)
+        return pi0, pi1, pi2
+    raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6 or 18.")
 
-    n2_vals = 0.5 * n_vals * (n_vals - 1.0)
-    n2_op = np.diag(n2_vals)
-    return n_op, n2_op
+
+def _build_p2_mpo_tensor(pi0: np.ndarray, pi1: np.ndarray, pi2: np.ndarray) -> np.ndarray:
+    dim = pi0.shape[0]
+    w = np.zeros((3, 3, dim, dim), dtype=complex)
+    w[0, 0] = pi0
+    w[0, 1] = pi1
+    w[0, 2] = pi2
+    w[1, 1] = pi0
+    w[1, 2] = pi1
+    w[2, 2] = pi0
+    return w
+
+
+def _apply_env_left_mpo(
+    env_left: np.ndarray,
+    B: np.ndarray,
+    Bc: np.ndarray,
+    mpo_tensor: np.ndarray,
+) -> np.ndarray:
+    return np.einsum('aij,ipk,jql,abpq->bkl', env_left, B, Bc, mpo_tensor, optimize=True)
 
 
 def compute_two_photon_arrival_prob(
@@ -486,32 +513,37 @@ def compute_two_photon_arrival_prob(
     """
     计算双光子均到达探测器的概率（总光子数=2）。
 
-    通过计算 <N_total(N_total-1)/2> 得到精确的两光子概率。
+    使用P2投影的MPO（bond dimension=3）计算 <P2>。
     """
+    # 在当前模型中 <P2> 与 <N(N-1)/2> 等价，但MPO可线性收缩，避免O(N^2)。
     mps._mps.canonical_form_finite(renormalize=True)
+    mps._mps.norm = 1.0
     bin_start = _infer_bin_start(mps)
     bin_dim = mps.d[bin_start]
-    n_op, n2_op = _build_number_ops(bin_dim)
-    n2_pair_op = np.kron(n_op, n_op)
+    bin_sites = set(_get_bin_sites(mps, n_bins))
+    pi0, pi1, pi2 = _build_photon_number_projectors(bin_dim)
+    w_bin = _build_p2_mpo_tensor(pi0, pi1, pi2)
+    w_identity_cache: dict[int, np.ndarray] = {}
 
-    sites = _get_bin_sites(mps, n_bins)
+    env = np.zeros((3, 1, 1), dtype=complex)
+    env[0, 0, 0] = 1.0
 
-    p2_local = 0.0
-    for site in sites:
-        rho = mps.get_reduced_density([site])
-        p2_local += np.trace(rho @ n2_op).real
+    for site in range(mps.L):
+        B = mps._mps.get_B(site, form='B').to_ndarray()
+        Bc = B.conj()
+        if site in bin_sites:
+            w = w_bin
+        else:
+            dim = mps.d[site]
+            if dim not in w_identity_cache:
+                pi0_id = np.eye(dim, dtype=complex)
+                pi1_zero = np.zeros((dim, dim), dtype=complex)
+                pi2_zero = np.zeros((dim, dim), dtype=complex)
+                w_identity_cache[dim] = _build_p2_mpo_tensor(pi0_id, pi1_zero, pi2_zero)
+            w = w_identity_cache[dim]
+        env = _apply_env_left_mpo(env, B, Bc, w)
 
-    p2_pair = 0.0
-    for i in range(len(sites)):
-        for j in range(i + 1, len(sites)):
-            site_i = sites[i]
-            site_j = sites[j]
-            rho_ij = mps.get_reduced_density([site_i, site_j])
-            if rho_ij.ndim == 4:
-                rho_ij = rho_ij.reshape(bin_dim * bin_dim, bin_dim * bin_dim)
-            p2_pair += np.trace(rho_ij @ n2_pair_op).real
-
-    p2 = p2_local + p2_pair
+    p2 = float(env[2, 0, 0].real)
     if verbose:
         print(f"  两光子到达概率 p_arrive={p2:.6f}")
     return float(max(0.0, p2))

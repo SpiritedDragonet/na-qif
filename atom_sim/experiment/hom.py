@@ -5,7 +5,7 @@ HOM 实验仿真：统计符合率随延迟 tau 的变化。
 
 import csv
 import os
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 
@@ -245,10 +245,12 @@ def _run_hom_run(
         return 0, True, 0.0
 
     # 有效样本：两光子都到达探测器（不含探测效率与暗计数）
+    if verbose:
+        print("计算两光子到达概率...")
     p_arrive = compute_two_photon_arrival_prob(
         result.mps,
         result.get_n_bins(),
-        verbose=False,
+        verbose=verbose,
     )
 
     bin_dt_s = result.time_grid.dt
@@ -432,50 +434,53 @@ def run_hom_experiment(
                             f"early_abort {early_abort_runs}"
                         )
             else:
-                print(f"[HOM] 详细日志: tau={tau_ns:.3f} ns, run=1")
-                coincid_run, early_abort, p_arrive = _run_hom_run(
-                    tau_ns, shots_per_run, noise_cfg, window_ns, criterion, verbose=True
-                )
-                focus_used = True
-                trials_total += shots_per_run
-                runs_done += 1
-                if early_abort:
-                    early_abort_runs += 1
-                else:
+                def _accumulate_run(coincid_run, early_abort, p_arrive):
+                    nonlocal trials_total, runs_done, early_abort_runs
+                    nonlocal valid_runs, arrive_trials, p_arrive_sum, coincidences
+                    trials_total += shots_per_run
+                    runs_done += 1
+                    if early_abort:
+                        early_abort_runs += 1
+                        return
                     valid_runs += 1
                     arrive_trials += p_arrive * shots_per_run
                     p_arrive_sum += p_arrive
                     coincidences += coincid_run
-                if runs_done % progress_every == 0 or runs_done == n_runs:
-                    print(
-                        f"[HOM] tau={tau_ns:.3f} ns 进度: "
-                        f"{runs_done}/{n_runs}, valid {valid_runs}, "
-                        f"early_abort {early_abort_runs}"
-                    )
 
                 remaining = n_runs - 1
-                if remaining > 0:
-                    tasks = [
-                        (tau_ns, shots_per_run, noise_cfg, window_ns, criterion)
-                        for _ in range(remaining)
-                    ]
-                    with ProcessPoolExecutor(max_workers=jobs) as executor:
-                        for coincid_run, early_abort, p_arrive in executor.map(_run_hom_run_task, tasks):
-                            trials_total += shots_per_run
-                            runs_done += 1
-                            if early_abort:
-                                early_abort_runs += 1
-                                continue
-                            valid_runs += 1
-                            arrive_trials += p_arrive * shots_per_run
-                            p_arrive_sum += p_arrive
-                            coincidences += coincid_run
-                            if runs_done % progress_every == 0 or runs_done == n_runs:
-                                print(
-                                    f"[HOM] tau={tau_ns:.3f} ns 进度: "
-                                    f"{runs_done}/{n_runs}, valid {valid_runs}, "
-                                    f"early_abort {early_abort_runs}"
-                                )
+                max_workers = max(1, jobs - 1)
+                futures = []
+                with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                    if remaining > 0:
+                        tasks = [
+                            (tau_ns, shots_per_run, noise_cfg, window_ns, criterion)
+                            for _ in range(remaining)
+                        ]
+                        for task in tasks:
+                            futures.append(executor.submit(_run_hom_run_task, task))
+
+                    print(f"[HOM] 详细日志: tau={tau_ns:.3f} ns, run=1")
+                    coincid_run, early_abort, p_arrive = _run_hom_run(
+                        tau_ns, shots_per_run, noise_cfg, window_ns, criterion, verbose=True
+                    )
+                    focus_used = True
+                    _accumulate_run(coincid_run, early_abort, p_arrive)
+                    if runs_done % progress_every == 0 or runs_done == n_runs:
+                        print(
+                            f"[HOM] tau={tau_ns:.3f} ns 进度: "
+                            f"{runs_done}/{n_runs}, valid {valid_runs}, "
+                            f"early_abort {early_abort_runs}"
+                        )
+
+                    for future in as_completed(futures):
+                        coincid_run, early_abort, p_arrive = future.result()
+                        _accumulate_run(coincid_run, early_abort, p_arrive)
+                        if runs_done % progress_every == 0 or runs_done == n_runs:
+                            print(
+                                f"[HOM] tau={tau_ns:.3f} ns 进度: "
+                                f"{runs_done}/{n_runs}, valid {valid_runs}, "
+                                f"early_abort {early_abort_runs}"
+                            )
 
         coinc_rate = (coincidences / arrive_trials) if arrive_trials > 0 else 0.0
         p_arrive_avg = (p_arrive_sum / valid_runs) if valid_runs > 0 else 0.0
