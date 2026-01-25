@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from ..simulation import (
     run_dual_atom_emission,
@@ -49,6 +50,12 @@ def _is_port_samepol_coincidence(clicks, window_bins: Optional[int]) -> bool:
             if abs(b1 - b2) <= window_bins:
                 return True
     return False
+
+
+def _progress_every(total: int) -> int:
+    if total <= 0:
+        return 1
+    return max(1, min(50, total // 10))
 
 
 def _build_hom_tau_values(hom_cfg: dict) -> list:
@@ -247,6 +254,83 @@ def _run_hom_run(
     return coincidences, False, p_arrive, p_no_loss
 
 
+def _run_hom_tau_task(
+    tau_idx: int,
+    tau_ns: float,
+    n_runs: int,
+    shots_per_run: int,
+    noise_cfg: Optional[dict],
+    window_ns: float,
+    limit: int,
+    verbose: bool = False,
+) -> tuple:
+    trials_target = n_runs * shots_per_run
+    coincidences = 0
+    trials_total = 0
+    valid_runs = 0
+    arrive_trials = 0.0
+    p_arrive_sum = 0.0
+    p_no_loss_sum = 0.0
+    early_abort_runs = 0
+    runs_attempted = 0
+    focus_used = False
+    progress_every = _progress_every(limit)
+
+    while valid_runs < n_runs and runs_attempted < limit:
+        runs_attempted += 1
+        run_verbose = verbose and (not focus_used)
+        if run_verbose:
+            print(f"[HOM] 详细日志: tau={tau_ns:.3f} ns, attempt={runs_attempted}")
+        coincid_run, early_abort, p_arrive, p_no_loss = _run_hom_run(
+            tau_ns, shots_per_run, noise_cfg, window_ns, verbose=run_verbose
+        )
+        focus_used = True
+        trials_total += shots_per_run
+        if early_abort:
+            early_abort_runs += 1
+            continue
+        valid_runs += 1
+        arrive_trials += p_arrive * shots_per_run
+        p_arrive_sum += p_arrive
+        p_no_loss_sum += p_no_loss
+        coincidences += coincid_run
+        if verbose and (runs_attempted % progress_every == 0 or runs_attempted == limit):
+            print(
+                f"[HOM] tau={tau_ns:.3f} ns 进度: "
+                f"attempted {runs_attempted}/{limit}, "
+                f"valid {valid_runs}/{n_runs}, "
+                f"early_abort {early_abort_runs}"
+            )
+
+    if verbose and valid_runs < n_runs:
+        print(
+            f"[HOM] tau={tau_ns:.3f} ns 未达到目标有效运行数: "
+            f"{valid_runs}/{n_runs} (max_attempts={limit})"
+        )
+
+    coinc_rate = (coincidences / arrive_trials) if arrive_trials > 0 else 0.0
+    p_arrive_avg = (p_arrive_sum / valid_runs) if valid_runs > 0 else 0.0
+    p_no_loss_avg = (p_no_loss_sum / valid_runs) if valid_runs > 0 else 0.0
+
+    return (
+        tau_idx,
+        tau_ns,
+        trials_target,
+        trials_total,
+        valid_runs,
+        arrive_trials,
+        p_no_loss_avg,
+        early_abort_runs,
+        coincidences,
+        coinc_rate,
+        p_arrive_avg,
+        window_ns,
+        "port_same",
+        n_runs,
+        runs_attempted,
+    )
+
+
 def run_hom_experiment(
     output_dir: Path,
     n_runs: int,
@@ -260,10 +344,7 @@ def run_hom_experiment(
     criterion = hom_cfg["criterion"]
     max_attempts = hom_cfg.get("max_attempts")
 
-    jobs = max(1, min(jobs, n_runs, os.cpu_count() or 1))
-    if jobs > 1:
-        print("HOM 固定为 valid-only，强制使用单进程，避免统计偏差。")
-        jobs = 1
+    jobs = max(1, min(jobs, len(tau_values), os.cpu_count() or 1))
 
     tau_desc = ""
     if hom_cfg.get("tau") is not None:
@@ -292,11 +373,6 @@ def run_hom_experiment(
         limit = n_runs * 20
     print(f"[HOM] valid-only=ON | max_attempts={limit}")
 
-    def _progress_every(total: int) -> int:
-        if total <= 0:
-            return 1
-        return max(1, min(50, total // 10))
-
     summary_path = output_dir / "hom_summary.csv"
     with open(summary_path, 'w', encoding='utf-8', newline='') as file:
         writer = csv.writer(file)
@@ -317,55 +393,26 @@ def run_hom_experiment(
             "runs_attempted",
         ])
 
-    trials_target = n_runs * shots_per_run
     total_taus = len(tau_values)
-    for tau_idx, tau_ns in enumerate(tau_values, start=1):
-        coincidences = 0
-        trials_total = 0
-        valid_runs = 0
-        arrive_trials = 0.0
-        p_arrive_sum = 0.0
-        p_no_loss_sum = 0.0
-        early_abort_runs = 0
-        runs_attempted = 0
-        runs_done = 0
-        focus_used = False
-        progress_every = _progress_every(limit)
 
-        while valid_runs < n_runs and runs_attempted < limit:
-            runs_attempted += 1
-            verbose = not focus_used
-            if verbose:
-                print(f"[HOM] 详细日志: tau={tau_ns:.3f} ns, attempt={runs_attempted}")
-            coincid_run, early_abort, p_arrive, p_no_loss = _run_hom_run(
-                tau_ns, shots_per_run, noise_cfg, window_ns, verbose=verbose
-            )
-            focus_used = True
-            trials_total += shots_per_run
-            if early_abort:
-                early_abort_runs += 1
-                continue
-            valid_runs += 1
-            arrive_trials += p_arrive * shots_per_run
-            p_arrive_sum += p_arrive
-            p_no_loss_sum += p_no_loss
-            coincidences += coincid_run
-            if runs_attempted % progress_every == 0 or runs_attempted == limit:
-                print(
-                    f"[HOM] tau={tau_ns:.3f} ns 进度: "
-                    f"attempted {runs_attempted}/{limit}, "
-                    f"valid {valid_runs}/{n_runs}, "
-                    f"early_abort {early_abort_runs}"
-                )
-        if valid_runs < n_runs:
-            print(
-                f"[HOM] tau={tau_ns:.3f} ns 未达到目标有效运行数: "
-                f"{valid_runs}/{n_runs} (max_attempts={limit})"
-            )
-
-        coinc_rate = (coincidences / arrive_trials) if arrive_trials > 0 else 0.0
-        p_arrive_avg = (p_arrive_sum / valid_runs) if valid_runs > 0 else 0.0
-        p_no_loss_avg = (p_no_loss_sum / valid_runs) if valid_runs > 0 else 0.0
+    def _append_row(row: tuple) -> None:
+        (
+            _tau_idx,
+            tau_ns,
+            trials_target,
+            trials_total,
+            valid_runs,
+            arrive_trials,
+            p_no_loss_avg,
+            early_abort_runs,
+            coincidences,
+            coinc_rate,
+            p_arrive_avg,
+            window_ns_val,
+            criterion_val,
+            runs_target,
+            runs_attempted,
+        ) = row
         with open(summary_path, 'a', encoding='utf-8', newline='') as file:
             writer = csv.writer(file)
             writer.writerow([
@@ -379,14 +426,86 @@ def run_hom_experiment(
                 coincidences,
                 f"{coinc_rate:.8f}",
                 f"{p_arrive_avg:.6f}",
-                f"{window_ns:.3f}",
-                criterion,
-                n_runs,
+                f"{window_ns_val:.3f}",
+                criterion_val,
+                runs_target,
                 runs_attempted,
             ])
+
+    def _print_tau_summary(row: tuple) -> None:
+        (
+            tau_idx,
+            tau_ns,
+            _trials_target,
+            _trials_total,
+            _valid_runs,
+            arrive_trials,
+            _p_no_loss_avg,
+            early_abort_runs,
+            coincidences,
+            coinc_rate,
+            _p_arrive_avg,
+            _window_ns,
+            _criterion,
+            _runs_target,
+            _runs_attempted,
+        ) = row
         print(
             f"[HOM] {tau_idx:02d}/{total_taus:02d} "
             f"tau={tau_ns:.3f} ns | "
             f"coinc={coincidences}/{arrive_trials:.1f} "
             f"rate={coinc_rate:.4f} | early_abort={early_abort_runs}"
         )
+
+    if jobs <= 1 or total_taus <= 1:
+        for tau_idx, tau_ns in enumerate(tau_values, start=1):
+            row = _run_hom_tau_task(
+                tau_idx,
+                tau_ns,
+                n_runs,
+                shots_per_run,
+                noise_cfg,
+                window_ns,
+                limit,
+                verbose=True,
+            )
+            _append_row(row)
+            _print_tau_summary(row)
+        return
+
+    print(f"[HOM] 并行: tau 扫描使用 {jobs} 个进程")
+    focus_tau = tau_values[0]
+    bg_taus = list(tau_values[1:])
+
+    with ProcessPoolExecutor(max_workers=max(1, jobs - 1)) as executor:
+        futures = []
+        for tau_idx, tau_ns in enumerate(bg_taus, start=2):
+            futures.append(executor.submit(
+                _run_hom_tau_task,
+                tau_idx,
+                tau_ns,
+                n_runs,
+                shots_per_run,
+                noise_cfg,
+                window_ns,
+                limit,
+                False,
+            ))
+
+        focus_row = _run_hom_tau_task(
+            1,
+            focus_tau,
+            n_runs,
+            shots_per_run,
+            noise_cfg,
+            window_ns,
+            limit,
+            True,
+        )
+        _append_row(focus_row)
+        _print_tau_summary(focus_row)
+
+        for future in as_completed(futures):
+            row = future.result()
+            _append_row(row)
+            _print_tau_summary(row)
