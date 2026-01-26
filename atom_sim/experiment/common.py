@@ -3,7 +3,9 @@
 实验流程中的通用配置与工具函数。
 """
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Callable, Any
+from dataclasses import dataclass
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 
 from ..physics import FiberChannelParams
@@ -127,3 +129,297 @@ def _apply_atomic_dephasing(
 
     if verbose:
         print(f"原子退相干：已应用 p_dephase={p_dephase:.4e}")
+
+
+@dataclass
+class PipelineHooks:
+    on_stage: Optional[Callable[[str], None]] = None
+    after_emission: Optional[Callable[[Any], None]] = None
+    after_qfc_filter: Optional[Callable[[Any], None]] = None
+    after_fiber: Optional[Callable[[Any, tuple], None]] = None
+    after_bs: Optional[Callable[[Any], None]] = None
+    should_abort: Optional[Callable[[str, Any], Optional[str]]] = None
+
+
+@dataclass
+class PipelineResult:
+    emission: Any
+    mps: Any
+    p_qubit_emit: float
+    p_no_loss_780: float
+    p_no_loss_fiber: float
+    p_no_loss: float
+    fiber_sample: Optional[tuple]
+    t_wait_us: float
+    t2_us: float
+    p_dephase: float
+    aborted: bool
+    abort_stage: Optional[str]
+    abort_reason: Optional[str]
+
+
+def run_emission_to_bs(
+    emission_cfg: dict,
+    rng: np.random.Generator,
+    fiber_params: Optional[FiberChannelParams] = None,
+    verbose: bool = True,
+    hooks: Optional[PipelineHooks] = None,
+    t_wait_us: float = 80.0,
+    t2_us: float = 1000.0,
+) -> PipelineResult:
+    """
+    统一的发射->QFC->滤波->投影->光纤->退相干->BS 流水线。
+    用于正常模式与HOM模式共用，避免重复逻辑。
+    """
+    from ..simulation import (
+        run_dual_atom_emission,
+        apply_qfc,
+        apply_780_filter,
+        apply_fiber_channel,
+        project_to_1517,
+        apply_bs,
+        extract_spin_state,
+    )
+
+    if hooks is None:
+        hooks = PipelineHooks()
+    if fiber_params is None:
+        fiber_params = _make_fiber_params()
+
+    def _call_stage(label: str) -> None:
+        if hooks.on_stage is not None:
+            hooks.on_stage(label)
+
+    def _maybe_abort(stage_label: str, mps) -> Optional[str]:
+        if hooks.should_abort is None:
+            return None
+        return hooks.should_abort(stage_label, mps)
+
+    _call_stage("发射")
+    emission = run_dual_atom_emission(
+        n_bins=emission_cfg["n_bins"],
+        dt_ns=emission_cfg["dt_ns"],
+        chi_max=emission_cfg["chi_max"],
+        gamma_peak_A=emission_cfg["gamma_peak_A"],
+        gamma_peak_B=emission_cfg["gamma_peak_B"],
+        sigma=emission_cfg["sigma"],
+        delay_ns=emission_cfg["delay_ns"],
+        delay_jitter_ns=emission_cfg["delay_jitter_ns"],
+        rng=rng,
+        verbose=verbose,
+    )
+    mps = emission.mps
+    _, p_qubit_emit = extract_spin_state(mps, emission.get_n_bins())
+    if hooks.after_emission is not None:
+        hooks.after_emission(emission)
+
+    reason = _maybe_abort("After Emission", mps)
+    if reason:
+        return PipelineResult(
+            emission=emission,
+            mps=mps,
+            p_qubit_emit=p_qubit_emit,
+            p_no_loss_780=0.0,
+            p_no_loss_fiber=0.0,
+            p_no_loss=0.0,
+            fiber_sample=None,
+            t_wait_us=t_wait_us,
+            t2_us=t2_us,
+            p_dephase=0.0,
+            aborted=True,
+            abort_stage="After Emission",
+            abort_reason=reason,
+        )
+
+    _call_stage("QFC + 780滤波 + 1517投影")
+    apply_qfc(
+        mps=mps,
+        n_bins=emission.get_n_bins(),
+        theta_H=np.pi / 4,
+        theta_V=np.pi / 4,
+        verbose=verbose,
+    )
+    mps, p_no_loss_780 = apply_780_filter(
+        mps=mps,
+        n_bins=emission.get_n_bins(),
+        verbose=verbose,
+        rng=rng,
+    )
+    if p_no_loss_780 <= 0.0:
+        return PipelineResult(
+            emission=emission,
+            mps=mps,
+            p_qubit_emit=p_qubit_emit,
+            p_no_loss_780=0.0,
+            p_no_loss_fiber=0.0,
+            p_no_loss=0.0,
+            fiber_sample=None,
+            t_wait_us=t_wait_us,
+            t2_us=t2_us,
+            p_dephase=0.0,
+            aborted=True,
+            abort_stage="After QFC + Filter",
+            abort_reason="780nm滤波后选概率为0，跳过后续计算",
+        )
+    project_to_1517(
+        mps=mps,
+        n_bins=emission.get_n_bins(),
+        verbose=verbose,
+    )
+    if hooks.after_qfc_filter is not None:
+        hooks.after_qfc_filter(emission)
+
+    reason = _maybe_abort("After QFC + Filter", mps)
+    if reason:
+        return PipelineResult(
+            emission=emission,
+            mps=mps,
+            p_qubit_emit=p_qubit_emit,
+            p_no_loss_780=p_no_loss_780,
+            p_no_loss_fiber=0.0,
+            p_no_loss=0.0,
+            fiber_sample=None,
+            t_wait_us=t_wait_us,
+            t2_us=t2_us,
+            p_dephase=0.0,
+            aborted=True,
+            abort_stage="After QFC + Filter",
+            abort_reason=reason,
+        )
+
+    _call_stage("光纤信道")
+    mps, fiber_sample, p_no_loss_fiber = apply_fiber_channel(
+        mps=mps,
+        n_bins=emission.get_n_bins(),
+        fiber_params=fiber_params,
+        rng=rng,
+        verbose=verbose,
+    )
+    p_no_loss = p_no_loss_780 * p_no_loss_fiber
+    if p_no_loss <= 0.0:
+        return PipelineResult(
+            emission=emission,
+            mps=mps,
+            p_qubit_emit=p_qubit_emit,
+            p_no_loss_780=p_no_loss_780,
+            p_no_loss_fiber=p_no_loss_fiber,
+            p_no_loss=0.0,
+            fiber_sample=fiber_sample,
+            t_wait_us=t_wait_us,
+            t2_us=t2_us,
+            p_dephase=0.0,
+            aborted=True,
+            abort_stage="After Fiber Channel",
+            abort_reason="光纤无损耗后选概率为0，跳过后续计算",
+        )
+    if hooks.after_fiber is not None:
+        hooks.after_fiber(emission, fiber_sample)
+
+    reason = _maybe_abort("After Fiber Channel", mps)
+    if reason:
+        return PipelineResult(
+            emission=emission,
+            mps=mps,
+            p_qubit_emit=p_qubit_emit,
+            p_no_loss_780=p_no_loss_780,
+            p_no_loss_fiber=p_no_loss_fiber,
+            p_no_loss=p_no_loss,
+            fiber_sample=fiber_sample,
+            t_wait_us=t_wait_us,
+            t2_us=t2_us,
+            p_dephase=0.0,
+            aborted=True,
+            abort_stage="After Fiber Channel",
+            abort_reason=reason,
+        )
+
+    if t2_us > 0.0:
+        p_dephase = 0.5 * (1.0 - np.exp(-t_wait_us / t2_us))
+    else:
+        p_dephase = 0.0
+    if verbose:
+        print(f"\n原子等待退相干: T_wait={t_wait_us:.1f} us, T2={t2_us:.1f} us, p={p_dephase:.4e}")
+    _apply_atomic_dephasing(mps, p_dephase, rng=rng, verbose=verbose)
+
+    _call_stage("分束器 + 诊断/可视化")
+    if verbose:
+        print("\n应用分束器（BS）...")
+    apply_bs(
+        mps=mps,
+        n_bins=emission.get_n_bins(),
+        verbose=verbose,
+    )
+    if hooks.after_bs is not None:
+        hooks.after_bs(emission)
+
+    return PipelineResult(
+        emission=emission,
+        mps=mps,
+        p_qubit_emit=p_qubit_emit,
+        p_no_loss_780=p_no_loss_780,
+        p_no_loss_fiber=p_no_loss_fiber,
+        p_no_loss=p_no_loss,
+        fiber_sample=fiber_sample,
+        t_wait_us=t_wait_us,
+        t2_us=t2_us,
+        p_dephase=p_dephase,
+        aborted=False,
+        abort_stage=None,
+        abort_reason=None,
+    )
+
+
+def run_task_queue(
+    jobs: int,
+    task_fn: Callable[..., Any],
+    next_task: Callable[[], Optional[tuple]],
+    on_result: Callable[[tuple, Any], None],
+    focus_task: Optional[tuple] = None,
+    focus_fn: Optional[Callable[..., Any]] = None,
+) -> None:
+    """
+    统一的进程任务调度器：
+    - next_task(): 返回一个任务参数元组，或 None 表示无任务
+    - task_fn(*task): 在子进程执行
+    - on_result(task, result): 主进程汇总
+    - focus_task: 可选的前台任务（主进程执行一次）
+    """
+    if jobs <= 1:
+        if focus_task is not None:
+            if focus_fn is None:
+                focus_fn = task_fn
+            result = focus_fn(*focus_task)
+            on_result(focus_task, result)
+        while True:
+            task = next_task()
+            if task is None:
+                break
+            result = task_fn(*task)
+            on_result(task, result)
+        return
+
+    worker_jobs = jobs - 1 if focus_task is not None and jobs > 1 else jobs
+    if worker_jobs <= 0:
+        worker_jobs = 1
+
+    with ProcessPoolExecutor(max_workers=worker_jobs) as executor:
+        pending = {}
+
+        def _fill_pending() -> None:
+            while len(pending) < worker_jobs:
+                task = next_task()
+                if task is None:
+                    break
+                pending[executor.submit(task_fn, *task)] = task
+
+        _fill_pending()
+        if focus_task is not None:
+            if focus_fn is None:
+                focus_fn = task_fn
+            result = focus_fn(*focus_task)
+            on_result(focus_task, result)
+        while pending:
+            future = next(as_completed(pending))
+            task = pending.pop(future)
+            on_result(task, future.result())
+            _fill_pending()
