@@ -281,48 +281,6 @@ class MPSState:
 
         return p_mu
 
-    def finalize_bin_pair(self, i: int) -> None:
-        """
-        冻结已测量的bin对以确保线性复杂度。
-
-        测量后，bin不应再被访问。此方法确保该对右侧的键维度为1，
-        从而有效地将它们与链的其余部分解耦。
-
-        Parameters
-        ----------
-        i : int
-            bin对的左格点索引（i, i+1）
-        """
-        # 获取格点i+1右侧键的当前theta
-        # 若i+1是最后一个格点，无需操作
-        if i + 1 >= self.L - 1:
-            return
-
-        # 强制SVD且chi_max=1以截断该键
-        theta = self._mps.get_theta(i + 1, n=1)
-        theta_np = theta.to_ndarray()
-
-        # 重塑为矩阵并只保留1个奇异值的SVD
-        chiL, d, chiR = theta_np.shape
-        theta_mat = theta_np.reshape(chiL * d, chiR)
-
-        # SVD并只保留最大奇异值
-        U, s, Vh = np.linalg.svd(theta_mat, full_matrices=False)
-
-        # 仅用第一个奇异值重构
-        theta_trunc = np.outer(U[:, 0] * s[0], Vh[0, :])
-        theta_trunc = theta_trunc.reshape(chiL, d, 1)
-
-        # 转换回并设置
-        theta_arr = Array.from_ndarray_trivial(theta_trunc, labels=['vL', 'p0', 'vR'])
-        theta_combined = theta_arr.combine_legs(
-            [['vL', 'p0'], ['vR']],
-            new_axes=[0, 1],
-            qconj=[+1, -1]
-        )
-
-        self._mps.set_svd_theta(i + 1, theta_combined, trunc_par={'chi_max': 1, 'svd_min': 1e-13})
-
     # ========================================================================
     # 便捷方法（向后兼容）
     # ========================================================================
@@ -352,124 +310,59 @@ class MPSState:
         self,
         site_left: int,
         kraus_ops: List[np.ndarray],
+        rho: np.ndarray,
         rng: Optional[np.random.Generator] = None,
-        probs_from_rho: bool = False,
-        rho: Optional[np.ndarray] = None,
     ) -> int:
         """
         通过量子轨迹（蒙特卡洛采样）应用Kraus信道。
 
-        对每个Kraus算符 K_mu：
-        1. 计算 p_mu = ||K_mu @ theta||^2
-        2. 根据概率 {p_mu} 采样 mu
-        3. 应用 K_mu 并除以 sqrt(p_mu) 归一化
-
-        这是完全局域的，不会触发 canonical_form()。
-
-        Parameters
-        ----------
-        site_left : int
-            左格点索引
-        kraus_ops : List[np.ndarray]
-            Kraus算符列表，每个形状为 (d1*d2, d1*d2) 或 (d1, d2, d1, d2)
-        rng : np.random.Generator, optional
-            随机数生成器
-
-        probs_from_rho : bool
-            若为True，则使用两站点约化密度矩阵计算Kraus概率，
-            避免依赖正交中心位置。此模式下仍会用get_theta更新态。
-        rho : Optional[np.ndarray]
-            可选的两站点约化密度矩阵（site_left, site_left+1）。
-            仅在 probs_from_rho=True 时使用。
-
-        Returns
-        -------
-        int
-            采样的Kraus算符索引
+        概率由两站点约化密度矩阵计算，避免依赖正交中心位置。
         """
         if rng is None:
             rng = np.random.default_rng()
 
+        if rho is None:
+            raise ValueError("rho 不能为空")
+
         d1, d2 = self.d[site_left], self.d[site_left + 1]
-
-        if probs_from_rho:
-            if rho is None:
-                rho = self.get_reduced_density([site_left, site_left + 1])
-
-            if rho.ndim == 4:
-                rho_mat = rho.reshape(d1 * d2, d1 * d2)
-            else:
-                rho_mat = rho.reshape(d1 * d2, d1 * d2)
-
-            probs = np.zeros(len(kraus_ops), dtype=float)
-            for idx, K in enumerate(kraus_ops):
-                K_mat = np.asarray(K)
-                if K_mat.ndim == 4:
-                    K_mat = K_mat.reshape(d1 * d2, d1 * d2)
-                else:
-                    K_mat = K_mat.reshape(d1 * d2, d1 * d2)
-                K_rho = K_mat @ rho_mat
-                p_mu = np.trace(K_rho @ K_mat.conj().T).real
-                probs[idx] = max(p_mu, 0.0)
-
-            p_total = np.sum(probs)
-            if p_total < 1e-15:
-                raise ValueError("总概率接近零 - Kraus算符可能无效")
-
-            probs = probs / p_total
-            mu = rng.choice(len(kraus_ops), p=probs)
-
-            # 获取当前theta并应用选中的Kraus
-            theta = self._mps.get_theta(site_left, n=2)
-            theta_np = theta.to_ndarray()  # Shape: (chiL, d1, d2, chiR)
-
-            K_sel = np.asarray(kraus_ops[mu])
-            if K_sel.ndim == 2:
-                K_sel = K_sel.reshape(d1 * d2, d1 * d2)
-            K_4d = K_sel.reshape(d1, d2, d1, d2)
-
-            K_theta = np.einsum('ijkl,aklb->aijb', K_4d, theta_np)
-            p_mu = probs[mu] * p_total
-            if p_mu < 1e-15:
-                raise ValueError("选中的Kraus概率过小，无法归一化")
-
-            theta_selected = K_theta / np.sqrt(p_mu)
-
+        if rho.ndim == 4:
+            rho_mat = rho.reshape(d1 * d2, d1 * d2)
         else:
-            # 获取当前theta
-            theta = self._mps.get_theta(site_left, n=2)
-            theta_np = theta.to_ndarray()  # Shape: (chiL, d1, d2, chiR)
+            rho_mat = rho.reshape(d1 * d2, d1 * d2)
 
-            # 计算每个Kraus算符的概率和结果态
-            probs = []
-            thetas_mu = []
+        probs = np.zeros(len(kraus_ops), dtype=float)
+        for idx, K in enumerate(kraus_ops):
+            K_mat = np.asarray(K)
+            if K_mat.ndim == 4:
+                K_mat = K_mat.reshape(d1 * d2, d1 * d2)
+            else:
+                K_mat = K_mat.reshape(d1 * d2, d1 * d2)
+            K_rho = K_mat @ rho_mat
+            p_mu = np.trace(K_rho @ K_mat.conj().T).real
+            probs[idx] = max(p_mu, 0.0)
 
-            for K in kraus_ops:
-                K = np.asarray(K)
-                if K.ndim == 2:
-                    K = K.reshape(d1 * d2, d1 * d2)
-                K_4d = K.reshape(d1, d2, d1, d2)
+        p_total = np.sum(probs)
+        if p_total < 1e-15:
+            raise ValueError("总概率接近零 - Kraus算符可能无效")
 
-                # 应用K: 将K的输入腿与theta的物理腿收缩
-                K_theta = np.einsum('ijkl,aklb->aijb', K_4d, theta_np)
-                p_mu = np.linalg.norm(K_theta) ** 2
-                probs.append(p_mu)
-                thetas_mu.append(K_theta)
+        probs = probs / p_total
+        mu = rng.choice(len(kraus_ops), p=probs)
 
-            # 归一化并采样
-            probs = np.array(probs)
-            p_total = np.sum(probs)
+        theta = self._mps.get_theta(site_left, n=2)
+        theta_np = theta.to_ndarray()  # Shape: (chiL, d1, d2, chiR)
 
-            if p_total < 1e-15:
-                raise ValueError("总概率接近零 - Kraus算符可能无效")
+        K_sel = np.asarray(kraus_ops[mu])
+        if K_sel.ndim == 2:
+            K_sel = K_sel.reshape(d1 * d2, d1 * d2)
+        K_4d = K_sel.reshape(d1, d2, d1, d2)
 
-            probs = probs / p_total
-            mu = rng.choice(len(kraus_ops), p=probs)
+        K_theta = np.einsum('ijkl,aklb->aijb', K_4d, theta_np)
+        p_mu = probs[mu] * p_total
+        if p_mu < 1e-15:
+            raise ValueError("选中的Kraus概率过小，无法归一化")
 
-            # 从选中分支创建归一化的theta
-            theta_selected = thetas_mu[mu] / np.sqrt(probs[mu] * p_total)
+        theta_selected = K_theta / np.sqrt(p_mu)
 
-        # 转换为TeNPy Array并写回
         theta_arr = Array.from_ndarray_trivial(theta_selected, labels=['vL', 'p0', 'p1', 'vR'])
         theta_combined = theta_arr.combine_legs(
             [['vL', 'p0'], ['p1', 'vR']],
@@ -502,24 +395,6 @@ class MPSState:
         # 这是apply_bond_op正确计算维度所必需的
         self.d[i], self.d[i + 1] = self.d[i + 1], self.d[i]
 
-    def find_sites_by_dim(self, target_dim: int) -> List[int]:
-        """
-        查找具有特定局域维度的所有格点。
-
-        用于在SWAP后动态定位原子（3D）或bin（18D）。
-
-        Parameters
-        ----------
-        target_dim : int
-            要搜索的局域维度
-
-        Returns
-        -------
-        List[int]
-            具有目标维度的格点索引列表
-        """
-        return [i for i, d in enumerate(self.d) if d == target_dim]
-
     # ========================================================================
     # 态提取
     # ========================================================================
@@ -533,29 +408,6 @@ class MPSState:
         """
         rho_array = self._mps.get_rho_segment(sites)
         return rho_array.to_ndarray()
-
-    def get_atom_state(self, system_site: int = 0) -> np.ndarray:
-        """从系统格点获取原子密度矩阵。"""
-        return self.get_reduced_density([system_site])
-
-    def expectation_value(self, observable: np.ndarray, site: int) -> float:
-        """
-        计算某格点上可观测量期望值。
-
-        Parameters
-        ----------
-        observable : np.ndarray
-            可观测量矩阵 (d, d)
-        site : int
-            格点索引
-
-        Returns
-        -------
-        float
-            期望值 <O>
-        """
-        rho = self.get_reduced_density([site])
-        return float(np.real(np.trace(observable @ rho)))
 
     # ========================================================================
     # 属性和工具方法
@@ -574,10 +426,6 @@ class MPSState:
         """获取所有键维度列表，等价于 self.chi。"""
         return self.chi
 
-    def test_sanity(self) -> bool:
-        """运行TeNPy的健全性检查（验证规范形式）。"""
-        return self._mps.test_sanity()
-
     def copy(self) -> 'MPSState':
         """创建深拷贝。"""
         new_state = MPSState(self.d.copy(), max_bond=self.max_bond)
@@ -590,31 +438,3 @@ class MPSState:
         return f"MPSState(L={self.L}, d={self.d}, chi={chi_str})"
 
 
-# ========================================================================
-# 工厂函数
-# ========================================================================
-
-def create_timebin_mps(
-    n_bins: int,
-    system_dim: int = 9,
-    bin_dim: int = 5,
-    max_bond: int = 100,
-) -> MPSState:
-    """
-    创建时间仓仿真的MPS。
-
-    结构：S - A1 - B1 - A2 - B2 - ... （系统，然后是原子-光子bin）
-
-    Parameters
-    ----------
-    n_bins : int
-        时间仓的数量
-    system_dim : int
-        系统（原子）希尔伯特空间维度
-    bin_dim : int
-        Bin（光子）希尔伯特空间维度
-    max_bond : int
-        最大键维度
-    """
-    local_dims = [system_dim] + [bin_dim] * (2 * n_bins)
-    return MPSState(local_dims, max_bond=max_bond)

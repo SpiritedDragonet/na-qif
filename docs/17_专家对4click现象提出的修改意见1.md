@@ -1,4 +1,4 @@
-【注】本文中关于 `build_detection_kraus_18d` 的内容为历史讨论，当前代码已切到 6D-only 探测。
+﻿【注】本文中关于 `build_detection_kraus_18d` 的内容为历史讨论，当前代码已切到 6D-only 探测。
 
 你这个输出里出现 **4 次 click**（而且分布在 4 个不同 bin），在你自己设定的前提下——**系统总光子数最多 2、没有暗计数、探测是破坏性的**——确实是“不可能事件”。所以结论先放在最前面：
 
@@ -13,7 +13,7 @@
 你上传的 `run_two_photon_detection()` 逻辑是：
 
 - 逐 bin 做两端口联合 POVM（Kraus）采样；
-- 每次采样后调用 `mps_work.apply_kraus_two_site()` 把选中的 Kraus 真正作用到 **全局 MPS** 并归一化；
+- 每次采样后调用 `mps_work.apply_two_site_kraus()` 把选中的 Kraus 真正作用到 **全局 MPS** 并归一化；
 - 一旦 `clicks` 里累计到 2 个事件就 `break`。
 
 所以**如果你真的跑的是这份 `detection.py`**，它最多只会打印到两次 click，然后就停了，不可能继续打印 bin 98、99。
@@ -39,7 +39,7 @@
 
 如果你只是对每个 bin 计算一个概率然后独立掷骰子，而 **不把选中的 Kraus 真正作用回 MPS**，你得到的就不是“同一次实验的测量记录”，而是“把同一个波包在不同 bin 上重复抽样”。这样出现 4 次 click 就很自然了（本质上你抽的是“边缘分布”，不是“条件分布链”）。
 
-你现在的 `MPSState.apply_two_site_kraus`（以及别名 `apply_kraus_two_site`）做的就是上面的条件化：它会对每个 Kraus 算 (p_\mu = |K_\mu\theta|^2)，按概率采样 (\mu)，然后把 (K_\mu) 作用到该 bin 的两-site 张量上并归一化。
+你现在的 `MPSState.apply_two_site_kraus`（以及别名 `apply_two_site_kraus`）做的就是上面的条件化：它会对每个 Kraus 算 (p_\mu = |K_\mu\theta|^2)，按概率采样 (\mu)，然后把 (K_\mu) 作用到该 bin 的两-site 张量上并归一化。
 所以**只要你确实在每个 bin 都调用它更新态**，在“最多两光子、无暗计数、click 会吸收光子”的前提下，click 总数绝不可能超过 2。
 
 ------
@@ -130,7 +130,7 @@ P_{11}=\big[1-(1-\eta)^{n_H}\big]\big[1-(1-\eta)^{n_V}\big]
 |\Psi\rangle \leftarrow \frac{K_{\mu_n}^{(n)}|\Psi\rangle}{\sqrt{p_{\mu_n}^{(n)}}}
 ]
 
-在代码层面，这个“抽样 + 施加 + 归一化”正是 `apply_kraus_two_site()` 在做的事。
+在代码层面，这个“抽样 + 施加 + 归一化”正是 `apply_two_site_kraus()` 在做的事。
 
 > **关键点：你必须用更新后的 MPS 继续处理下一个 bin。**
 > 只要做到这点，“第一次 click 会影响第二次 click 的分布”自动发生。
@@ -208,3 +208,4 @@ P_{11}=\big[1-(1-\eta)^{n_H}\big]\big[1-(1-\eta)^{n_V}\big]
 - 你现在出现 4 click，说明你实际执行的探测路径没有做到“每次抽样后更新全局态并吸收光子”，或者你根本没跑到你以为的那份 `run_two_photon_detection`。
 
 如果你愿意把你本地那段打印 “Using 6D Kraus operators (36x36) - optimized!” 的探测函数（或对应 `channels.py`）也贴出来，我可以直接在那份代码上指出是哪一行导致“同一光子被多次计数”。但就算不贴，你照着上面第 5 节把探测逻辑改成“逐 bin Kraus + 真实作用回 MPS”，4 click 这种现象会立刻消失。
+

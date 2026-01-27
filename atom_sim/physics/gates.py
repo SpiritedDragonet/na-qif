@@ -6,20 +6,14 @@
 不随每仓变化的门会被缓存。
 """
 
-from typing import Optional, Tuple
+from typing import Tuple
 from functools import lru_cache
 import numpy as np
 from scipy.linalg import expm
 
 from ..hilbert.basis import (
-    SubSpace,
-    ProductSpace,
-    subspace_gate,
     SUBSPACE_780,
     SUBSPACE_1517,
-    BIN_SPACE,
-    get_bin_space,
-    get_system_space,
 )
 from ..hilbert.operators import (
     annihilation_op,
@@ -236,32 +230,6 @@ def jones_gate(U: Tuple[Tuple[complex, complex], Tuple[complex, complex]]) -> np
     return op
 
 
-def jones_gate_from_array(U_array: np.ndarray) -> np.ndarray:
-    """
-    便捷包装器，用numpy数组调用jones_gate。
-    返回嵌入18D bin空间的门（I_780 ⊗ U_1517）。
-
-    Parameters
-    ----------
-    U_array : np.ndarray
-        2x2琼斯矩阵
-
-    Returns
-    -------
-    np.ndarray
-        作用于完整bin空间（780 × 1517）的18x18幺正矩阵
-    """
-    U_tuple = (
-        (complex(U_array[0, 0]), complex(U_array[0, 1])),
-        (complex(U_array[1, 0]), complex(U_array[1, 1]))
-    )
-    U_1517 = jones_gate(U_tuple)  # 6x6
-
-    # 嵌入18D bin空间：I_780 ⊗ U_1517
-    I_780 = np.eye(3, dtype=complex)
-    return np.kron(I_780, U_1517)  # 18x18
-
-
 def emission_gate(
     gamma: float,
     dt: float,
@@ -341,9 +309,6 @@ def emission_gate(
     bV = bV_dag.conj().T
 
     # 生成元：G = √dt * (L_H ⊗ b_H^† + L_V ⊗ b_V^† - h.c.)
-    I_atom = np.eye(3, dtype=complex)
-    I_780 = np.eye(3, dtype=complex)
-
     sqrt_dt = np.sqrt(dt)
 
     G_H = sqrt_dt * (np.kron(L_H, bH_dag) - np.kron(L_H.conj().T, bH))

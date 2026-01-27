@@ -15,7 +15,7 @@ from ..core.mps import MPSState
 from ..time_grid import TimeGrid
 from ..hilbert.basis import BIN_SPACE, SUBSPACE_780, SUBSPACE_1517
 from ..physics.gates import (
-    emission_gate, qfc_gate, jones_gate_from_array, jones_gate
+    emission_gate, jones_gate
 )
 from ..physics.channels import (
     loss_channel_both_subspaces, loss_channel_1517_raw,
@@ -27,20 +27,6 @@ DIM_ATOM = 3
 DIM_BIN = BIN_SPACE.dim  # 18
 DIM_780 = SUBSPACE_780.dim  # 3
 DIM_1517 = SUBSPACE_1517.dim  # 6
-
-# 仓子空间索引（780 x 1517 积空间）
-# index = i_780 * DIM_1517 + i_1517
-IDX_780_VAC = 0  # 780子空间中的 |vac>
-IDX_780_H = 1    # 780子空间中的 |H>
-IDX_780_V = 2    # 780子空间中的 |V>
-
-# 18维仓空间中的780H块：索引范围 DIM_1517 * 1 到 DIM_1511 * 2 - 1
-IDX_BIN_780H_START = DIM_1517 * IDX_780_H  # 6
-IDX_BIN_780H_END = DIM_1517 * (IDX_780_H + 1)  # 12
-
-# 18维仓空间中的780V块
-IDX_BIN_780V_START = DIM_1517 * IDX_780_V  # 12
-IDX_BIN_780V_END = DIM_1517 * (IDX_780_V + 1)  # 18
 
 
 class LossBranchWeight:
@@ -429,7 +415,6 @@ def apply_bs(
     # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
     for n in range(n_bins):
         site_A = 2 + 2 * n
-        site_B = 2 + 2 * n + 1
         mps.apply_bond_op(site_A, U_bs)
 
         _print_progress(n + 1, n_bins, verbose)
@@ -471,7 +456,7 @@ def apply_fiber_channel(
 
     这一步同时处理琼斯旋转与损耗，并从 FiberChannelParams
     为每次轨迹采样参数（模拟光纤漂移）。
-    支持18D（780x1517）或6D（1517-only）bin空间。
+    仅支持6D（1517-only）bin空间。
 
     Parameters
     ----------
@@ -498,10 +483,8 @@ def apply_fiber_channel(
 
     # 为本次轨迹采样参数（残余Jones旋转 + 小PDL）
     U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase = fiber_params.sample_all(rng)
-    phase_slope = 0.0
-    phase_jitter_std = float(getattr(fiber_params, "phase_jitter_std", 0.0))
-    if hasattr(fiber_params, "sample_phase_slope"):
-        phase_slope = fiber_params.sample_phase_slope(rng)
+    phase_slope = fiber_params.sample_phase_slope(rng)
+    phase_jitter_std = float(fiber_params.phase_jitter_std)
 
     if verbose:
         print(f"  Sampled Jones_A:\n{U_A}")
@@ -525,6 +508,8 @@ def apply_fiber_channel(
         raise ValueError(f"bin_start={bin_start} 超出MPS长度 {mps.L}")
 
     bin_dim = mps.d[bin_start]
+    if bin_dim != DIM_1517:
+        raise ValueError(f"Unsupported bin dimension: {bin_dim}. Expected 6.")
 
     def _to_tuple(U: np.ndarray) -> Tuple[Tuple[complex, complex], Tuple[complex, complex]]:
         return (
@@ -533,20 +518,26 @@ def apply_fiber_channel(
         )
 
     # 应用琼斯旋转
-    if bin_dim == DIM_BIN:
-        U_J_A = jones_gate_from_array(U_A)
-        U_J_B = jones_gate_from_array(U_B)
-    elif bin_dim == DIM_1517:
-        U_J_A = jones_gate(_to_tuple(U_A))
-        U_J_B = jones_gate(_to_tuple(U_B))
-    else:
-        raise ValueError(f"Unsupported bin dimension: {bin_dim}. Expected 18 or 6.")
+    U_J_A = jones_gate(_to_tuple(U_A))
+    U_J_B = jones_gate(_to_tuple(U_B))
 
     phase_center = 0.5 * (n_bins - 1)
     apply_phase_profile = abs(phase_slope) > 0.0 or phase_jitter_std > 0.0
+
+    # 应用损耗（6D：只作用于1517）
+    K_list_A = loss_channel_1517_raw(eta_H_A, eta_V_A)
+    K_list_B = loss_channel_1517_raw(eta_H_B, eta_V_B)
+
+    # 固定选择无损耗Kraus分支，记录后选概率 p_no_loss
+    K_noloss_A = K_list_A[0]
+    K_noloss_B = K_list_B[0]
+    no_loss_weight = LossBranchWeight()
+
     for n in range(n_bins):
         site_A = bin_start + 2 * n
         site_B = bin_start + 2 * n + 1
+
+        # 先应用琼斯旋转
         mps.apply_one_site_gate(site_A, U_J_A)
         mps.apply_one_site_gate(site_B, U_J_B)
 
@@ -556,40 +547,11 @@ def apply_fiber_channel(
                 phase_n += rng.normal(0.0, phase_jitter_std)
             if abs(phase_n) > 0.0:
                 phase_factor = np.exp(1j * phase_n)
-                if bin_dim == DIM_BIN:
-                    U_phase = jones_gate_from_array(
-                        np.array([[phase_factor, 0.0], [0.0, phase_factor]], dtype=complex)
-                    )
-                else:
-                    U_phase = jones_gate(((phase_factor, 0.0), (0.0, phase_factor)))
+                U_phase = jones_gate(((phase_factor, 0.0), (0.0, phase_factor)))
                 # 只对B臂施加时间相关相位，形成相对失配
                 mps.apply_one_site_gate(site_B, U_phase)
 
-        _print_progress(n + 1, n_bins, verbose)
-
-    # 应用损耗（18D包含780滤波；6D只作用于1517）
-    if bin_dim == DIM_BIN:
-        K_list_A = loss_channel_both_subspaces(
-            eta_780=0.0,
-            eta_H_1517=eta_H_A,
-            eta_V_1517=eta_V_A,
-        )
-        K_list_B = loss_channel_both_subspaces(
-            eta_780=0.0,
-            eta_H_1517=eta_H_B,
-            eta_V_1517=eta_V_B,
-        )
-    else:
-        K_list_A = loss_channel_1517_raw(eta_H_A, eta_V_A)
-        K_list_B = loss_channel_1517_raw(eta_H_B, eta_V_B)
-
-    # 固定选择无损耗Kraus分支，记录后选概率 p_no_loss
-    K_noloss_A = K_list_A[0]
-    K_noloss_B = K_list_B[0]
-    no_loss_weight = LossBranchWeight()
-    for n in range(n_bins):
-        site_A = bin_start + 2 * n
-        site_B = bin_start + 2 * n + 1
+        # 再应用无损耗Kraus分支
         try:
             pA = mps.apply_kraus_one_site_fixed(site_A, K_noloss_A, canonicalize=False)
             pB = mps.apply_kraus_one_site_fixed(site_B, K_noloss_B, canonicalize=False)

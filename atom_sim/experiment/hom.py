@@ -28,6 +28,8 @@ from .common import (
     run_task_queue,
 )
 
+DEFAULT_TAU_RANDOM_RANGE_NS = (-10.0, 10.0)
+
 
 def _is_port_samepol_coincidence(clicks, window_bins: Optional[int]) -> bool:
     # 仅统计同偏振跨端口符合：H1-H2 或 V1-V2
@@ -55,6 +57,10 @@ def _progress_every(total: int) -> int:
 
 
 def _build_hom_tau_values(hom_cfg: dict) -> list:
+    if hom_cfg.get("tau_random"):
+        tau_min, tau_max = hom_cfg.get("tau_random_range", DEFAULT_TAU_RANDOM_RANGE_NS)
+        rng = np.random.default_rng()
+        return [float(rng.uniform(tau_min, tau_max))]
     tau = hom_cfg.get("tau")
     if tau is not None:
         return [float(tau)]
@@ -81,24 +87,31 @@ def _build_hom_tau_values(hom_cfg: dict) -> list:
     return [float(v) for v in values]
 
 
-def parse_hom_cli(args, positional, parser, consume) -> dict:
-    if args.tau is None:
-        consume("tau_start", float)
-        consume("tau_end", float)
-        if args.tau_step is not None and args.tau_points is not None:
-            parser.error("HOM 的 tau-step 与 tau-points 只能选其一")
-        if args.tau_step is None and args.tau_points is None:
-            consume("tau_step", float)
-    consume("window_ns", float)
-
-    if positional:
-        parser.error(f"未识别的参数: {' '.join(positional)}")
-
+def parse_hom_cli(args, parser) -> dict:
     tau = args.tau
     tau_start = args.tau_start
     tau_end = args.tau_end
     tau_step = args.tau_step
     tau_points = args.tau_points
+    if (
+        tau is None
+        and tau_start is None
+        and tau_end is None
+        and tau_step is None
+        and tau_points is None
+    ):
+        window_ns = args.window_ns if args.window_ns is not None else 70.0
+        return {
+            "tau": None,
+            "tau_start": None,
+            "tau_end": None,
+            "tau_step": None,
+            "tau_points": None,
+            "tau_random": True,
+            "tau_random_range": DEFAULT_TAU_RANDOM_RANGE_NS,
+            "window_ns": window_ns,
+            "max_attempts": args.max_attempts,
+        }
     if tau is not None:
         if (
             tau_start is not None
@@ -122,15 +135,13 @@ def parse_hom_cli(args, positional, parser, consume) -> dict:
         "tau_end": tau_end,
         "tau_step": tau_step,
         "tau_points": tau_points,
+        "tau_random": False,
+        "tau_random_range": DEFAULT_TAU_RANDOM_RANGE_NS,
         "window_ns": window_ns,
-        "criterion": "port_same",
         "max_attempts": args.max_attempts,
     }
 
-
-def validate_no_hom_args(args, positional, parser) -> None:
-    if positional:
-        parser.error(f"未识别的参数: {' '.join(positional)}")
+def validate_no_hom_args(args, parser) -> None:
     if (
         args.tau is not None
         or args.tau_start is not None
@@ -148,6 +159,9 @@ def _run_hom_run(
     shots_per_run: int,
     noise_cfg: Optional[dict],
     window_ns: float,
+    fiber_noise: bool,
+    eta_det: float,
+    ideal_det: bool,
     verbose: bool = False,
 ) -> tuple:
     run_rng = np.random.default_rng()
@@ -164,7 +178,7 @@ def _run_hom_run(
     pipe = run_emission_to_bs(
         emission_cfg=emission_cfg,
         rng=run_rng,
-        fiber_params=_make_fiber_params(),
+        fiber_params=_make_fiber_params(noise_enabled=fiber_noise),
         verbose=verbose,
         hooks=PipelineHooks(should_abort=_should_abort),
     )
@@ -187,9 +201,13 @@ def _run_hom_run(
     bin_dt_ns = bin_dt_s * 1e9
     window_bins = _compute_window_bins(window_ns, bin_dt_ns)
 
-    noise = _compute_noise_params(noise_cfg, bin_dt_s, run_rng)
-    p_noise = noise["p_noise"]
-    kraus_list, outcome_detectors, _ = build_detection_kraus_6d(0.85, p_noise)
+    if ideal_det:
+        p_noise = 0.0
+        eta_det = 1.0
+    else:
+        noise = _compute_noise_params(noise_cfg, bin_dt_s, run_rng)
+        p_noise = noise["p_noise"]
+    kraus_list, outcome_detectors, _ = build_detection_kraus_6d(eta_det, p_noise)
     det_kraus_cache = (kraus_list, outcome_detectors)  # 复用Kraus以减少开销
 
     coincidences = 0
@@ -197,7 +215,7 @@ def _run_hom_run(
         det_result = run_two_photon_detection(
             mps=result.mps,
             n_bins=result.get_n_bins(),
-            eta_det=0.85,
+            eta_det=eta_det,
             window_bins=window_bins,
             p_dark=p_noise,
             kraus_cache=det_kraus_cache,
@@ -210,49 +228,25 @@ def _run_hom_run(
     return coincidences, False, p_arrive, p_no_loss
 
 
-def _run_hom_attempt_task(
+def _run_hom_task_indexed(
+    tau_idx: int,
     tau_ns: float,
     shots_per_run: int,
     noise_cfg: Optional[dict],
     window_ns: float,
+    fiber_noise: bool,
+    eta_det: float,
+    ideal_det: bool,
+    verbose: bool = False,
 ) -> tuple:
     return _run_hom_run(
         tau_ns,
         shots_per_run,
         noise_cfg,
         window_ns,
-        verbose=False,
-    )
-
-
-def _run_hom_attempt_task_indexed(
-    tau_idx: int,
-    tau_ns: float,
-    shots_per_run: int,
-    noise_cfg: Optional[dict],
-    window_ns: float,
-) -> tuple:
-    return _run_hom_attempt_task(
-        tau_ns,
-        shots_per_run,
-        noise_cfg,
-        window_ns,
-    )
-
-
-def _run_hom_focus_task_indexed(
-    tau_idx: int,
-    tau_ns: float,
-    shots_per_run: int,
-    noise_cfg: Optional[dict],
-    window_ns: float,
-    verbose: bool,
-) -> tuple:
-    return _run_hom_run(
-        tau_ns,
-        shots_per_run,
-        noise_cfg,
-        window_ns,
+        fiber_noise,
+        eta_det,
+        ideal_det,
         verbose=verbose,
     )
 
@@ -264,10 +258,12 @@ def run_hom_experiment(
     jobs: int,
     hom_cfg: dict,
     noise_cfg: Optional[dict],
+    fiber_noise: bool,
+    eta_det: float,
+    ideal_det: bool,
 ) -> None:
     tau_values = _build_hom_tau_values(hom_cfg)
     window_ns = hom_cfg["window_ns"]
-    criterion = hom_cfg["criterion"]
     max_attempts = hom_cfg.get("max_attempts")
 
     jobs = max(1, min(jobs, os.cpu_count() or 1))
@@ -275,6 +271,11 @@ def run_hom_experiment(
     tau_desc = ""
     if hom_cfg.get("tau") is not None:
         tau_desc = f"tau={hom_cfg['tau']:.3f} ns"
+    elif hom_cfg.get("tau_random"):
+        tau_desc = (
+            f"tau=random in [{hom_cfg['tau_random_range'][0]:.1f}, "
+            f"{hom_cfg['tau_random_range'][1]:.1f}] ns"
+        )
     elif hom_cfg.get("tau_points") is not None:
         tau_desc = (
             f"tau_start={hom_cfg['tau_start']:.3f} ns, "
@@ -289,8 +290,10 @@ def run_hom_experiment(
         )
     print(
         f"[HOM] {tau_desc} | window_ns={window_ns:.1f} | "
-        f"criterion={criterion} | runs={n_runs} | shots_per_run={shots_per_run} | jobs={jobs}"
+        f"runs={n_runs} | shots_per_run={shots_per_run} | jobs={jobs}"
     )
+    print(f"[HOM] 光纤噪声: {'开启' if fiber_noise else '关闭'}")
+    print(f"[HOM] 探测参数: eta_det={eta_det:.3f} | 理想探测={'是' if ideal_det else '否'}")
     if max_attempts is not None:
         if max_attempts < n_runs:
             max_attempts = n_runs
@@ -314,7 +317,6 @@ def run_hom_experiment(
             "coinc_rate",
             "p_arrive_avg",
             "window_ns",
-            "criterion",
             "runs_target",
             "runs_attempted",
         ])
@@ -390,6 +392,10 @@ def run_hom_experiment(
             shots_per_run,
             noise_cfg,
             window_ns,
+            fiber_noise,
+            eta_det,
+            ideal_det,
+            False,
         )
 
     def _on_result(task: tuple, result: tuple) -> None:
@@ -406,16 +412,18 @@ def run_hom_experiment(
             shots_per_run,
             noise_cfg,
             window_ns,
+            fiber_noise,
+            eta_det,
+            ideal_det,
             True,
         )
 
     run_task_queue(
         jobs=jobs,
-        task_fn=_run_hom_attempt_task_indexed,
+        task_fn=_run_hom_task_indexed,
         next_task=_next_task,
         on_result=_on_result,
         focus_task=focus_task,
-        focus_fn=_run_hom_focus_task_indexed,
     )
 
     for idx, tau_ns in enumerate(tau_values):
@@ -444,7 +452,6 @@ def run_hom_experiment(
                 f"{coinc_rate:.8f}",
                 f"{p_arrive_avg:.6f}",
                 f"{window_ns:.3f}",
-                criterion,
                 n_runs,
                 s["attempted"],
             ])

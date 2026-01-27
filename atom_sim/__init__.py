@@ -11,7 +11,7 @@ Atom Sim：中性原子量子接口的时间仓MPS仿真
 - TimeGrid：时间网格
 """
 
-from .core.mps import MPSState, create_timebin_mps
+from .core.mps import MPSState
 from .time_grid import TimeGrid
 from .simulation import run_dual_atom_emission
 
@@ -20,7 +20,6 @@ __version__ = '0.1.0'
 __all__ = [
     # core
     'MPSState',
-    'create_timebin_mps',
     # time grid
     'TimeGrid',
     # simulation

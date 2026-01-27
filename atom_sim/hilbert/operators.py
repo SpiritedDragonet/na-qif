@@ -5,9 +5,8 @@
 本模块提供构造产生、湮灭、数算符和原子跃迁算符的函数。
 """
 
-from typing import Tuple, Union
 import numpy as np
-from .basis import SubSpace, ProductSpace, SUBSPACE_780, SUBSPACE_1517, ATOM_3D
+from .basis import SubSpace, SUBSPACE_780, SUBSPACE_1517
 
 
 def annihilation_op(space: SubSpace, mode_id: int = 0) -> np.ndarray:
@@ -160,34 +159,3 @@ def atom_transition(which: str) -> np.ndarray:
     return op
 
 
-def number_op(space: SubSpace, mode_id: int = 0) -> np.ndarray:
-    """
-    在福克子空间上构造数算符 N = a^† a。
-
-    用于波包提取：<N> 给出光子数期望值。
-
-    对于基为 (vac, H, V, 2H, 2V, HV) 的1517子空间：
-        N_H = diag(0, 1, 0, 2, 0, 1)
-        N_V = diag(0, 0, 1, 0, 2, 1)
-
-    Parameters
-    ----------
-    space : SubSpace
-        构造算符的子空间
-    mode_id : int
-        计数光子的模式（默认：0）
-
-    Returns
-    -------
-    np.ndarray
-        数算符矩阵（对角），形状为 (space.dim, space.dim)
-
-    Examples
-    --------
-    >>> N_780_H = number_op(SUBSPACE_780, mode_id=0)  # 计数780 H光子
-    >>> N_1517_H = number_op(SUBSPACE_1517, mode_id=0)  # 计数1517 H光子
-    >>> N_1517_V = number_op(SUBSPACE_1517, mode_id=1)  # 计数1517 V光子
-    """
-    adag = creation_op(space, mode_id)
-    a = annihilation_op(space, mode_id)
-    return adag @ a

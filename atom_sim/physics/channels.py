@@ -40,7 +40,7 @@ def loss_channel_both_subspaces(
     """
     # 获取每个子空间的Kraus算符（未嵌入）
     K_780_list = loss_channel_780_general(eta_780)  # 3x3 矩阵
-    K_1517_list = _loss_channel_1517_raw(eta_H_1517, eta_V_1517)  # 6x6 矩阵
+    K_1517_list = loss_channel_1517_raw(eta_H_1517, eta_V_1517)  # 6x6 矩阵
 
     # 构成所有张量积组合
     K_combined = []
@@ -52,11 +52,9 @@ def loss_channel_both_subspaces(
     return K_combined
 
 
-def _loss_channel_1517_raw(eta_H: float, eta_V: float) -> List[np.ndarray]:
+def loss_channel_1517_raw(eta_H: float, eta_V: float) -> List[np.ndarray]:
     """
     原始1517nm损耗信道（6x6矩阵，未嵌入18D）。
-
-    这是loss_channel_both_subspaces使用的内部函数。
 
     Parameters
     ----------
@@ -106,25 +104,6 @@ def _loss_channel_1517_raw(eta_H: float, eta_V: float) -> List[np.ndarray]:
     # 移除全零算符
     K_list_1517 = [K for K in K_list_1517 if np.any(K != 0)]
     return K_list_1517
-
-
-def loss_channel_1517_raw(eta_H: float, eta_V: float) -> List[np.ndarray]:
-    """
-    1517nm通信子空间（6D）的振幅阻尼Kraus算符（不嵌入18D）。
-
-    Parameters
-    ----------
-    eta_H : float
-        H偏振的透过率
-    eta_V : float
-        V偏振的透过率
-
-    Returns
-    -------
-    List[np.ndarray]
-        仅作用于1517子空间的6x6 Kraus算符列表
-    """
-    return _loss_channel_1517_raw(eta_H, eta_V)
 
 
 def loss_channel_780_general(eta: float) -> List[np.ndarray]:
@@ -201,7 +180,6 @@ class FiberChannelParams:
     - 琼斯矩阵偏振漂移（SU(2)随机矩阵）
     - 两臂之间的相位漂移
     - 带小波动的损耗（含小幅度PDL）
-    - PMD（偏振模色散）
 
     每条轨迹从分布中采样新的随机参数。
 
@@ -229,11 +207,6 @@ class FiberChannelParams:
         相位斜率的标准差（弧度/每个bin），用于模拟频率失配
     phase_jitter_std : float
         单个bin相位噪声的标准差（弧度），用于模拟时间相关相位噪声
-    pmd_enabled : bool
-        是否包含PMD效应
-    pmd_delay_bins : int
-        PMD延迟，以仓数为单位（整数位移）
-
     Examples
     --------
     >>> # 未补偿的长光纤
@@ -256,8 +229,6 @@ class FiberChannelParams:
         phase_drift_std: float = 0.2,
         phase_slope_std: float = 0.0,
         phase_jitter_std: float = 0.0,
-        pmd_enabled: bool = False,
-        pmd_delay_bins: int = 0,
     ):
         if U_mean_A is None:
             U_mean_A = np.eye(2, dtype=complex)
@@ -274,8 +245,6 @@ class FiberChannelParams:
         self.phase_drift_std = phase_drift_std
         self.phase_slope_std = phase_slope_std
         self.phase_jitter_std = phase_jitter_std
-        self.pmd_enabled = pmd_enabled
-        self.pmd_delay_bins = pmd_delay_bins
 
     def sample_jones_A(self, rng: np.random.Generator) -> np.ndarray:
         """为A臂采样琼斯矩阵。"""

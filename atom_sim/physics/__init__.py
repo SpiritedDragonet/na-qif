@@ -9,7 +9,6 @@ from .gates import (
     emission_gate,
     qfc_gate,
     jones_gate,
-    jones_gate_from_array,
 )
 from .channels import (
     loss_channel_both_subspaces,
@@ -21,7 +20,6 @@ __all__ = [
     'emission_gate',
     'qfc_gate',
     'jones_gate',
-    'jones_gate_from_array',
     # channels
     'loss_channel_both_subspaces',
     'FiberChannelParams',

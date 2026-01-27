@@ -31,7 +31,7 @@ total_simulation.py               # CLI 主入口（全流程仿真 + 汇总输�
 
 atom_sim/
 ├── __init__.py                    # 包导出
-│   ├── MPSState, create_timebin_mps
+│   ├── MPSState
 │   ├── TimeGrid
 │   └── run_dual_atom_emission
 │
@@ -46,21 +46,15 @@ atom_sim/
 │       │   ├── _apply_two_site_op_local()
 │       │   ├── apply_bond_op()
 │       │   ├── apply_kraus_one_site()
-│       │   ├── finalize_bin_pair()
 │       │   ├── apply_one_site_gate()
 │       │   ├── apply_two_site_kraus()
 │       │   ├── swap_sites()
-│       │   ├── find_sites_by_dim()
 │       │   ├── get_reduced_density()
-│       │   ├── get_atom_state()
-│       │   ├── expectation_value()
 │       │   ├── chi
 │       │   ├── norm()
 │       │   ├── get_bond_dimensions()
-│       │   ├── test_sanity()
 │       │   ├── copy()
 │       │   └── __repr__()
-│       └── create_timebin_mps()
 │
 ├── hilbert/                       # 希尔伯特空间层（物理抽象）
 │   ├── __init__.py
@@ -74,8 +68,7 @@ atom_sim/
 │   └── operators.py               # 基本算符工厂
 │       ├── annihilation_op()      # 湮灭算符 a[i]（复用实现）
 │       ├── creation_op()          # 产生算符 a^†[i]
-│       ├── atom_transition()      # S_+, S_-（原子跃迁算符）
-│       └── number_op()            # 粒子数算符 N = a^† a
+│       └── atom_transition()      # S_+, S_-（原子跃迁算符）
 │
 ├── physics/                       # 物理过程层（门和通道）
 │   ├── __init__.py
@@ -84,13 +77,11 @@ atom_sim/
 │   │   ├── bs_gate_6d()           # U_BS: 50/50 分束器 (36x36, 仅1517nm)
 │   │   ├── _bs_gate_1517()
 │   │   ├── jones_gate()           # U_pol: 琼斯旋转 (6x6)
-│   │   ├── jones_gate_from_array() # 从 2x2 琼斯矩阵构造门
 │   │   └── emission_gate()        # U_emit: 原子-光子耦合 (54x54)
 │   │
 │   └── channels.py                # 所有 Kraus 通道
 │       ├── loss_channel_both_subspaces() # 780+1517 联合损耗
 │       ├── loss_channel_780_general()    # 780nm 损耗
-│       ├── _loss_channel_1517_raw()
 │       ├── loss_channel_1517_raw()       # 1517nm 振幅阻尼（6D）
 │       └── FiberChannelParams            # 光纤漂移模型（琼斯+损耗）
 │
@@ -124,7 +115,7 @@ atom_sim/
 │       ├── compute_fidelity_with_bell()
 │       ├── _infer_bin_start()
 │       ├── _get_bin_sites()
-│       ├── _build_number_ops()
+│       ├── _build_photon_number_projectors()
 │       ├── compute_two_photon_arrival_prob()
 │       ├── _build_detection_effects()
 │       ├── _bell_projector_full()
@@ -145,19 +136,10 @@ atom_sim/
 │       ├── _maybe_show()
 │       ├── _telecom_ops_1517()
 │       ├── telecom_ops_bin18()
-│       ├── extract_wavepacket()          # 提取波包复振幅
-│       ├── extract_intensity_envelope()  # 提取强度包络
-│       ├── extract_single_photon_prob()  # 提取单光子概率
-│       ├── plot_wavepacket()             # 绘制波包图
-│       ├── plot_intensity_envelope()     # 绘制强度包络
-│       ├── plot_single_photon_prob()     # 绘制单光子概率
 │       ├── _get_bin18_state_labels()
 │       ├── _get_bin6_state_labels()
-│       ├── _get_bin3_state_labels()
 │       ├── _infer_first_bin_site()
 │       ├── _validate_bin_rho_traces()
-│       ├── extract_bin_state_probabilities()  # 提取 bin 态概率
-│       ├── plot_bin_state_heatmap()      # 绘制 bin 态热图
 │       ├── plot_dual_arm_heatmap()       # 绘制双臂热图
 │       └── plot_cross_bin_joint_heatmap()# 跨 bin 联合分布热图
 │
@@ -203,13 +185,10 @@ simulation/trajectory.py → core/mps.py → 张量网络更新（仅局域！�
 - `apply_kraus_one_site(i, {Kμ}, rng)` 用于单格点 Kraus
 - `apply_two_site_kraus(i, {Kμ}, rng)` 用于双格点测量
 
-### 2. Bin 废弃机制
-测量后，bins 被冻结（键维度=1）且不再被访问。使用 `finalize_bin_pair(n)` 确保线性复杂度。
-
-### 3. 格点类型：有限维格点，非 BosonSite
+### 2. 格点类型：有限维格点，非 BosonSite
 使用自定义的 `FiniteDimSite(d)` 配合算符字典，而非 TeNPy 的 `BosonSite`（语义不兼容）。
 
-### 4. 密度矩阵提取
+### 3. 密度矩阵提取
 始终使用 `get_reduced_density([i])`，绝不直接收缩 `_B[i]`。
 
 ## 物理模型

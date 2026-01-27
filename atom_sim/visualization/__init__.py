@@ -7,30 +7,12 @@
 """
 
 from .wavepacket import (
-    telecom_ops_bin18,
-    extract_wavepacket,
-    extract_intensity_envelope,
-    extract_single_photon_prob,
-    plot_wavepacket,
-    plot_intensity_envelope,
-    plot_single_photon_prob,
-    extract_bin_state_probabilities,
-    plot_bin_state_heatmap,
     plot_dual_arm_heatmap,
     plot_cross_bin_joint_heatmap,
 )
 
 __all__ = [
     # wavepacket
-    'telecom_ops_bin18',
-    'extract_wavepacket',
-    'extract_intensity_envelope',
-    'extract_single_photon_prob',
-    'plot_wavepacket',
-    'plot_intensity_envelope',
-    'plot_single_photon_prob',
-    'extract_bin_state_probabilities',
-    'plot_bin_state_heatmap',
     'plot_dual_arm_heatmap',
     'plot_cross_bin_joint_heatmap',
 ]

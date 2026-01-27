@@ -41,8 +41,6 @@ from atom_sim.simulation import (
     enumerate_success_events,
     build_detection_kraus_6d,
     compute_fidelity_with_bell,
-    compute_photon_statistics,
-    extract_spin_state,
 )
 from atom_sim.visualization import plot_dual_arm_heatmap
 from atom_sim.visualization.wavepacket import plot_cross_bin_joint_heatmap
@@ -52,6 +50,7 @@ from atom_sim.experiment.common import (
     DEFAULT_BG_RATE_STD_HZ,
     ATOM_EXTREME_EPS,
     _get_emission_params,
+    _make_fiber_params,
     _compute_window_bins,
     _compute_noise_params,
     _atom_extreme_state,
@@ -145,7 +144,9 @@ class Tee:
         return bool(self._tty_streams)
 
 
-def _parse_run_params(argv) -> Tuple[int, int, int, dict, str, str, dict]:
+def _parse_run_params(
+    argv,
+) -> Tuple[int, int, int, dict, str, str, dict, bool, bool, float, bool]:
     parser = argparse.ArgumentParser(
         prog="python total_simulation.py",
         formatter_class=argparse.RawTextHelpFormatter,
@@ -154,6 +155,7 @@ def _parse_run_params(argv) -> Tuple[int, int, int, dict, str, str, dict]:
     parser.add_argument("--shots", "--shots-per-run", dest="shots_per_run", type=int)
     parser.add_argument("--jobs", dest="jobs", type=int)
     parser.add_argument("--mode", "--trial-type", dest="mode")
+    parser.add_argument("--no-fiber-noise", dest="no_fiber_noise", action="store_true")
 
     parser.add_argument("--tau", dest="tau", type=float)
     parser.add_argument("--tau-start", dest="tau_start", type=float)
@@ -168,8 +170,8 @@ def _parse_run_params(argv) -> Tuple[int, int, int, dict, str, str, dict]:
     parser.add_argument("--bg-std-hz", dest="bg_rate_std_hz", type=float)
     parser.add_argument("--enum-mode", dest="enum_mode", type=str)
     parser.add_argument("--plot-all", dest="plot_all", action="store_true")
-
-    parser.add_argument("positional", nargs="*", help=argparse.SUPPRESS)
+    parser.add_argument("--eta-det", dest="eta_det", type=float)
+    parser.add_argument("--ideal-det", dest="ideal_det", action="store_true")
     args = parser.parse_args(argv[1:])
 
     noise_cfg = {
@@ -184,29 +186,11 @@ def _parse_run_params(argv) -> Tuple[int, int, int, dict, str, str, dict]:
     if args.bg_rate_std_hz is not None:
         noise_cfg["bg_rate_std_hz"] = args.bg_rate_std_hz
 
-    positional = list(args.positional)
-
-    def _consume(name: str, cast):
-        if getattr(args, name) is not None:
-            return
-        if not positional:
-            return
-        token = positional.pop(0)
-        try:
-            value = cast(token)
-        except ValueError:
-            parser.error(f"参数 {name} 需要 {cast.__name__}，得到 {token}")
-        setattr(args, name, value)
-
-    _consume("n_runs", int)
-    _consume("shots_per_run", int)
-    _consume("jobs", int)
-    _consume("mode", str)
-
     n_runs = args.n_runs if args.n_runs is not None else 1
     shots_per_run = args.shots_per_run if args.shots_per_run is not None else 1
     jobs = args.jobs if args.jobs is not None else 1
     mode = (args.mode or "SIM").upper()
+    fiber_noise = not args.no_fiber_noise
 
     if n_runs < 1:
         parser.error("N_runs 必须 >= 1")
@@ -216,28 +200,38 @@ def _parse_run_params(argv) -> Tuple[int, int, int, dict, str, str, dict]:
         parser.error("jobs 必须 >= 1")
 
     enum_mode = (args.enum_mode or "dark").strip().lower()
-    enum_mode_map = {
-        "dark": "dark",
-        "with-dark": "dark",
-        "with_dark": "dark",
-        "both": "both",
-        "all": "both",
-        "no-dark": "no-dark",
-        "no_dark": "no-dark",
-        "nodark": "no-dark",
-    }
-    if enum_mode not in enum_mode_map:
-        parser.error("enum-mode 仅支持 dark / both / no-dark")
-    enum_mode = enum_mode_map[enum_mode]
+    if enum_mode not in ("dark", "no-dark"):
+        parser.error("enum-mode 仅支持 dark / no-dark")
+
+    eta_det = 0.85
+    if args.eta_det is not None:
+        eta_det = float(args.eta_det)
+    ideal_det = bool(args.ideal_det)
+    if ideal_det:
+        eta_det = 1.0
+    if not (0.0 < eta_det <= 1.0):
+        parser.error("eta_det 必须在 (0, 1] 内")
 
     hom_cfg = {}
     if mode == "HOM":
-        hom_cfg = parse_hom_cli(args, positional, parser, _consume)
+        hom_cfg = parse_hom_cli(args, parser)
     else:
-        validate_no_hom_args(args, positional, parser)
+        validate_no_hom_args(args, parser)
 
     plot_all = bool(args.plot_all)
-    return n_runs, shots_per_run, jobs, noise_cfg, enum_mode, mode, hom_cfg, plot_all
+    return (
+        n_runs,
+        shots_per_run,
+        jobs,
+        noise_cfg,
+        enum_mode,
+        mode,
+        hom_cfg,
+        plot_all,
+        fiber_noise,
+        eta_det,
+        ideal_det,
+    )
 
 
 def save_debug_info(
@@ -700,7 +694,6 @@ def _write_success_metrics_detail(
             file.write(f"p_no_loss = {metrics['p_no_loss']:.8f}\n")
 
         file.write(f"p_arrive = {metrics['p_arrive']:.8f}\n")
-        file.write("\nmethod_1_two_runs\n")
         if metrics.get("p_success_no_dark") is not None:
             file.write(f"p_success_no_dark = {metrics['p_success_no_dark']:.8f}\n")
             file.write(f"fidelity_no_dark = {metrics['fidelity_no_dark']:.6f}\n")
@@ -716,7 +709,6 @@ def _write_success_metrics_detail(
             file.write("p_false_approx = N/A\n")
             file.write("false_fraction_approx = N/A\n")
 
-        file.write("\nmethod_2_kraus_tag\n")
         file.write(f"p_success_true = {metrics['p_success_true']:.8f}\n")
         file.write(f"p_success_false = {metrics['p_success_false']:.8f}\n")
         file.write(f"p_success_given_arrival = {metrics['p_success_given_arrival']:.8f}\n")
@@ -843,6 +835,9 @@ def _run_single_simulation_core(
     plot_all: bool,
     noise_cfg: Optional[dict],
     enum_mode: str,
+    fiber_noise: bool,
+    eta_det: float,
+    ideal_det: bool,
 ):
     run_tag = f"run{run_index:03d}"
     success_metrics = None
@@ -1130,10 +1125,6 @@ def _run_single_simulation_core(
                 rho_AB = emission.mps.get_reduced_density([site_A, site_B])
 
                 p_vac_vac = rho_AB[0, 0, 0, 0].real
-                p_H_vac = rho_AB[1, 0, 1, 0].real
-                p_V_vac = rho_AB[2, 0, 2, 0].real
-                p_vac_H = rho_AB[0, 1, 0, 1].real
-                p_vac_V = rho_AB[0, 2, 0, 2].real
                 p_H_H = rho_AB[1, 1, 1, 1].real
                 p_V_V = rho_AB[2, 2, 2, 2].real
                 p_H_V = rho_AB[1, 2, 1, 2].real
@@ -1161,6 +1152,7 @@ def _run_single_simulation_core(
     pipe = run_emission_to_bs(
         emission_cfg=emission_cfg,
         rng=run_rng,
+        fiber_params=_make_fiber_params(noise_enabled=fiber_noise),
         verbose=True,
         hooks=PipelineHooks(
             on_stage=_on_stage,
@@ -1172,7 +1164,7 @@ def _run_single_simulation_core(
         ),
     )
     if pipe.aborted:
-        metrics = _make_zero_success_metrics(include_no_dark=(enum_mode in ("both", "no-dark")))
+        metrics = _make_zero_success_metrics(include_no_dark=(enum_mode == "no-dark"))
         metrics["p_qubit_emit"] = pipe.p_qubit_emit
         metrics["p_no_loss"] = pipe.p_no_loss
         _cleanup_plots()
@@ -1197,7 +1189,8 @@ def _run_single_simulation_core(
     # 探测
     # =========================================================================
     # 探测参数（基于Nature 2022实验）
-    eta_det = 0.85
+    if ideal_det:
+        eta_det = 1.0
     # 符合窗口：默认采用论文中数据分析窗口 70 ns
     coincidence_window_ns = 70.0
     bin_dt_s = result.time_grid.dt
@@ -1205,7 +1198,18 @@ def _run_single_simulation_core(
     window_bins = _compute_window_bins(coincidence_window_ns, bin_dt_ns)
 
     # QFC 背景噪声 + 探测器本底暗计数（两者独立）
-    noise = _compute_noise_params(noise_cfg, bin_dt_s, run_rng)
+    if ideal_det:
+        noise = {
+            "dark_rate_intrinsic_hz": 0.0,
+            "bg_rate_mean_hz": 0.0,
+            "bg_rate_std_hz": 0.0,
+            "dark_rate_bg_hz": 0.0,
+            "p_dark_intrinsic": 0.0,
+            "p_bg": 0.0,
+            "p_noise": 0.0,
+        }
+    else:
+        noise = _compute_noise_params(noise_cfg, bin_dt_s, run_rng)
     dark_rate_intrinsic_hz = noise["dark_rate_intrinsic_hz"]
     bg_rate_mean_hz = noise["bg_rate_mean_hz"]
     bg_rate_std_hz = noise["bg_rate_std_hz"]
@@ -1222,8 +1226,6 @@ def _run_single_simulation_core(
     if DEBUG_MODE:
         # 诊断：检查每个bin的光子分布
         print("\n诊断：检查每个bin的光子分布...")
-        n_bins = result.get_n_bins()
-
         # 先检查第一个bin的rho形状
         site_A = 2
         site_B = 3
@@ -1232,30 +1234,9 @@ def _run_single_simulation_core(
     _stage(5, "成功事件统计 (POVM)")
     print(f"\n成功事件枚举模式: {enum_mode}")
     enum_no_dark = None
-    enum_with_dark = None
     enum_main = None
 
-    if enum_mode == "both":
-        print("\n枚举成功事件（无暗计数）...")
-        enum_no_dark = enumerate_success_events(
-            mps=result.mps,
-            n_bins=result.get_n_bins(),
-            eta_det=eta_det,
-            p_dark=0.0,
-            window_bins=window_bins,
-            verbose=True,
-        )
-        print("\n枚举成功事件（含暗计数）...")
-        enum_with_dark = enumerate_success_events(
-            mps=result.mps,
-            n_bins=result.get_n_bins(),
-            eta_det=eta_det,
-            p_dark=p_noise,
-            window_bins=window_bins,
-            verbose=True,
-        )
-        enum_main = enum_with_dark
-    elif enum_mode == "no-dark":
+    if enum_mode == "no-dark":
         print("\n枚举成功事件（无暗计数）...")
         enum_no_dark = enumerate_success_events(
             mps=result.mps,
@@ -1270,7 +1251,7 @@ def _run_single_simulation_core(
         enum_main = enum_no_dark
     else:
         print("\n枚举成功事件（含暗计数）...")
-        enum_with_dark = enumerate_success_events(
+        enum_main = enumerate_success_events(
             mps=result.mps,
             n_bins=result.get_n_bins(),
             eta_det=eta_det,
@@ -1278,7 +1259,6 @@ def _run_single_simulation_core(
             window_bins=window_bins,
             verbose=True,
         )
-        enum_main = enum_with_dark
 
     success_metrics = {
         "eta_det": eta_det,
@@ -1437,6 +1417,9 @@ def _run_single_simulation(
     shots_per_run: int,
     noise_cfg: Optional[dict],
     enum_mode: str,
+    fiber_noise: bool,
+    eta_det: float,
+    ideal_det: bool,
     log_path: Optional[Path] = None,
     mirror_console: bool = True,
     show_plots: bool = True,
@@ -1456,6 +1439,9 @@ def _run_single_simulation(
             plot_all,
             noise_cfg,
             enum_mode,
+            fiber_noise,
+            eta_det,
+            ideal_det,
         )
     with open(log_path, 'w', encoding='utf-8') as log_file:
         if mirror_console:
@@ -1479,25 +1465,30 @@ def _run_single_simulation(
                 plot_all,
                 noise_cfg,
                 enum_mode,
+                fiber_noise,
+                eta_det,
+                ideal_det,
             )
         finally:
             sys.stdout, sys.stderr = old_out, old_err
 
 
-def _run_single_simulation_task(args):
-    (
-        output_dir,
-        run_index,
-        n_runs,
-        summary_path,
-        summary_lock_path,
-        shots_per_run,
-        noise_cfg,
-        enum_mode,
-        mirror_console,
-        show_plots,
-        plot_all,
-    ) = args
+def _run_single_simulation_task(
+    output_dir,
+    run_index,
+    n_runs,
+    summary_path,
+    summary_lock_path,
+    shots_per_run,
+    noise_cfg,
+    enum_mode,
+    fiber_noise,
+    eta_det,
+    ideal_det,
+    mirror_console,
+    show_plots,
+    plot_all,
+):
     run_tag = f"run{run_index:03d}"
     log_path = output_dir / f"{run_tag}_console.log"
     run_stats, success_metrics = _run_single_simulation(
@@ -1509,6 +1500,9 @@ def _run_single_simulation_task(args):
         shots_per_run,
         noise_cfg,
         enum_mode,
+        fiber_noise,
+        eta_det,
+        ideal_det,
         log_path=log_path,
         mirror_console=mirror_console,
         show_plots=show_plots,
@@ -1519,7 +1513,19 @@ def _run_single_simulation_task(args):
 
 def main():
     """主函数：运行发射 + QFC + 分束器 + 探测仿真。"""
-    n_runs, shots_per_run, jobs, noise_cfg, enum_mode, mode, hom_cfg, plot_all = _parse_run_params(sys.argv)
+    (
+        n_runs,
+        shots_per_run,
+        jobs,
+        noise_cfg,
+        enum_mode,
+        mode,
+        hom_cfg,
+        plot_all,
+        fiber_noise,
+        eta_det,
+        ideal_det,
+    ) = _parse_run_params(sys.argv)
 
     # 创建带时间戳的输出目录
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
@@ -1530,7 +1536,7 @@ def main():
         print(f"Output directory: {output_dir}")
         print(
             f"HOM 模式: runs={n_runs}, shots_per_run={shots_per_run}, jobs={jobs}, "
-            f"criterion={hom_cfg.get('criterion')}, window_ns={hom_cfg.get('window_ns')}"
+            f"window_ns={hom_cfg.get('window_ns')}"
         )
         run_hom_experiment(
             output_dir=output_dir,
@@ -1539,6 +1545,9 @@ def main():
             jobs=jobs,
             hom_cfg=hom_cfg,
             noise_cfg=noise_cfg,
+            fiber_noise=fiber_noise,
+            eta_det=eta_det,
+            ideal_det=ideal_det,
         )
         return
 
@@ -1553,6 +1562,8 @@ def main():
     print(f"并行进程数: {jobs}")
     print(f"成功事件枚举模式: {enum_mode}")
     print(f"绘图模式: {'全部run' if plot_all else '仅单run'}")
+    print(f"光纤噪声: {'开启' if fiber_noise else '关闭'}")
+    print(f"探测参数: eta_det={eta_det:.3f} | 理想探测={'是' if ideal_det else '否'}")
 
     rng = np.random.default_rng()
     run_indices = list(range(1, n_runs + 1))
@@ -1567,6 +1578,9 @@ def main():
             shots_per_run,
             noise_cfg,
             enum_mode,
+            fiber_noise,
+            eta_det,
+            ideal_det,
             mirror_console,
             show_plots,
             plot_all,

@@ -376,7 +376,6 @@ p_{\rm loss} = 1 - p_{\rm arrive}
 
 你现在跳测 bins 的做法，会让“no-click 的条件化信息”丢失，从而破坏时间上的条件概率结构。
 正确做法：对 n=1..N，逐个 bin 扫描、每 bin 都应用一次两端口 Kraus（16 outcome）。
-并且测完之后立刻 `finalize_bin_pair()` 把该 bin 对冻结，保证复杂度线性。
 
 ### Step 4：加一个硬断言：任何时刻 click 数 >2 直接 dump debug
 

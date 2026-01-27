@@ -24,7 +24,6 @@ from .operators import (
     annihilation_op,
     creation_op,
     atom_transition,
-    number_op,
 )
 
 __all__ = [
@@ -45,5 +44,4 @@ __all__ = [
     'annihilation_op',
     'creation_op',
     'atom_transition',
-    'number_op',
 ]

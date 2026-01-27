@@ -14,7 +14,6 @@ import numpy as np
 from itertools import product
 from typing import Tuple, List, Optional
 from dataclasses import dataclass
-from collections import Counter
 
 from ..core.mps import MPSState
 from ..hilbert.basis import SUBSPACE_780, SUBSPACE_1517
@@ -48,11 +47,6 @@ class SuccessEnumerationResult:
     fidelity_declared: float
     fidelity_true: float
     fidelity_false: float
-    spin_state: np.ndarray  # success条件下的4x4密度矩阵
-    spin_state_true: np.ndarray
-    spin_state_false: np.ndarray
-    bell_weights: Counter
-    success_events: List[Tuple[str, int, int, float]]  # (bell, bin1, bin2, weight)
 
 # 条件量在此阈值以下视为无效，避免数值噪声放大。
 P_ARRIVE_EPS = 1e-8
@@ -298,9 +292,8 @@ def run_two_photon_detection(
         outcome_idx = mps_work.apply_two_site_kraus(
             site_left=site_1,
             kraus_ops=kraus_list,
-            rng=rng,
-            probs_from_rho=True,
             rho=rho_AB,
+            rng=rng,
         )
 
         detectors = outcome_detectors[outcome_idx]
@@ -478,16 +471,7 @@ def _build_photon_number_projectors(bin_dim: int) -> Tuple[np.ndarray, np.ndarra
         pi1 = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)
         pi2 = np.diag([0, 0, 0, 1, 1, 1]).astype(complex)
         return pi0, pi1, pi2
-    if bin_dim == 18:
-        pi0_6 = np.diag([1, 0, 0, 0, 0, 0]).astype(complex)
-        pi1_6 = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)
-        pi2_6 = np.diag([0, 0, 0, 1, 1, 1]).astype(complex)
-        i_780 = np.eye(3, dtype=complex)
-        pi0 = np.kron(i_780, pi0_6)
-        pi1 = np.kron(i_780, pi1_6)
-        pi2 = np.kron(i_780, pi2_6)
-        return pi0, pi1, pi2
-    raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6 or 18.")
+    raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6.")
 
 
 def _build_p2_mpo_tensor(pi0: np.ndarray, pi1: np.ndarray, pi2: np.ndarray) -> np.ndarray:
@@ -673,7 +657,6 @@ def enumerate_success_events(
     if p_arrive <= p_arrive_eps and p_dark <= 0.0:
         if verbose:
             print(f"  p_arrive<{p_arrive_eps:.1e} 且 p_dark=0，跳过成功事件枚举")
-        zero_spin = np.zeros((4, 4), dtype=complex)
         return SuccessEnumerationResult(
             p_arrive=p_arrive,
             p_success=0.0,
@@ -683,11 +666,6 @@ def enumerate_success_events(
             fidelity_declared=0.0,
             fidelity_true=0.0,
             fidelity_false=0.0,
-            spin_state=zero_spin,
-            spin_state_true=zero_spin,
-            spin_state_false=zero_spin,
-            bell_weights=Counter(),
-            success_events=[],
         )
 
     bin_start = _infer_bin_start(mps)
@@ -747,30 +725,21 @@ def enumerate_success_events(
     def _contract_env(env_mid: np.ndarray, env_right: np.ndarray) -> float:
         return float(np.einsum('ij,ij->', env_mid, env_right).real)
 
-    success_events = []
-    bell_weights = Counter()
-
     def _sum_same_bin(
         left_envs: List[np.ndarray],
         op_pair: np.ndarray,
-        bell_state: Optional[str] = None,
-        record: bool = False,
     ) -> float:
         total = 0.0
         for s in range(1, n_bins + 1):
             env_mid = _apply_env_left(B_list[s], Bc_list[s], op_pair, left_envs[s])
             weight = _contract_env(env_mid, right_envs[s + 1])
             total += weight
-            if record and bell_state is not None:
-                success_events.append((bell_state, s - 1, s - 1, weight))
         return total
 
     def _sum_diff_bins(
         left_envs: List[np.ndarray],
         op_a: np.ndarray,
         op_b: np.ndarray,
-        bell_state: Optional[str] = None,
-        record: bool = False,
     ) -> float:
         total = 0.0
         for i in range(1, n_bins):
@@ -782,8 +751,6 @@ def enumerate_success_events(
                 env_j = _apply_env_left(B_list[j], Bc_list[j], op_b, env_mid)
                 weight = _contract_env(env_j, right_envs[j + 1])
                 total += weight
-                if record and bell_state is not None:
-                    success_events.append((bell_state, i - 1, j - 1, weight))
                 if j < j_end:
                     env_mid = _apply_env_left(B_list[j], Bc_list[j], E_no, env_mid)
         return total
@@ -814,18 +781,16 @@ def enumerate_success_events(
         E_a_true = _get_effect(effects_true, key_a, dim_pair)
         E_b_true = _get_effect(effects_true, key_b, dim_pair)
 
-        weight_same_all = _sum_same_bin(left_envs_id, E_pair_all, bell_state, record=True)
+        weight_same_all = _sum_same_bin(left_envs_id, E_pair_all)
         weight_same_true = _sum_same_bin(left_envs_id, E_pair_true)
 
-        weight_diff_all = _sum_diff_bins(left_envs_id, E_a_all, E_b_all, bell_state, record=True)
-        weight_diff_all += _sum_diff_bins(left_envs_id, E_b_all, E_a_all, bell_state, record=True)
+        weight_diff_all = _sum_diff_bins(left_envs_id, E_a_all, E_b_all)
+        weight_diff_all += _sum_diff_bins(left_envs_id, E_b_all, E_a_all)
         weight_diff_true = _sum_diff_bins(left_envs_id, E_a_true, E_b_true)
         weight_diff_true += _sum_diff_bins(left_envs_id, E_b_true, E_a_true)
 
         p_success_all += weight_same_all + weight_diff_all
         p_success_true += weight_same_true + weight_diff_true
-        bell_weights[bell_state] += weight_same_all + weight_diff_all
-
         fidelity_weighted_all += _sum_same_bin(left_envs_bell[bell_state], E_pair_all)
         fidelity_weighted_all += _sum_diff_bins(left_envs_bell[bell_state], E_a_all, E_b_all)
         fidelity_weighted_all += _sum_diff_bins(left_envs_bell[bell_state], E_b_all, E_a_all)
@@ -849,7 +814,6 @@ def enumerate_success_events(
 
     p_success_given_arrival = (p_success_true / p_arrive) if p_arrive > p_arrive_eps else 0.0
 
-    zero_spin = np.zeros((4, 4), dtype=complex)
     return SuccessEnumerationResult(
         p_arrive=p_arrive,
         p_success=p_success_all,
@@ -859,11 +823,6 @@ def enumerate_success_events(
         fidelity_declared=fidelity_declared,
         fidelity_true=fidelity_true,
         fidelity_false=fidelity_false,
-        spin_state=zero_spin,
-        spin_state_true=zero_spin,
-        spin_state_false=zero_spin,
-        bell_weights=bell_weights,
-        success_events=success_events,
     )
 
 
@@ -890,8 +849,6 @@ def _compute_photon_statistics_global(mps: MPSState, n_bins: int, bin_dim: int, 
     from ..hilbert.operators import annihilation_op
 
     # 构建全局光子数算符的MPO
-    n_sites = len(mps.d)
-
     # 为每个站点准备单位算符和光子数算符
     if bin_dim == 6:
         # 6D空间：只有1517nm光子

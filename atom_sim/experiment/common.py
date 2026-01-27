@@ -3,7 +3,7 @@
 实验流程中的通用配置与工具函数。
 """
 
-from typing import Optional, Tuple, Callable, Any
+from typing import Optional, Callable, Any
 from dataclasses import dataclass
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
@@ -33,11 +33,22 @@ def _get_emission_params(delay_ns: float) -> dict:
     }
 
 
-def _make_fiber_params() -> FiberChannelParams:
+def _make_fiber_params(noise_enabled: bool = True) -> FiberChannelParams:
     # 残余Jones旋转 + 小PDL + 相位斜率噪声
     compensation_sigma = 0.1  # 补偿后的残差旋转（弧度，可调）
     pdl_sigma = 0.02  # 小PDL：H/V透过率相对差异的标准差（线性）
     phase_slope_std = 0.05  # 相位斜率标准差（rad/bin）
+    if not noise_enabled:
+        # 关闭光纤噪声：保留平均透过率，移除随机偏振/相位/PDL扰动
+        return FiberChannelParams(
+            polarization_model="perturb",
+            polarization_sigma=0.0,
+            eta_std=0.0,
+            pdl_sigma=0.0,
+            phase_drift_std=0.0,
+            phase_slope_std=0.0,
+            phase_jitter_std=0.0,
+        )
     return FiberChannelParams(
         polarization_model="perturb",
         polarization_sigma=compensation_sigma,
