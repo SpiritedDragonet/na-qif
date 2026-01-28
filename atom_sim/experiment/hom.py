@@ -14,7 +14,7 @@ import numpy as np
 from ..simulation import (
     run_two_photon_detection,
     compute_two_photon_arrival_prob,
-    build_detection_kraus_6d,
+    build_detection_effects_6d,
 )
 from .common import (
     ATOM_EXTREME_EPS,
@@ -207,8 +207,7 @@ def _run_hom_run(
     else:
         noise = _compute_noise_params(noise_cfg, bin_dt_s, run_rng)
         p_noise = noise["p_noise"]
-    kraus_list, outcome_detectors, _ = build_detection_kraus_6d(eta_det, p_noise)
-    det_kraus_cache = (kraus_list, outcome_detectors)  # 复用Kraus以减少开销
+    effects_cache = build_detection_effects_6d(eta_det, p_noise)  # 复用POVM以减少开销
 
     coincidences = 0
     for _ in range(shots_per_run):
@@ -218,7 +217,7 @@ def _run_hom_run(
             eta_det=eta_det,
             window_bins=window_bins,
             p_dark=p_noise,
-            kraus_cache=det_kraus_cache,
+            effects_cache=effects_cache,
             rng=run_rng,
             verbose=verbose,
         )

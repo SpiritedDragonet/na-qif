@@ -20,16 +20,15 @@
 \end{equation}
 其中 $\hat{L}_{H/V} = \alpha_{H/V,+}|0\rangle\langle e| + \alpha_{H/V,-}|1\rangle\langle e|$，$\boldsymbol{\alpha}$ 为偏振映射矩阵。
 
-发射门的强度不是手写的 $\gamma(t)$，而是由 $\Omega(t)$ 与腔 QED 参数正向生成的输出通量 $\Phi_{\mathrm{out}}(t)$ 编译而来。定义
+发射门的时间依赖主要由驱动脉冲 $\Omega(t)$ 写入系统哈密顿量 $H_{\mathrm{sys}}(t_n)$，而发射耦合强度由腔参数给出的有效耦合率 $\gamma_{\mathrm{eff}}$ 决定。本文在坏腔近似下取
 \begin{equation}
-Q_n = \int_{t_n}^{t_{n+1}} \Phi_{\mathrm{out}}(t)\,\mathrm{d}t, \quad
-q_n = \frac{Q_n}{\sum_m Q_m},
+\gamma_{\mathrm{eff}} = 2\kappa_{\mathrm{ex}}\left(\frac{g}{\kappa_{\mathrm{ex}}+\kappa_{\mathrm{in}}}\right)^2,
 \end{equation}
-并记 $R_n = 1 - \sum_{j<n} q_j$，则离散发射率由
+并令
 \begin{equation}
-\gamma_n = -\frac{1}{\Delta t} \ln\left(1 - \frac{q_n}{R_n}\right)
+L_{H/V}=\sqrt{\gamma_{\mathrm{eff}}}\left(\alpha_{H/V,+}S_+ + \alpha_{H/V,-}S_-\right).
 \end{equation}
-反解得到。这样，驱动脉冲 $\Omega(t)$、腔耦合 $g$ 与损耗 $\kappa$ 的变化会自然体现在 time-bin 的发射强度上；两臂相对时延通过对 $\Omega(t)$ 或 $\Phi_{\mathrm{out}}(t)$ 的时间偏移 $\tau$ 实现。
+这里的 $\gamma_{\mathrm{eff}}$ 是单偏振通道的耦合率；若 $\Alpha$ 为幺正映射，则总辐射率由两通道叠加。两臂相对时延通过对 $\Omega(t)$ 做时间平移 $\tau$ 实现。
 
 \subsection{发射门的矩阵形式与有效演化}
 
@@ -44,6 +43,7 @@ q_n = \frac{Q_n}{\sum_m Q_m},
 \begin{equation}
 \Phi_{\mathrm{out}}(t) = 2\kappa_{\mathrm{ex}}\left(|\alpha_0(t)|^2 + |\alpha_1(t)|^2\right).
 \end{equation}
+在数值实现中，$\Phi_{\mathrm{out}}(t)$ 用于理解输出通量的参数依赖，离散门本身使用固定的 $\gamma_{\mathrm{eff}}$ 并通过 $\Omega(t)$ 控制波包形状。
 
 将系统与单个 780 bin 的耦合作用写成反厄米生成元 $G_n$ 并指数化，即得到两站点门。以 780 子空间基底 $(|vac\rangle,|H\rangle,|V\rangle)$ 为块索引，$G_n$ 可写为 3×3 的块矩阵：
 \begin{equation}
@@ -54,7 +54,7 @@ G_n=
 \sqrt{\Delta t}L_V & 0 & -iH_{\mathrm{sys}}\Delta t
 \end{pmatrix},
 \end{equation}
-其中每个块是 4×4 原子算符。由于发射仅作用在 780 子空间，完整的两站点门为
+其中每个块是 4×4 原子算符（基顺序取 $|0\rangle,|1\rangle,|e\rangle,|u\rangle$）。由于发射仅作用在 780 子空间，完整的两站点门为
 \begin{equation}
 U_{\mathrm{emit}}^{(n)} = \exp(G_n)\otimes I_{1517},
 \end{equation}
@@ -78,6 +78,8 @@ H_{\mathrm{eff}}(t)=H_{\mathrm{sys}}(t)-\frac{i}{2}\sum_{\mu\in\{H,V\}}L_\mu^\da
 
 光纤偏振演化用 Jones 矩阵描述，并在每条臂上采样残余旋转与小幅 PDL；光纤损耗以透过率 $\eta_{\mathrm{fiber}}=10^{-\alpha L/10}$ 的振幅阻尼信道处理。中继站分束器采用 50/50 变换，后续 BSM 只区分两类成功模式：$|\Psi^-\rangle$ 的 $\{H_1,V_2\}$ 或 $\{V_1,H_2\}$ 点击，以及 $|\Psi^+\rangle$ 的 $\{H_1,V_1\}$ 或 $\{H_2,V_2\}$ 点击。
 
+链路噪声统一以 Kraus 通道实现：光纤损耗与 780 滤波使用振幅阻尼 Kraus，原子等待退相干用相位噪声 Kraus；探测器效率与暗计数通过“点击/未点击”的 Kraus 分解及暗计数拆分编码。QFC 背景噪声在本模型中折算为等效点击率并并入探测器噪声项，以保持探测判据的一致性。
+
 \subsection{探测与成功事件}
 
 桶式探测器的 POVM 写为
@@ -95,6 +97,12 @@ p_m = \mathrm{Tr}(\Pi_m \rho), \quad \Pi_m = K_m^\dagger K_m, \quad
 \rho_m = \frac{K_m \rho K_m^\dagger}{p_m}.
 \end{equation}
 对应到桶式探测器，$\Pi_0$ 与 $\Pi_1$ 即来自 $K_0,K_1$ 的构造，因此点击/未点击事件可直接用上述公式计算。
+
+一次双点击实验的测量记录写为
+\begin{equation}
+m=(d_a,n_a; d_b,n_b),
+\end{equation}
+其中 $d_{a/b}\in\{H_1,V_1,H_2,V_2\}$ 为探测器标签，$n_{a/b}$ 为 bin 索引。对每个记录 $m$，可由 Kraus 集合构造对应的 POVM effect $\Pi_m$，其权重 $p_m=\mathrm{Tr}(\Pi_m\rho)$。在实现中通过环境收缩枚举所有双点击记录的权重分布并进行抽样，从而得到“具体到探测器与 bin”的单次实验记录；同一 POVM effect 再用于计算该记录的原子后验态。符合窗口仅用于成功判据，窗口外双点击保留为失败样本。
 
 联合探测的成功概率与条件态为
 \begin{equation}
@@ -116,9 +124,9 @@ P_{\mathrm{success}} = \sum_{\mu \in \mathcal{S}} \mathrm{Tr}(\hat{K}_\mu \rho \
 \end{enumerate}
 该流程保证原子在时间顺序上逐 bin 发射，同时保留 A/B 两臂的时间对齐与链结构的局域性。
 
-\subsection{轨迹采样与统计}
+\subsection{POVM 抽样与统计}
 
-探测过程采用量子轨迹采样：对每个 bin 计算 16 个联合点击模式概率，按分布采样结果并更新 MPS。为了避免在大量损耗事件上浪费算力，损耗信道可固定选择“无损”Kraus 分支并记录其权重，将真实到达概率在后处理时恢复。最终统计量以有效事件归一化，分别输出 $p_{\mathrm{arrive}}$、$P(\mathrm{success}|\mathrm{arrive})$ 与条件保真度 $F_{\mathrm{true}}$，并支持符合窗口与时间门控判据。
+探测过程采用 POVM 抽样：先通过环境收缩枚举两次点击记录（探测器$\times$bin）的权重分布，再按分布抽样得到本次点击记录，并用同一个 POVM effect 计算该记录对应的原子后验态。符合窗口只作为成功判据，窗口外双点击保留为失败样本。为了避免在大量损耗事件上浪费算力，损耗信道可固定选择“无损”Kraus 分支并记录其权重，将真实到达概率在后处理时恢复。最终统计量以有效事件归一化，分别输出 $p_{\mathrm{arrive}}$、$P(\mathrm{success}|\mathrm{arrive})$ 与条件保真度 $F_{\mathrm{true}}$，并支持符合窗口与时间门控判据。
 
 \section{本章小结}[Chapter Summary]
 

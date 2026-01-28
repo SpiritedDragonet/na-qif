@@ -19,6 +19,7 @@ from .detection import (
     TwoPhotonDetectionResult,
     SuccessEnumerationResult,
     run_two_photon_detection,
+    build_detection_effects_6d,
     build_detection_kraus_6d,
     enumerate_success_events,
     compute_two_photon_arrival_prob,
@@ -38,11 +39,12 @@ __all__ = [
     'apply_bs',
     'apply_fiber_channel',
     'project_to_1517',
-    # detection (Kraus measurement)
+    # detection (POVM sampling)
     'DetectionEvent',
     'TwoPhotonDetectionResult',
     'SuccessEnumerationResult',
     'run_two_photon_detection',
+    'build_detection_effects_6d',
     'build_detection_kraus_6d',
     'enumerate_success_events',
     'compute_two_photon_arrival_prob',

@@ -39,7 +39,7 @@ DEBUG_MODE = False
 from atom_sim.simulation import (  # noqa: E402
     run_two_photon_detection,
     enumerate_success_events,
-    build_detection_kraus_6d,
+    build_detection_effects_6d,
     compute_fidelity_with_bell,
 )
 from atom_sim.visualization import plot_dual_arm_heatmap  # noqa: E402
@@ -1305,12 +1305,11 @@ def _run_single_simulation_core(
     success_path = _write_success_metrics_detail(output_dir, run_tag, success_metrics)
     print(f"  Success metrics saved: {success_path.name}")
 
-    # 使用逐bin Kraus测量方法运行探测和BSM（可多次采样）
-    _stage(6, "逐bin测量采样")
-    print("\n运行探测和BSM（逐bin Kraus测量）...")
+    # 使用POVM抽样运行探测和BSM（可多次采样）
+    _stage(6, "POVM抽样")
+    print("\n运行探测和BSM（POVM抽样）...")
     run_stats = _init_stats()
-    kraus_list, outcome_detectors, _ = build_detection_kraus_6d(eta_det, p_noise)
-    det_kraus_cache = (kraus_list, outcome_detectors)
+    effects_cache = build_detection_effects_6d(eta_det, p_noise)
     for shot_index in range(1, shots_per_run + 1):
         print(f"\n[shot {shot_index}/{shots_per_run}]")
         det_result = run_two_photon_detection(
@@ -1319,7 +1318,7 @@ def _run_single_simulation_core(
             eta_det=eta_det,
             window_bins=window_bins,
             p_dark=p_noise,
-            kraus_cache=det_kraus_cache,
+            effects_cache=effects_cache,
             #rng=np.random.default_rng(seed=19),
             rng=run_rng,
             verbose=True,
@@ -1329,29 +1328,30 @@ def _run_single_simulation_core(
         if det_result.success:
             print("\n  BSM成功!")
             print(f"  宣告的Bell态: {det_result.bell_state}")
-            print(f"  点击: {[(c.detector, c.bin_index) for c in det_result.clicks]}")
 
             # 计算与期望Bell态的保真度（未归一化）
             fidelity_full = compute_fidelity_with_bell(det_result.spin_state, det_result.bell_state)
-            print(f"  F_full(|{det_result.bell_state}>): {fidelity_full:.4f}")
+            rho = det_result.spin_state
+            trace_rho = float(np.trace(rho).real)
+            fidelity_cond = (fidelity_full / trace_rho) if trace_rho > 0 else 0.0
+            print(f"  F_full(|{det_result.bell_state}>): {fidelity_full:.4e}")
+            print(f"  F_cond(|{det_result.bell_state}>): {fidelity_cond:.4f}")
 
             # 计算与所有Bell态的保真度以供参考
             print("\n  与所有Bell态的保真度:")
             for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
                 f_full = compute_fidelity_with_bell(det_result.spin_state, bell)
+                f_cond = (f_full / trace_rho) if trace_rho > 0 else 0.0
                 marker = " <-- 宣告的" if bell == det_result.bell_state else ""
-                print(f"    F_full(|{bell}>): {f_full:.4f}{marker}")
+                print(f"    F_full(|{bell}>): {f_full:.4e}, F_cond: {f_cond:.4f}{marker}")
 
             # 打印自旋态
             print("\n  自旋密度矩阵（量子比特子空间）:")
-            rho = det_result.spin_state
-            print(f"    Tr(rho) = {np.trace(rho).real:.4f}")
+            print(f"    Tr(rho) = {trace_rho:.4e}")
             print(f"    纯度(未归一化) = {np.trace(rho @ rho).real:.4f}")
         else:
             print("\n  BSM失败 - 未找到成功模式")
             print(f"  点击数量: {len(det_result.clicks)}")
-            if det_result.clicks:
-                print(f"  点击: {[(c.detector, c.bin_index) for c in det_result.clicks]}")
 
         # 保存探测后的调试信息
         if DEBUG_MODE:
@@ -1387,6 +1387,13 @@ def _run_single_simulation_core(
                         file.write(f'  F({bell}) = {fid:.4f}{marker}\n')
 
             print(f"  调试信息已保存: {det_file.name}")
+
+        click_pairs = [(c.detector, c.bin_index) for c in det_result.clicks]
+        declared = det_result.bell_state if det_result.success else "失败"
+        if click_pairs:
+            print(f"  宣告结果: {declared} | 点击记录: {click_pairs}")
+        else:
+            print(f"  宣告结果: {declared} | 点击记录: 无")
 
         run_stats["shots"] += 1
         run_stats["clicks"][len(det_result.clicks)] += 1

@@ -91,7 +91,7 @@ MPS 键维度 & $\chi_{\max}$ & 50--64 \\
 端到端评估采用三项核心指标：两光子到达概率 $p_{\mathrm{arrive}}$、条件成功率 $P(\mathrm{success}\,|\,\mathrm{arrive})$、以及成功样本的条件保真度 $F_{\mathrm{true}}$。$p_{\mathrm{arrive}}$ 反映通道与器件的总损耗，条件成功率刻画测量判据与噪声对“宣告成功”的影响，而 $F_{\mathrm{true}}$ 直接回答纠缠质量是否跨过经典极限。该口径与实验中“符合门控后统计”一致，也便于把“到达损失”和“测量误判”分开讨论。
 
 \paragraph{单臂发射验证}
-发射波包由驱动脉冲 $\Omega(t)$ 与腔 QED 参数正向生成的输出通量 $\Phi_{\mathrm{out}}(t)$ 决定，离散化后得到 $q_n$ 并编译成发射门强度。这里主要检查三件事：波包形状是否随驱动改变而合理移动/展宽，$\sum_n q_n$ 是否与预期发射概率一致，以及 $\langle \hat{n}(t_n) \rangle$ 的形状是否与离散通量吻合。图 \ref{fig:wavepacket} 给出示例。为控制数值成本与精度，进一步观察 MPS 键维度随时间变化（图 \ref{fig:bond_dim}），并据此选择 $\chi_{\max}$。
+发射波包由驱动脉冲 $\Omega(t)$ 与腔参数给出的有效耦合率 $\gamma_{\mathrm{eff}}$ 共同决定，离散门通过 $H_{\mathrm{sys}}(t_n)$ 与 $L_\mu$ 直接生成波包。这里主要检查三件事：波包形状是否随驱动改变而合理移动/展宽，按 bin 统计的非真空概率之和是否与预期发射概率一致，以及 $\langle \hat{n}(t_n) \rangle$ 的形状是否与驱动包络吻合。图 \ref{fig:wavepacket} 给出示例。为控制数值成本与精度，进一步观察 MPS 键维度随时间变化（图 \ref{fig:bond_dim}），并据此选择 $\chi_{\max}$。
 
 \begin{figure}[htbp]
 \centering

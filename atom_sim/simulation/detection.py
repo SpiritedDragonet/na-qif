@@ -2,12 +2,12 @@
 """
 双光子探测与Bell态测量
 
-实现：逐bin Kraus测量，遍历所有bins，无早停。
+实现：基于POVM的双点击事件抽样与后验态计算。
 
 物理模型：
-- 每个时间仓应用16结果Kraus测量（两端口×两偏振×有无click）
-- 记录完整的观测序列（包括no-click）
-- BSM成功判据：恰好2次click且满足Bell态模式
+- 每个时间仓定义桶式探测POVM（含效率与暗计数）
+- 通过MPO收缩枚举双点击事件的精确权重分布
+- 从该分布抽样得到本次点击记录，并计算对应原子后验态
 """
 
 import numpy as np
@@ -37,6 +37,16 @@ class TwoPhotonDetectionResult:
 
 
 @dataclass
+class TwoClickRecord:
+    """双点击记录（用于POVM抽样）。"""
+    detector_a: str
+    detector_b: str
+    bin_a: int
+    bin_b: int
+    weight: float
+
+
+@dataclass
 class SuccessEnumerationResult:
     """枚举成功事件的统计结果。"""
     p_arrive: float
@@ -60,6 +70,12 @@ def _order_detectors(detectors: List[str]) -> List[str]:
 def _order_two_port_detectors(detectors: List[str]) -> Tuple[str, ...]:
     order = {"H1": 0, "V1": 1, "H2": 2, "V2": 3}
     return tuple(sorted(detectors, key=lambda d: order[d]))
+
+
+def _get_effect(effects: dict, key: Tuple[str, ...], dim: int) -> np.ndarray:
+    if key in effects:
+        return effects[key]
+    return np.zeros((dim, dim), dtype=complex)
 
 
 def _split_with_dark(
@@ -215,6 +231,24 @@ def build_detection_kraus_6d(
     return _build_detection_kraus(eta, p_dark)
 
 
+def build_detection_effects_6d(
+    eta: float,
+    p_dark: float = 0.0,
+) -> Tuple[dict, dict]:
+    """
+    构造6D探测 POVM effects（包含暗计数拆分）。
+
+    Returns
+    -------
+    effects_all : dict
+        所有点击记录的 effect（含暗计数）
+    effects_true : dict
+        不含暗计数的 effect（仅真实点击）
+    """
+    kraus_list, outcome_detectors, outcome_dark = build_detection_kraus_6d(eta, p_dark)
+    return _build_detection_effects(kraus_list, outcome_detectors, outcome_dark)
+
+
 def run_two_photon_detection(
     mps: MPSState,
     n_bins: int,
@@ -222,105 +256,139 @@ def run_two_photon_detection(
     window_bins: Optional[int] = None,
     rng: Optional[np.random.Generator] = None,
     verbose: bool = True,
-    kraus_cache: Optional[Tuple[List[np.ndarray], List[List[str]]]] = None,
+    effects_cache: Optional[Tuple[dict, dict]] = None,
     *,
     p_dark: float = 0.0,
 ) -> TwoPhotonDetectionResult:
     """
-    逐bin Kraus测量（方案1：遍历所有bins，无早停）。
+    基于POVM枚举双点击事件分布，并抽样得到单次点击记录及其后验原子态。
 
-    物理语义：条件在完整观测记录（click + no-click）下的原子后验态。
-
-    当前仅支持6D bin空间（project_to_1517之后）。
-    Kraus概率由两站点约化密度矩阵计算，避免正交中心位置依赖。
-
-    Parameters
-    ----------
-    mps : MPSState
-        输入MPS态
-    n_bins : int
-        时间仓数量
-    eta_det : float
-        探测效率
-    window_bins : int, optional
-        点击时间窗（bin差阈值）。None表示不限制。
-    p_dark : float
-        每个探测器每个bin的暗计数概率
-    kraus_cache : Optional[Tuple[List[np.ndarray], List[List[str]]]]
-        预构建的Kraus列表与点击映射（用于同一run内复用以节省算力）。
-    rng : np.random.Generator, optional
-        随机数生成器
-    verbose : bool
-        是否打印详细信息
-
-    Returns
-    -------
-    TwoPhotonDetectionResult
-        包含clicks、BSM成功与否、Bell态、原子自旋态
+    物理语义：先计算两次点击事件的精确权重分布，再抽样得到本次点击记录；
+    随后用同一个POVM effect 计算该记录对应的原子后验态。
     """
     if rng is None:
         rng = np.random.default_rng()
 
     if verbose:
         print("\n" + "=" * 60)
-        print("双光子探测（逐bin扫描）")
+        print("双光子探测（POVM抽样）")
         print("=" * 60)
 
-    # 当前仅支持投影到1517后的6D bin空间
-    bin_dim = mps.d[2]  # 第一个bin的维度
+    bin_start = _infer_bin_start(mps)
+    bin_dim = mps.d[bin_start]
     if bin_dim != 6:
         raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6.")
-    if kraus_cache is None:
-        kraus_list, outcome_detectors, _ = build_detection_kraus_6d(eta_det, p_dark)
+
+    if effects_cache is None:
+        effects_all, _ = build_detection_effects_6d(eta_det, p_dark)
     else:
-        kraus_list, outcome_detectors = kraus_cache
+        effects_all = effects_cache[0] if isinstance(effects_cache, (tuple, list)) else effects_cache
+
     if verbose:
-        print("  Using 6D Kraus operators (36x36) - optimized!")
+        print("  Using 6D POVM effects (36x36) - sampling two-click records")
 
-    mps_work = mps.copy()
-    clicks = []
+    B_list, Bc_list = _prepare_grouped_mps_pairs(mps)
+    grouped_bins = len(B_list) - 1
+    if grouped_bins != n_bins:
+        raise ValueError(f"n_bins={n_bins} 与分组后bin数量 {grouped_bins} 不一致")
 
-    # 规范化一次即可：get_reduced_density()内部的get_rho_segment()会自动处理正交中心
-    # 无需在每个bin循环中重复规范化（避免O(n_bins * L * chi^3)的性能瓶颈）
-    mps_work._mps.canonical_form_finite(renormalize=True)
+    dim_atom = B_list[0].shape[1]
+    if dim_atom != 16:
+        raise ValueError(f"Atom pair site dimension {dim_atom} != 16")
 
-    # 遍历所有bins，不预扫描，不早停
-    for n in range(n_bins):
-        site_1 = 2 + 2 * n  # A_n
-        site_2 = 2 + 2 * n + 1  # B_n
+    dim_pair = bin_dim * bin_dim
+    empty_key = _order_two_port_detectors([])
+    E_no = _get_effect(effects_all, empty_key, dim_pair)
+    atom_I = np.eye(dim_atom, dtype=complex)
+    right_envs = _build_right_envs(B_list, Bc_list, E_no)
+    left_envs_id = _build_left_envs(B_list, Bc_list, atom_I, E_no)
 
-        rho_AB = mps_work.get_reduced_density([site_1, site_2])
+    patterns = [
+        ("Psi-", ("H1", "V2")),
+        ("Psi-", ("V1", "H2")),
+        ("Psi+", ("H1", "V1")),
+        ("Psi+", ("H2", "V2")),
+        ("", ("H1", "H2")),
+        ("", ("V1", "V2")),
+    ]
 
-        outcome_idx = mps_work.apply_two_site_kraus(
-            site_left=site_1,
-            kraus_ops=kraus_list,
-            rho=rho_AB,
-            rng=rng,
+    weight_eps = 1e-14
+    records: List[TwoClickRecord] = []
+    for _, (det_a, det_b) in patterns:
+        key_pair = _order_two_port_detectors([det_a, det_b])
+        key_a = _order_two_port_detectors([det_a])
+        key_b = _order_two_port_detectors([det_b])
+
+        E_pair = _get_effect(effects_all, key_pair, dim_pair)
+        E_a = _get_effect(effects_all, key_a, dim_pair)
+        E_b = _get_effect(effects_all, key_b, dim_pair)
+
+        records.extend(_collect_same_bin_records(
+            B_list, Bc_list, left_envs_id, right_envs,
+            E_pair, det_a, det_b, n_bins, weight_eps,
+        ))
+        records.extend(_collect_diff_bin_records(
+            B_list, Bc_list, left_envs_id, right_envs,
+            E_a, E_b, E_no, det_a, det_b, n_bins, weight_eps,
+        ))
+        records.extend(_collect_diff_bin_records(
+            B_list, Bc_list, left_envs_id, right_envs,
+            E_b, E_a, E_no, det_b, det_a, n_bins, weight_eps,
+        ))
+
+    if not records:
+        zero_spin = np.zeros((4, 4), dtype=complex)
+        return TwoPhotonDetectionResult(
+            clicks=[],
+            success=False,
+            bell_state="",
+            spin_state=zero_spin,
         )
 
-        detectors = outcome_detectors[outcome_idx]
+    weights = np.array([max(0.0, r.weight) for r in records], dtype=float)
+    total_weight = float(weights.sum())
+    if total_weight <= weight_eps:
+        zero_spin = np.zeros((4, 4), dtype=complex)
+        return TwoPhotonDetectionResult(
+            clicks=[],
+            success=False,
+            bell_state="",
+            spin_state=zero_spin,
+        )
 
-        if detectors:
-            if verbose:
-                print(f"  bin {n}: {'+'.join(detectors)}")
-            for det in detectors:
-                site = site_1 if det in ["H1", "V1"] else site_2
-                clicks.append(DetectionEvent(
-                    detector=det, bin_index=n, site=site,
-                ))
+    probs = weights / total_weight
+    pick = int(rng.choice(len(records), p=probs))
+    record = records[pick]
 
+    clicks = [
+        DetectionEvent(
+            detector=record.detector_a,
+            bin_index=record.bin_a,
+            site=_detector_site(record.detector_a, record.bin_a),
+        ),
+        DetectionEvent(
+            detector=record.detector_b,
+            bin_index=record.bin_b,
+            site=_detector_site(record.detector_b, record.bin_b),
+        ),
+    ]
+    # 窗口仅用于判定成功，抽样仍覆盖所有双点击记录。
     success, bell_state = check_bsm_success(clicks, window_bins=window_bins)
-
-    # 提取探测后的原子态
-    # 所有bins已被测量，直接trace得到原子的后验态
-    mps_work._mps.canonical_form_finite(renormalize=True)
-    spin_state, _ = extract_spin_state(mps_work, n_bins)
+    spin_state = _compute_record_qubit_state(
+        B_list=B_list,
+        Bc_list=Bc_list,
+        right_envs=right_envs,
+        op_no=E_no,
+        record=record,
+        effects_all=effects_all,
+        dim_atom=dim_atom,
+        dim_pair=dim_pair,
+    )
 
     if verbose:
         print("\n  结果：")
-        print(f"    总点击数：{len(clicks)}")
-        if clicks:
-            print(f"    点击：{[(c.detector, c.bin_index) for c in clicks]}")
+        print("    抽样自双点击分布（条件在两次点击）")
+        print(f"    点击：{[(c.detector, c.bin_index) for c in clicks]}")
         print(f"    BSM成功：{success}")
         if success:
             print(f"    Bell态：{bell_state}")
@@ -650,6 +718,157 @@ def _build_right_envs(
     return right_envs
 
 
+def _contract_env_real(env_mid: np.ndarray, env_right: np.ndarray) -> float:
+    return float(np.einsum('ij,ij->', env_mid, env_right).real)
+
+
+def _contract_env_complex(env_mid: np.ndarray, env_right: np.ndarray) -> complex:
+    return np.einsum('ij,ij->', env_mid, env_right)
+
+
+def _detector_site(detector: str, bin_index: int) -> int:
+    site_left = 2 + 2 * bin_index
+    site_right = 2 + 2 * bin_index + 1
+    return site_left if detector in ("H1", "V1") else site_right
+
+
+def _collect_same_bin_records(
+    B_list: List[np.ndarray],
+    Bc_list: List[np.ndarray],
+    left_envs: List[np.ndarray],
+    right_envs: List[np.ndarray],
+    op_pair: np.ndarray,
+    det_a: str,
+    det_b: str,
+    n_bins: int,
+    weight_eps: float,
+) -> List[TwoClickRecord]:
+    records = []
+    for s in range(1, n_bins + 1):
+        env_mid = _apply_env_left(B_list[s], Bc_list[s], op_pair, left_envs[s])
+        weight = _contract_env_real(env_mid, right_envs[s + 1])
+        if weight > weight_eps:
+            records.append(TwoClickRecord(det_a, det_b, s - 1, s - 1, weight))
+    return records
+
+
+def _collect_diff_bin_records(
+    B_list: List[np.ndarray],
+    Bc_list: List[np.ndarray],
+    left_envs: List[np.ndarray],
+    right_envs: List[np.ndarray],
+    op_first: np.ndarray,
+    op_second: np.ndarray,
+    op_no: np.ndarray,
+    det_first: str,
+    det_second: str,
+    n_bins: int,
+    weight_eps: float,
+) -> List[TwoClickRecord]:
+    records = []
+    for i in range(1, n_bins):
+        env_mid = _apply_env_left(B_list[i], Bc_list[i], op_first, left_envs[i])
+        j_end = n_bins
+        for j in range(i + 1, j_end + 1):
+            env_j = _apply_env_left(B_list[j], Bc_list[j], op_second, env_mid)
+            weight = _contract_env_real(env_j, right_envs[j + 1])
+            if weight > weight_eps:
+                records.append(TwoClickRecord(det_first, det_second, i - 1, j - 1, weight))
+            if j < j_end:
+                env_mid = _apply_env_left(B_list[j], Bc_list[j], op_no, env_mid)
+        # restore env_mid not needed beyond loop
+    return records
+
+
+def _contract_record(
+    B_list: List[np.ndarray],
+    Bc_list: List[np.ndarray],
+    left_envs: List[np.ndarray],
+    right_envs: List[np.ndarray],
+    op_no: np.ndarray,
+    record: TwoClickRecord,
+    op_pair: np.ndarray,
+    op_a: np.ndarray,
+    op_b: np.ndarray,
+) -> complex:
+    if record.bin_a == record.bin_b:
+        s = record.bin_a + 1
+        env_mid = _apply_env_left(B_list[s], Bc_list[s], op_pair, left_envs[s])
+        return _contract_env_complex(env_mid, right_envs[s + 1])
+
+    if record.bin_a < record.bin_b:
+        i = record.bin_a + 1
+        j = record.bin_b + 1
+        op_first = op_a
+        op_second = op_b
+    else:
+        i = record.bin_b + 1
+        j = record.bin_a + 1
+        op_first = op_b
+        op_second = op_a
+
+    env_mid = _apply_env_left(B_list[i], Bc_list[i], op_first, left_envs[i])
+    for s in range(i + 1, j):
+        env_mid = _apply_env_left(B_list[s], Bc_list[s], op_no, env_mid)
+    env_mid = _apply_env_left(B_list[j], Bc_list[j], op_second, env_mid)
+    return _contract_env_complex(env_mid, right_envs[j + 1])
+
+
+def _compute_record_qubit_state(
+    B_list: List[np.ndarray],
+    Bc_list: List[np.ndarray],
+    right_envs: List[np.ndarray],
+    op_no: np.ndarray,
+    record: TwoClickRecord,
+    effects_all: dict,
+    dim_atom: int,
+    dim_pair: int,
+) -> np.ndarray:
+    single_dim = int(round(np.sqrt(dim_atom)))
+    if single_dim * single_dim != dim_atom:
+        raise ValueError(f"Unexpected atom-pair dimension: {dim_atom}")
+    qubit_indices = [
+        0 * single_dim + 0,
+        0 * single_dim + 1,
+        1 * single_dim + 0,
+        1 * single_dim + 1,
+    ]
+    op_pair = _get_effect(
+        effects_all,
+        _order_two_port_detectors([record.detector_a, record.detector_b]),
+        dim_pair,
+    )
+    op_a = _get_effect(
+        effects_all,
+        _order_two_port_detectors([record.detector_a]),
+        dim_pair,
+    )
+    op_b = _get_effect(
+        effects_all,
+        _order_two_port_detectors([record.detector_b]),
+        dim_pair,
+    )
+
+    sigma = np.zeros((4, 4), dtype=complex)
+    for i, qi in enumerate(qubit_indices):
+        for j, qj in enumerate(qubit_indices):
+            atom_op = np.zeros((dim_atom, dim_atom), dtype=complex)
+            atom_op[qi, qj] = 1.0
+            left_envs = _build_left_envs(B_list, Bc_list, atom_op, op_no)
+            sigma[i, j] = _contract_record(
+                B_list,
+                Bc_list,
+                left_envs,
+                right_envs,
+                op_no,
+                record,
+                op_pair,
+                op_a,
+                op_b,
+            )
+    return sigma
+
+
 def enumerate_success_events(
     mps: MPSState,
     n_bins: int,
@@ -717,11 +936,6 @@ def enumerate_success_events(
     if dim_atom != 16:
         raise ValueError(f"Atom pair site dimension {dim_atom} != 16")
 
-    def _get_effect(effects: dict, key: Tuple[str, ...], dim: int) -> np.ndarray:
-        if key in effects:
-            return effects[key]
-        return np.zeros((dim, dim), dtype=complex)
-
     dim_pair = kraus_list[0].shape[0]
     E_no = _get_effect(effects_all, empty_key, dim_pair)
 
@@ -735,9 +949,6 @@ def enumerate_success_events(
         for bell, proj in bell_projectors.items()
     }
 
-    def _contract_env(env_mid: np.ndarray, env_right: np.ndarray) -> float:
-        return float(np.einsum('ij,ij->', env_mid, env_right).real)
-
     def _sum_same_bin(
         left_envs: List[np.ndarray],
         op_pair: np.ndarray,
@@ -745,7 +956,7 @@ def enumerate_success_events(
         total = 0.0
         for s in range(1, n_bins + 1):
             env_mid = _apply_env_left(B_list[s], Bc_list[s], op_pair, left_envs[s])
-            weight = _contract_env(env_mid, right_envs[s + 1])
+            weight = _contract_env_real(env_mid, right_envs[s + 1])
             total += weight
         return total
 
@@ -762,7 +973,7 @@ def enumerate_success_events(
                 j_end = min(n_bins, i + window_bins)
             for j in range(i + 1, j_end + 1):
                 env_j = _apply_env_left(B_list[j], Bc_list[j], op_b, env_mid)
-                weight = _contract_env(env_j, right_envs[j + 1])
+                weight = _contract_env_real(env_j, right_envs[j + 1])
                 total += weight
                 if j < j_end:
                     env_mid = _apply_env_left(B_list[j], Bc_list[j], E_no, env_mid)

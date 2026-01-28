@@ -109,7 +109,7 @@ atom_sim/
 │       ├── _build_port_kraus_entries_6d()
 │       ├── _build_detection_kraus()
 │       ├── build_detection_kraus_6d()
-│       ├── run_two_photon_detection()   # 量子跃迁采样
+│       ├── run_two_photon_detection()   # POVM抽样
 │       ├── extract_spin_state()
 │       ├── check_bsm_success()
 │       ├── compute_fidelity_with_bell()
@@ -144,7 +144,6 @@ atom_sim/
 │       └── plot_cross_bin_joint_heatmap()# 跨 bin 联合分布热图
 │
 ├── docs/                          # 设计文档与讨论
-├── notebooks/                     # 交互式实验
 └── thesis/                        # 论文材料
 
 outputs/                           # 仿真输出目录（已 gitignore）
