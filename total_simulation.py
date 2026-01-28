@@ -36,15 +36,15 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # 调试开关：默认 False（非调试模式）
 DEBUG_MODE = False
 
-from atom_sim.simulation import (
+from atom_sim.simulation import (  # noqa: E402
     run_two_photon_detection,
     enumerate_success_events,
     build_detection_kraus_6d,
     compute_fidelity_with_bell,
 )
-from atom_sim.visualization import plot_dual_arm_heatmap
-from atom_sim.visualization.wavepacket import plot_cross_bin_joint_heatmap
-from atom_sim.experiment.common import (
+from atom_sim.visualization import plot_dual_arm_heatmap  # noqa: E402
+from atom_sim.visualization.wavepacket import plot_cross_bin_joint_heatmap  # noqa: E402
+from atom_sim.experiment.common import (  # noqa: E402
     DEFAULT_DARK_RATE_INTRINSIC_HZ,
     DEFAULT_BG_RATE_MEAN_HZ,
     DEFAULT_BG_RATE_STD_HZ,
@@ -58,7 +58,7 @@ from atom_sim.experiment.common import (
     run_emission_to_bs,
     run_task_queue,
 )
-from atom_sim.experiment.hom import (
+from atom_sim.experiment.hom import (  # noqa: E402
     run_hom_experiment,
     parse_hom_cli,
     validate_no_hom_args,
@@ -302,21 +302,21 @@ def save_debug_info(
     with open(info_file, 'w', encoding='utf-8') as f:
         f.write(f'调试信息 - {stage}\n')
         f.write('='*60 + '\n\n')
-        f.write(f'MPS维度信息:\n')
+        f.write('MPS维度信息:\n')
         f.write(f'  n_sites = {info["n_sites"]}\n')
         f.write(f'  n_bins = {info["n_bins"]}\n')
         f.write(f'  {info["bond_dimensions"]}\n')
         f.write(f'  {info["local_dimensions"]}\n\n')
-        f.write(f'光子统计:\n')
+        f.write('光子统计:\n')
         f.write(f'  总期望光子数 = {stats["n_total"]:.4f}\n')
         f.write(f'  780nm: H={stats.get("n_780_H", 0):.4f}, V={stats.get("n_780_V", 0):.4f}, total={stats.get("n_780_total", 0):.4f}\n')
         f.write(f'  1517nm: H={stats.get("n_1517_H", 0):.4f}, V={stats.get("n_1517_V", 0):.4f}, total={stats.get("n_1517_total", 0):.4f}\n')
         f.write(f'  期望损耗光子数 = {stats["loss_expected"]:.4f}\n\n')
-        f.write(f'原子态信息:\n')
+        f.write('原子态信息:\n')
         f.write(f'  对角元: {info["spin_state_diag"]}\n')
         f.write(f'  p_qubit: {info["p_qubit"]:.4f}\n')
         f.write(f'  纯度(条件化): {info["spin_purity"]:.4f}\n\n')
-        f.write(f'Bell态保真度:\n')
+        f.write('Bell态保真度:\n')
         f.write(f'  Psi+ (full/cond) = {info["fidelity_Psip_full"]:.4f} / {info["fidelity_Psip_cond"]:.4f}\n')
         f.write(f'  Psi- (full/cond) = {info["fidelity_Psim_full"]:.4f} / {info["fidelity_Psim_cond"]:.4f}\n')
         f.write(f'  Phi+ (full/cond) = {info["fidelity_Phip_full"]:.4f} / {info["fidelity_Phip_cond"]:.4f}\n')
@@ -903,11 +903,11 @@ def _run_single_simulation_core(
         extreme, probs = _atom_extreme_state(mps, eps=ATOM_EXTREME_EPS)
         if not extreme:
             return None
-        pA0, pA1, pAe, pB0, pB1, pBe = probs
+        pA0, pA1, pAe, pAu, pB0, pB1, pBe, pBu = probs
         return (
             f"{stage_label} 原子态接近基态 |0>/<1| 极端值，"
-            f"A(p0={pA0:.3f}, p1={pA1:.3f}, pe={pAe:.3f}) "
-            f"B(p0={pB0:.3f}, p1={pB1:.3f}, pe={pBe:.3f})"
+            f"A(p0={pA0:.3f}, p1={pA1:.3f}, pe={pAe:.3f}, pu={pAu:.3f}) "
+            f"B(p0={pB0:.3f}, p1={pB1:.3f}, pe={pBe:.3f}, pu={pBu:.3f})"
         )
 
     def _after_emission(emission) -> None:
@@ -1099,20 +1099,20 @@ def _run_single_simulation_core(
                     print(f"  总光子数: {bin_photons:.6f}")
                     print(f"  双光子态概率: {bin_two_photon:.6f}")
 
-                    print(f"  主要态分量:")
+                    print("  主要态分量:")
                     for i_A in range(6):
                         for i_B in range(6):
                             prob = rho_AB[i_A, i_B, i_A, i_B].real
                             if prob > 0.001:
                                 print(f"    |{state_names[i_A]},{state_names[i_B]}>: {prob:.6f}")
 
-            print(f"\n【全局统计】")
+            print("\n【全局统计】")
             print(f"  总光子数（所有bin）: {total_photons_global:.6f}")
             print(f"  双光子态总概率: {total_two_photon_states:.6f}")
             print(f"  非双光子态概率: {1.0 - total_two_photon_states:.6f}")
 
             if total_two_photon_states < 0.95:
-                print(f"警告：双光子态概率 < 95%，存在单光子或多光子分量")
+                print("警告：双光子态概率 < 95%，存在单光子或多光子分量")
 
             print("="*80)
 
@@ -1327,7 +1327,7 @@ def _run_single_simulation_core(
 
         # 打印结果
         if det_result.success:
-            print(f"\n  BSM成功!")
+            print("\n  BSM成功!")
             print(f"  宣告的Bell态: {det_result.bell_state}")
             print(f"  点击: {[(c.detector, c.bin_index) for c in det_result.clicks]}")
 
@@ -1336,19 +1336,19 @@ def _run_single_simulation_core(
             print(f"  F_full(|{det_result.bell_state}>): {fidelity_full:.4f}")
 
             # 计算与所有Bell态的保真度以供参考
-            print(f"\n  与所有Bell态的保真度:")
+            print("\n  与所有Bell态的保真度:")
             for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
                 f_full = compute_fidelity_with_bell(det_result.spin_state, bell)
                 marker = " <-- 宣告的" if bell == det_result.bell_state else ""
                 print(f"    F_full(|{bell}>): {f_full:.4f}{marker}")
 
             # 打印自旋态
-            print(f"\n  自旋密度矩阵（量子比特子空间）:")
+            print("\n  自旋密度矩阵（量子比特子空间）:")
             rho = det_result.spin_state
             print(f"    Tr(rho) = {np.trace(rho).real:.4f}")
             print(f"    纯度(未归一化) = {np.trace(rho @ rho).real:.4f}")
         else:
-            print(f"\n  BSM失败 - 未找到成功模式")
+            print("\n  BSM失败 - 未找到成功模式")
             print(f"  点击数量: {len(det_result.clicks)}")
             if det_result.clicks:
                 print(f"  点击: {[(c.detector, c.bin_index) for c in det_result.clicks]}")

@@ -3,6 +3,7 @@
 \chapter{张量网络理论基础}[Theoretical Foundations of Tensor Networks]
 
 量子多体系统的精确描述面临"维数灾难"：$N$ 个二能级系统的 Hilbert 空间维数为 $2^N$，直接存储量子态需要指数级内存。张量网络通过将高阶张量分解为低阶张量的收缩网络，在保持物理精度的前提下实现多项式复杂度的表示与计算。本章系统介绍张量网络的数学结构与物理直觉，为后续量子接口仿真奠定理论基础。
+本论文关注中性原子量子接口的端到端仿真，其核心特征是时间 bin 离散化的一维光场、顺序的原子—光场耦合、以及包含损耗与测量的量子信道过程。因此，本章将重点放在 MPS 表示、局域门更新与 Kraus 信道处理等与仿真直接相关的工具上。
 
 \section{从量子态到张量：表示论视角}[From Quantum States to Tensors: A Representation Perspective]
 
@@ -35,6 +36,13 @@ C_{s_1 s_2 \cdots s_N} = \sum_{\alpha_1, \ldots, \alpha_{N-1}} A^{[1]s_1}_{\alph
 其中 $A^{[n]s_n}_{\alpha_{n-1} \alpha_n}$ 是第 $n$ 个格点的局域张量，物理指标 $s_n$ 取值 $1, \ldots, d$，虚拟指标（bond index）$\alpha_n$ 取值 $1, \ldots, \chi_n$。
 
 从物理角度理解，MPS 可以视为从左到右依次生成量子态的过程。设想一个量子系统从左端开始演化，每经过一个格点就根据该格点的物理状态 $s_n$ 选择一个矩阵 $A^{[n]s_n}$，最终将所有矩阵相乘得到概率振幅。虚拟指标 $\alpha$ 在此过程中扮演量子记忆的角色，携带左侧所有格点的关联信息传递给右侧。
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.8\linewidth]{fig_mps_chain}
+\caption{一维量子链的 MPS 结构示意}
+\label{fig:mps_chain}
+\end{figure}
 
 \subsection{键维度与表示能力}
 
@@ -123,6 +131,14 @@ e^{-i\hat{H}\Delta t} = e^{-i\hat{H}_{\mathrm{odd}}\Delta t/2} e^{-i\hat{H}_{\ma
 TEBD（Time-Evolving Block Decimation）算法将 Trotter 分解与 MPS 更新结合。算法首先将初态表示为 MPS，然后交替进行奇键和偶键更新：对所有奇数键 $(1,2), (3,4), \ldots$ 并行作用双格点门 $e^{-i\hat{h}\Delta t/2}$，每个门后做 SVD 截断；接着对所有偶数键 $(2,3), (4,5), \ldots$ 并行作用双格点门 $e^{-i\hat{h}\Delta t}$；最后再次对奇数键作用 $e^{-i\hat{h}\Delta t/2}$。迭代上述步骤直到达到目标时间。
 
 从复杂度角度分析，每个时间步需要 $O(N)$ 次双格点更新，每次更新的复杂度为 $O(d^3 \chi^3)$（SVD 主导），总复杂度为 $O(N d^3 \chi^3 T/\Delta t)$。
+在本文仿真中，TEBD 的角色更偏向于实现顺序的局域门作用（如原子与时间 bin 的耦合）与截断控制，而非求解一般哈密顿量的全局动力学。
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.8\linewidth]{fig_tebd_pattern}
+\caption{TEBD 奇偶键交替更新示意}
+\label{fig:tebd_pattern}
+\end{figure}
 
 \subsection{开放边界与周期边界}
 
@@ -176,10 +192,11 @@ TEBD（Time-Evolving Block Decimation）算法将 Trotter 分解与 MPS 更新�
 \begin{equation}
 \langle\hat{O}\rangle_{\mathrm{success}} = \frac{\sum_{\mu \in \mathrm{success}} p_\mu \langle\psi_\mu|\hat{O}|\psi_\mu\rangle}{\sum_{\mu \in \mathrm{success}} p_\mu}.
 \end{equation}
+本文的成功事件筛选、条件保真度与误差评估均基于该条件化框架展开。
 
 \section{本章小结}[Chapter Summary]
 
 本章系统介绍了张量网络理论的数学结构与物理直觉。在张量表示方面，量子态的系数张量可以分解为低阶张量网络，利用量子态的结构性实现指数级压缩。在 MPS 结构方面，矩阵乘积态是一维系统的最优表示，键维度 $\chi$ 控制表示能力与计算复杂度的平衡。在基本操作方面，内积、期望值、门作用等操作可在 $O(N\chi^3)$ 复杂度内完成。在 TEBD 算法方面，通过 Trotter 分解将全局演化转化为局域门序列，实现高效时间演化。在量子信道方面，Kraus 算符可通过量子轨迹方法在纯态 MPS 上实现，自然支持测量条件化。
 
-这些理论工具为下一章的量子接口端到端仿真提供了计算框架。特别是，时间 bin 编码的光场天然具有一维链结构，MPS 表示与 TEBD 演化可以直接应用；而量子轨迹方法则为处理光子探测的条件化问题提供了自然的解决方案。
+这些理论工具为下一章的量子接口端到端仿真提供了计算框架。特别是，时间 bin 编码的光场天然具有一维链结构，MPS 表示与局域门更新可以直接应用；而量子轨迹方法则为处理光子探测的条件化问题提供了自然的解决方案。这种“可计算的物理模型”是本文后续建模与实验设计的基础。
 

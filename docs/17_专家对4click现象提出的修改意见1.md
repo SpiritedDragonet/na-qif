@@ -29,17 +29,17 @@
 
 正确的量子测量更新永远是：
 
-[
+$$
 \rho ;\to; \rho_\mu
 =\frac{K_\mu,\rho,K_\mu^\dagger}{\mathrm{Tr}(K_\mu\rho K_\mu^\dagger)}
-]
+$$
 
-- (K_\mu) 只作用在“当前被测的那一个 bin（或该 bin 的两端口）”上；
+- $K_\mu$ 只作用在“当前被测的那一个 bin（或该 bin 的两端口）”上；
 - 但因为你的光子-原子-其余 bins 是纠缠的，所以局域 Kraus 会把整个波函数都条件化（这就是你想要的“点一下后，后面 bins 的条件概率改变”）。
 
 如果你只是对每个 bin 计算一个概率然后独立掷骰子，而 **不把选中的 Kraus 真正作用回 MPS**，你得到的就不是“同一次实验的测量记录”，而是“把同一个波包在不同 bin 上重复抽样”。这样出现 4 次 click 就很自然了（本质上你抽的是“边缘分布”，不是“条件分布链”）。
 
-你现在的 `MPSState.apply_two_site_kraus`（以及别名 `apply_two_site_kraus`）做的就是上面的条件化：它会对每个 Kraus 算 (p_\mu = |K_\mu\theta|^2)，按概率采样 (\mu)，然后把 (K_\mu) 作用到该 bin 的两-site 张量上并归一化。
+你现在的 `MPSState.apply_two_site_kraus`$以及别名 `apply_two_site_kraus`$做的就是上面的条件化：它会对每个 Kraus 算 $p_\mu = |K_\mu\theta|^2$，按概率采样 $\mu$，然后把 $K_\mu$ 作用到该 bin 的两-site 张量上并归一化。
 所以**只要你确实在每个 bin 都调用它更新态**，在“最多两光子、无暗计数、click 会吸收光子”的前提下，click 总数绝不可能超过 2。
 
 ------
@@ -48,17 +48,17 @@
 
 ### 3.1 数分辨 / 量子跳跃（最干净、最不容易出 bug 的版本）
 
-把 BS 后的 4 个探测模式记为 (\alpha\in{H1,V1,H2,V2})，时间 bin 为 (n)。令该模式的湮灭算符为 (d_{\alpha,n})。
+把 BS 后的 4 个探测模式记为 $\alpha\in{H1,V1,H2,V2}$，时间 bin 为 (n)。令该模式的湮灭算符为 $d_{\alpha,n}$。
 
-“在 ((\alpha,n)) 发生一次光子计数(click)”的标准 jump 更新就是：
+“在 $(\alpha,n)$ 发生一次光子计数(click)”的标准 jump 更新就是：
 
-[
+$$
 J_{\alpha,n}=\sqrt{\eta_\alpha},d_{\alpha,n},
 \qquad
 |\Psi\rangle\to \frac{J_{\alpha,n}|\Psi\rangle}{\sqrt{\langle\Psi|J_{\alpha,n}^\dagger J_{\alpha,n}|\Psi\rangle}}.
-]
+$$
 
-- (d_{\alpha,n}) 会把该模式的光子数减 1：(|2\rangle \to \sqrt{2}|1\rangle)，所以它天然实现你说的“**双光子投到单光子**”。
+- $d_{\alpha,n}$ 会把该模式的光子数减 1：$|2\rangle \to \sqrt{2}|1\rangle$，所以它天然实现你说的“**双光子投到单光子**”。
 - 它不会“把后续所有 bin 湮灭”，只在当前 bin 的当前模式做局域更新；后续 bins 的变化来自纠缠条件化。
 
 如果你只想先保证“不会出现 4 click 这种物理不可能”，这套 jump 形式是最稳的（因为每次 click 明确减少总光子数）。
@@ -67,31 +67,31 @@ J_{\alpha,n}=\sqrt{\eta_\alpha},d_{\alpha,n},
 
 桶式探测器的 POVM（单模式）满足：
 
-- no-click 的概率：((1-\eta)^n)（n 个光子都没触发）
-- click 的概率：(1-(1-\eta)^n)
+- no-click 的概率：$(1-\eta)^n$（n 个光子都没触发）
+- click 的概率：$1-(1-\eta)^n$
 
 在你截断的 1517 子空间基
-({|vac\rangle,|H\rangle,|V\rangle,|2H\rangle,|2V\rangle,|HV\rangle})
+${|vac\rangle,|H\rangle,|V\rangle,|2H\rangle,|2V\rangle,|HV\rangle}$
 且一个端口内有 H/V 两个独立桶式探测器时，四种端口结果（00/10/01/11）的**基态概率**就是：
 
-[
+$$
 P_{00}=(1-\eta)^{n_H}(1-\eta)^{n_V}
-]
-[
+$$
+$$
 P_{10}=\big[1-(1-\eta)^{n_H}\big](https://chatgpt.com/c/1-\eta)^{n_V}
-]
-[
+$$
+$$
 P_{01}=(1-\eta)^{n_H}\big[1-(1-\eta)^{n_V}\big]
-]
-[
+$$
+$$
 P_{11}=\big[1-(1-\eta)^{n_H}\big]\big[1-(1-\eta)^{n_V}\big]
-]
+$$
 
 然后你把它做成 Kraus，就能保证：
 
 - 真空不会 click；
-- (|2H\rangle) 的 click 概率是 (1-(1-\eta)^2=2\eta-\eta^2)，而不是 (\eta)；
-- **不会把 (|2H\rangle) 错算成 “H+V 同时 click”**（这是你现在实现里最危险的简化点之一，见下面第 4 节）。
+- $|2H\rangle$ 的 click 概率是 $1-(1-\eta)^2=2\eta-\eta^2$，而不是 $\eta$；
+- **不会把 $|2H\rangle$ 错算成 “H+V 同时 click”**（这是你现在实现里最危险的简化点之一，见下面第 4 节）。
 
 ------
 
@@ -102,9 +102,9 @@ P_{11}=\big[1-(1-\eta)^{n_H}\big]\big[1-(1-\eta)^{n_V}\big]
 
 尤其是这条物理约束：
 
-> 对 n=2 的福克态，桶式 click 概率必须是 (1-(1-\eta)^2)，并且 “H+V 同时 click” **不该由 (|2H\rangle) 或 (|2V\rangle) 贡献**。
+> 对 n=2 的福克态，桶式 click 概率必须是 $1-(1-\eta)^2$，并且 “H+V 同时 click” **不该由 $|2H\rangle$ 或 $|2V\rangle$ 贡献**。
 
-如果你把 (|2H\rangle) 也塞进 “H+V” 结果里，然后又把 “H+V” 拆成两个 click 事件（H 和 V），那你会把 **“两光子 bunching 到同一偏振同一路”** 的情况人为变成 **“同一路两探测器同时响”**，这会把 click 统计、BSM 成功判据都搞偏。
+如果你把 $|2H\rangle$ 也塞进 “H+V” 结果里，然后又把 “H+V” 拆成两个 click 事件（H 和 V），那你会把 **“两光子 bunching 到同一偏振同一路”** 的情况人为变成 **“同一路两探测器同时响”**，这会把 click 统计、BSM 成功判据都搞偏。
 
 这虽然不一定直接导致“跨不同 bin 的 4 click”，但会让你的模式分布整体不物理，间接制造很多怪现象。
 
@@ -121,14 +121,14 @@ P_{11}=\big[1-(1-\eta)^{n_H}\big]\big[1-(1-\eta)^{n_V}\big]
 
 对每个 bin (n)，对该 bin 的两个输出端口（对应链上的两个 site）做一次联合 POVM 采样：
 
-[
+$$
 {K_\mu^{(n)}}*{\mu}
 \quad\Rightarrow\quad
 \mu_n\sim p*\mu^{(n)}=\langle\Psi|K_\mu^\dagger K_\mu|\Psi\rangle
-]
-[
+$$
+$$
 |\Psi\rangle \leftarrow \frac{K_{\mu_n}^{(n)}|\Psi\rangle}{\sqrt{p_{\mu_n}^{(n)}}}
-]
+$$
 
 在代码层面，这个“抽样 + 施加 + 归一化”正是 `apply_two_site_kraus()` 在做的事。
 
@@ -149,9 +149,9 @@ P_{11}=\big[1-(1-\eta)^{n_H}\big]\big[1-(1-\eta)^{n_V}\big]
 
 最后原子态就是对光子自由度做偏迹：
 
-[
+$$
 \rho_{AB}=\mathrm{Tr}*{\text{photons}}\big(|\Psi*{\text{cond}}\rangle\langle\Psi_{\text{cond}}|\big)
-]
+$$
 
 你代码里就是 `mps.get_reduced_density([0,1])`，它在数学上是完全正确的约化态。
 
@@ -161,8 +161,8 @@ P_{11}=\big[1-(1-\eta)^{n_H}\big]\big[1-(1-\eta)^{n_V}\big]
 
 它本身不是 BSM，只是：
 
-1. 取两原子约化态 (9\times 9)；
-2. 抽取 (|0/1\rangle\otimes|0/1\rangle) 的 (4\times4) 子块；
+1. 取两原子约化态 $9\times 9$；
+2. 抽取 $|0/1\rangle\otimes|0/1\rangle$ 的 $4\times4$ 子块；
 3. **再把这个子块按自身迹重新归一化**。
 
 所以它是不是“后验”，取决于你喂进去的全局态是不是已经被探测记录条件化过：
@@ -189,7 +189,7 @@ P_{11}=\big[1-(1-\eta)^{n_H}\big]\big[1-(1-\eta)^{n_V}\big]
 ### (1) 确认你到底跑的是哪个探测函数文件
 
 因为你当前日志和你上传的 `detection.py` 明显对不上。
-（你本地跑一下 `print(run_two_photon_detection.__file__)` 这种级别就够了。）
+$你本地跑一下 `print(run_two_photon_detection.__file__)` 这种级别就够了。$
 
 ### (2) 每次 click 后检查“总光子数是否减少”
 
@@ -207,5 +207,5 @@ P_{11}=\big[1-(1-\eta)^{n_H}\big]\big[1-(1-\eta)^{n_V}\big]
 - **指导思路（逐 bin 的 Kraus 条件化/量子跳跃）是对的**：它天然保证不会抽到物理上概率为 0 的“乱点”，也天然保证第一次 click 会改变后续 bins 的条件分布。
 - 你现在出现 4 click，说明你实际执行的探测路径没有做到“每次抽样后更新全局态并吸收光子”，或者你根本没跑到你以为的那份 `run_two_photon_detection`。
 
-如果你愿意把你本地那段打印 “Using 6D Kraus operators (36x36) - optimized!” 的探测函数（或对应 `channels.py`）也贴出来，我可以直接在那份代码上指出是哪一行导致“同一光子被多次计数”。但就算不贴，你照着上面第 5 节把探测逻辑改成“逐 bin Kraus + 真实作用回 MPS”，4 click 这种现象会立刻消失。
+如果你愿意把你本地那段打印 “Using 6D Kraus operators (36x36) - optimized!” 的探测函数$或对应 `channels.py`$也贴出来，我可以直接在那份代码上指出是哪一行导致“同一光子被多次计数”。但就算不贴，你照着上面第 5 节把探测逻辑改成“逐 bin Kraus + 真实作用回 MPS”，4 click 这种现象会立刻消失。
 

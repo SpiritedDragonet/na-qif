@@ -120,10 +120,11 @@ def atom_transition(which: str) -> np.ndarray:
     """
     构造原子跃迁算符 S_+ 或 S_-。
 
-    原子能级（3D）：
+    原子能级（4D）：
         |0>: 基态 (m_F = +1)
         |1>: 基态 (m_F = -1)
         |e>: 激发态 (m_F = 0)
+        |u>: 基态 (m_F = 0)
 
     选择定则：
         |e> → |0>: Δm = +1 → σ+ 光子 (S_+ = |0><e|)
@@ -137,15 +138,15 @@ def atom_transition(which: str) -> np.ndarray:
     Returns
     -------
     np.ndarray
-        跃迁算符矩阵，形状为 (3, 3)
+        跃迁算符矩阵，形状为 (4, 4)
 
     Examples
     --------
     >>> S_plus = atom_transition('+')  # |0><e|
     >>> S_minus = atom_transition('-')  # |1><e|
     """
-    # 基顺序：|0>, |1>, |e>
-    op = np.zeros((3, 3), dtype=complex)
+    # 基顺序：|0>, |1>, |e>, |u>
+    op = np.zeros((4, 4), dtype=complex)
 
     if which == '+':
         # S_+ = |0><e|

@@ -25,11 +25,11 @@ def _is_headless() -> bool:
 if _is_headless():
     matplotlib.use("Agg")
 
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt  # noqa: E402
 
-from ..core.mps import MPSState
-from ..time_grid import TimeGrid
-from ..simulation.trajectory import EmissionResult
+from ..core.mps import MPSState  # noqa: E402
+from ..time_grid import TimeGrid  # noqa: E402
+from ..simulation.trajectory import EmissionResult  # noqa: E402
 
 
 # ============================================================================
@@ -170,9 +170,9 @@ def _get_bin6_state_labels() -> List[str]:
 
 
 def _infer_first_bin_site(mps: MPSState) -> int:
-    """Infer the first bin site index based on 3D atom sites."""
-    n_3d_sites = sum(1 for d in mps.d if d == 3)
-    return 2 if n_3d_sites >= 2 else 0
+    """Infer the first bin site index based on 4D atom sites."""
+    n_atom_sites = sum(1 for d in mps.d if d == 4)
+    return 2 if n_atom_sites >= 2 else 0
 
 
 def _validate_bin_rho_traces(
@@ -224,7 +224,7 @@ def plot_dual_arm_heatmap(
     - QFC/Jones/Loss/BS：使用 show_atomic=False（原子不参与）
 
     每个臂显示：
-    - 若 show_atomic=True：顶部3行（原子）+ 底部18行（仓状态）
+    - 若 show_atomic=True：顶部4行（原子）+ 底部18行（仓状态）
     - 若 show_atomic=False：仅18行仓状态
 
     三种色图：
@@ -277,9 +277,9 @@ def plot_dual_arm_heatmap(
     fig, axes = plt.subplots(1, 2, figsize=(14.4, 7.2))
     # 注意：subplots_adjust 将在确定 display_atomic 后设置
 
-    # 检测是否有原子站点（3D站点）
-    n_3d_sites = sum(1 for d in mps.d if d == 3)
-    has_atomic_sites = n_3d_sites >= 2
+    # 检测是否有原子站点（4D站点）
+    n_atom_sites = sum(1 for d in mps.d if d == 4)
+    has_atomic_sites = n_atom_sites >= 2
 
     # 确定first_bin_site
     if has_atomic_sites:
@@ -322,11 +322,11 @@ def plot_dual_arm_heatmap(
         rho_A = mps.get_reduced_density([0])
         rho_B = mps.get_reduced_density([1])
         # 提取对角元素（概率）
-        atom_A_probs = np.diag(rho_A).real  # shape: (3,)
-        atom_B_probs = np.diag(rho_B).real  # shape: (3,)
+        atom_A_probs = np.diag(rho_A).real  # shape: (4,)
+        atom_B_probs = np.diag(rho_B).real  # shape: (4,)
         # 扩展为所有bin列显示相同的概率（整行同色）
-        atom_A_for_bins = np.tile(atom_A_probs.reshape(3, 1), (1, n_bins))
-        atom_B_for_bins = np.tile(atom_B_probs.reshape(3, 1), (1, n_bins))
+        atom_A_for_bins = np.tile(atom_A_probs.reshape(4, 1), (1, n_bins))
+        atom_B_for_bins = np.tile(atom_B_probs.reshape(4, 1), (1, n_bins))
 
     # 获取第一个bin的维度
     if first_bin_site < len(mps.d):
@@ -368,22 +368,24 @@ def plot_dual_arm_heatmap(
 
     # Create combined data matrices
     if display_atomic:
-        atomic_labels = ['|e>', '|1>', '|0>']
+        atomic_labels = ['|e>', '|u>', '|1>', '|0>']
         combined_labels_A = atomic_labels + bin_state_labels
         combined_labels_B = atomic_labels + bin_state_labels
-        total_rows = 3 + bin_dim
+        total_rows = 4 + bin_dim
 
         combined_A = np.zeros((total_rows, n_bins))
         combined_A[0, :] = atom_A_for_bins[2, :]  # |e>
-        combined_A[1, :] = atom_A_for_bins[1, :]  # |1>
-        combined_A[2, :] = atom_A_for_bins[0, :]  # |0>
-        combined_A[3:, :] = probs_A.T
+        combined_A[1, :] = atom_A_for_bins[3, :]  # |u>
+        combined_A[2, :] = atom_A_for_bins[1, :]  # |1>
+        combined_A[3, :] = atom_A_for_bins[0, :]  # |0>
+        combined_A[4:, :] = probs_A.T
 
         combined_B = np.zeros((total_rows, n_bins))
         combined_B[0, :] = atom_B_for_bins[2, :]  # |e>
-        combined_B[1, :] = atom_B_for_bins[1, :]  # |1>
-        combined_B[2, :] = atom_B_for_bins[0, :]  # |0>
-        combined_B[3:, :] = probs_B.T
+        combined_B[1, :] = atom_B_for_bins[3, :]  # |u>
+        combined_B[2, :] = atom_B_for_bins[1, :]  # |1>
+        combined_B[3, :] = atom_B_for_bins[0, :]  # |0>
+        combined_B[4:, :] = probs_B.T
     else:
         combined_labels_A = bin_state_labels
         combined_labels_B = bin_state_labels
@@ -402,14 +404,14 @@ def plot_dual_arm_heatmap(
 
     # Create masks for different sections
     if display_atomic:
-        # Three sections: Atom (rows 0-2), Vac (row 3), Bin (rows 4-20)
+        # Three sections: Atom (rows 0-3), Vac (row 4), Bin (rows 5+)
         mask_atom = np.zeros((total_rows, n_bins), dtype=bool)
-        mask_atom[:3, :] = True
+        mask_atom[:4, :] = True
         mask_vac = np.zeros((total_rows, n_bins), dtype=bool)
-        mask_vac[3, :] = True
+        mask_vac[4, :] = True
         mask_bin = np.zeros((total_rows, n_bins), dtype=bool)
-        mask_bin[4:, :] = True
-        atom_row_offset = 3  # Offset for separator lines
+        mask_bin[5:, :] = True
+        atom_row_offset = 4  # Offset for separator lines
     else:
         # Two sections: Vac (row 0), Bin (rows 1-17)
         mask_atom = None
@@ -470,8 +472,8 @@ def plot_dual_arm_heatmap(
     axes[0].set_title(f'Arm A - Bin State Probabilities (vmax={vmax:.3f})', fontsize=11)
 
     if display_atomic:
-        # 黑色实线分隔原子态（行0-2）和仓态（行3+），应该在第2行下方（y=3）
-        axes[0].axhline(3, color='black', linewidth=2)
+        # 黑色实线分隔原子态（行0-3）和仓态（行4+），应该在第3行下方（y=4）
+        axes[0].axhline(4, color='black', linewidth=2)
 
     # x-axis (dual: time and bin index)
     # 时间轴：从左到右显示 (N-1)dt, ..., dt, 0（递减）
@@ -529,8 +531,8 @@ def plot_dual_arm_heatmap(
     axes[1].set_title(f'Arm B - Bin State Probabilities (vmax={vmax:.3f})', fontsize=11)
 
     if display_atomic:
-        # 黑色实线分隔原子态（行0-2）和仓态（行3+），应该在第2行下方（y=3）
-        axes[1].axhline(3, color='black', linewidth=2)
+        # 黑色实线分隔原子态（行0-3）和仓态（行4+），应该在第3行下方（y=4）
+        axes[1].axhline(4, color='black', linewidth=2)
 
     axes[1].set_xticks(tick_indices)
     # 反转时间标签：tick_indices[i] 对应的时间是 t[(n_bins-1) - tick_indices[i]]
@@ -566,13 +568,13 @@ def plot_dual_arm_heatmap(
     fig_height = ax_pos_A.y1 - ax_pos_A.y0
 
     if display_atomic:
-        # Three colorbars: Atom (3/21), Vac (1/21), Bin (17/21)
+        # Three colorbars: Atom (4/total), Vac (1/total), Bin (rest)
         # Atomic colorbar for arm A
         cax_A_atom = fig.add_axes([
             ax_pos_A.x1 + 0.01,
-            ax_pos_A.y1 - fig_height * (3/total_rows),
+            ax_pos_A.y1 - fig_height * (4/total_rows),
             0.01,
-            fig_height * (3/total_rows)
+            fig_height * (4/total_rows)
         ])
         cbar_A_atom = fig.colorbar(im_A_atom, cax=cax_A_atom)
         cbar_A_atom.set_ticks([0, 0.5, 1])
@@ -581,7 +583,7 @@ def plot_dual_arm_heatmap(
         # (vac,vac) colorbar for arm A
         cax_A_vac = fig.add_axes([
             ax_pos_A.x1 + 0.01,
-            ax_pos_A.y1 - fig_height * (4/total_rows),
+            ax_pos_A.y1 - fig_height * (5/total_rows),
             0.01,
             fig_height * (1/total_rows)
         ])
@@ -590,7 +592,7 @@ def plot_dual_arm_heatmap(
         cbar_A_vac.set_label('Vac', fontsize=8)
 
         # Bin colorbar for arm A
-        bin_rows = total_rows - 4  # 除去3个原子行和1个vac行
+        bin_rows = total_rows - 5  # 除去4个原子行和1个vac行
         cax_A = fig.add_axes([
             ax_pos_A.x1 + 0.01,
             ax_pos_A.y0,
@@ -606,9 +608,9 @@ def plot_dual_arm_heatmap(
         # Atomic colorbar for arm B
         cax_B_atom = fig.add_axes([
             ax_pos_B.x1 + 0.01,
-            ax_pos_B.y1 - fig_height * (3/total_rows),
+            ax_pos_B.y1 - fig_height * (4/total_rows),
             0.01,
-            fig_height * (3/total_rows)
+            fig_height * (4/total_rows)
         ])
         cbar_B_atom = fig.colorbar(im_B_atom, cax=cax_B_atom)
         cbar_B_atom.set_ticks([0, 0.5, 1])
@@ -617,7 +619,7 @@ def plot_dual_arm_heatmap(
         # (vac,vac) colorbar for arm B
         cax_B_vac = fig.add_axes([
             ax_pos_B.x1 + 0.01,
-            ax_pos_B.y1 - fig_height * (4/total_rows),
+            ax_pos_B.y1 - fig_height * (5/total_rows),
             0.01,
             fig_height * (1/total_rows)
         ])
@@ -626,7 +628,7 @@ def plot_dual_arm_heatmap(
         cbar_B_vac.set_label('Vac', fontsize=8)
 
         # Bin colorbar for arm B
-        bin_rows = total_rows - 4  # 除去3个原子行和1个vac行
+        bin_rows = total_rows - 5  # 除去4个原子行和1个vac行
         cax_B = fig.add_axes([
             ax_pos_B.x1 + 0.01,
             ax_pos_B.y0,

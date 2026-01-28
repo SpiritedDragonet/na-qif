@@ -167,15 +167,15 @@ def subspace_gate(
 # 本项目的预定义子空间
 # 这些与 README 中的物理模型对应
 
-ATOM_3D = SubSpace('atom', 3, ('|0>', '|1>', '|e>'))
-ATOM_A = SubSpace('atom_A', 3, ('|0>', '|1>', '|e>'))
-ATOM_B = SubSpace('atom_B', 3, ('|0>', '|1>', '|e>'))
+ATOM_4D = SubSpace('atom', 4, ('|0>', '|1>', '|e>', '|u>'))  # |u>: 5S1/2, F=1, m_F=0
+ATOM_A = SubSpace('atom_A', 4, ('|0>', '|1>', '|e>', '|u>'))
+ATOM_B = SubSpace('atom_B', 4, ('|0>', '|1>', '|e>', '|u>'))
 
 SUBSPACE_780 = SubSpace('780', 3, ('vac', 'H', 'V'))
 SUBSPACE_1517 = SubSpace('1517', 6, ('vac', 'H', 'V', '2H', '2V', 'HV'))
 
 # 系统格点：两个原子
-SYSTEM_SPACE = ProductSpace((ATOM_A, ATOM_B))  # 9D
+SYSTEM_SPACE = ProductSpace((ATOM_A, ATOM_B))  # 16D
 
 # Bin格点：780 x 1517
 BIN_SPACE = ProductSpace((SUBSPACE_780, SUBSPACE_1517))  # 18D

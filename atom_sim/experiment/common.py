@@ -3,12 +3,17 @@
 实验流程中的通用配置与工具函数。
 """
 
-from typing import Optional, Callable, Any
+from __future__ import annotations
+
+from typing import Optional, Callable, Any, TYPE_CHECKING
 from dataclasses import dataclass
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 
 from ..physics import FiberChannelParams
+
+if TYPE_CHECKING:
+    from ..core.mps import MPSState
 
 # 探测噪声默认参数（可用CLI覆盖）
 DEFAULT_DARK_RATE_INTRINSIC_HZ = 65.0
@@ -25,11 +30,17 @@ def _get_emission_params(delay_ns: float) -> dict:
         "n_bins": 100,
         "dt_ns": 0.5,
         "chi_max": 50,
-        "gamma_peak_A": 0.5,
-        "gamma_peak_B": 0.5,
+        "gamma_peak_A": 2 * np.pi * 20e6,
+        "gamma_peak_B": 2 * np.pi * 20e6,
         "sigma": 10.0,
         "delay_ns": delay_ns,
         "delay_jitter_ns": 0.5,
+        "g": 2 * np.pi * 20e6,
+        "kappa_ex": 2 * np.pi * 20e6,
+        "kappa_in": 2 * np.pi * 1e6,
+        "gamma_atom": 2 * np.pi * 3e6,
+        "delta_u": 0.0,
+        "delta_e": 0.0,
     }
 
 
@@ -95,20 +106,36 @@ def _compute_noise_params(
     }
 
 
-def _atom_extreme_state(mps: "MPSState", eps: float = ATOM_EXTREME_EPS) -> tuple:
+def _atom_extreme_state(mps: MPSState, eps: float = ATOM_EXTREME_EPS) -> tuple:
     rho_A = mps.get_reduced_density([0])
     rho_B = mps.get_reduced_density([1])
 
     pA0 = float(np.real(rho_A[0, 0]))
     pA1 = float(np.real(rho_A[1, 1]))
     pAe = float(np.real(rho_A[2, 2]))
+    pAu = float(np.real(rho_A[3, 3]))
     pB0 = float(np.real(rho_B[0, 0]))
     pB1 = float(np.real(rho_B[1, 1]))
     pBe = float(np.real(rho_B[2, 2]))
+    pBu = float(np.real(rho_B[3, 3]))
 
-    extreme_A = (pA0 < eps or pA1 < eps or pA0 > 1.0 - eps or pA1 > 1.0 - eps)
-    extreme_B = (pB0 < eps or pB1 < eps or pB0 > 1.0 - eps or pB1 > 1.0 - eps)
-    return (extreme_A or extreme_B), (pA0, pA1, pAe, pB0, pB1, pBe)
+    pA_qubit = pA0 + pA1
+    pB_qubit = pB0 + pB1
+    extreme_A = False
+    extreme_B = False
+    if pA_qubit > eps:
+        pA0_rel = pA0 / pA_qubit
+        pA1_rel = pA1 / pA_qubit
+        extreme_A = (
+            pA0_rel < eps or pA1_rel < eps or pA0_rel > 1.0 - eps or pA1_rel > 1.0 - eps
+        )
+    if pB_qubit > eps:
+        pB0_rel = pB0 / pB_qubit
+        pB1_rel = pB1 / pB_qubit
+        extreme_B = (
+            pB0_rel < eps or pB1_rel < eps or pB0_rel > 1.0 - eps or pB1_rel > 1.0 - eps
+        )
+    return (extreme_A or extreme_B), (pA0, pA1, pAe, pAu, pB0, pB1, pBe, pBu)
 
 
 def _apply_atomic_dephasing(
@@ -129,8 +156,8 @@ def _apply_atomic_dephasing(
     if rng is None:
         rng = np.random.default_rng()
 
-    K0 = np.sqrt(1.0 - p_dephase) * np.eye(3, dtype=complex)
-    Z = np.diag([1.0, -1.0, 1.0]).astype(complex)
+    K0 = np.sqrt(1.0 - p_dephase) * np.eye(4, dtype=complex)
+    Z = np.diag([1.0, -1.0, 1.0, 1.0]).astype(complex)
     K1 = np.sqrt(p_dephase) * Z
     kraus_list = [K0, K1]
 
@@ -216,6 +243,12 @@ def run_emission_to_bs(
         sigma=emission_cfg["sigma"],
         delay_ns=emission_cfg["delay_ns"],
         delay_jitter_ns=emission_cfg["delay_jitter_ns"],
+        g=emission_cfg["g"],
+        kappa_ex=emission_cfg["kappa_ex"],
+        kappa_in=emission_cfg["kappa_in"],
+        gamma_atom=emission_cfg["gamma_atom"],
+        delta_u=emission_cfg["delta_u"],
+        delta_e=emission_cfg["delta_e"],
         rng=rng,
         verbose=verbose,
     )

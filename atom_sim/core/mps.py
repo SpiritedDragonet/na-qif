@@ -73,7 +73,7 @@ class MPSState:
             # 完整波函数 - 使用TeNPy的from_full
             psi_reshaped = init_state.reshape(self.d + [1] * (self.L - len(self.d)))
             psi_array = Array.from_ndarray_trivial(psi_reshaped, labels=[f'p{i}' for i in range(self.L)])
-            self._mps = TeNPy.from_full(psi_array, sites, bc='finite', form='B')
+            self._mps = TeNPy_MPS.from_full(psi_array, sites, bc='finite', form='B')
         else:
             raise ValueError(f"Invalid init_state: {type(init_state)}")
 

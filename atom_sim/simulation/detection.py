@@ -280,13 +280,15 @@ def run_two_photon_detection(
     mps_work = mps.copy()
     clicks = []
 
+    # 规范化一次即可：get_reduced_density()内部的get_rho_segment()会自动处理正交中心
+    # 无需在每个bin循环中重复规范化（避免O(n_bins * L * chi^3)的性能瓶颈）
+    mps_work._mps.canonical_form_finite(renormalize=True)
+
     # 遍历所有bins，不预扫描，不早停
     for n in range(n_bins):
         site_1 = 2 + 2 * n  # A_n
         site_2 = 2 + 2 * n + 1  # B_n
 
-        # 先规一化到规范形式，再用rho计算Kraus概率（避免正交中心问题）
-        mps_work._mps.canonical_form_finite(renormalize=True)
         rho_AB = mps_work.get_reduced_density([site_1, site_2])
 
         outcome_idx = mps_work.apply_two_site_kraus(
@@ -315,7 +317,7 @@ def run_two_photon_detection(
     spin_state, _ = extract_spin_state(mps_work, n_bins)
 
     if verbose:
-        print(f"\n  结果：")
+        print("\n  结果：")
         print(f"    总点击数：{len(clicks)}")
         if clicks:
             print(f"    点击：{[(c.detector, c.bin_index) for c in clicks]}")
@@ -350,18 +352,23 @@ def extract_spin_state(mps: MPSState, n_bins: int) -> Tuple[np.ndarray, float]:
         p_qubit: Tr(rho_qubit)，表示留在量子比特子空间的概率
     """
     site_A, site_B = 0, 1
+    dim_atom = mps.d[0]
+    if dim_atom != 4:
+        raise ValueError(f"Unexpected atom dimension: {dim_atom}. Expected 4.")
+
     rho_full = mps.get_reduced_density([site_A, site_B])
     if rho_full.ndim == 4:
-        rho_full = rho_full.reshape(9, 9)
+        rho_full = rho_full.reshape(dim_atom * dim_atom, dim_atom * dim_atom)
 
-    # 3D原子基：|0>=0, |1>=1, |e>=2
-    # 提取量子比特子空间：|0>, |1> → indices [0, 1] in single atom
-    # 双原子：|00>=0, |01>=1, |10>=2, |11>=3
-    # 完整9x9基顺序：
-    #   |0,0>=0, |0,1>=1, |0,e>=2,
-    #   |1,0>=3, |1,1>=4, |1,e>=5,
-    #   |e,0>=6, |e,1>=7, |e,e>=8
-    qubit_indices = [0, 1, 3, 4]  # |00>, |01>, |10>, |11>
+    # 4D原子基顺序：|0>, |1>, |e>, |u>
+    # 提取量子比特子空间：|0>, |1>
+    # 双原子基序：|i,j> 的扁平索引为 i * dim_atom + j
+    qubit_indices = [
+        0 * dim_atom + 0,  # |00>
+        0 * dim_atom + 1,  # |01>
+        1 * dim_atom + 0,  # |10>
+        1 * dim_atom + 1,  # |11>
+    ]
 
     rho_qubit = np.zeros((4, 4), dtype=complex)
     for i, qi in enumerate(qubit_indices):
@@ -447,7 +454,7 @@ def compute_fidelity_with_bell(spin_state: np.ndarray, target_bell: str) -> floa
 
 
 def _infer_bin_start(mps: MPSState) -> int:
-    if len(mps.d) >= 2 and mps.d[0] == 3 and mps.d[1] == 3:
+    if len(mps.d) >= 2 and mps.d[0] == 4 and mps.d[1] == 4:
         return 2
     return 0
 
@@ -567,8 +574,14 @@ def _bell_projector_full(target_bell: str) -> np.ndarray:
         raise ValueError(f"未知的Bell态：{target_bell}")
     psi = bell_states[target_bell]
     proj_qubit = np.outer(psi, psi.conj())
-    proj_full = np.zeros((9, 9), dtype=complex)
-    qubit_indices = [0, 1, 3, 4]
+    dim_atom = 4
+    proj_full = np.zeros((dim_atom * dim_atom, dim_atom * dim_atom), dtype=complex)
+    qubit_indices = [
+        0 * dim_atom + 0,
+        0 * dim_atom + 1,
+        1 * dim_atom + 0,
+        1 * dim_atom + 1,
+    ]
     for i, qi in enumerate(qubit_indices):
         for j, qj in enumerate(qubit_indices):
             proj_full[qi, qj] = proj_qubit[i, j]
@@ -701,8 +714,8 @@ def enumerate_success_events(
         raise ValueError(f"n_bins={n_bins} 与分组后bin数量 {grouped_bins} 不一致")
 
     dim_atom = B_list[0].shape[1]
-    if dim_atom != 9:
-        raise ValueError(f"Atom pair site dimension {dim_atom} != 9")
+    if dim_atom != 16:
+        raise ValueError(f"Atom pair site dimension {dim_atom} != 16")
 
     def _get_effect(effects: dict, key: Tuple[str, ...], dim: int) -> np.ndarray:
         if key in effects:
@@ -907,7 +920,7 @@ def _compute_photon_statistics_global(mps: MPSState, n_bins: int, bin_dim: int, 
     }
 
     if verbose:
-        print(f"\n  光子统计（全局MPO方法）：")
+        print("\n  光子统计（全局MPO方法）：")
         print(f"    总期望光子数：{stats['n_total']:.4f}")
         print(f"    780nm: H={stats['n_780_H']:.4f}, V={stats['n_780_V']:.4f}, total={stats['n_780_total']:.4f}")
         print(f"    1517nm: H={stats['n_1517_H']:.4f}, V={stats['n_1517_V']:.4f}, total={stats['n_1517_total']:.4f}")

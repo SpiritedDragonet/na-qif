@@ -1,12 +1,12 @@
 \chapter{仿真结果与参数依赖性分析}[Simulation Results and Parameter Dependence Analysis]
 
-本章基于前述仿真框架，对中性原子量子接口的端到端性能进行系统性数值研究。我们首先给出基准参数设定，然后依次展示单臂发射验证、双臂纠缠分发、以及关键参数的敏感性分析，最后讨论误差来源分解与优化策略。
+本章以“可对照实验的指标体系”为主线，给出端到端仿真的评估口径与数据组织方式。由于完整实验计划仍在迭代，本章强调“如何计算、如何验证、如何解释趋势”，具体数值结果将在后续批量实验中补齐。
 
-\section{基准场景与参数设定}[Baseline Scenario and Parameter Settings]
+\section{参数与实验设置}[Parameter Sets and Experimental Setup]
 
-\subsection{原子系统参数}
+为便于后续对比与参数扫描，本节给出参考参数与可调范围。除原子谱线等物理常量外，其余参数均视为设计量，重点在于变化趋势而非单点数值。
 
-以 $^{87}$Rb 原子的 D2 线跃迁为例，相关参数如下：
+\paragraph{原子系统参数}
 
 \begin{table}[htbp]
 \centering
@@ -24,20 +24,16 @@
 \end{tabular}
 \end{table}
 
-偏振映射矩阵 $\boldsymbol{\alpha}$ 由 Clebsch-Gordan 系数决定。对于 $\sigma^+/\sigma^-$ 跃迁到 $|F'=1, m_F'=\pm 1\rangle$ 激发态，偏振映射为
-\begin{equation}
-|e\rangle \xrightarrow{\text{decay}} \frac{1}{\sqrt{2}}(|0\rangle|R\rangle + |1\rangle|L\rangle),
-\end{equation}
-其中 $|R\rangle$, $|L\rangle$ 是圆偏振态，可通过四分之一波片转换为线偏振 $|H\rangle$, $|V\rangle$。
+该表用于标定发射的时间尺度与能级结构，是后续波包尺度与失谐设定的参考基准。
 
-\subsection{光学链路参数}
+\paragraph{光学链路参数}
 
 \begin{table}[htbp]
 \centering
-\caption{光学链路基准参数}
+\caption{光学链路参考参数（可调）}
 \begin{tabular}{lcc}
 \hline
-参数 & 符号 & 基准值 \\
+参数 & 符号 & 参考值 \\
 \hline
 QFC 转换效率 & $\eta_{\mathrm{QFC}}$ & 0.5 \\
 QFC 噪声光子率 & $\mu_{\mathrm{noise}}$ & $10^{-3}$/bin \\
@@ -49,14 +45,16 @@ QFC 噪声光子率 & $\mu_{\mathrm{noise}}$ & $10^{-3}$/bin \\
 \end{tabular}
 \end{table}
 
-\subsection{探测器参数}
+这些参数用于刻画链路的主要损耗与噪声量级，参考相关实验报告与器件性能水平（如文献~\cite{vanleent2022entangling}），仿真中以此为基准进行趋势扫描。
+
+\paragraph{探测器参数}
 
 \begin{table}[htbp]
 \centering
-\caption{SNSPD 探测器参数}
+\caption{SNSPD 探测器参考参数（可调）}
 \begin{tabular}{lcc}
 \hline
-参数 & 符号 & 基准值 \\
+参数 & 符号 & 参考值 \\
 \hline
 探测效率 & $\eta_d$ & 0.9 \\
 暗计数率 & $R_{\mathrm{dark}}$ & 10 Hz \\
@@ -66,222 +64,129 @@ QFC 噪声光子率 & $\mu_{\mathrm{noise}}$ & $10^{-3}$/bin \\
 \end{tabular}
 \end{table}
 
-\subsection{仿真参数}
+探测器指标取自高性能 SNSPD 的典型范围，噪声部分在模型中统一并入有效噪声率，以便与实际计数率对应。
+
+\paragraph{数值仿真参数}
 
 \begin{table}[htbp]
 \centering
-\caption{数值仿真参数}
+\caption{数值仿真参数范围（可调）}
 \begin{tabular}{lcc}
 \hline
-参数 & 符号 & 基准值 \\
+参数 & 符号 & 参考范围 \\
 \hline
-时间 bin 宽度 & $\Delta t$ & 1 ns \\
-总 bin 数 & $N$ & 200 \\
-Fock 空间截断 & $n_{\max}$ & 3 \\
-MPS 键维度 & $\chi_{\max}$ & 64 \\
-量子轨迹数 & $N_{\mathrm{traj}}$ & $10^5$ \\
+时间 bin 宽度 & $\Delta t$ & 0.5--1 ns \\
+总 bin 数 & $N$ & 100--200 \\
+Fock 空间截断 & $n_{\max}$ & 2--3 \\
+MPS 键维度 & $\chi_{\max}$ & 50--64 \\
+量子轨迹数 & $N_{\mathrm{traj}}$ & $10^3$--$10^5$ \\
 \hline
 \end{tabular}
 \end{table}
 
-\section{单臂发射与原子—光子纠缠验证}[Single-Arm Emission and Atom-Photon Entanglement Verification]
+该范围是精度与算力之间的折中：$\Delta t$ 决定时间分辨率，$N$ 决定波包覆盖范围，$n_{\max}$ 与 $\chi_{\max}$ 控制高光子数与纠缠截断误差。
 
-\subsection{发射波包的时间结构}
+\section{核心指标与验证}[Core Metrics and Verification]
 
-原子从激发态 $|e\rangle$ 自发辐射产生指数衰减的光子波包。仿真得到的光子数期望值时间分布为
-\begin{equation}
-\langle \hat{n}(t) \rangle = \gamma e^{-\gamma t}, \quad t \geq 0,
-\end{equation}
-与理论预期完全吻合。
+端到端评估采用三项核心指标：两光子到达概率 $p_{\mathrm{arrive}}$、条件成功率 $P(\mathrm{success}\,|\,\mathrm{arrive})$、以及成功样本的条件保真度 $F_{\mathrm{true}}$。$p_{\mathrm{arrive}}$ 反映通道与器件的总损耗，条件成功率刻画测量判据与噪声对“宣告成功”的影响，而 $F_{\mathrm{true}}$ 直接回答纠缠质量是否跨过经典极限。该口径与实验中“符合门控后统计”一致，也便于把“到达损失”和“测量误判”分开讨论。
 
-图 \ref{fig:wavepacket} 展示了不同发射率 $\gamma$ 下的波包形状。波包宽度约为 $1/\gamma$，决定了时间 bin 分辨率的要求。波包积分（总光子数期望）为 1，验证了归一化正确性。波包尾部的截断误差随 $N\Delta t / \tau$ 指数衰减。
+\paragraph{单臂发射验证}
+发射波包由驱动脉冲 $\Omega(t)$ 与腔 QED 参数正向生成的输出通量 $\Phi_{\mathrm{out}}(t)$ 决定，离散化后得到 $q_n$ 并编译成发射门强度。这里主要检查三件事：波包形状是否随驱动改变而合理移动/展宽，$\sum_n q_n$ 是否与预期发射概率一致，以及 $\langle \hat{n}(t_n) \rangle$ 的形状是否与离散通量吻合。图 \ref{fig:wavepacket} 给出示例。为控制数值成本与精度，进一步观察 MPS 键维度随时间变化（图 \ref{fig:bond_dim}），并据此选择 $\chi_{\max}$。
 
-\subsection{原子—光子纠缠态}
-
-发射完成后，原子—光子联合态为
-\begin{equation}
-|\Psi_{\mathrm{AP}}\rangle = \frac{1}{\sqrt{2}}(|0\rangle_A |\phi_H\rangle + |1\rangle_A |\phi_V\rangle),
-\end{equation}
-其中 $|\phi_{H/V}\rangle$ 是 H/V 偏振的单光子波包态。
-
-对光子偏振进行投影测量可验证纠缠，条件原子态应满足
-\begin{equation}
-|H\rangle \to |0\rangle_A, \quad |V\rangle \to |1\rangle_A, \quad |D\rangle = \frac{|H\rangle + |V\rangle}{\sqrt{2}} \to |+\rangle_A.
-\end{equation}
-
-仿真结果显示条件态保真度 $F > 0.9999$，验证了发射门实现的正确性。
-
-\subsection{MPS 键维度的演化}
-
-在发射过程中，原子—光场纠缠导致 MPS 键维度增长。图 \ref{fig:bond_dim} 展示了键维度随时间 bin 的变化。发射初期键维度快速增长，反映原子—光子纠缠的建立；发射中期键维度达到峰值 $\chi_{\mathrm{peak}} \approx 8$；发射后期原子退激发完成，键维度趋于稳定。
-
-关键结论：对于单光子发射过程，$\chi_{\max} = 16$ 已足够达到机器精度；$\chi_{\max} = 64$ 的设定留有充分余量。
-
-\section{双臂纠缠分发性能}[Dual-Arm Entanglement Distribution Performance]
-
-\subsection{理想情况下的成功率}
-
-在无损耗、无噪声的理想情况下，BSM 成功概率由光子波包重叠决定：
-\begin{equation}
-P_{\mathrm{success}}^{\mathrm{ideal}} = \frac{1}{2} \times |\langle\phi_A|\phi_B\rangle|^2,
-\end{equation}
-其中因子 $1/2$ 来自线性光学 BSM 的本征效率限制。
-
-对于相同的指数波包，$|\langle\phi_A|\phi_B\rangle|^2 = 1$，故 $P_{\mathrm{success}}^{\mathrm{ideal}} = 0.5$。
-
-仿真验证：在关闭所有损耗和噪声后，得到 $P_{\mathrm{success}} = 0.4998 \pm 0.0016$，与理论值一致。
-
-\subsection{实际参数下的性能}
-
-使用基准参数，仿真得到：
-
-\begin{table}[htbp]
+\begin{figure}[htbp]
 \centering
-\caption{基准参数下的纠缠分发性能}
-\begin{tabular}{lc}
-\hline
-指标 & 数值 \\
-\hline
-成功概率 $P_{\mathrm{success}}$ & $(3.2 \pm 0.1) \times 10^{-3}$ \\
-条件态保真度 $F$ & $0.92 \pm 0.01$ \\
-Concurrence $C$ & $0.85 \pm 0.02$ \\
-有效纠缠速率 & $\sim 100$ Hz（假设 10 kHz 尝试率）\\
-\hline
-\end{tabular}
-\end{table}
+\includegraphics[width=0.85\linewidth]{fig_wavepacket}
+\caption{发射波包时间结构}
+\label{fig:wavepacket}
+\end{figure}
 
-成功率可分解为各环节效率的乘积：
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\linewidth]{fig_bond_dim}
+\caption{发射过程中 MPS 键维度的演化}
+\label{fig:bond_dim}
+\end{figure}
+
+\paragraph{双臂纠缠与 HOM 验证}
+理想情况下，BSM 成功概率为
 \begin{equation}
-P_{\mathrm{success}} \approx P_{\mathrm{success}}^{\mathrm{ideal}} \times \eta_{\mathrm{QFC}}^2 \times \eta_{\mathrm{fiber}}^2 \times \eta_d^2 = 0.5 \times 0.25 \times 0.1 \times 0.81 \approx 0.01,
+P_{\mathrm{success}}^{\mathrm{ideal}} = \frac{1}{2}|\langle\phi_A|\phi_B\rangle|^2,
 \end{equation}
-实际值略低于此估计，因为还有波包不完美重叠、暗计数等因素。
-
-\subsection{Hong-Ou-Mandel 干涉可见度}
-
-HOM 干涉是 BSM 的物理基础。通过扫描两臂光子的相对到达时间 $\delta t$，可以测量 HOM dip：
+其中 $1/2$ 来自线性光学 BSM 的本征效率限制。实际链路中需同时报告 $p_{\mathrm{arrive}}$ 与 $F_{\mathrm{true}}$，以区分损耗与误判。HOM 干涉通过扫描两臂到达时延得到
 \begin{equation}
 P_{\mathrm{coinc}}(\delta t) = \frac{1}{2}\left[1 - V \cdot e^{-|\delta t|/\tau_c}\right],
 \end{equation}
-其中 $V$ 是干涉可见度，$\tau_c$ 是相干时间。
+图 \ref{fig:hom} 给出示例曲线。若 dip 的宽度或中心位置与单臂波包统计不一致，通常意味着时延标定、相位漂移或偏振失配未被充分补偿；可见度下降则主要来自背景噪声与探测器时间响应的不理想。
 
-仿真结果：$V = 0.95 \pm 0.02$，$\tau_c = 25 \pm 2$ ns，与波包宽度 $1/\gamma = 26.2$ ns 一致。
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\linewidth]{fig_hom}
+\caption{HOM 干涉曲线}
+\label{fig:hom}
+\end{figure}
 
-可见度低于 1 的主要原因包括：QFC 噪声光子破坏双光子干涉、两臂波包形状的微小差异、以及探测器时间抖动导致的时间分辨模糊。
+\section{参数依赖与误差来源}[Parameter Dependence and Error Sources]
 
-\section{关键参数的敏感性分析}[Sensitivity Analysis of Key Parameters]
+参数扫描以“趋势判断”为主：改变某一物理量并观察 $p_{\mathrm{arrive}}$、$P(\mathrm{success}\,|\,\mathrm{arrive})$ 与 $F_{\mathrm{true}}$ 的系统性变化，同时用误差预算框架定位主导来源。
 
-\subsection{QFC 噪声的影响}
-
-QFC 噪声是保真度下降的主要来源。图 \ref{fig:qfc_noise} 展示了保真度随噪声光子率 $\mu_{\mathrm{noise}}$ 的变化：
-
+\paragraph{QFC 噪声}
+保真度随噪声率 $\mu_{\mathrm{noise}}$ 单调下降，低噪声区间近似线性退化：
 \begin{equation}
-F(\mu_{\mathrm{noise}}) \approx F_0 - \alpha_{\mathrm{noise}} \cdot \mu_{\mathrm{noise}},
+F(\mu_{\mathrm{noise}}) \approx F_0 - \alpha_{\mathrm{noise}}\mu_{\mathrm{noise}}.
 \end{equation}
-其中 $F_0 \approx 0.98$ 是无噪声保真度，$\alpha_{\mathrm{noise}} \approx 50$ 是噪声敏感系数。
+图 \ref{fig:qfc_noise} 给出趋势示例。该趋势反映了“假成功事件”占比上升对条件态的直接污染。
+在这一过程中，$p_{\mathrm{arrive}}$ 主要由链路损耗决定，变化不大；下降更明显的是 $P(\mathrm{success}\,|\,\mathrm{arrive})$ 与 $F_{\mathrm{true}}$，它们直接反映噪声对宣告成功的稀释效应。
 
-从物理机制上理解，噪声光子可能触发"假成功"事件——探测器点击来自噪声而非信号光子，导致原子态与预期贝尔态不符。假成功概率正比于 $\mu_{\mathrm{noise}}$，每次假成功将保真度拉向 $0.5$（完全混合态）。
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\linewidth]{fig_qfc_noise}
+\caption{保真度随噪声率变化}
+\label{fig:qfc_noise}
+\end{figure}
 
-针对 QFC 噪声的优化策略包括：窄带滤波可通过减小 $\Delta\nu_{\mathrm{filter}}$ 降低噪声，但也会减小信号透过率；时间门控只接受特定时间窗内的点击，可抑制均匀分布的噪声；此外，优化相位匹配条件可降低 SPDC 噪声，实现低噪声 QFC。
-
-\subsection{光纤长度的影响}
-
-光纤损耗导致成功率随距离指数衰减：
+\paragraph{光纤长度}
+成功率随距离指数衰减：
 \begin{equation}
-P_{\mathrm{success}}(L) = P_{\mathrm{success}}(0) \times 10^{-\alpha L / 5},
+P_{\mathrm{success}}(L) = P_{\mathrm{success}}(0)\times 10^{-\alpha L/5}.
 \end{equation}
-其中因子 $1/5$ 来自双臂各经历 $L$ 距离、损耗指数为 $\alpha/10$（dB 到自然对数的转换）。
+图 \ref{fig:distance} 展示成功率与保真度随距离的变化。远距离下噪声占比上升，保真度出现拐点，这是链路极限的主要判据之一。
+从指标分解上看，$p_{\mathrm{arrive}}$ 会随距离快速下降，而 $F_{\mathrm{true}}$ 在中短距离内相对稳定，直到噪声与信号可比时才明显下降。
 
-图 \ref{fig:distance} 展示了成功率和保真度随光纤长度的变化。成功率每 25 km 下降约 10 倍；保真度随距离缓慢下降，主要因为暗计数的相对贡献增加。
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\linewidth]{fig_distance}
+\caption{成功率与保真度随光纤长度变化}
+\label{fig:distance}
+\end{figure}
 
-当信号光子率降至与暗计数率可比时，保真度急剧下降，这决定了系统的距离极限。对于 $R_{\mathrm{dark}} = 10$ Hz、$\Delta t = 1$ ns，极限距离约 100 km。
+\paragraph{探测器效率与时间分辨}
+探测效率提升使成功率近似按 $\eta_d^2$ 增长，同时改善信噪比；时间 bin 宽度过大将削弱时间分辨与 HOM 可见度，过小则提高噪声占比与计算成本。图 \ref{fig:detector_eff} 给出探测效率的趋势示例。
+实际设置中，需要同时考虑“时间窗覆盖波包”与“噪声积分窗口”的平衡：窗口越窄越利于保真度，但会牺牲成功率。
 
-\subsection{探测器效率的影响}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\linewidth]{fig_detector_eff}
+\caption{探测器效率对成功率与保真度的影响}
+\label{fig:detector_eff}
+\end{figure}
 
-探测效率 $\eta_d$ 同时影响成功率和保真度。就成功率而言，$P_{\mathrm{success}} \propto \eta_d^2$，因为需要两个探测器同时点击。就保真度而言，高 $\eta_d$ 减少"漏检"事件，提高信号/噪声比。
-
-图 \ref{fig:detector_eff} 显示，$\eta_d$ 从 0.7 提升到 0.95 可使成功率提高 1.8 倍、保真度提高约 3\%。
-
-\subsection{时间 bin 宽度的影响}
-
-时间 bin 宽度 $\Delta t$ 存在最优值。若 $\Delta t$ 过大，时间分辨率不足，无法区分不同时刻的光子，HOM 可见度下降；若 $\Delta t$ 过小，每个 bin 内光子数过低，暗计数相对贡献增加，同时计算成本也会增加。
-
-最优 $\Delta t \sim \tau/10 \approx 2.6$ ns，此时兼顾时间分辨率和信噪比。
-
-\section{误差来源分解}[Error Source Decomposition]
-
-\subsection{保真度误差预算}
-
-将保真度损失分解为各独立来源：
+\paragraph{误差预算与损耗分解}
+保真度损失可写为
 \begin{equation}
 1 - F = \epsilon_{\mathrm{QFC}} + \epsilon_{\mathrm{dark}} + \epsilon_{\mathrm{PMD}} + \epsilon_{\mathrm{mismatch}} + \epsilon_{\mathrm{other}},
 \end{equation}
-
-通过逐一关闭各噪声源，仿真得到：
-
-\begin{table}[htbp]
-\centering
-\caption{保真度误差分解（基准参数）}
-\begin{tabular}{lcc}
-\hline
-误差来源 & 符号 & 贡献 \\
-\hline
-QFC 噪声 & $\epsilon_{\mathrm{QFC}}$ & $0.05 \pm 0.01$ \\
-暗计数 & $\epsilon_{\mathrm{dark}}$ & $0.01 \pm 0.005$ \\
-偏振漂移/PMD & $\epsilon_{\mathrm{PMD}}$ & $0.01 \pm 0.005$ \\
-波包不匹配 & $\epsilon_{\mathrm{mismatch}}$ & $0.005 \pm 0.002$ \\
-数值误差 & $\epsilon_{\mathrm{num}}$ & $< 0.001$ \\
-\hline
-总计 & $1 - F$ & $0.08 \pm 0.02$ \\
-\hline
-\end{tabular}
-\end{table}
-
-从误差预算可以看出，QFC 噪声贡献了约 60\% 的保真度损失，是优化的首要目标。
-
-\subsection{成功率损失分解}
-
-类似地，成功率损失可分解为：
+成功率损失可分解为
 \begin{equation}
-\frac{P_{\mathrm{success}}}{P_{\mathrm{success}}^{\mathrm{ideal}}} = \eta_{\mathrm{QFC}}^2 \times \eta_{\mathrm{fiber}}^2 \times \eta_d^2 \times \eta_{\mathrm{other}},
+\frac{P_{\mathrm{success}}}{P_{\mathrm{success}}^{\mathrm{ideal}}} = \eta_{\mathrm{QFC}}^2 \times \eta_{\mathrm{fiber}}^2 \times \eta_d^2 \times \eta_{\mathrm{other}}.
 \end{equation}
+通过逐一关闭或单独开启噪声源并比较 $\Delta F$，即可建立误差预算并识别主导瓶颈。
 
-\begin{table}[htbp]
-\centering
-\caption{成功率损失分解（基准参数）}
-\begin{tabular}{lcc}
-\hline
-损失来源 & 效率因子 & 对数损失 (dB) \\
-\hline
-QFC 转换 & $\eta_{\mathrm{QFC}}^2 = 0.25$ & $-6.0$ \\
-光纤传输 & $\eta_{\mathrm{fiber}}^2 = 0.10$ & $-10.0$ \\
-探测器 & $\eta_d^2 = 0.81$ & $-0.9$ \\
-BSM 本征 & $0.5$ & $-3.0$ \\
-其他 & $\sim 0.8$ & $-1.0$ \\
-\hline
-总计 & $\sim 0.01$ & $-20.9$ \\
-\hline
-\end{tabular}
-\end{table}
+\section{优化策略与取舍}[Optimization and Trade-offs]
 
-从损失分解可以看出，光纤传输（10 dB）和 QFC 转换（6 dB）是成功率的主要瓶颈。
+提升保真度的关键路径是降低背景噪声（QFC 噪声与暗计数）、缩小符合窗口并提升偏振/相位稳定性；提升成功率则依赖高效率 QFC、低损耗光纤与复用策略。二者间的取舍主要由窗口选择与实验目标决定：宽窗口提高成功率但引入噪声，窄窗口提升保真度但牺牲速率。
 
-\section{优化策略讨论}[Discussion of Optimization Strategies]
-
-\subsection{提升保真度}
-
-提升保真度的主要策略包括以下几个方面。首先，降低 QFC 噪声是最有效的途径，采用窄带滤波（$\Delta\nu < 100$ MHz）可将 $\mu_{\mathrm{noise}}$ 降低 10 倍，但需权衡信号损失。其次，时间门控技术只接受发射窗口内的点击，可抑制 50\% 以上的暗计数和噪声。此外，主动偏振补偿可实时监测和补偿光纤偏振漂移，进一步提升保真度。
-
-\subsection{提升成功率}
-
-提升成功率同样有多种策略。高效率 QFC 是关键，采用腔增强或波导 QFC，$\eta_{\mathrm{QFC}} > 0.9$ 已有报道。缩短光纤距离也很有效，城域网络（$L < 10$ km）可将光纤损耗降至 2 dB。时间复用技术允许单次尝试发射多个光子波包，任一成功即可，从而提高整体成功率。
-
-\subsection{成功率与保真度权衡}
-
-在实际系统中存在基本的成功率与保真度权衡。宽时间窗可以提高成功率，但会引入更多噪声从而降低保真度；严格后选择可以提高保真度，但会降低成功率。最优工作点取决于下游应用的需求。对于量子密钥分发，可容忍较低保真度（$F > 0.81$ 即可违反 Bell 不等式）；对于分布式量子计算，需要 $F > 0.99$ 以支持纠错。
+更实际的做法是先判断系统处于“损耗主导”还是“噪声主导”：若 $p_{\mathrm{arrive}}$ 极低且噪声占比小，则应优先提高收集与传输效率；若噪声占比已接近或超过信号，则应优先压噪并收紧判据。该判断可直接从 $p_{\mathrm{arrive}}$、$P(\mathrm{success}|\mathrm{arrive})$ 与 $F_{\mathrm{true}}$ 的相对变化中读出。
 
 \section{本章小结}[Chapter Summary]
 
-本章通过系统性数值仿真，全面分析了中性原子量子接口的端到端性能。在基准性能方面，25 km 双臂配置下，成功率约为 $3 \times 10^{-3}$，保真度约为 0.92。主导误差分析表明，QFC 噪声是保真度的主要限制因素，而光纤损耗是成功率的主要限制因素。参数敏感性研究显示，保真度对 QFC 噪声高度敏感，成功率随距离呈指数衰减。基于这些分析，窄带滤波、时间门控、高效率 QFC 是提升性能的关键优化方向。
-
-这些定量结果为中性原子量子网络的工程设计提供了直接指导，特别是在器件参数选择和误差预算分配方面。
-
+本章给出端到端仿真的指标体系与实验设计思路，强调以有效事件归一化的统计口径来分离“到达损失”和“测量判据”的影响。通过参数趋势与误差预算，可在尚未固定最终实验参数时识别关键瓶颈与优化方向。后续将结合批量实验数据补充定量曲线与对照表格，使分析与实验需求直接对齐。

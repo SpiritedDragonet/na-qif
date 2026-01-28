@@ -14,14 +14,14 @@
    这会让 “vac 也能点”，那当然能点到 4 次。
    你 `channels.py` 里的 `detection_povm_single_site()` 明确包含 `p_dark`，并且在真空（nH=0）时给 `P_H_click=p_dark`、`P_V_click=p_dark`，对应的 Kraus 对真空有非零作用（vac 也能产生 click）。
    如果你在检测阶段走的是 `trajectory.apply_detection()` 这条路，它会调用这个 POVM。
-   **只要 p_dark 不是严格 0，就有可能出现 >2 次 click。**（但如果你用的是 1e-6，出现 4 次其实概率很小；如果你经常看到 4 次，那 p_dark 很可能被你设大了或者被当成“每 bin 概率”而不是“每秒率×dt”。）
+   **只要 p_dark 不是严格 0，就有可能出现 >2 次 click。**$但如果你用的是 1e-6，出现 4 次其实概率很小；如果你经常看到 4 次，那 p_dark 很可能被你设大了或者被当成“每 bin 概率”而不是“每秒率×dt”。$
 2. **你把每个 bin 的 click 当成“独立抽样”，但没有把测量反作用真正更新回同一个 MPS（或更新不正确）**
    这会导致“同一个光子在不同 bin 上被重复计数”，正好就是你之前担心的“乱点”。
    典型表现：你每个 bin 都从局域约化密度算一次 click 概率并抽样，但**没有用 Kraus 把全局态投影/归一化**（或 Kraus 用错/不完备导致条件化失败）。
    你现在的 `run_two_photon_detection()` 做了 Kraus 回写，但它还有别的问题（见第 3 条）。
 3. **你用的 Kraus “仪器(instrument)”不是物理 detector 的 instrument，尤其是：Kraus 集不完备（∑K†K≠I）或把多光子态处理错了**
    这会让你的 `apply_two_site_kraus()` 里出现 `p_total ≠ 1`，然后你用 `probs/p_total` 强行归一化，相当于“每个 bin 都在偷偷 postselect”，统计会崩坏。
-   你现在 `build_detection_kraus_18d()` 版本确实是简化的，且对 `2H/2V/HV` 的 click 概率处理是不对的（比如 `2H` 的 click 概率不该是 η，而应该是 `1-(1-η)^2`）。
+   你现在 `build_detection_kraus_18d()` 版本确实是简化的，且对 `2H/2V/HV` 的 click 概率处理是不对的$比如 `2H` 的 click 概率不该是 η，而应该是 `1-(1-η)^2`$。
    这类错误会让“点击序列统计”出现明显不物理的现象（虽然严格说它不一定直接“制造额外光子”，但它会让条件化的波函数分支不对应真实实验 record，从而出现你看到的怪相）。
 
 > 你日志里写的 “Using 6D Kraus operators (36x36) - optimized!” 更像你实际跑的是“6D 两端口 36×36”的版本而不是 18D 简化版。无论如何，只要你看到 4 click，这三类问题至少占一条。
@@ -78,22 +78,22 @@ if len(clicks) >= 2:
 
 以某个时间 bin `m`、某个输出端口（1 或 2）、某个极化（H 或 V）为例：
 
-- 对应那个模式的湮灭算符记为 (a_{H1,m}), (a_{V1,m}), (a_{H2,m}), (a_{V2,m})
+- 对应那个模式的湮灭算符记为 $a_{H1,m}$, $a_{V1,m}$, $a_{H2,m}$, $a_{V2,m}$
 - 你要在整个 Hilbert 空间上作用，它其实是一个张量积的局域算符：
-  [
+  $$
   J_{H1,m} = \sqrt{\eta_{\rm det}} ; a_{H1,m};\otimes I_{\text{其它所有站点}}
-  ]
+  $$
   其它三个类似：
-  [
+  $$
   J_{V1,m} = \sqrt{\eta_{\rm det}} ; a_{V1,m},\quad
   J_{H2,m} = \sqrt{\eta_{\rm det}} ; a_{H2,m},\quad
   J_{V2,m} = \sqrt{\eta_{\rm det}} ; a_{V2,m}
-  ]
+  $$
 
 **为什么这是“把双光子投到单光子”的正确算符？**
-因为湮灭算符满足 (a|n\rangle = \sqrt{n}|n-1\rangle)。
-所以如果你的全局态里某个分量在该模式是 (|1\rangle)，作用后变成 (|0\rangle)；
-如果是 (|2\rangle)，作用后变成 (\sqrt{2}|1\rangle)，光子数减 1；
+因为湮灭算符满足 $a|n\rangle = \sqrt{n}|n-1\rangle$。
+所以如果你的全局态里某个分量在该模式是 $|1\rangle$，作用后变成 $|0\rangle$；
+如果是 $|2\rangle$，作用后变成 $\sqrt{2}|1\rangle$，光子数减 1；
 这正是“检测到一个光子、系统剩下一个光子”的数学实现。
 
 ## A.2 click 后态怎么更新（量子轨迹）
@@ -101,20 +101,20 @@ if len(clicks) >= 2:
 若你在 bin m 观察到 H1 click：
 
 - click 概率：
-  [
+  $$
   p = \langle\Psi| J_{H1,m}^\dagger J_{H1,m} |\Psi\rangle
-  ]
+  $$
 - 条件化后的纯态：
-  [
+  $$
   |\Psi'\rangle = \frac{J_{H1,m}|\Psi\rangle}{\sqrt{p}}
-  ]
+  $$
 
 这一步 **自动** 对“原子 + 所有 bin”产生条件化影响（你不需要手工去抹除其它 bin 的可能性）：
 因为你在全局态上作用了一个局域算符，任何与该模式不相容的分量都会被湮灭掉。
 
 ## A.3 为什么最多 2 次 click
 
-因为每次 click 操作都把总光子数算符 (N_{\rm tot}) 的期望至少降低，严格地在“总光子数确实是 2”的子空间里：
+因为每次 click 操作都把总光子数算符 $N_{\rm tot}$ 的期望至少降低，严格地在“总光子数确实是 2”的子空间里：
 
 - 第一次 click 后，态落在 ≤1 光子子空间
 - 第二次 click 后，落在 0 光子子空间
@@ -124,13 +124,13 @@ if len(clicks) >= 2:
 
 ## A.4 怎么 trace 掉光子得到原子态
 
-检测全部结束后（或者你决定在记录上只保留前两次 click），你有一个条件化纯态 (|\Psi_{\rm cond}\rangle)（仍包含光子自由度）。你要的原子两比特态就是：
+检测全部结束后（或者你决定在记录上只保留前两次 click），你有一个条件化纯态 $|\Psi_{\rm cond}\rangle$（仍包含光子自由度）。你要的原子两比特态就是：
 
-[
+$$
 \rho_{AB} = \mathrm{Tr}*{\text{photons}}\left(|\Psi*{\rm cond}\rangle\langle\Psi_{\rm cond}|\right)
-]
+$$
 
-你现在的代码实现就是 `mps.get_reduced_density([site_A, site_B])`，然后把 3×3×3×3 里对应 |0>,|1> 子空间提出来（你在 `extract_spin_state()` 里就是这么干的）。
+你现在的代码实现就是 `mps.get_reduced_density([site_A, site_B])`，然后把 3×3×3×3 里对应 |0>,|1> 子空间提出来$你在 `extract_spin_state()` 里就是这么干的$。
 
 ------
 
@@ -138,9 +138,9 @@ if len(clicks) >= 2:
 
 你现在的光子局域基是：
 
-[
+$$
 {|{\rm vac}\rangle, |H\rangle, |V\rangle, |2H\rangle, |2V\rangle, |HV\rangle}
-]
+$$
 
 我们先做单端口（比如端口 1）的两探测器（H、V）on/off，忽略 dark count。
 
@@ -157,74 +157,74 @@ if len(clicks) >= 2:
 
 ## B.2 每个结果的概率（在你的 6D 截断上精确写出来）
 
-假设两个探测器对各自极化的效率都是 (\eta)，且相互独立，那么对每个局域基态：
+假设两个探测器对各自极化的效率都是 $\eta$，且相互独立，那么对每个局域基态：
 
-- (|{\rm vac}\rangle)：
+- $|{\rm vac}\rangle$：
   none = 1，其它 = 0
-- (|H\rangle)：
-  none = (1-\eta)
-  H = (\eta)
-- (|V\rangle)：
-  none = (1-\eta)
-  V = (\eta)
-- (|2H\rangle)：（bucket detector 看到的是“至少一个 H 光子触发”）
-  none = ((1-\eta)^2)
-  H = (1-(1-\eta)^2 = 2\eta-\eta^2)
-- (|2V\rangle)：
-  none = ((1-\eta)^2)
-  V = (2\eta-\eta^2)
-- (|HV\rangle)：（H、V 各 1 个）
-  none = ((1-\eta)^2)
-  H only = (\eta(1-\eta))
-  V only = (\eta(1-\eta))
-  H+V = (\eta^2)
+- $|H\rangle$：
+  none = $1-\eta$
+  H = $\eta$
+- $|V\rangle$：
+  none = $1-\eta$
+  V = $\eta$
+- $|2H\rangle$：（bucket detector 看到的是“至少一个 H 光子触发”）
+  none = $(1-\eta)^2$
+  H = $1-(1-\eta)^2 = 2\eta-\eta^2$
+- $|2V\rangle$：
+  none = $(1-\eta)^2$
+  V = $2\eta-\eta^2$
+- $|HV\rangle$：（H、V 各 1 个）
+  none = $(1-\eta)^2$
+  H only = $\eta(1-\eta)$
+  V only = $\eta(1-\eta)$
+  H+V = $\eta^2$
 
 你可以看到：每个基态下 4 类结果的概率都严格加和为 1。
 
 ## B.3 构造“吸收型”的 Kraus（instrument），确保 click 之后该端口局域态变成 vacuum
 
-这是你想要的“点击消去数算符”的版本：click 一旦发生，对应光子在 detector 上被吸收，从系统里消失，所以我们把 click 的 Kraus 都设计成把相关分量送到 (|{\rm vac}\rangle)。
+这是你想要的“点击消去数算符”的版本：click 一旦发生，对应光子在 detector 上被吸收，从系统里消失，所以我们把 click 的 Kraus 都设计成把相关分量送到 $|{\rm vac}\rangle$。
 
 用矩阵表示（按你的基序 vac,H,V,2H,2V,HV）：
 
 - **No-click Kraus**
-  [
+  $$
   K_{00}=\mathrm{diag}\Big(1,\sqrt{1-\eta},\sqrt{1-\eta},(1-\eta),(1-\eta),(1-\eta)\Big)
-  ]
+  $$
 - **H-only click Kraus（吸收掉能导致“H only”的所有分量）**
-  [
+  $$
   K_{10} = |{\rm vac}\rangle\Big(
   \sqrt{\eta}\langle H|
   +\sqrt{2\eta-\eta^2}\langle 2H|
   +\sqrt{\eta(1-\eta)}\langle HV|
   \Big)
-  ]
+  $$
 - **V-only click Kraus**
-  [
+  $$
   K_{01} = |{\rm vac}\rangle\Big(
   \sqrt{\eta}\langle V|
   +\sqrt{2\eta-\eta^2}\langle 2V|
   +\sqrt{\eta(1-\eta)}\langle HV|
   \Big)
-  ]
+  $$
 - **H+V click Kraus（只可能来自 HV）**
-  [
+  $$
   K_{11} = |{\rm vac}\rangle\Big(\eta\langle HV|\Big)
-  ]
+  $$
 
 ### 为什么这样写是对的？
 
 1. **它给出的概率正好等于上面列的那些概率**
-   比如对 (|2H\rangle)，click(H) 概率是 (|K_{10}|2H\rangle|^2 = 2\eta-\eta^2)，none 概率是 (|K_{00}|2H\rangle|^2=(1-\eta)^2)。
+   比如对 $|2H\rangle$，click(H) 概率是 $|K_{10}|2H\rangle|^2 = 2\eta-\eta^2$，none 概率是 $|K_{00}|2H\rangle|^2=(1-\eta)^2$。
 2. **它是完备的（trace-preserving）**
-   因为对每个基态 (|s\rangle)，有：
-   [
+   因为对每个基态 $|s\rangle$，有：
+   $$
    \sum_{\mu\in{00,10,01,11}}\langle s|K_\mu^\dagger K_\mu|s\rangle = 1
-   ]
+   $$
    等价于矩阵恒等式：
-   [
+   $$
    K_{00}^\dagger K_{00}+K_{10}^\dagger K_{10}+K_{01}^\dagger K_{01}+K_{11}^\dagger K_{11}=I
-   ]
+   $$
    **这一点非常关键**：你如果这里不成立，你在 `apply_two_site_kraus()` 里看到的 `p_total` 就不会 ≈1，然后你每次 bin 都在隐式 postselect，统计会崩。
 3. **它是吸收型（click 后局域态 reset 到 vacuum）**
    这保证了：如果你系统里只有 2 光子，那么扫描所有 bins 的记录里最多出现 2 次 click（除非加 dark count）。
@@ -233,9 +233,9 @@ if len(clicks) >= 2:
 
 端口 1 和端口 2 独立，所以两端口 Kraus 直接做张量积：
 
-[
+$$
 K_{\mu\nu}^{(1,2)} = K_{\mu}^{(1)}\otimes K_{\nu}^{(2)},\quad \mu,\nu\in{00,10,01,11}
-]
+$$
 
 总共 16 个 Kraus，对应结果名称：
 
@@ -262,18 +262,18 @@ K_{\mu\nu}^{(1,2)} = K_{\mu}^{(1)}\otimes K_{\nu}^{(2)},\quad \mu,\nu\in{00,10,0
 
 如果你用的是完备 Kraus，且 MPS norm 是 1，那么对任意 bin：
 
-[
+$$
 p_{\rm total}(m) = \sum_\alpha |K_\alpha |\Psi\rangle|^2 \approx 1
-]
+$$
 
 如果你发现某些 bin `p_total` 明显小于 1（比如 0.7, 0.8），那说明：
 
 - 要么 Kraus 不完备（∑K†K≠I）——你 `build_detection_kraus_18d()` 简化版就属于这一类。
-- 要么你取的 theta 不是一个“规范化意义下的局域波函数”，也就是 **MPS canonical/position 没对齐**（尤其是你从 bin92 跳到 bin95 这种非相邻更新，如果 TenPy 不自动 `position()`，就会出事）。
+- 要么你取的 theta 不是一个“规范化意义下的局域波函数”，也就是 **MPS canonical/position 没对齐**$尤其是你从 bin92 跳到 bin95 这种非相邻更新，如果 TenPy 不自动 `position()`，就会出事$。
 
 ### 自检 2：每发生一次 click，总光子数期望应减少（至少不增加）
 
-在 click 发生后打印一次全链的 ⟨N_total⟩（你已有 `compute_photon_statistics()`）。
+在 click 发生后打印一次全链的 ⟨N_total⟩$你已有 `compute_photon_statistics()`$。
 
 - 如果第一次 click 后 ⟨N_total⟩ 没下降（甚至上升），那你的 click instrument 不是吸收型，或者你没有把 Kraus 正确回写到同一个态上。
 
@@ -289,9 +289,9 @@ p_{\rm total}(m) = \sum_\alpha |K_\alpha |\Psi\rangle|^2 \approx 1
 ### 5.1 `extract_spin_state()` 本质做的事
 
 它就是：
-[
+$$
 \rho_{AB} = \mathrm{Tr}_{\text{all bins}}(|\Psi\rangle\langle\Psi|)
-]
+$$
 然后取 |0>,|1> 子空间并归一化。
 
 所以它本身不“做 BSM”，只是“把光子 trace 掉看原子”。
@@ -300,7 +300,7 @@ p_{\rm total}(m) = \sum_\alpha |K_\alpha |\Psi\rangle|^2 \approx 1
 
 - 如果你先跑了逐 bin 检测，并且每个 bin 都把对应 Kraus 回写了同一个 MPS（这就是量子轨迹），那么 `extract_spin_state()` 得到的是**该检测 record 条件下的后验原子态**。这时算 Bell fidelity 是有意义的（作为 heralded entanglement 的后验质量）。
 - 但你现在 `run_two_photon_detection()` **只测了 bins_with_photons 的一部分，且两次 click 就停**，剩下 bins 没有施加“no-click”条件化。
-  这意味着你拿到的 (\rho_{AB}) 更像是“给定你只观察到了这部分记录”的条件态，而不一定等价于“真实实验里完整 record（包括无 click 的时间段）”条件下的态。
+  这意味着你拿到的 $\rho_{AB}$ 更像是“给定你只观察到了这部分记录”的条件态，而不一定等价于“真实实验里完整 record（包括无 click 的时间段）”条件下的态。
 
 > 换句话说：它是“后验”，但可能是“后验条件不完整”的后验；这会让你算出来的 Bell fidelity 在物理含义上打折，甚至偏乐观/偏悲观都可能。
 
@@ -320,40 +320,40 @@ p_{\rm total}(m) = \sum_\alpha |K_\alpha |\Psi\rangle|^2 \approx 1
 
 对每个时间 bin 的每个端口（或每条光纤段），你都有两类 Kraus：
 
-- (K_{\rm surv})：不损失（no-loss）
-- (K_{\rm loss})：损失（lost）
+- $K_{\rm surv}$：不损失（no-loss）
+- $K_{\rm loss}$：损失（lost）
 
 如果你要“净化到两光子都到达”，你做的其实是**条件化在“所有地方都走 no-loss Kraus”**上：
 
-[
+$$
 |\Psi_{\rm arrive}\rangle \propto K_{\rm surv}^{(\text{all bins})} |\Psi_{\rm in}\rangle
-]
+$$
 
 然后归一化。
 
 此时：
 
 - **到达概率**就是未归一化态的范数平方：
-  [
+  $$
   p_{\rm arrive} = |K_{\rm surv}^{(\text{all bins})} |\Psi_{\rm in}\rangle|^2
-  ]
+  $$
 - **净化态**是：
-  [
+  $$
   |\Psi_{\rm arrive}\rangle = \frac{K_{\rm surv}^{(\text{all bins})} |\Psi_{\rm in}\rangle}{\sqrt{p_{\rm arrive}}}
-  ]
+  $$
 
 这正是你说的：“净化后 vac,vac 子空间概率为 0，且整体归一化为 1”（前提是你净化的条件确实等价于“两光子都还在系统里”；如果还包括 detector inefficiency，那还会有 miss-click 的分支）。
 
 ### 6.2 总损失概率怎么得
 
-[
+$$
 p_{\rm loss} = 1 - p_{\rm arrive}
-]
+$$
 
 这就是你要的“走到最后的综合光子损失概率”。
 
 > 注意：你现在 `compute_photon_statistics()` 里用 `2 - ⟨N_total⟩` 当 “loss_prob”，这不是严格意义的概率，只是“期望光子数缺口”。
-> 严格概率应该用上面的范数方法（或计算 `P(N=2)`）。
+> 严格概率应该用上面的范数方法$或计算 `P(N=2)`$。
 
 ------
 
@@ -372,7 +372,7 @@ p_{\rm loss} = 1 - p_{\rm arrive}
 别再用你简化版本里那个把 `2H/2V/HV` 全塞进同一个 `KHV` 且系数不对的写法了。
 把单端口 Kraus 换成我在 B.3 写的那组（K00,K10,K01,K11），两端口取张量积成 16 个。
 
-### Step 3：每个 bin 都测（不要 bins_with_photons 阈值跳测）
+### Step 3：每个 bin 都测$不要 bins_with_photons 阈值跳测$
 
 你现在跳测 bins 的做法，会让“no-click 的条件化信息”丢失，从而破坏时间上的条件概率结构。
 正确做法：对 n=1..N，逐个 bin 扫描、每 bin 都应用一次两端口 Kraus（16 outcome）。

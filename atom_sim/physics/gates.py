@@ -6,7 +6,7 @@
 不随每仓变化的门会被缓存。
 """
 
-from typing import Tuple
+from typing import Tuple, Optional
 from functools import lru_cache
 import numpy as np
 from scipy.linalg import expm
@@ -235,6 +235,8 @@ def emission_gate(
     dt: float,
     Alpha: np.ndarray,
     which_atom: str = 'A',
+    phase: float = 0.0,
+    H_sys: Optional[np.ndarray] = None,
     bin_first: bool = False
 ) -> np.ndarray:
     """
@@ -245,8 +247,8 @@ def emission_gate(
     其中 L = √gamma * (alpha_+ * S_+ + alpha_- * S_-)
     且 S_± 是原子跃迁算符。
 
-    门嵌入18D bin空间为U_9x9 ⊗ I_1517，
-    其中9×9门作用于原子(3D) × 780(3D)，I_1517是通信子空间上的单位。
+    门嵌入18D bin空间为U_12x12 ⊗ I_1517，
+    其中12×12门作用于原子(4D) × 780(3D)，I_1517是通信子空间上的单位。
 
     这在原子态和发射光子偏振之间创建纠缠。
     发射的光子在780nm子空间中，稍后可通过QFC
@@ -255,7 +257,7 @@ def emission_gate(
     Parameters
     ----------
     gamma : float
-        此时间步的发射率
+        此时间步的单通道发射率（总发射率的一半）
     dt : float
         时间仓宽度
     Alpha : np.ndarray
@@ -263,16 +265,20 @@ def emission_gate(
         [[alpha_H+, alpha_H-], [alpha_V+, alpha_V-]]
     which_atom : str
         哪个原子（'A' 或 'B'）
+    phase : float
+        发射波包的相位（会同时作用于H/V通道）
+    H_sys : np.ndarray, optional
+        原子系统哈密顿量（4x4），用于在单步门中同时加入驱动与失谐
     bin_first : bool
-        如果为 True，返回 I_1517 ⊗ U_9x9（作用于 bin × atom）
-        如果为 False，返回 U_9x9 ⊗ I_1517（作用于 atom × bin）
+        如果为 True，返回 I_1517 ⊗ U_12x12（作用于 bin × atom）
+        如果为 False，返回 U_12x12 ⊗ I_1517（作用于 atom × bin）
 
     Returns
     -------
     np.ndarray
-        54x54 幺正矩阵
-        - bin_first=False: 作用在 原子(3D) × bin(18D=780×1517)
-        - bin_first=True: 作用在 bin(18D) × 原子(3D)
+        72x72 幺正矩阵
+        - bin_first=False: 作用在 原子(4D) × bin(18D=780×1517)
+        - bin_first=True: 作用在 bin(18D) × 原子(4D)
 
     Examples
     --------
@@ -290,13 +296,14 @@ def emission_gate(
     alpha_V_plus = Alpha[1, 0]
     alpha_V_minus = Alpha[1, 1]
 
-    # 在原子(3D)上构造L算符
+    # 在原子(4D)上构造L算符
     # L = √gamma * (alpha_H+ * S_+ + alpha_H- * S_-) 用于H偏振
     # V偏振同理
     sqrt_gamma = np.sqrt(gamma)
+    phase_factor = np.exp(1j * phase) if phase != 0.0 else 1.0
 
-    L_H = sqrt_gamma * (alpha_H_plus * S_plus + alpha_H_minus * S_minus)
-    L_V = sqrt_gamma * (alpha_V_plus * S_plus + alpha_V_minus * S_minus)
+    L_H = phase_factor * sqrt_gamma * (alpha_H_plus * S_plus + alpha_H_minus * S_minus)
+    L_V = phase_factor * sqrt_gamma * (alpha_V_plus * S_plus + alpha_V_minus * S_minus)
 
     # 780上的光子算符（3D：vac, H, V）
     # b^†_H = |H><vac|
@@ -313,21 +320,27 @@ def emission_gate(
 
     G_H = sqrt_dt * (np.kron(L_H, bH_dag) - np.kron(L_H.conj().T, bH))
     G_V = sqrt_dt * (np.kron(L_V, bV_dag) - np.kron(L_V.conj().T, bV))
+    G_12x12 = G_H + G_V
 
-    G_9x9 = G_H + G_V
+    d_atom = L_H.shape[0]
+    if H_sys is not None:
+        if H_sys.shape != (d_atom, d_atom):
+            raise ValueError(f"H_sys 维度应为 ({d_atom},{d_atom})，实际为 {H_sys.shape}")
+        G_sys = -1j * dt * np.kron(H_sys, np.eye(3, dtype=complex))
+        G_12x12 = G_12x12 + G_sys
 
     # 指数化得到原子×780上的幺正
-    U_9x9 = expm(G_9x9)
+    U_12x12 = expm(G_12x12)
 
-    # U_9x9 作用在 atom(3D) × 780(3D) 上，形状 (9, 9)
+    # U_12x12 作用在 atom(4D) × 780(3D) 上，形状 (12, 12)
     # Reshape 为 (d_atom, d_780, d_atom, d_780)
-    U_9x9_4d = U_9x9.reshape(3, 3, 3, 3)
+    U_12x12_4d = U_12x12.reshape(d_atom, 3, d_atom, 3)
 
     if bin_first:
         # bin × atom: (780 × 1517) × atom
-        # 需要把 U_9x9 (作用在 atom × 780) 转换为作用在 780 × atom
+        # 需要把 U_12x12 (作用在 atom × 780) 转换为作用在 780 × atom
         # 交换前两个索引: (atom, 780, atom, 780) -> (780, atom, 780, atom)
-        U_swapped = U_9x9_4d.transpose(1, 0, 3, 2)
+        U_swapped = U_12x12_4d.transpose(1, 0, 3, 2)
 
         # 扩展到包含 1517 子空间
         # (780, atom, 780, atom) -> (780, 1517, atom, 780, 1517, atom)
@@ -335,13 +348,11 @@ def emission_gate(
         d_780, d_atom, _, _ = U_swapped.shape
         d_1517 = 6
 
-        # 构造最终的 (54, 54) 矩阵
-        # 方法：先构造 I_1517 ⊗ U_swapped，然后 reshape
-        # I_1517 ⊗ U_swapped 的形状是 (6*3*3, 6*3*3) = (18, 18)？不对
-        # 正确的维度：(d_780 * d_1517 * d_atom, d_780 * d_1517 * d_atom) = (54, 54)
+        # 构造最终的 (72, 72) 矩阵
+        # 正确的维度：(d_780 * d_1517 * d_atom, d_780 * d_1517 * d_atom) = (72, 72)
 
         # 使用循环构造更清晰
-        U_54 = np.zeros((d_780 * d_1517 * d_atom, d_780 * d_1517 * d_atom), dtype=complex)
+        U_72 = np.zeros((d_780 * d_1517 * d_atom, d_780 * d_1517 * d_atom), dtype=complex)
         for i780 in range(d_780):
             for i1517 in range(d_1517):
                 for iatom in range(d_atom):
@@ -352,11 +363,11 @@ def emission_gate(
                                 col = (j780 * d_1517 + j1517) * d_atom + jatom
                                 # 只有当 i1517 == j1517 时才有非零元素（I_1517）
                                 if i1517 == j1517:
-                                    U_54[row, col] = U_swapped[i780, iatom, j780, jatom]
+                                    U_72[row, col] = U_swapped[i780, iatom, j780, jatom]
     else:
         # atom × bin: atom × (780 × 1517)
-        # U_9x9 作用在 atom × 780 上，只需要张量积上 I_1517
+        # U_12x12 作用在 atom × 780 上，只需要张量积上 I_1517
         I_1517 = np.eye(6, dtype=complex)
-        U_54 = np.kron(U_9x9, I_1517)
+        U_72 = np.kron(U_12x12, I_1517)
 
-    return U_54
+    return U_72
