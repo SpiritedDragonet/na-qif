@@ -5,28 +5,22 @@ HOM 实验仿真：统计符合率随延迟 tau 的变化。
 
 import csv
 import os
+import time
 from collections import deque
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
 
-from ..simulation import (
-    run_two_photon_detection,
-    compute_two_photon_arrival_prob,
-    build_detection_effects_6d,
-)
+from ..simulation import run_detection_pipeline
 from .common import (
-    ATOM_EXTREME_EPS,
-    _get_emission_params,
-    _make_fiber_params,
+    HomConfig,
+    SimConfig,
     _compute_window_bins,
     _compute_noise_params,
-    _atom_extreme_state,
-    PipelineHooks,
-    run_emission_to_bs,
     run_task_queue,
 )
+from .single_run import _run_single_trial
 
 DEFAULT_TAU_RANDOM_RANGE_NS = (-10.0, 10.0)
 
@@ -53,21 +47,21 @@ def _is_port_samepol_coincidence(clicks, window_bins: Optional[int]) -> bool:
 def _progress_every(total: int) -> int:
     if total <= 0:
         return 1
-    return max(1, min(50, total // 10))
+    return max(1, min(5, total // 10))
 
 
-def _build_hom_tau_values(hom_cfg: dict) -> list:
-    if hom_cfg.get("tau_random"):
-        tau_min, tau_max = hom_cfg.get("tau_random_range", DEFAULT_TAU_RANDOM_RANGE_NS)
+def _build_hom_tau_values(hom_cfg: HomConfig) -> list:
+    if hom_cfg.tau_random:
+        tau_min, tau_max = hom_cfg.tau_random_range
         rng = np.random.default_rng()
         return [float(rng.uniform(tau_min, tau_max))]
-    tau = hom_cfg.get("tau")
+    tau = hom_cfg.tau
     if tau is not None:
         return [float(tau)]
-    tau_start = float(hom_cfg["tau_start"])
-    tau_end = float(hom_cfg["tau_end"])
-    tau_step = hom_cfg.get("tau_step")
-    tau_points = hom_cfg.get("tau_points")
+    tau_start = float(hom_cfg.tau_start)
+    tau_end = float(hom_cfg.tau_end)
+    tau_step = hom_cfg.tau_step
+    tau_points = hom_cfg.tau_points
     if tau_end < tau_start:
         raise ValueError("tau_end 必须 >= tau_start")
     if tau_points is not None:
@@ -87,7 +81,7 @@ def _build_hom_tau_values(hom_cfg: dict) -> list:
     return [float(v) for v in values]
 
 
-def parse_hom_cli(args, parser) -> dict:
+def parse_hom_cli(args, parser) -> HomConfig:
     tau = args.tau
     tau_start = args.tau_start
     tau_end = args.tau_end
@@ -101,17 +95,17 @@ def parse_hom_cli(args, parser) -> dict:
         and tau_points is None
     ):
         window_ns = args.window_ns if args.window_ns is not None else 70.0
-        return {
-            "tau": None,
-            "tau_start": None,
-            "tau_end": None,
-            "tau_step": None,
-            "tau_points": None,
-            "tau_random": True,
-            "tau_random_range": DEFAULT_TAU_RANDOM_RANGE_NS,
-            "window_ns": window_ns,
-            "max_attempts": args.max_attempts,
-        }
+        return HomConfig(
+            tau=None,
+            tau_start=None,
+            tau_end=None,
+            tau_step=None,
+            tau_points=None,
+            tau_random=True,
+            tau_random_range=DEFAULT_TAU_RANDOM_RANGE_NS,
+            window_ns=window_ns,
+            max_attempts=args.max_attempts,
+        )
     if tau is not None:
         if (
             tau_start is not None
@@ -129,17 +123,17 @@ def parse_hom_cli(args, parser) -> dict:
             parser.error("HOM 的 tau-step 与 tau-points 只能选其一")
 
     window_ns = args.window_ns if args.window_ns is not None else 70.0
-    return {
-        "tau": tau,
-        "tau_start": tau_start,
-        "tau_end": tau_end,
-        "tau_step": tau_step,
-        "tau_points": tau_points,
-        "tau_random": False,
-        "tau_random_range": DEFAULT_TAU_RANDOM_RANGE_NS,
-        "window_ns": window_ns,
-        "max_attempts": args.max_attempts,
-    }
+    return HomConfig(
+        tau=tau,
+        tau_start=tau_start,
+        tau_end=tau_end,
+        tau_step=tau_step,
+        tau_points=tau_points,
+        tau_random=False,
+        tau_random_range=DEFAULT_TAU_RANDOM_RANGE_NS,
+        window_ns=window_ns,
+        max_attempts=args.max_attempts,
+    )
 
 def validate_no_hom_args(args, parser) -> None:
     if (
@@ -157,72 +151,81 @@ def validate_no_hom_args(args, parser) -> None:
 def _run_hom_run(
     tau_ns: float,
     shots_per_run: int,
-    noise_cfg: Optional[dict],
+    config: SimConfig,
     window_ns: float,
-    fiber_noise: bool,
-    eta_det: float,
-    ideal_det: bool,
+    delay_jitter_ns: float = 0.0,
     verbose: bool = False,
+    debug: bool = False,
 ) -> tuple:
     run_rng = np.random.default_rng()
-    emission_cfg = _get_emission_params(delay_ns=tau_ns)
-
-    def _should_abort(stage_label: str, mps) -> Optional[str]:
-        if stage_label != "After Emission":
-            return None
-        extreme, _ = _atom_extreme_state(mps, eps=ATOM_EXTREME_EPS)
-        if not extreme:
-            return None
-        return "After Emission 原子态接近基态极端值"
-
-    pipe = run_emission_to_bs(
-        emission_cfg=emission_cfg,
+    timings = {} if debug else None
+    pipe = _run_single_trial(
         rng=run_rng,
-        fiber_params=_make_fiber_params(noise_enabled=fiber_noise),
+        config=config,
+        delay_ns=tau_ns,
+        delay_jitter_ns=delay_jitter_ns,
         verbose=verbose,
-        hooks=PipelineHooks(should_abort=_should_abort),
+        debug=debug,
+        hooks=None,
     )
+    if debug and pipe.timings:
+        timings.update(pipe.timings)
     if pipe.aborted:
         return 0, True, 0.0, 0.0
 
     result = pipe.emission
     p_no_loss = pipe.p_no_loss
 
-    # 有效样本：两光子都到达探测器（不含探测效率与暗计数）
-    if verbose:
-        print("计算两光子到达概率...")
-    p_arrive = compute_two_photon_arrival_prob(
-        result.mps,
-        result.get_n_bins(),
-        verbose=verbose,
-    )
-
-    bin_dt_s = result.time_grid.dt
+    bin_dt_s = result.dt_s
     bin_dt_ns = bin_dt_s * 1e9
     window_bins = _compute_window_bins(window_ns, bin_dt_ns)
 
-    if ideal_det:
+    if config.detector.ideal_det:
         p_noise = 0.0
         eta_det = 1.0
     else:
-        noise = _compute_noise_params(noise_cfg, bin_dt_s, run_rng)
+        noise = _compute_noise_params(config.noise, bin_dt_s, run_rng)
         p_noise = noise["p_noise"]
-    effects_cache = build_detection_effects_6d(eta_det, p_noise)  # 复用POVM以减少开销
+        eta_det = config.detector.eta_det
 
     coincidences = 0
-    for _ in range(shots_per_run):
-        det_result = run_two_photon_detection(
-            mps=result.mps,
-            n_bins=result.get_n_bins(),
-            eta_det=eta_det,
-            window_bins=window_bins,
-            p_dark=p_noise,
-            effects_cache=effects_cache,
-            rng=run_rng,
-            verbose=verbose,
-        )
+    detect_start = time.perf_counter() if debug else None
+    pipeline = run_detection_pipeline(
+        mps=result.mps,
+        n_bins=result.get_n_bins(),
+        eta_det=eta_det,
+        p_dark=p_noise,
+        window_bins=window_bins,
+        rng=run_rng,
+        verbose=verbose,
+        n_samples=shots_per_run,
+        compute_metrics=False,
+    )
+    p_arrive = pipeline.p_arrive
+    for det_result in pipeline.samples:
         if _is_port_samepol_coincidence(det_result.clicks, window_bins):
             coincidences += 1
+
+    if debug and timings is not None and detect_start is not None:
+        timings["detection_total"] = time.perf_counter() - detect_start
+        if shots_per_run > 0:
+            timings["detection_per_shot"] = timings["detection_total"] / shots_per_run
+        timing_order = [
+            ("emission", "发射"),
+            ("qfc", "QFC"),
+            ("filter_780", "780滤波"),
+            ("project_1517", "1517投影"),
+            ("fiber", "光纤"),
+            ("dephase", "退相干"),
+            ("bs", "BS"),
+            ("detection_total", "探测抽样"),
+        ]
+        parts = []
+        for key, label in timing_order:
+            if key in timings:
+                parts.append(f"{label}={timings[key]:.2f}s")
+        if parts:
+            print(f"[HOM][调试耗时] tau={tau_ns:.3f} ns | " + " | ".join(parts))
 
     return coincidences, False, p_arrive, p_no_loss
 
@@ -231,68 +234,71 @@ def _run_hom_task_indexed(
     tau_idx: int,
     tau_ns: float,
     shots_per_run: int,
-    noise_cfg: Optional[dict],
+    config: SimConfig,
     window_ns: float,
-    fiber_noise: bool,
-    eta_det: float,
-    ideal_det: bool,
+    delay_jitter_ns: float = 0.0,
     verbose: bool = False,
+    debug: bool = False,
 ) -> tuple:
     return _run_hom_run(
         tau_ns,
         shots_per_run,
-        noise_cfg,
+        config,
         window_ns,
-        fiber_noise,
-        eta_det,
-        ideal_det,
+        delay_jitter_ns=delay_jitter_ns,
         verbose=verbose,
+        debug=debug,
     )
 
 
 def run_hom_experiment(
     output_dir: Path,
-    n_runs: int,
-    shots_per_run: int,
-    jobs: int,
-    hom_cfg: dict,
-    noise_cfg: Optional[dict],
-    fiber_noise: bool,
-    eta_det: float,
-    ideal_det: bool,
+    config: SimConfig,
 ) -> None:
+    if config.hom is None:
+        raise ValueError("HOM 模式需要提供 hom 配置")
+    hom_cfg = config.hom
+    run_cfg = config.run
+    n_runs = run_cfg.runs
+    shots_per_run = run_cfg.shots_per_run
+    jobs = run_cfg.jobs
+    debug = run_cfg.debug
+
     tau_values = _build_hom_tau_values(hom_cfg)
-    window_ns = hom_cfg["window_ns"]
-    max_attempts = hom_cfg.get("max_attempts")
+    window_ns = hom_cfg.window_ns
+    max_attempts = hom_cfg.max_attempts
 
     jobs = max(1, min(jobs, os.cpu_count() or 1))
 
     tau_desc = ""
-    if hom_cfg.get("tau") is not None:
-        tau_desc = f"tau={hom_cfg['tau']:.3f} ns"
-    elif hom_cfg.get("tau_random"):
+    if hom_cfg.tau is not None:
+        tau_desc = f"tau={hom_cfg.tau:.3f} ns"
+    elif hom_cfg.tau_random:
         tau_desc = (
-            f"tau=random in [{hom_cfg['tau_random_range'][0]:.1f}, "
-            f"{hom_cfg['tau_random_range'][1]:.1f}] ns"
+            f"tau=random in [{hom_cfg.tau_random_range[0]:.1f}, "
+            f"{hom_cfg.tau_random_range[1]:.1f}] ns"
         )
-    elif hom_cfg.get("tau_points") is not None:
+    elif hom_cfg.tau_points is not None:
         tau_desc = (
-            f"tau_start={hom_cfg['tau_start']:.3f} ns, "
-            f"tau_end={hom_cfg['tau_end']:.3f} ns, "
-            f"tau_points={hom_cfg['tau_points']}"
+            f"tau_start={hom_cfg.tau_start:.3f} ns, "
+            f"tau_end={hom_cfg.tau_end:.3f} ns, "
+            f"tau_points={hom_cfg.tau_points}"
         )
     else:
         tau_desc = (
-            f"tau_start={hom_cfg['tau_start']:.3f} ns, "
-            f"tau_end={hom_cfg['tau_end']:.3f} ns, "
-            f"tau_step={hom_cfg['tau_step']:.3f} ns"
+            f"tau_start={hom_cfg.tau_start:.3f} ns, "
+            f"tau_end={hom_cfg.tau_end:.3f} ns, "
+            f"tau_step={hom_cfg.tau_step:.3f} ns"
         )
     print(
         f"[HOM] {tau_desc} | window_ns={window_ns:.1f} | "
         f"runs={n_runs} | shots_per_run={shots_per_run} | jobs={jobs}"
     )
-    print(f"[HOM] 光纤噪声: {'开启' if fiber_noise else '关闭'}")
-    print(f"[HOM] 探测参数: eta_det={eta_det:.3f} | 理想探测={'是' if ideal_det else '否'}")
+    print(f"[HOM] 光纤噪声: {'开启' if config.fiber.noise_enabled else '关闭'}")
+    print(
+        f"[HOM] 探测参数: eta_det={config.detector.eta_det:.3f} | "
+        f"理想探测={'是' if config.detector.ideal_det else '否'}"
+    )
     if max_attempts is not None:
         if max_attempts < n_runs:
             max_attempts = n_runs
@@ -326,6 +332,7 @@ def run_hom_experiment(
     total_taus = len(tau_values)
     progress_every = _progress_every(limit)
     trials_target = n_runs * shots_per_run
+    delay_jitter_ns = 0.5 if hom_cfg.tau_random else 0.0
 
     states = []
     for _ in tau_values:
@@ -389,12 +396,11 @@ def run_hom_experiment(
             idx,
             tau_values[idx],
             shots_per_run,
-            noise_cfg,
+            config,
             window_ns,
-            fiber_noise,
-            eta_det,
-            ideal_det,
+            delay_jitter_ns,
             False,
+            debug,
         )
 
     def _on_result(task: tuple, result: tuple) -> None:
@@ -409,12 +415,11 @@ def run_hom_experiment(
             focus_idx,
             tau_values[focus_idx],
             shots_per_run,
-            noise_cfg,
+            config,
             window_ns,
-            fiber_noise,
-            eta_det,
-            ideal_det,
+            delay_jitter_ns,
             True,
+            debug,
         )
 
     run_task_queue(

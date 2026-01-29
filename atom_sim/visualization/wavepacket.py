@@ -28,7 +28,6 @@ if _is_headless():
 import matplotlib.pyplot as plt  # noqa: E402
 
 from ..core.mps import MPSState  # noqa: E402
-from ..time_grid import TimeGrid  # noqa: E402
 from ..simulation.trajectory import EmissionResult  # noqa: E402
 
 
@@ -210,7 +209,7 @@ def plot_dual_arm_heatmap(
     save_path: str = "dual_arm_heatmap.png",
     show_atomic: bool = False,
     stage_name: str = "",
-    time_grid: Optional[TimeGrid] = None,
+    time_grid: Optional[dict] = None,
     vmax_scale_factor: float = 1.5,
     show: bool = True,
     validate: bool = True,
@@ -243,9 +242,9 @@ def plot_dual_arm_heatmap(
         是否显示原子状态行（默认：False）
     stage_name : str
         标题的阶段名称（如 "Emission", "QFC", "BS"）
-    time_grid : TimeGrid, optional
-        x轴标签的时间网格。若为None且result是EmissionResult，
-        使用result.time_grid。
+    time_grid : dict, optional
+        x轴标签的时间参数字典，可包含 dt_s / dt / dt_ns。
+        若为None且result是EmissionResult，使用result.dt_s。
     vmax_scale_factor : float
         缩放vmax的因子（相对于最大仓概率）
     show : bool
@@ -259,19 +258,40 @@ def plot_dual_arm_heatmap(
 
     mpl.rcParams['image.interpolation'] = 'nearest'
 
-    # 从结果中提取MPS和time_grid
+    def _resolve_dt_s(grid: Optional[dict], fallback_dt: float) -> float:
+        if grid is None:
+            return fallback_dt
+        if isinstance(grid, dict):
+            if "dt_s" in grid:
+                return float(grid["dt_s"])
+            if "dt" in grid:
+                return float(grid["dt"])
+            if "dt_ns" in grid:
+                return float(grid["dt_ns"]) * 1e-9
+            return fallback_dt
+        dt_s = getattr(grid, "dt_s", None)
+        if dt_s is not None:
+            return float(dt_s)
+        dt = getattr(grid, "dt", None)
+        if dt is not None:
+            return float(dt)
+        dt_ns = getattr(grid, "dt_ns", None)
+        if dt_ns is not None:
+            return float(dt_ns) * 1e-9
+        return fallback_dt
+
+    # 从结果中提取MPS和时间参数
     if isinstance(result, EmissionResult):
         mps = result.mps
-        if time_grid is None:
-            time_grid = result.time_grid
         n_bins = result.get_n_bins()
+        dt_s = _resolve_dt_s(time_grid, result.dt_s)
         has_atom_evol = True
     else:  # MPSState
         mps = result
-        if time_grid is None:
-            time_grid = TimeGrid(dt=1.0, N=1)  # 虚拟
         n_bins = (mps.L - 2) // 2  # 从链长度推断
+        dt_s = _resolve_dt_s(time_grid, 1.0)
         has_atom_evol = False
+    time_axis_s = np.arange(n_bins) * dt_s
 
     # 创建具有更大间距的图形 (1080x720 aspect ratio)
     fig, axes = plt.subplots(1, 2, figsize=(14.4, 7.2))
@@ -482,7 +502,7 @@ def plot_dual_arm_heatmap(
     tick_indices = np.linspace(0, n_bins - 1, n_ticks, dtype=int)
     axes[0].set_xticks(tick_indices)
     # 反转时间标签：tick_indices[i] 对应的时间是 t[(n_bins-1) - tick_indices[i]]
-    axes[0].set_xticklabels([f'{time_grid.t[(n_bins - 1) - i] * 1e9:.0f}' for i in tick_indices], fontsize=9)
+    axes[0].set_xticklabels([f'{time_axis_s[(n_bins - 1) - i] * 1e9:.0f}' for i in tick_indices], fontsize=9)
     axes[0].set_xlabel('Time (ns)', fontsize=10)
     axes[0].top = axes[0].twiny()
     axes[0].top.set_xticks(tick_indices)
@@ -536,7 +556,7 @@ def plot_dual_arm_heatmap(
 
     axes[1].set_xticks(tick_indices)
     # 反转时间标签：tick_indices[i] 对应的时间是 t[(n_bins-1) - tick_indices[i]]
-    axes[1].set_xticklabels([f'{time_grid.t[(n_bins - 1) - i] * 1e9:.0f}' for i in tick_indices], fontsize=9)
+    axes[1].set_xticklabels([f'{time_axis_s[(n_bins - 1) - i] * 1e9:.0f}' for i in tick_indices], fontsize=9)
     axes[1].set_xlabel('Time (ns)', fontsize=10)
     axes[1].top = axes[1].twiny()
     axes[1].top.set_xticks(tick_indices)

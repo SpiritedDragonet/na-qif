@@ -5,38 +5,14 @@
 ## 项目结构
 
 ```
-total_simulation.py               # CLI 主入口（全流程仿真 + 汇总输出）
-├── _parse_run_params()
-├── save_debug_info()
-├── _append_click_summary()
-├── _init_stats()
-├── _merge_stats()
-├── _format_counter()
-├── _write_csv_header()
-├── _append_csv_row()
-├── _format_metric()
-├── _format_stat()
-├── _file_lock()
-├── _init_combined_summary()
-├── _finalize_combined_summary()
-├── _write_extra_data()
-├── _write_success_metrics_detail()
-├── _init_success_metrics_accumulator()
-├── _accumulate_success_metrics()
-├── _finalize_success_metrics()
-├── _run_single_simulation_core()
-├── _run_single_simulation()
-├── _run_single_simulation_task()
-└── main()
+total_simulation.py               # CLI 主入口（参数解析 + 任务调度）
+├── _parse_run_params()           # 解析 CLI 参数
+└── main()                        # 调度入口（内部含汇总/统计辅助函数）
 
 atom_sim/
 ├── __init__.py                    # 包导出
 │   ├── MPSState
-│   ├── TimeGrid
 │   └── run_dual_atom_emission
-│
-├── time_grid.py                   # 时间网格
-│   └── TimeGrid
 │
 ├── core/                          # 数值核心层
 │   ├── __init__.py
@@ -152,8 +128,6 @@ outputs/                           # 仿真输出目录（已 gitignore）
     ├── runXXX_2_after_qfc.png
     ├── runXXX_3_after_fiber.png
     ├── runXXX_4_after_bs.png
-    ├── runXXX_4b_after_bs_cross_bin_joint.png
-    ├── runXXX_extra_data.txt
     └── all_clicks_summary.csv
 ```
 
@@ -164,14 +138,13 @@ outputs/                           # 仿真输出目录（已 gitignore）
 | `core/mps.py` | 张量网络存储、局域 TEBD 更新、SVD | 物理意义 |
 | `hilbert/` | 线性代数：空间、基、算符 | 门做什么 |
 | `physics/` | 物理：门矩阵、Kraus 通道 | MPS 更新 |
-| `time_grid.py` | 时间网格参数 | 计算 |
 | `simulation/` | 编排：调用顺序、条件 | 矩阵如何计算 |
 | `visualization/` | 结果可视化、数据提取 | - |
 
 ## 数据流
 
 ```
-time_grid.py → physics/gates.py → hilbert/basis.py → numpy 矩阵
+simulation/trajectory.py → physics/gates.py → hilbert/basis.py → numpy 矩阵
                                                ↓
 simulation/trajectory.py → core/mps.py → 张量网络更新（仅局域！）
 ```

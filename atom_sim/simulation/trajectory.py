@@ -12,7 +12,6 @@ import math
 import numpy as np
 
 from ..core.mps import MPSState
-from ..time_grid import TimeGrid
 from ..hilbert.basis import BIN_SPACE, SUBSPACE_780, SUBSPACE_1517
 from ..physics.gates import (
     emission_gate, jones_gate
@@ -67,8 +66,8 @@ class EmissionResult:
     ----------
     mps : MPSState
         发射后的最终MPS态
-    time_grid : TimeGrid
-        仿真使用的时间网格
+    dt_s : float
+        时间步长（秒）
     per_bin_prob_A : np.ndarray
         A臂每个仓的发射概率（形状：n_bins）
     per_bin_prob_B : np.ndarray
@@ -97,7 +96,7 @@ class EmissionResult:
         B臂外耦合通道的出射成功概率（由波包生成器估计）
     """
     mps: MPSState
-    time_grid: TimeGrid
+    dt_s: float
     per_bin_prob_A: np.ndarray
     per_bin_prob_B: np.ndarray
     atom_states: dict
@@ -710,9 +709,9 @@ def run_dual_atom_emission(
         print("双原子发射仿真（原子向左移动方案）")
         print("=" * 70)
 
-    # 创建时间网格
-    time_grid = TimeGrid(dt=dt_ns * 1e-9, N=n_bins)
-    t_sec = time_grid.t
+    # 时间参数
+    dt_s = dt_ns * 1e-9
+    t_sec = np.arange(n_bins) * dt_s
     t_ns = t_sec * 1e9
 
     # 设置默认峰值为bin中心
@@ -1005,7 +1004,7 @@ def run_dual_atom_emission(
 
     result = EmissionResult(
         mps=mps,
-        time_grid=time_grid,
+        dt_s=dt_s,
         per_bin_prob_A=per_bin_prob_A,
         per_bin_prob_B=per_bin_prob_B,
         atom_states=atom_states,

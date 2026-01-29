@@ -5,55 +5,129 @@
 
 from __future__ import annotations
 
-from typing import Optional, Callable, Any, TYPE_CHECKING
-from dataclasses import dataclass
+from typing import Optional, Callable, Any, Tuple
+from dataclasses import dataclass, field
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import time
 import numpy as np
 
 from ..physics import FiberChannelParams
-
-if TYPE_CHECKING:
-    from ..core.mps import MPSState
 
 # 探测噪声默认参数（可用CLI覆盖）
 DEFAULT_DARK_RATE_INTRINSIC_HZ = 65.0
 DEFAULT_BG_RATE_MEAN_HZ = 165.0
 DEFAULT_BG_RATE_STD_HZ = float(np.sqrt(5.0))
 
-# 原子态极端判据
-ATOM_EXTREME_EPS = 1e-2
+
+@dataclass
+class EmissionParams:
+    """发射阶段参数（可复用的最小物理输入）。"""
+    n_bins: int = 100
+    dt_ns: float = 0.5
+    chi_max: int = 50
+    gamma_peak_A: float = 2 * np.pi * 20e6
+    gamma_peak_B: float = 2 * np.pi * 20e6
+    sigma: float = 10.0
+    g: float = 2 * np.pi * 20e6
+    kappa_ex: float = 2 * np.pi * 20e6
+    kappa_in: float = 2 * np.pi * 1e6
+    gamma_atom: float = 2 * np.pi * 3e6
+    delta_u: float = 0.0
+    delta_e: float = 0.0
+    delay_ns: Optional[float] = None
+    delay_jitter_ns: float = 0.5
+    delay_random_range: Tuple[float, float] = (-10.0, 10.0)
 
 
-def _get_emission_params(delay_ns: float) -> dict:
-    # 发射参数集中管理，避免多处硬编码
-    return {
-        "n_bins": 100,
-        "dt_ns": 0.5,
-        "chi_max": 50,
-        "gamma_peak_A": 2 * np.pi * 20e6,
-        "gamma_peak_B": 2 * np.pi * 20e6,
-        "sigma": 10.0,
-        "delay_ns": delay_ns,
-        "delay_jitter_ns": 0.5,
-        "g": 2 * np.pi * 20e6,
-        "kappa_ex": 2 * np.pi * 20e6,
-        "kappa_in": 2 * np.pi * 1e6,
-        "gamma_atom": 2 * np.pi * 3e6,
-        "delta_u": 0.0,
-        "delta_e": 0.0,
-    }
+@dataclass
+class NoiseParams:
+    """探测噪声参数（暗计数 + 背景噪声）。"""
+    dark_rate_intrinsic_hz: float = DEFAULT_DARK_RATE_INTRINSIC_HZ
+    bg_rate_mean_hz: float = DEFAULT_BG_RATE_MEAN_HZ
+    bg_rate_std_hz: float = DEFAULT_BG_RATE_STD_HZ
 
 
-def _make_fiber_params(noise_enabled: bool = True) -> FiberChannelParams:
-    # 残余Jones旋转 + 小PDL + 相位斜率噪声
-    compensation_sigma = 0.1  # 补偿后的残差旋转（弧度，可调）
-    pdl_sigma = 0.02  # 小PDL：H/V透过率相对差异的标准差（线性）
-    phase_slope_std = 0.05  # 相位斜率标准差（rad/bin）
-    if not noise_enabled:
-        # 关闭光纤噪声：保留平均透过率，移除随机偏振/相位/PDL扰动
+@dataclass
+class DetectorParams:
+    """探测器参数。"""
+    eta_det: float = 0.85
+    ideal_det: bool = False
+
+
+@dataclass
+class FiberParams:
+    """光纤信道参数。"""
+    noise_enabled: bool = True
+    polarization_model: str = "perturb"
+    polarization_sigma: float = 0.1
+    eta_mean: float = 0.6
+    eta_std: float = 0.02
+    pdl_sigma: float = 0.02
+    phase_drift_std: float = 0.2
+    phase_slope_std: float = 0.05
+    phase_jitter_std: float = 0.0
+
+
+@dataclass
+class RunConfig:
+    """运行参数（次数、并行、枚举模式等）。"""
+    runs: int = 1
+    shots_per_run: int = 1
+    jobs: int = 1
+    enum_mode: str = "dark"
+    plot_all: bool = False
+    debug: bool = False
+
+
+@dataclass
+class HomConfig:
+    """HOM 扫描参数。"""
+    tau: Optional[float] = None
+    tau_start: Optional[float] = None
+    tau_end: Optional[float] = None
+    tau_step: Optional[float] = None
+    tau_points: Optional[int] = None
+    tau_random: bool = False
+    tau_random_range: Tuple[float, float] = (-10.0, 10.0)
+    window_ns: float = 70.0
+    max_attempts: Optional[int] = None
+
+
+@dataclass
+class SimConfig:
+    """统一配置入口（所有实验参数挂在此处）。"""
+    mode: str = "SIM"
+    run: RunConfig = field(default_factory=RunConfig)
+    emission: EmissionParams = field(default_factory=EmissionParams)
+    noise: NoiseParams = field(default_factory=NoiseParams)
+    detector: DetectorParams = field(default_factory=DetectorParams)
+    fiber: FiberParams = field(default_factory=FiberParams)
+    hom: Optional[HomConfig] = None
+
+
+def _resolve_emission_delay(
+    emission: EmissionParams,
+    rng: np.random.Generator,
+    delay_ns: Optional[float],
+    delay_jitter_ns: Optional[float],
+) -> tuple:
+    if delay_ns is None:
+        if emission.delay_ns is None:
+            low, high = emission.delay_random_range
+            delay_ns = float(rng.uniform(low, high))
+        else:
+            delay_ns = float(emission.delay_ns)
+    if delay_jitter_ns is None:
+        delay_jitter_ns = float(emission.delay_jitter_ns)
+    return float(delay_ns), float(delay_jitter_ns)
+
+
+def _build_fiber_params(cfg: FiberParams) -> FiberChannelParams:
+    if not cfg.noise_enabled:
         return FiberChannelParams(
-            polarization_model="perturb",
+            polarization_model=cfg.polarization_model,
             polarization_sigma=0.0,
+            eta_mean=cfg.eta_mean,
             eta_std=0.0,
             pdl_sigma=0.0,
             phase_drift_std=0.0,
@@ -61,10 +135,14 @@ def _make_fiber_params(noise_enabled: bool = True) -> FiberChannelParams:
             phase_jitter_std=0.0,
         )
     return FiberChannelParams(
-        polarization_model="perturb",
-        polarization_sigma=compensation_sigma,
-        pdl_sigma=pdl_sigma,
-        phase_slope_std=phase_slope_std,
+        polarization_model=cfg.polarization_model,
+        polarization_sigma=cfg.polarization_sigma,
+        eta_mean=cfg.eta_mean,
+        eta_std=cfg.eta_std,
+        pdl_sigma=cfg.pdl_sigma,
+        phase_drift_std=cfg.phase_drift_std,
+        phase_slope_std=cfg.phase_slope_std,
+        phase_jitter_std=cfg.phase_jitter_std,
     )
 
 
@@ -75,21 +153,15 @@ def _compute_window_bins(window_ns: float, bin_dt_ns: float) -> int:
 
 
 def _compute_noise_params(
-    noise_cfg: Optional[dict],
+    noise_cfg: Optional[NoiseParams],
     bin_dt_s: float,
     rng: np.random.Generator,
 ) -> dict:
     if noise_cfg is None:
-        noise_cfg = {}
-    dark_rate_intrinsic_hz = max(
-        0.0, float(noise_cfg.get("dark_rate_intrinsic_hz", DEFAULT_DARK_RATE_INTRINSIC_HZ))
-    )
-    bg_rate_mean_hz = max(
-        0.0, float(noise_cfg.get("bg_rate_mean_hz", DEFAULT_BG_RATE_MEAN_HZ))
-    )
-    bg_rate_std_hz = max(
-        0.0, float(noise_cfg.get("bg_rate_std_hz", DEFAULT_BG_RATE_STD_HZ))
-    )
+        noise_cfg = NoiseParams()
+    dark_rate_intrinsic_hz = max(0.0, float(noise_cfg.dark_rate_intrinsic_hz))
+    bg_rate_mean_hz = max(0.0, float(noise_cfg.bg_rate_mean_hz))
+    bg_rate_std_hz = max(0.0, float(noise_cfg.bg_rate_std_hz))
     dark_rate_bg_hz = max(0.0, rng.normal(bg_rate_mean_hz, bg_rate_std_hz))
     p_dark_intrinsic = 1.0 - np.exp(-dark_rate_intrinsic_hz * bin_dt_s)
     p_bg = 1.0 - np.exp(-dark_rate_bg_hz * bin_dt_s)
@@ -104,38 +176,6 @@ def _compute_noise_params(
         "p_bg": p_bg,
         "p_noise": p_noise,
     }
-
-
-def _atom_extreme_state(mps: MPSState, eps: float = ATOM_EXTREME_EPS) -> tuple:
-    rho_A = mps.get_reduced_density([0])
-    rho_B = mps.get_reduced_density([1])
-
-    pA0 = float(np.real(rho_A[0, 0]))
-    pA1 = float(np.real(rho_A[1, 1]))
-    pAe = float(np.real(rho_A[2, 2]))
-    pAu = float(np.real(rho_A[3, 3]))
-    pB0 = float(np.real(rho_B[0, 0]))
-    pB1 = float(np.real(rho_B[1, 1]))
-    pBe = float(np.real(rho_B[2, 2]))
-    pBu = float(np.real(rho_B[3, 3]))
-
-    pA_qubit = pA0 + pA1
-    pB_qubit = pB0 + pB1
-    extreme_A = False
-    extreme_B = False
-    if pA_qubit > eps:
-        pA0_rel = pA0 / pA_qubit
-        pA1_rel = pA1 / pA_qubit
-        extreme_A = (
-            pA0_rel < eps or pA1_rel < eps or pA0_rel > 1.0 - eps or pA1_rel > 1.0 - eps
-        )
-    if pB_qubit > eps:
-        pB0_rel = pB0 / pB_qubit
-        pB1_rel = pB1 / pB_qubit
-        extreme_B = (
-            pB0_rel < eps or pB1_rel < eps or pB0_rel > 1.0 - eps or pB1_rel > 1.0 - eps
-        )
-    return (extreme_A or extreme_B), (pA0, pA1, pAe, pAu, pB0, pB1, pBe, pBu)
 
 
 def _apply_atomic_dephasing(
@@ -176,7 +216,6 @@ class PipelineHooks:
     after_qfc_filter: Optional[Callable[[Any], None]] = None
     after_fiber: Optional[Callable[[Any, tuple], None]] = None
     after_bs: Optional[Callable[[Any], None]] = None
-    should_abort: Optional[Callable[[str, Any], Optional[str]]] = None
 
 
 @dataclass
@@ -194,16 +233,20 @@ class PipelineResult:
     aborted: bool
     abort_stage: Optional[str]
     abort_reason: Optional[str]
+    timings: Optional[dict] = None
 
 
 def run_emission_to_bs(
-    emission_cfg: dict,
+    emission: EmissionParams,
     rng: np.random.Generator,
-    fiber_params: Optional[FiberChannelParams] = None,
+    fiber: Optional[FiberParams] = None,
+    delay_ns: Optional[float] = None,
+    delay_jitter_ns: Optional[float] = None,
     verbose: bool = True,
     hooks: Optional[PipelineHooks] = None,
     t_wait_us: float = 80.0,
     t2_us: float = 1000.0,
+    record_timings: bool = False,
 ) -> PipelineResult:
     """
     统一的发射->QFC->滤波->投影->光纤->退相干->BS 流水线。
@@ -221,61 +264,48 @@ def run_emission_to_bs(
 
     if hooks is None:
         hooks = PipelineHooks()
-    if fiber_params is None:
-        fiber_params = _make_fiber_params()
+    if fiber is None:
+        fiber = FiberParams()
+    fiber_params = _build_fiber_params(fiber)
+    delay_ns, delay_jitter_ns = _resolve_emission_delay(
+        emission, rng, delay_ns, delay_jitter_ns
+    )
 
     def _call_stage(label: str) -> None:
         if hooks.on_stage is not None:
             hooks.on_stage(label)
 
-    def _maybe_abort(stage_label: str, mps) -> Optional[str]:
-        if hooks.should_abort is None:
-            return None
-        return hooks.should_abort(stage_label, mps)
+    timings = {} if record_timings else None
 
     _call_stage("发射")
+    t0 = time.perf_counter() if timings is not None else None
     emission = run_dual_atom_emission(
-        n_bins=emission_cfg["n_bins"],
-        dt_ns=emission_cfg["dt_ns"],
-        chi_max=emission_cfg["chi_max"],
-        gamma_peak_A=emission_cfg["gamma_peak_A"],
-        gamma_peak_B=emission_cfg["gamma_peak_B"],
-        sigma=emission_cfg["sigma"],
-        delay_ns=emission_cfg["delay_ns"],
-        delay_jitter_ns=emission_cfg["delay_jitter_ns"],
-        g=emission_cfg["g"],
-        kappa_ex=emission_cfg["kappa_ex"],
-        kappa_in=emission_cfg["kappa_in"],
-        gamma_atom=emission_cfg["gamma_atom"],
-        delta_u=emission_cfg["delta_u"],
-        delta_e=emission_cfg["delta_e"],
+        n_bins=emission.n_bins,
+        dt_ns=emission.dt_ns,
+        chi_max=emission.chi_max,
+        gamma_peak_A=emission.gamma_peak_A,
+        gamma_peak_B=emission.gamma_peak_B,
+        sigma=emission.sigma,
+        delay_ns=delay_ns,
+        delay_jitter_ns=delay_jitter_ns,
+        g=emission.g,
+        kappa_ex=emission.kappa_ex,
+        kappa_in=emission.kappa_in,
+        gamma_atom=emission.gamma_atom,
+        delta_u=emission.delta_u,
+        delta_e=emission.delta_e,
         rng=rng,
         verbose=verbose,
     )
+    if timings is not None and t0 is not None:
+        timings["emission"] = time.perf_counter() - t0
     mps = emission.mps
     _, p_qubit_emit = extract_spin_state(mps, emission.get_n_bins())
     if hooks.after_emission is not None:
         hooks.after_emission(emission)
 
-    reason = _maybe_abort("After Emission", mps)
-    if reason:
-        return PipelineResult(
-            emission=emission,
-            mps=mps,
-            p_qubit_emit=p_qubit_emit,
-            p_no_loss_780=0.0,
-            p_no_loss_fiber=0.0,
-            p_no_loss=0.0,
-            fiber_sample=None,
-            t_wait_us=t_wait_us,
-            t2_us=t2_us,
-            p_dephase=0.0,
-            aborted=True,
-            abort_stage="After Emission",
-            abort_reason=reason,
-        )
-
     _call_stage("QFC + 780滤波 + 1517投影")
+    t0 = time.perf_counter() if timings is not None else None
     apply_qfc(
         mps=mps,
         n_bins=emission.get_n_bins(),
@@ -283,12 +313,17 @@ def run_emission_to_bs(
         theta_V=np.pi / 4,
         verbose=verbose,
     )
+    if timings is not None and t0 is not None:
+        timings["qfc"] = time.perf_counter() - t0
+    t0 = time.perf_counter() if timings is not None else None
     mps, p_no_loss_780 = apply_780_filter(
         mps=mps,
         n_bins=emission.get_n_bins(),
         verbose=verbose,
         rng=rng,
     )
+    if timings is not None and t0 is not None:
+        timings["filter_780"] = time.perf_counter() - t0
     if p_no_loss_780 <= 0.0:
         return PipelineResult(
             emission=emission,
@@ -304,34 +339,21 @@ def run_emission_to_bs(
             aborted=True,
             abort_stage="After QFC + Filter",
             abort_reason="780nm滤波后选概率为0，跳过后续计算",
+            timings=timings,
         )
+    t0 = time.perf_counter() if timings is not None else None
     project_to_1517(
         mps=mps,
         n_bins=emission.get_n_bins(),
         verbose=verbose,
     )
+    if timings is not None and t0 is not None:
+        timings["project_1517"] = time.perf_counter() - t0
     if hooks.after_qfc_filter is not None:
         hooks.after_qfc_filter(emission)
 
-    reason = _maybe_abort("After QFC + Filter", mps)
-    if reason:
-        return PipelineResult(
-            emission=emission,
-            mps=mps,
-            p_qubit_emit=p_qubit_emit,
-            p_no_loss_780=p_no_loss_780,
-            p_no_loss_fiber=0.0,
-            p_no_loss=0.0,
-            fiber_sample=None,
-            t_wait_us=t_wait_us,
-            t2_us=t2_us,
-            p_dephase=0.0,
-            aborted=True,
-            abort_stage="After QFC + Filter",
-            abort_reason=reason,
-        )
-
     _call_stage("光纤信道")
+    t0 = time.perf_counter() if timings is not None else None
     mps, fiber_sample, p_no_loss_fiber = apply_fiber_channel(
         mps=mps,
         n_bins=emission.get_n_bins(),
@@ -339,6 +361,8 @@ def run_emission_to_bs(
         rng=rng,
         verbose=verbose,
     )
+    if timings is not None and t0 is not None:
+        timings["fiber"] = time.perf_counter() - t0
     p_no_loss = p_no_loss_780 * p_no_loss_fiber
     if p_no_loss <= 0.0:
         return PipelineResult(
@@ -355,27 +379,10 @@ def run_emission_to_bs(
             aborted=True,
             abort_stage="After Fiber Channel",
             abort_reason="光纤无损耗后选概率为0，跳过后续计算",
+            timings=timings,
         )
     if hooks.after_fiber is not None:
         hooks.after_fiber(emission, fiber_sample)
-
-    reason = _maybe_abort("After Fiber Channel", mps)
-    if reason:
-        return PipelineResult(
-            emission=emission,
-            mps=mps,
-            p_qubit_emit=p_qubit_emit,
-            p_no_loss_780=p_no_loss_780,
-            p_no_loss_fiber=p_no_loss_fiber,
-            p_no_loss=p_no_loss,
-            fiber_sample=fiber_sample,
-            t_wait_us=t_wait_us,
-            t2_us=t2_us,
-            p_dephase=0.0,
-            aborted=True,
-            abort_stage="After Fiber Channel",
-            abort_reason=reason,
-        )
 
     if t2_us > 0.0:
         p_dephase = 0.5 * (1.0 - np.exp(-t_wait_us / t2_us))
@@ -383,16 +390,22 @@ def run_emission_to_bs(
         p_dephase = 0.0
     if verbose:
         print(f"\n原子等待退相干: T_wait={t_wait_us:.1f} us, T2={t2_us:.1f} us, p={p_dephase:.4e}")
+    t0 = time.perf_counter() if timings is not None else None
     _apply_atomic_dephasing(mps, p_dephase, rng=rng, verbose=verbose)
+    if timings is not None and t0 is not None:
+        timings["dephase"] = time.perf_counter() - t0
 
     _call_stage("分束器 + 诊断/可视化")
     if verbose:
         print("\n应用分束器（BS）...")
+    t0 = time.perf_counter() if timings is not None else None
     apply_bs(
         mps=mps,
         n_bins=emission.get_n_bins(),
         verbose=verbose,
     )
+    if timings is not None and t0 is not None:
+        timings["bs"] = time.perf_counter() - t0
     if hooks.after_bs is not None:
         hooks.after_bs(emission)
 
@@ -410,6 +423,7 @@ def run_emission_to_bs(
         aborted=False,
         abort_stage=None,
         abort_reason=None,
+        timings=timings,
     )
 
 
