@@ -156,8 +156,9 @@ def _run_hom_run(
     delay_jitter_ns: float = 0.0,
     verbose: bool = False,
     debug: bool = False,
+    rng_seed: Optional[int] = None,
 ) -> tuple:
-    run_rng = np.random.default_rng()
+    run_rng = np.random.default_rng(rng_seed)
     timings = {} if debug else None
     pipe = _run_single_trial(
         rng=run_rng,
@@ -239,6 +240,7 @@ def _run_hom_task_indexed(
     delay_jitter_ns: float = 0.0,
     verbose: bool = False,
     debug: bool = False,
+    rng_seed: Optional[int] = None,
 ) -> tuple:
     return _run_hom_run(
         tau_ns,
@@ -248,6 +250,7 @@ def _run_hom_task_indexed(
         delay_jitter_ns=delay_jitter_ns,
         verbose=verbose,
         debug=debug,
+        rng_seed=rng_seed,
     )
 
 
@@ -261,14 +264,15 @@ def run_hom_experiment(
     run_cfg = config.run
     n_runs = run_cfg.runs
     shots_per_run = run_cfg.shots_per_run
-    jobs = run_cfg.jobs
+    core_budget = run_cfg.cores
     debug = run_cfg.debug
 
     tau_values = _build_hom_tau_values(hom_cfg)
     window_ns = hom_cfg.window_ns
     max_attempts = hom_cfg.max_attempts
 
-    jobs = max(1, min(jobs, os.cpu_count() or 1))
+    core_budget = max(1, min(core_budget, os.cpu_count() or 1))
+    run_cfg.cores = core_budget
 
     tau_desc = ""
     if hom_cfg.tau is not None:
@@ -292,7 +296,7 @@ def run_hom_experiment(
         )
     print(
         f"[HOM] {tau_desc} | window_ns={window_ns:.1f} | "
-        f"runs={n_runs} | shots_per_run={shots_per_run} | jobs={jobs}"
+        f"runs={n_runs} | shots_per_run={shots_per_run} | cores={core_budget}"
     )
     print(f"[HOM] 光纤噪声: {'开启' if config.fiber.noise_enabled else '关闭'}")
     print(
@@ -376,7 +380,8 @@ def run_hom_experiment(
             )
             s["progress_next"] += progress_every
 
-    print(f"[HOM] 并行: 尝试任务并发 jobs={jobs}")
+    jobs = max(1, min(core_budget, limit))
+    print(f"[HOM] 并行: 核数预算={core_budget} | 实际并发进程={jobs}")
     tau_queue = deque(range(total_taus))
 
     def _pick_tau() -> Optional[int]:

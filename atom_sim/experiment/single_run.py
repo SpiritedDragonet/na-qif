@@ -211,9 +211,12 @@ def _run_single_simulation_core(
     output_dir: Path,
     run_index: int,
     config: SimConfig,
-    summary_path: Path,
-    summary_lock_path: Path,
+    summary_path: Optional[Path],
+    summary_lock_path: Optional[Path],
     show_plots: bool,
+    plot_dir: Optional[Path] = None,
+    run_tag: Optional[str] = None,
+    seed: Optional[int] = None,
 ):
     run_cfg = config.run
     n_runs = run_cfg.runs
@@ -264,6 +267,8 @@ def _run_single_simulation_core(
         det_result,
         metrics: Optional[dict],
     ) -> None:
+        if summary_path is None or lock_path is None:
+            return
         # 目的：记录单次点击结果；公式：F_full = <Bell|ρ|Bell>（未归一化保真度）。
         def _fmt(key: str, fmt: str) -> str:
             if not metrics or key not in metrics:
@@ -419,7 +424,7 @@ def _run_single_simulation_core(
     print(f"Output directory: {output_dir}")
     print("运行发射 + QFC + 分束器 + 探测仿真...")
 
-    run_rng = np.random.default_rng()
+    run_rng = np.random.default_rng(seed)
     p_no_loss = 0.0
 
     stage_map = {
@@ -450,7 +455,7 @@ def _run_single_simulation_core(
         def _hook(emission, *_args):
             if _plot_gate_allow():
                 print(f"\n生成{stage_name}的可视化图...")
-                plot_path = output_dir / f"{run_tag}_{file_suffix}.png"
+                plot_path = plot_dir / f"{run_tag}_{file_suffix}.png"
                 target = emission if use_emission_obj else emission.mps
                 kwargs = dict(
                     save_path=str(plot_path),

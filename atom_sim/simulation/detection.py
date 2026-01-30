@@ -229,24 +229,10 @@ def run_detection_pipeline(
     if rng is None:
         rng = np.random.default_rng()
 
-    def _infer_bin_start(state: MPSState) -> int:
-        if len(state.d) >= 2 and state.d[0] == 4 and state.d[1] == 4:
-            return 2
-        return 0
-
-    def _empty_samples(count: int) -> List[TwoPhotonDetectionResult]:
-        if count <= 0:
-            return []
-        zero_spin = np.zeros((4, 4), dtype=complex)
-        return [
-            TwoPhotonDetectionResult(
-                clicks=[],
-                success=False,
-                bell_state="",
-                spin_state=zero_spin,
-            )
-            for _ in range(count)
-        ]
+    bin_start = 2 if (len(mps.d) >= 2 and mps.d[0] == 4 and mps.d[1] == 4) else 0
+    bin_dim = mps.d[bin_start]
+    if bin_dim != 6:
+        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6.")
 
     if verbose and n_samples > 0:
         print("\n" + "=" * 60)
@@ -254,7 +240,56 @@ def run_detection_pipeline(
         print("=" * 60)
 
     arrival_verbose = verbose and compute_metrics
-    p_arrive = compute_two_photon_arrival_prob(mps, n_bins, verbose=arrival_verbose)
+    # 使用P2投影的MPO计算两光子到达概率
+    mps._mps.canonical_form_finite(renormalize=True)
+    mps._mps.norm = 1.0
+    bin_sites = set()
+    for n in range(n_bins):
+        site_A = bin_start + 2 * n
+        site_B = bin_start + 2 * n + 1
+        if site_B >= mps.L:
+            raise ValueError(f"n_bins={n_bins} 超出MPS长度 {mps.L}")
+        bin_sites.add(site_A)
+        bin_sites.add(site_B)
+
+    pi0 = np.diag([1, 0, 0, 0, 0, 0]).astype(complex)
+    pi1 = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)
+    pi2 = np.diag([0, 0, 0, 1, 1, 1]).astype(complex)
+    w_bin = np.zeros((3, 3, bin_dim, bin_dim), dtype=complex)
+    w_bin[0, 0] = pi0
+    w_bin[0, 1] = pi1
+    w_bin[0, 2] = pi2
+    w_bin[1, 1] = pi0
+    w_bin[1, 2] = pi1
+    w_bin[2, 2] = pi0
+
+    w_identity_cache: dict[int, np.ndarray] = {}
+    env = np.zeros((3, 1, 1), dtype=complex)
+    env[0, 0, 0] = 1.0
+    for site in range(mps.L):
+        B = mps._mps.get_B(site, form='B').to_ndarray()
+        Bc = B.conj()
+        if site in bin_sites:
+            w = w_bin
+        else:
+            dim = mps.d[site]
+            if dim not in w_identity_cache:
+                pi0_id = np.eye(dim, dtype=complex)
+                pi1_zero = np.zeros((dim, dim), dtype=complex)
+                pi2_zero = np.zeros((dim, dim), dtype=complex)
+                w_id = np.zeros((3, 3, dim, dim), dtype=complex)
+                w_id[0, 0] = pi0_id
+                w_id[0, 1] = pi1_zero
+                w_id[0, 2] = pi2_zero
+                w_id[1, 1] = pi0_id
+                w_id[1, 2] = pi1_zero
+                w_id[2, 2] = pi0_id
+                w_identity_cache[dim] = w_id
+            w = w_identity_cache[dim]
+        env = np.einsum('aij,ipk,jql,abpq->bkl', env, B, Bc, w, optimize=True)
+    p_arrive = float(env[2, 0, 0].real)
+    if arrival_verbose:
+        print(f"  两光子到达概率 p_arrive={p_arrive:.6f}")
     if p_arrive < P_ARRIVE_EPS:
         p_arrive = 0.0
 
@@ -273,30 +308,33 @@ def run_detection_pipeline(
                 fidelity_true=0.0,
                 fidelity_false=0.0,
             )
+        samples = []
+        if n_samples > 0:
+            zero_spin = np.zeros((4, 4), dtype=complex)
+            samples = [
+                TwoPhotonDetectionResult(
+                    clicks=[],
+                    success=False,
+                    bell_state="",
+                    spin_state=zero_spin,
+                )
+                for _ in range(n_samples)
+            ]
         return DetectionPipelineResult(
             p_arrive=p_arrive,
             metrics=metrics,
-            samples=_empty_samples(n_samples),
+            samples=samples,
         )
-
-    bin_start = _infer_bin_start(mps)
-    bin_dim = mps.d[bin_start]
-    if bin_dim != 6:
-        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6.")
 
     effects_all, effects_true = build_detection_effects_6d(eta_det, p_dark)
     if verbose and n_samples > 0:
         print("  使用6D POVM effects (36x36) - 抽样双点击记录")
 
-    def _get_effect(effects: dict, key: Tuple[str, ...], dim: int) -> np.ndarray:
-        if key in effects:
-            return effects[key]
-        return np.zeros((dim, dim), dtype=complex)
-
     empty_key = _order_two_port_detectors([])
     if not effects_all:
         raise ValueError("空的探测effect，无法进行POVM计算")
     dim_pair = next(iter(effects_all.values())).shape[0]
+    zero_effect = np.zeros((dim_pair, dim_pair), dtype=complex)
     required_keys = [
         empty_key,
         _order_two_port_detectors(["H1"]),
@@ -336,7 +374,7 @@ def run_detection_pipeline(
     if dim_atom != 16:
         raise ValueError(f"Atom pair site dimension {dim_atom} != 16")
 
-    E_no = _get_effect(effects_all, empty_key, dim_pair)
+    E_no = effects_all.get(empty_key, zero_effect)
     atom_I = np.eye(dim_atom, dtype=complex)
     L = len(B_list)
 
@@ -373,12 +411,6 @@ def run_detection_pipeline(
 
     right_envs = _build_right_envs()
     left_envs_id = _build_left_envs(atom_I)
-
-    def _contract_env_real(env_mid: np.ndarray, env_right: np.ndarray) -> float:
-        return float(np.einsum('ij,ij->', env_mid, env_right).real)
-
-    def _contract_env_complex(env_mid: np.ndarray, env_right: np.ndarray) -> complex:
-        return np.einsum('ij,ij->', env_mid, env_right)
 
     metrics = None
     if compute_metrics:
@@ -425,7 +457,7 @@ def run_detection_pipeline(
             total = 0.0
             for s in range(1, n_bins + 1):
                 env_mid = _apply_env_left(B_list[s], Bc_list[s], op_pair, left_envs[s])
-                weight = _contract_env_real(env_mid, right_envs[s + 1])
+                weight = float(np.einsum('ij,ij->', env_mid, right_envs[s + 1]).real)
                 total += weight
             return total
 
@@ -442,7 +474,7 @@ def run_detection_pipeline(
                     j_end = min(n_bins, i + window_bins)
                 for j in range(i + 1, j_end + 1):
                     env_j = _apply_env_left(B_list[j], Bc_list[j], op_b, env_mid)
-                    weight = _contract_env_real(env_j, right_envs[j + 1])
+                    weight = float(np.einsum('ij,ij->', env_j, right_envs[j + 1]).real)
                     total += weight
                     if j < j_end:
                         env_mid = _apply_env_left(B_list[j], Bc_list[j], E_no, env_mid)
@@ -467,12 +499,12 @@ def run_detection_pipeline(
             key_a = _order_two_port_detectors([det_a])
             key_b = _order_two_port_detectors([det_b])
 
-            E_pair_all = _get_effect(effects_all, key_pair, dim_pair)
-            E_pair_true = _get_effect(effects_true, key_pair, dim_pair)
-            E_a_all = _get_effect(effects_all, key_a, dim_pair)
-            E_b_all = _get_effect(effects_all, key_b, dim_pair)
-            E_a_true = _get_effect(effects_true, key_a, dim_pair)
-            E_b_true = _get_effect(effects_true, key_b, dim_pair)
+            E_pair_all = effects_all.get(key_pair, zero_effect)
+            E_pair_true = effects_true.get(key_pair, zero_effect)
+            E_a_all = effects_all.get(key_a, zero_effect)
+            E_b_all = effects_all.get(key_b, zero_effect)
+            E_a_true = effects_true.get(key_a, zero_effect)
+            E_b_true = effects_true.get(key_b, zero_effect)
 
             weight_same_all = _sum_same_bin(left_envs_id, E_pair_all)
             weight_same_true = _sum_same_bin(left_envs_id, E_pair_true)
@@ -541,7 +573,7 @@ def run_detection_pipeline(
         records_local = []
         for s in range(1, n_bins + 1):
             env_mid = _apply_env_left(B_list[s], Bc_list[s], op_pair, left_envs_id[s])
-            weight = _contract_env_real(env_mid, right_envs[s + 1])
+            weight = float(np.einsum('ij,ij->', env_mid, right_envs[s + 1]).real)
             if weight > weight_eps:
                 records_local.append(TwoClickRecord(det_a, det_b, s - 1, s - 1, weight))
         return records_local
@@ -557,7 +589,7 @@ def run_detection_pipeline(
             env_mid = _apply_env_left(B_list[i], Bc_list[i], op_first, left_envs_id[i])
             for j in range(i + 1, n_bins + 1):
                 env_j = _apply_env_left(B_list[j], Bc_list[j], op_second, env_mid)
-                weight = _contract_env_real(env_j, right_envs[j + 1])
+                weight = float(np.einsum('ij,ij->', env_j, right_envs[j + 1]).real)
                 if weight > weight_eps:
                     records_local.append(TwoClickRecord(det_first, det_second, i - 1, j - 1, weight))
                 if j < n_bins:
@@ -569,51 +601,55 @@ def run_detection_pipeline(
         key_a = _order_two_port_detectors([det_a])
         key_b = _order_two_port_detectors([det_b])
 
-        E_pair = _get_effect(effects_all, key_pair, dim_pair)
-        E_a = _get_effect(effects_all, key_a, dim_pair)
-        E_b = _get_effect(effects_all, key_b, dim_pair)
+        E_pair = effects_all.get(key_pair, zero_effect)
+        E_a = effects_all.get(key_a, zero_effect)
+        E_b = effects_all.get(key_b, zero_effect)
 
         records.extend(_collect_same_bin_records(E_pair, det_a, det_b))
         records.extend(_collect_diff_bin_records(E_a, E_b, det_a, det_b))
         records.extend(_collect_diff_bin_records(E_b, E_a, det_b, det_a))
 
     if not records:
+        samples = []
+        if n_samples > 0:
+            zero_spin = np.zeros((4, 4), dtype=complex)
+            samples = [
+                TwoPhotonDetectionResult(
+                    clicks=[],
+                    success=False,
+                    bell_state="",
+                    spin_state=zero_spin,
+                )
+                for _ in range(n_samples)
+            ]
         return DetectionPipelineResult(
             p_arrive=p_arrive,
             metrics=metrics,
-            samples=_empty_samples(n_samples),
+            samples=samples,
         )
 
     weights = np.array([max(0.0, r.weight) for r in records], dtype=float)
     total_weight = float(weights.sum())
     if total_weight <= weight_eps:
+        samples = []
+        if n_samples > 0:
+            zero_spin = np.zeros((4, 4), dtype=complex)
+            samples = [
+                TwoPhotonDetectionResult(
+                    clicks=[],
+                    success=False,
+                    bell_state="",
+                    spin_state=zero_spin,
+                )
+                for _ in range(n_samples)
+            ]
         return DetectionPipelineResult(
             p_arrive=p_arrive,
             metrics=metrics,
-            samples=_empty_samples(n_samples),
+            samples=samples,
         )
 
     probs = weights / total_weight
-
-    def _detector_site(detector: str, bin_index: int) -> int:
-        site_left = bin_start + 2 * bin_index
-        site_right = bin_start + 2 * bin_index + 1
-        return site_left if detector in ("H1", "V1") else site_right
-
-    def _check_bsm_success(clicks_local: List[DetectionEvent]) -> Tuple[bool, str]:
-        if len(clicks_local) != 2:
-            return False, ""
-
-        if window_bins is not None:
-            if abs(clicks_local[0].bin_index - clicks_local[1].bin_index) > window_bins:
-                return False, ""
-
-        detectors = {clicks_local[0].detector, clicks_local[1].detector}
-        if detectors == {"H1", "V2"} or detectors == {"V1", "H2"}:
-            return True, "Psi-"
-        if detectors == {"H1", "V1"} or detectors == {"H2", "V2"}:
-            return True, "Psi+"
-        return False, ""
 
     def _contract_record(
         left_envs: List[np.ndarray],
@@ -625,7 +661,7 @@ def run_detection_pipeline(
         if record_local.bin_a == record_local.bin_b:
             s = record_local.bin_a + 1
             env_mid = _apply_env_left(B_list[s], Bc_list[s], op_pair, left_envs[s])
-            return _contract_env_complex(env_mid, right_envs[s + 1])
+            return np.einsum('ij,ij->', env_mid, right_envs[s + 1])
 
         if record_local.bin_a < record_local.bin_b:
             i = record_local.bin_a + 1
@@ -642,7 +678,7 @@ def run_detection_pipeline(
         for s in range(i + 1, j):
             env_mid = _apply_env_left(B_list[s], Bc_list[s], E_no, env_mid)
         env_mid = _apply_env_left(B_list[j], Bc_list[j], op_second, env_mid)
-        return _contract_env_complex(env_mid, right_envs[j + 1])
+        return np.einsum('ij,ij->', env_mid, right_envs[j + 1])
 
     single_dim = int(round(np.sqrt(dim_atom)))
     if single_dim * single_dim != dim_atom:
@@ -668,20 +704,17 @@ def run_detection_pipeline(
 
     def _compute_record_qubit_state(record_local: TwoClickRecord) -> np.ndarray:
         _ensure_left_envs_qubit()
-        op_pair = _get_effect(
-            effects_all,
+        op_pair = effects_all.get(
             _order_two_port_detectors([record_local.detector_a, record_local.detector_b]),
-            dim_pair,
+            zero_effect,
         )
-        op_a = _get_effect(
-            effects_all,
+        op_a = effects_all.get(
             _order_two_port_detectors([record_local.detector_a]),
-            dim_pair,
+            zero_effect,
         )
-        op_b = _get_effect(
-            effects_all,
+        op_b = effects_all.get(
             _order_two_port_detectors([record_local.detector_b]),
-            dim_pair,
+            zero_effect,
         )
 
         sigma = np.zeros((4, 4), dtype=complex)
@@ -700,19 +733,32 @@ def run_detection_pipeline(
     for sample_index in range(1, n_samples + 1):
         pick = int(rng.choice(len(records), p=probs))
         record = records[pick]
+        base_a = bin_start + 2 * record.bin_a
+        base_b = bin_start + 2 * record.bin_b
+        site_a = base_a if record.detector_a in ("H1", "V1") else base_a + 1
+        site_b = base_b if record.detector_b in ("H1", "V1") else base_b + 1
         clicks = [
             DetectionEvent(
                 detector=record.detector_a,
                 bin_index=record.bin_a,
-                site=_detector_site(record.detector_a, record.bin_a),
+                site=site_a,
             ),
             DetectionEvent(
                 detector=record.detector_b,
                 bin_index=record.bin_b,
-                site=_detector_site(record.detector_b, record.bin_b),
+                site=site_b,
             ),
         ]
-        success, bell_state = _check_bsm_success(clicks)
+        success = False
+        bell_state = ""
+        if window_bins is None or abs(record.bin_a - record.bin_b) <= window_bins:
+            detectors = {record.detector_a, record.detector_b}
+            if detectors == {"H1", "V2"} or detectors == {"V1", "H2"}:
+                success = True
+                bell_state = "Psi-"
+            elif detectors == {"H1", "V1"} or detectors == {"H2", "V2"}:
+                success = True
+                bell_state = "Psi+"
         spin_state = _compute_record_qubit_state(record)
 
         if verbose:
@@ -809,94 +855,6 @@ def compute_fidelity_with_bell(spin_state: np.ndarray, target_bell: str) -> floa
         raise ValueError(f"未知的Bell态：{target_bell}")
     psi = bell_states[target_bell]
     return float(np.real(psi.conj() @ spin_state @ psi))
-
-
-def compute_two_photon_arrival_prob(
-    mps: MPSState,
-    n_bins: int,
-    verbose: bool = False,
-) -> float:
-    """
-    计算双光子均到达探测器的概率（总光子数=2）。
-
-    使用P2投影的MPO（bond dimension=3）计算 <P2>。
-    """
-    def _infer_bin_start(state: MPSState) -> int:
-        if len(state.d) >= 2 and state.d[0] == 4 and state.d[1] == 4:
-            return 2
-        return 0
-
-    def _get_bin_sites(state: MPSState, n_bins_local: int) -> List[int]:
-        bin_start_local = _infer_bin_start(state)
-        sites_local = []
-        for n in range(n_bins_local):
-            site_A = bin_start_local + 2 * n
-            site_B = bin_start_local + 2 * n + 1
-            if site_B >= state.L:
-                raise ValueError(f"n_bins={n_bins_local} 超出MPS长度 {state.L}")
-            sites_local.append(site_A)
-            sites_local.append(site_B)
-        return sites_local
-
-    def _build_photon_number_projectors(bin_dim_local: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        if bin_dim_local == 6:
-            pi0_local = np.diag([1, 0, 0, 0, 0, 0]).astype(complex)
-            pi1_local = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)
-            pi2_local = np.diag([0, 0, 0, 1, 1, 1]).astype(complex)
-            return pi0_local, pi1_local, pi2_local
-        raise ValueError(f"Unexpected bin dimension: {bin_dim_local}. Expected 6.")
-
-    def _build_p2_mpo_tensor(pi0: np.ndarray, pi1: np.ndarray, pi2: np.ndarray) -> np.ndarray:
-        dim_local = pi0.shape[0]
-        w_local = np.zeros((3, 3, dim_local, dim_local), dtype=complex)
-        w_local[0, 0] = pi0
-        w_local[0, 1] = pi1
-        w_local[0, 2] = pi2
-        w_local[1, 1] = pi0
-        w_local[1, 2] = pi1
-        w_local[2, 2] = pi0
-        return w_local
-
-    def _apply_env_left_mpo(
-        env_left: np.ndarray,
-        B: np.ndarray,
-        Bc: np.ndarray,
-        mpo_tensor: np.ndarray,
-    ) -> np.ndarray:
-        return np.einsum('aij,ipk,jql,abpq->bkl', env_left, B, Bc, mpo_tensor, optimize=True)
-
-    # 在当前模型中 <P2> 与 <N(N-1)/2> 等价，但MPO可线性收缩，避免O(N^2)。
-    mps._mps.canonical_form_finite(renormalize=True)
-    mps._mps.norm = 1.0
-    bin_start = _infer_bin_start(mps)
-    bin_dim = mps.d[bin_start]
-    bin_sites = set(_get_bin_sites(mps, n_bins))
-    pi0, pi1, pi2 = _build_photon_number_projectors(bin_dim)
-    w_bin = _build_p2_mpo_tensor(pi0, pi1, pi2)
-    w_identity_cache: dict[int, np.ndarray] = {}
-
-    env = np.zeros((3, 1, 1), dtype=complex)
-    env[0, 0, 0] = 1.0
-
-    for site in range(mps.L):
-        B = mps._mps.get_B(site, form='B').to_ndarray()
-        Bc = B.conj()
-        if site in bin_sites:
-            w = w_bin
-        else:
-            dim = mps.d[site]
-            if dim not in w_identity_cache:
-                pi0_id = np.eye(dim, dtype=complex)
-                pi1_zero = np.zeros((dim, dim), dtype=complex)
-                pi2_zero = np.zeros((dim, dim), dtype=complex)
-                w_identity_cache[dim] = _build_p2_mpo_tensor(pi0_id, pi1_zero, pi2_zero)
-            w = w_identity_cache[dim]
-        env = _apply_env_left_mpo(env, B, Bc, w)
-
-    p2 = float(env[2, 0, 0].real)
-    if verbose:
-        print(f"  两光子到达概率 p_arrive={p2:.6f}")
-    return float(max(0.0, p2))
 
 
 def compute_photon_statistics(mps: MPSState, n_bins: int, verbose: bool = False) -> dict:

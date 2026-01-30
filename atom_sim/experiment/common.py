@@ -8,6 +8,8 @@ from __future__ import annotations
 from typing import Optional, Callable, Any, Tuple
 from dataclasses import dataclass, field
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from contextlib import redirect_stdout
+import os
 import time
 import numpy as np
 
@@ -70,10 +72,10 @@ class FiberParams:
 
 @dataclass
 class RunConfig:
-    """运行参数（次数、并行、枚举模式等）。"""
+    """运行参数（次数、核预算、枚举模式等）。"""
     runs: int = 1
     shots_per_run: int = 1
-    jobs: int = 1
+    cores: int = 1
     enum_mode: str = "dark"
     plot_all: bool = False
     debug: bool = False
@@ -460,6 +462,19 @@ def run_task_queue(
     if worker_jobs <= 0:
         worker_jobs = 1
 
+    if worker_jobs > 1:
+        # 避免多进程叠加 BLAS 线程导致过度并发。
+        os.environ["OMP_NUM_THREADS"] = "1"
+        os.environ["MKL_NUM_THREADS"] = "1"
+        os.environ["OPENBLAS_NUM_THREADS"] = "1"
+        os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
+    def _run_task_silent(fn: Callable[..., Any], *task: Any) -> Any:
+        # 只让前台任务输出，避免多进程 stdout 阻塞。
+        with open(os.devnull, "w", encoding="utf-8") as devnull:
+            with redirect_stdout(devnull):
+                return fn(*task)
+
     with ProcessPoolExecutor(max_workers=worker_jobs) as executor:
         pending = {}
 
@@ -468,7 +483,7 @@ def run_task_queue(
                 task = next_task()
                 if task is None:
                     break
-                pending[executor.submit(task_fn, *task)] = task
+                pending[executor.submit(_run_task_silent, task_fn, *task)] = task
 
         _fill_pending()
         if focus_task is not None:
