@@ -234,7 +234,6 @@ def emission_gate(
     gamma: float,
     dt: float,
     Alpha: np.ndarray,
-    which_atom: str = 'A',
     phase: float = 0.0,
     H_sys: Optional[np.ndarray] = None,
     bin_first: bool = False
@@ -263,8 +262,6 @@ def emission_gate(
     Alpha : np.ndarray
         从原子跃迁到H/V的2x2偏振映射矩阵
         [[alpha_H+, alpha_H-], [alpha_V+, alpha_V-]]
-    which_atom : str
-        哪个原子（'A' 或 'B'）
     phase : float
         发射波包的相位（会同时作用于H/V通道）
     H_sys : np.ndarray, optional
@@ -284,7 +281,7 @@ def emission_gate(
     --------
     >>> # 示例：圆偏振映射
     >>> Alpha = np.array([[1, 0], [0, 1]])  # σ+ -> H, σ- -> V
-    >>> U = emission_gate(gamma=0.1, dt=1.0, Alpha=Alpha, which_atom='A')
+    >>> U = emission_gate(gamma=0.1, dt=1.0, Alpha=Alpha)
     """
     # 原子跃迁算符
     S_plus = atom_transition('+')  # |0><e|

@@ -9,7 +9,6 @@
 from .basis import (
     SubSpace,
     ProductSpace,
-    subspace_gate,
     ATOM_4D,
     ATOM_A,
     ATOM_B,
@@ -30,7 +29,6 @@ __all__ = [
     # basis
     'SubSpace',
     'ProductSpace',
-    'subspace_gate',
     'ATOM_4D',
     'ATOM_A',
     'ATOM_B',

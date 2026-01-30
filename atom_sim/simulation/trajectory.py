@@ -869,7 +869,6 @@ def run_dual_atom_emission(
                 gamma=gamma_A_n,
                 dt=dt_ns * 1e-9,
                 Alpha=Alpha_A,
-                which_atom='A',
                 phase=0.0,
                 H_sys=h_sys_A,
                 bin_first=True  # bin × atom（仓在左，原子在右）
@@ -886,7 +885,6 @@ def run_dual_atom_emission(
                 gamma=gamma_B_n,
                 dt=dt_ns * 1e-9,
                 Alpha=Alpha_B,
-                which_atom='B',
                 phase=0.0,
                 H_sys=h_sys_B,
                 bin_first=True  # bin × atom

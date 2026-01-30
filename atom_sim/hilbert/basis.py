@@ -2,12 +2,11 @@
 """
 希尔伯特空间定义和张量积构造
 
-本模块提供定义子空间、构造积空间以及将门嵌入积空间的类和函数。
+本模块提供定义子空间与构造积空间的类和函数。
 """
 
-from typing import List, Tuple, Optional, Union
+from typing import Tuple, Optional
 from dataclasses import dataclass
-import numpy as np
 
 
 @dataclass(frozen=True)
@@ -81,87 +80,6 @@ class ProductSpace:
     def subspace_dim(self, name: str) -> int:
         """通过名称获取特定子空间的维度。"""
         return self.subspaces[self.subspace_index(name)].dim
-
-
-def subspace_gate(
-    full_space: ProductSpace,
-    active_subspaces: Union[str, List[str]],
-    gate_matrix: np.ndarray,
-) -> np.ndarray:
-    """
-    将作用于特定子空间的门嵌入到完整的积空间中。
-
-    给定一个作用于 active_subspaces 的门，将其嵌入为 I ⊗ ... ⊗ G ⊗ ... ⊗ I
-    其中 G 作用于活动子空间，I 作用于其他子空间。
-
-    Parameters
-    ----------
-    full_space : ProductSpace
-        完整的积空间 H = H_1 ⊗ ... ⊗ H_n
-    active_subspaces : Union[str, List[str]]
-        门所作用的子空间名称
-    gate_matrix : np.ndarray
-        作用于活动子空间张量积的门矩阵。
-        形状应为 (d_active, d_active)，其中 d_active 是活动
-        子空间维度的乘积。
-
-    Returns
-    -------
-    np.ndarray
-        作用于完整空间的嵌入门矩阵。
-        形状为 (full_space.dim, full_space.dim)
-
-    Examples
-    --------
-    >>> space_780 = SubSpace('780', 3)
-    >>> space_1517 = SubSpace('1517', 6)
-    >>> bin_space = ProductSpace((space_780, space_1517))
-    >>> gate_on_780 = np.eye(3)  # 780子空间上的单位门
-    >>> full_gate = subspace_gate(bin_space, '780', gate_on_780)
-    >>> full_gate.shape == (18, 18)
-    True
-    """
-    if isinstance(active_subspaces, str):
-        active_subspaces = [active_subspaces]
-
-    # 验证活动子空间存在
-    for name in active_subspaces:
-        if name not in [s.name for s in full_space.subspaces]:
-            raise ValueError(f"在 full_space 中未找到子空间 '{name}'")
-
-    # 计算活动子空间的期望维度
-    active_dim = 1
-    for name in active_subspaces:
-        active_dim *= full_space.subspace_dim(name)
-
-    if gate_matrix.shape != (active_dim, active_dim):
-        raise ValueError(
-            f"门矩阵形状 {gate_matrix.shape} 与 "
-            f"活动子空间维度 ({active_dim}, {active_dim}) 不匹配"
-        )
-
-    # 以张量积形式构建完整门
-    # 从第一个子空间的单位门开始
-    result = np.eye(1, dtype=complex)
-
-    for i, subspace in enumerate(full_space.subspaces):
-        if subspace.name in active_subspaces:
-            # 此子空间受门作用
-            # 需要从 gate_matrix 提取正确的分块
-            # 并将其张量积入
-            if len(active_subspaces) == 1:
-                # 单个活动子空间 - 直接使用门
-                result = np.kron(result, gate_matrix)
-            else:
-                # 多个活动子空间 - 需要分解门
-                # 这更复杂；目前假设门已为
-                # 活动子空间张量积格式化
-                result = np.kron(result, gate_matrix)
-        else:
-            # 非活动子空间上的单位门
-            result = np.kron(result, np.eye(subspace.dim, dtype=complex))
-
-    return result
 
 
 # 本项目的预定义子空间
