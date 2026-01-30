@@ -238,6 +238,7 @@ def _run_summary_loop(
     task_type: str,
     paths: dict,
     expected_total: int,
+    done_flag_path: Optional[Path] = None,
 ) -> None:
     results_dir = paths["results"]
     summary_dir = paths["summary"]
@@ -284,6 +285,11 @@ def _run_summary_loop(
             pending = list(paths["pending"].glob("task_*.json"))
             inprogress = list(paths["inprogress"].glob("task_*.json"))
             if not pending and not inprogress:
+                if done_flag_path is not None:
+                    try:
+                        done_flag_path.write_text("done", encoding="utf-8")
+                    except Exception:
+                        pass
                 break
         time.sleep(10)
 
@@ -292,11 +298,14 @@ def _run_worker_loop(
     worker_id: int,
     queue_root: str,
     config: SimConfig,
+    exit_when_done: bool = False,
+    done_flag_path: Optional[str] = None,
 ) -> None:
     paths = _queue_paths(queue_root)
     _ensure_queue_dirs(paths)
     host = os.environ.get("HOSTNAME") or os.environ.get("COMPUTERNAME") or "worker"
     heartbeat_path = paths["heartbeat"] / f"worker_{host}_{worker_id}.txt"
+    done_flag = Path(done_flag_path) if done_flag_path else None
     backoff = [5, 10, 30]
     backoff_idx = 0
     last_heartbeat = 0.0
@@ -307,6 +316,10 @@ def _run_worker_loop(
             last_heartbeat = now
         pending = sorted(paths["pending"].glob("task_*.json"))
         if not pending:
+            if exit_when_done and done_flag and done_flag.exists():
+                inprogress = list(paths["inprogress"].glob("task_*.json"))
+                if not inprogress:
+                    break
             time.sleep(backoff[backoff_idx])
             backoff_idx = min(backoff_idx + 1, len(backoff) - 1)
             continue
@@ -438,11 +451,17 @@ def main():
     single_run.DEBUG_MODE = config.run.debug
 
     expected_total = 0
+    done_flag = paths["summary"] / "server_done.flag"
     if role in ("server", "both"):
+        if done_flag.exists():
+            try:
+                done_flag.unlink()
+            except Exception:
+                pass
         expected_total = _build_task_list(task_type, config, config_hash, paths["pending"])
         print(f"[server] 任务总数: {expected_total} | queue: {paths['root']}")
         if role == "server":
-            _run_summary_loop(task_type, paths, expected_total)
+            _run_summary_loop(task_type, paths, expected_total, done_flag)
             return
 
     if role in ("worker", "both"):
@@ -463,18 +482,18 @@ def main():
         if role == "both":
             summary_thread = threading.Thread(
                 target=_run_summary_loop,
-                args=(task_type, paths, expected_total),
+                args=(task_type, paths, expected_total, done_flag),
                 daemon=True,
             )
             summary_thread.start()
 
         if worker_count == 1:
-            _run_worker_loop(1, queue_root, config)
+            _run_worker_loop(1, queue_root, config, True, str(done_flag))
         else:
             with ProcessPoolExecutor(max_workers=worker_count) as executor:
                 futures = []
                 for idx in range(worker_count):
-                    futures.append(executor.submit(_run_worker_loop, idx + 1, queue_root, config))
+                    futures.append(executor.submit(_run_worker_loop, idx + 1, queue_root, config, True, str(done_flag)))
                 for future in futures:
                     future.result()
 
