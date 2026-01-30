@@ -11,6 +11,7 @@ import argparse
 import threading
 import time
 import re
+import shutil
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -52,7 +53,7 @@ def _parse_run_params(argv):
     )
     parser.add_argument("--role", dest="role", choices=["server", "worker", "both"], default="both", help="运行角色：server/worker/both（默认 both）")
     parser.add_argument("--queue-root", dest="queue_root", type=str, default="/mnt/quantum_sim/queue", help="任务队列根目录（默认 /mnt/quantum_sim/queue）")
-    parser.add_argument("--run-id", dest="run_id", type=str, help="运行ID（用于隔离多次任务，server/both 必填）")
+    parser.add_argument("--run-id", dest="run_id", type=str, help="运行ID（用于隔离多次任务；未提供则自动选择最小可用ID）")
     parser.add_argument("--task-type", dest="task_type", type=str, choices=["SIM", "HOM"], help="任务类型：SIM 或 HOM（默认随 --mode）")
     parser.add_argument("--config-hash", dest="config_hash", type=str, help="任务配置版本标识（默认自动读取 git）")
     parser.add_argument("--runs", "--n-runs", dest="n_runs", type=int, help="仿真 run 次数（默认 1）")
@@ -90,8 +91,6 @@ def _parse_run_params(argv):
             parser.error("run-id 不能包含路径分隔符")
         if run_id in (".", ".."):
             parser.error("run-id 不能为 . 或 ..")
-    if args.role in ("server", "both") and not run_id:
-        parser.error("role=server/both 需要提供 --run-id 以隔离任务")
 
     config = SimConfig()
 
@@ -211,6 +210,49 @@ def _discover_run_roots(base_root: Path) -> list:
         if pending_dir.exists():
             roots.append(child)
     return sorted(roots, key=lambda p: _run_id_sort_key(p.name))
+
+
+def _is_run_complete(run_root: Path) -> bool:
+    pending = run_root / "tasks" / "pending"
+    inprogress = run_root / "tasks" / "inprogress"
+    done_flag = run_root / "summary" / "server_done.flag"
+    if not pending.exists() or not inprogress.exists():
+        return False
+    if not done_flag.exists():
+        return False
+    return (not any(pending.glob("task_*.json"))) and (not any(inprogress.glob("task_*.json")))
+
+
+def _archive_completed_runs(base_root: Path, outputs_root: Path, stamp: str) -> None:
+    archive_root = outputs_root / stamp
+    moved_any = False
+    for run_root in _discover_run_roots(base_root):
+        if not _is_run_complete(run_root):
+            continue
+        archive_root.mkdir(parents=True, exist_ok=True)
+        dest = archive_root / run_root.name
+        if dest.exists():
+            suffix = 1
+            while (archive_root / f"{run_root.name}_{suffix}").exists():
+                suffix += 1
+            dest = archive_root / f"{run_root.name}_{suffix}"
+        shutil.move(str(run_root), str(dest))
+        moved_any = True
+    if moved_any:
+        print(f"[server] 已归档完成任务到: {archive_root}")
+
+
+def _pick_next_run_id(base_root: Path) -> str:
+    used = set()
+    for child in base_root.iterdir():
+        if not child.is_dir():
+            continue
+        if child.name.isdigit():
+            used.add(int(child.name))
+    candidate = 1
+    while candidate in used:
+        candidate += 1
+    return str(candidate)
 
 
 def _write_json_atomic(path: Path, payload: dict) -> None:
@@ -504,6 +546,14 @@ def main():
     config_hash = _resolve_config_hash(config_hash)
     task_type = task_type.upper()
     base_root = Path(queue_root)
+    if role in ("server", "both") and run_id is None:
+        base_root.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M")
+        outputs_root = PROJECT_ROOT / "outputs"
+        outputs_root.mkdir(parents=True, exist_ok=True)
+        _archive_completed_runs(base_root, outputs_root, stamp)
+        run_id = _pick_next_run_id(base_root)
+        print(f"[server] 未指定 run-id，自动选择: {run_id}")
     run_root = base_root / run_id if run_id else base_root
     paths = _queue_paths(run_root)
     if role in ("server", "both"):
@@ -552,14 +602,17 @@ def main():
             )
             summary_thread.start()
 
+        exit_when_done = role == "both" or (role == "worker" and run_id is not None)
+        done_flag_arg = str(done_flag) if run_id is not None else None
+        auto_pick = run_id is None
         if worker_count == 1:
             _run_worker_loop(
                 1,
                 str(run_root if run_id else base_root),
                 config,
-                True,
-                str(done_flag),
-                run_id is None,
+                exit_when_done,
+                done_flag_arg,
+                auto_pick,
             )
         else:
             with ProcessPoolExecutor(max_workers=worker_count) as executor:
@@ -571,9 +624,9 @@ def main():
                             idx + 1,
                             str(run_root if run_id else base_root),
                             config,
-                            True,
-                            str(done_flag),
-                            run_id is None,
+                            exit_when_done,
+                            done_flag_arg,
+                            auto_pick,
                         )
                     )
                 for future in futures:
