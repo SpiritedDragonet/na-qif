@@ -52,7 +52,7 @@ def _parse_run_params(argv):
         ),
     )
     parser.add_argument("--role", dest="role", choices=["server", "worker", "both"], default="both", help="运行角色：server/worker/both（默认 both）")
-    parser.add_argument("--queue-root", dest="queue_root", type=str, default="/mnt/quantum_sim/queue", help="任务队列根目录（默认 /mnt/quantum_sim/queue）")
+    parser.add_argument("--queue-root", dest="queue_root", type=str, default="queue", help="任务队列根目录（默认项目根目录下的 queue）")
     parser.add_argument("--run-id", dest="run_id", type=str, help="运行ID（用于隔离多次任务；未提供则自动选择最小可用ID）")
     parser.add_argument("--task-type", dest="task_type", type=str, choices=["SIM", "HOM"], help="任务类型：SIM 或 HOM（默认随 --mode）")
     parser.add_argument("--config-hash", dest="config_hash", type=str, help="任务配置版本标识（默认自动读取 git）")
@@ -165,6 +165,13 @@ def _resolve_config_hash(explicit: Optional[str]) -> str:
                 if name.strip() == ref:
                     return f"git:{sha.strip()}"
     return f"git:{head[:12]}"
+
+
+def _resolve_queue_root(path_str: str) -> Path:
+    path = Path(path_str)
+    if not path.is_absolute():
+        return (PROJECT_ROOT / path).resolve()
+    return path
 
 
 def _queue_paths(queue_root: Path) -> dict:
@@ -545,7 +552,7 @@ def main():
     config, role, queue_root, run_id, task_type, config_hash = _parse_run_params(sys.argv)
     config_hash = _resolve_config_hash(config_hash)
     task_type = task_type.upper()
-    base_root = Path(queue_root)
+    base_root = _resolve_queue_root(queue_root)
     if role in ("server", "both") and run_id is None:
         base_root.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d_%H%M")
