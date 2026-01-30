@@ -172,7 +172,7 @@ def _run_hom_run(
     if debug and pipe.timings:
         timings.update(pipe.timings)
     if pipe.aborted:
-        return 0, True, 0.0, 0.0
+        return 0, True, 0.0, 0.0, []
 
     result = pipe.emission
     p_no_loss = pipe.p_no_loss
@@ -190,6 +190,7 @@ def _run_hom_run(
         eta_det = config.detector.eta_det
 
     coincidences = 0
+    click_records = []
     detect_start = time.perf_counter() if debug else None
     pipeline = run_detection_pipeline(
         mps=result.mps,
@@ -204,6 +205,7 @@ def _run_hom_run(
     )
     p_arrive = pipeline.p_arrive
     for det_result in pipeline.samples:
+        click_records.append([(c.detector, c.bin_index) for c in det_result.clicks])
         if _is_port_samepol_coincidence(det_result.clicks, window_bins):
             coincidences += 1
 
@@ -228,7 +230,7 @@ def _run_hom_run(
         if parts:
             print(f"[HOM][调试耗时] tau={tau_ns:.3f} ns | " + " | ".join(parts))
 
-    return coincidences, False, p_arrive, p_no_loss
+    return coincidences, False, p_arrive, p_no_loss, click_records
 
 
 def _run_hom_task_indexed(
@@ -361,7 +363,7 @@ def run_hom_experiment(
     def _apply_result(idx: int, result: tuple) -> None:
         s = states[idx]
         s["completed"] += 1
-        coincid_run, early_abort, p_arrive, p_no_loss = result
+        coincid_run, early_abort, p_arrive, p_no_loss, _clicks = result
         if early_abort:
             s["early_abort"] += 1
         else:

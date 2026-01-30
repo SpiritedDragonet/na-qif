@@ -10,6 +10,7 @@ import json
 import argparse
 import threading
 import time
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -31,7 +32,7 @@ from atom_sim.experiment.hom import (  # noqa: E402
 from atom_sim.experiment import single_run  # noqa: E402
 
 
-def _parse_run_params(argv) -> SimConfig:
+def _parse_run_params(argv):
     parser = argparse.ArgumentParser(
         prog="python total_simulation.py",
         formatter_class=argparse.RawTextHelpFormatter,
@@ -41,16 +42,17 @@ def _parse_run_params(argv) -> SimConfig:
         epilog=(
             "用法示例:\n"
             "  # 主节点（服务端）\n"
-            "  python total_simulation.py --role server --queue-root /mnt/quantum_sim/queue "
+            "  python total_simulation.py --role server --queue-root /mnt/quantum_sim/queue --run-id homA "
             "--task-type HOM --runs 120 --tau-start -40 --tau-end 40 --tau-step 2 --shots 1\n"
             "  # 抢占式节点（worker）\n"
-            "  python total_simulation.py --role worker --queue-root /mnt/quantum_sim/queue --cores 64\n"
+            "  python total_simulation.py --role worker --queue-root /mnt/quantum_sim/queue --run-id homA --cores 64\n"
             "  # 本地运行（server + worker）\n"
-            "  python total_simulation.py --role both --queue-root /mnt/quantum_sim/queue --task-type SIM --runs 10\n"
+            "  python total_simulation.py --role both --queue-root /mnt/quantum_sim/queue --run-id simA --task-type SIM --runs 10\n"
         ),
     )
     parser.add_argument("--role", dest="role", choices=["server", "worker", "both"], default="both", help="运行角色：server/worker/both（默认 both）")
     parser.add_argument("--queue-root", dest="queue_root", type=str, default="/mnt/quantum_sim/queue", help="任务队列根目录（默认 /mnt/quantum_sim/queue）")
+    parser.add_argument("--run-id", dest="run_id", type=str, help="运行ID（用于隔离多次任务，server/both 必填）")
     parser.add_argument("--task-type", dest="task_type", type=str, choices=["SIM", "HOM"], help="任务类型：SIM 或 HOM（默认随 --mode）")
     parser.add_argument("--config-hash", dest="config_hash", type=str, help="任务配置版本标识（默认自动读取 git）")
     parser.add_argument("--runs", "--n-runs", dest="n_runs", type=int, help="仿真 run 次数（默认 1）")
@@ -81,6 +83,15 @@ def _parse_run_params(argv) -> SimConfig:
     parser.add_argument("--ideal-det", dest="ideal_det", action="store_true", help="理想探测（eta_det=1, 无噪声）")
     parser.add_argument("--debug", dest="debug", action="store_true", help="开启调试模式（输出耗时等）")
     args = parser.parse_args(argv[1:])
+
+    run_id = args.run_id.strip() if args.run_id else None
+    if run_id:
+        if "/" in run_id or "\\" in run_id:
+            parser.error("run-id 不能包含路径分隔符")
+        if run_id in (".", ".."):
+            parser.error("run-id 不能为 . 或 ..")
+    if args.role in ("server", "both") and not run_id:
+        parser.error("role=server/both 需要提供 --run-id 以隔离任务")
 
     config = SimConfig()
 
@@ -130,7 +141,7 @@ def _parse_run_params(argv) -> SimConfig:
 
     config.run.plot_all = bool(args.plot_all)
     config.run.debug = bool(args.debug)
-    return config, args.role, args.queue_root, task_type, args.config_hash
+    return config, args.role, args.queue_root, run_id, task_type, args.config_hash
 
 
 def _resolve_config_hash(explicit: Optional[str]) -> str:
@@ -157,7 +168,7 @@ def _resolve_config_hash(explicit: Optional[str]) -> str:
     return f"git:{head[:12]}"
 
 
-def _queue_paths(queue_root: str) -> dict:
+def _queue_paths(queue_root: Path) -> dict:
     root = Path(queue_root)
     return {
         "root": root,
@@ -178,6 +189,28 @@ def _ensure_queue_dirs(paths: dict) -> None:
     paths["results"].mkdir(parents=True, exist_ok=True)
     paths["summary"].mkdir(parents=True, exist_ok=True)
     paths["heartbeat"].mkdir(parents=True, exist_ok=True)
+
+
+def _run_id_sort_key(run_id: str) -> tuple:
+    if run_id.isdigit():
+        return (0, int(run_id), run_id)
+    m = re.match(r"(\d+)", run_id)
+    if m:
+        return (0, int(m.group(1)), run_id)
+    return (1, run_id)
+
+
+def _discover_run_roots(base_root: Path) -> list:
+    if not base_root.exists():
+        return []
+    roots = []
+    for child in base_root.iterdir():
+        if not child.is_dir():
+            continue
+        pending_dir = child / "tasks" / "pending"
+        if pending_dir.exists():
+            roots.append(child)
+    return sorted(roots, key=lambda p: _run_id_sort_key(p.name))
 
 
 def _write_json_atomic(path: Path, payload: dict) -> None:
@@ -300,19 +333,41 @@ def _run_worker_loop(
     config: SimConfig,
     exit_when_done: bool = False,
     done_flag_path: Optional[str] = None,
+    auto_pick: bool = False,
 ) -> None:
-    paths = _queue_paths(queue_root)
-    _ensure_queue_dirs(paths)
+    base_root = Path(queue_root)
+    paths = None
     host = os.environ.get("HOSTNAME") or os.environ.get("COMPUTERNAME") or "worker"
-    heartbeat_path = paths["heartbeat"] / f"worker_{host}_{worker_id}.txt"
+    heartbeat_path = None
     done_flag = Path(done_flag_path) if done_flag_path else None
     backoff = [5, 10, 30]
     backoff_idx = 0
     last_heartbeat = 0.0
     while True:
+        if auto_pick:
+            picked = None
+            for run_root in _discover_run_roots(base_root):
+                run_paths = _queue_paths(run_root)
+                pending = list(run_paths["pending"].glob("task_*.json"))
+                if pending:
+                    picked = run_paths
+                    break
+            if picked is None:
+                time.sleep(backoff[backoff_idx])
+                backoff_idx = min(backoff_idx + 1, len(backoff) - 1)
+                continue
+            paths = picked
+            _ensure_queue_dirs(paths)
+            heartbeat_path = paths["heartbeat"] / f"worker_{host}_{worker_id}.txt"
+        elif paths is None:
+            paths = _queue_paths(base_root)
+            _ensure_queue_dirs(paths)
+            heartbeat_path = paths["heartbeat"] / f"worker_{host}_{worker_id}.txt"
+
         now = time.time()
         if now - last_heartbeat > 60:
-            heartbeat_path.write_text(str(int(now)), encoding="utf-8")
+            if heartbeat_path is not None:
+                heartbeat_path.write_text(str(int(now)), encoding="utf-8")
             last_heartbeat = now
         pending = sorted(paths["pending"].glob("task_*.json"))
         if not pending:
@@ -371,7 +426,7 @@ def _run_worker_loop(
                 tau_ns = float(task.get("tau_ns", 0.0))
                 shots = int(task.get("shots", config.run.shots_per_run))
                 window_ns = float(task.get("window_ns", config.hom.window_ns if config.hom else 70.0))
-                coincid, early_abort, p_arrive, p_no_loss = _run_hom_run(
+                coincid, early_abort, p_arrive, p_no_loss, click_records = _run_hom_run(
                     tau_ns,
                     shots,
                     config,
@@ -387,6 +442,8 @@ def _run_worker_loop(
                     "valid": 0 if early_abort else 1,
                     "p_no_loss": p_no_loss,
                 }
+                if click_records is not None:
+                    _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
             else:
                 run_index = int(task.get("run_index", 1))
                 run_stats, success_metrics = single_run._run_single_simulation_core(
@@ -443,11 +500,18 @@ def main():
     """
     主函数：基于共享目录的 server/worker 调度。
     """
-    config, role, queue_root, task_type, config_hash = _parse_run_params(sys.argv)
+    config, role, queue_root, run_id, task_type, config_hash = _parse_run_params(sys.argv)
     config_hash = _resolve_config_hash(config_hash)
     task_type = task_type.upper()
-    paths = _queue_paths(queue_root)
-    _ensure_queue_dirs(paths)
+    base_root = Path(queue_root)
+    run_root = base_root / run_id if run_id else base_root
+    paths = _queue_paths(run_root)
+    if role in ("server", "both"):
+        if run_root.exists() and any(run_root.iterdir()):
+            raise SystemExit(f"run-id 已存在且非空: {run_root}")
+        _ensure_queue_dirs(paths)
+    elif run_id:
+        _ensure_queue_dirs(paths)
     single_run.DEBUG_MODE = config.run.debug
 
     expected_total = 0
@@ -467,7 +531,7 @@ def main():
     if role in ("worker", "both"):
         core_budget = max(1, min(config.run.cores, os.cpu_count() or 1))
         reserve = 1
-        pending_count = len(list(paths["pending"].glob("task_*.json")))
+        pending_count = len(list(paths["pending"].glob("task_*.json"))) if run_id else 1
         target_tasks = pending_count if pending_count > 0 else 1
         worker_count = max(1, min(core_budget - reserve, target_tasks))
         if worker_count < 1:
@@ -477,7 +541,8 @@ def main():
             os.environ["MKL_NUM_THREADS"] = "1"
             os.environ["OPENBLAS_NUM_THREADS"] = "1"
             os.environ["NUMEXPR_NUM_THREADS"] = "1"
-        print(f"[worker] cores={core_budget} | workers={worker_count} | queue={paths['root']}")
+        queue_hint = str(paths["root"]) if run_id else str(base_root)
+        print(f"[worker] cores={core_budget} | workers={worker_count} | queue={queue_hint}")
 
         if role == "both":
             summary_thread = threading.Thread(
@@ -488,12 +553,29 @@ def main():
             summary_thread.start()
 
         if worker_count == 1:
-            _run_worker_loop(1, queue_root, config, True, str(done_flag))
+            _run_worker_loop(
+                1,
+                str(run_root if run_id else base_root),
+                config,
+                True,
+                str(done_flag),
+                run_id is None,
+            )
         else:
             with ProcessPoolExecutor(max_workers=worker_count) as executor:
                 futures = []
                 for idx in range(worker_count):
-                    futures.append(executor.submit(_run_worker_loop, idx + 1, queue_root, config, True, str(done_flag)))
+                    futures.append(
+                        executor.submit(
+                            _run_worker_loop,
+                            idx + 1,
+                            str(run_root if run_id else base_root),
+                            config,
+                            True,
+                            str(done_flag),
+                            run_id is None,
+                        )
+                    )
                 for future in futures:
                     future.result()
 
