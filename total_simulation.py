@@ -587,11 +587,20 @@ def main():
     if role in ("worker", "both"):
         core_budget = max(1, min(config.run.cores, os.cpu_count() or 1))
         reserve = 1
-        pending_count = len(list(paths["pending"].glob("task_*.json"))) if run_id else 1
-        target_tasks = pending_count if pending_count > 0 else 1
-        worker_count = max(1, min(core_budget - reserve, target_tasks))
-        if worker_count < 1:
-            worker_count = 1
+        effective_budget = max(1, core_budget - reserve)
+        if run_id:
+            pending_total = len(list(paths["pending"].glob("task_*.json")))
+        else:
+            pending_total = 0
+            for run_root in _discover_run_roots(base_root):
+                run_paths = _queue_paths(run_root)
+                pending_total += len(list(run_paths["pending"].glob("task_*.json")))
+                if pending_total >= effective_budget:
+                    break
+        if pending_total > 0:
+            worker_count = min(effective_budget, pending_total)
+        else:
+            worker_count = effective_budget
         if worker_count > 1:
             os.environ["OMP_NUM_THREADS"] = "1"
             os.environ["MKL_NUM_THREADS"] = "1"
