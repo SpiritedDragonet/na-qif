@@ -219,34 +219,29 @@ def _discover_run_roots(base_root: Path) -> list:
     return sorted(roots, key=lambda p: _run_id_sort_key(p.name))
 
 
-def _is_run_complete(run_root: Path) -> bool:
-    pending = run_root / "tasks" / "pending"
-    inprogress = run_root / "tasks" / "inprogress"
-    done_flag = run_root / "summary" / "server_done.flag"
-    if not pending.exists() or not inprogress.exists():
-        return False
-    if not done_flag.exists():
-        return False
-    return (not any(pending.glob("task_*.json"))) and (not any(inprogress.glob("task_*.json")))
+def _pick_output_root(outputs_root: Path, stamp: str) -> Path:
+    dest = outputs_root / stamp
+    if not dest.exists():
+        return dest
+    suffix = 1
+    while (outputs_root / f"{stamp}_{suffix}").exists():
+        suffix += 1
+    return outputs_root / f"{stamp}_{suffix}"
 
 
-def _archive_completed_runs(base_root: Path, outputs_root: Path, stamp: str) -> None:
-    archive_root = outputs_root / stamp
-    moved_any = False
-    for run_root in _discover_run_roots(base_root):
-        if not _is_run_complete(run_root):
-            continue
-        archive_root.mkdir(parents=True, exist_ok=True)
-        dest = archive_root / run_root.name
-        if dest.exists():
-            suffix = 1
-            while (archive_root / f"{run_root.name}_{suffix}").exists():
-                suffix += 1
-            dest = archive_root / f"{run_root.name}_{suffix}"
+def _archive_run(run_root: Path, outputs_root: Path) -> Optional[Path]:
+    if not run_root.exists():
+        return None
+    outputs_root.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    dest = _pick_output_root(outputs_root, stamp)
+    try:
         shutil.move(str(run_root), str(dest))
-        moved_any = True
-    if moved_any:
-        print(f"[server] 已归档完成任务到: {archive_root}")
+    except Exception as exc:
+        print(f"[server] 归档失败: {exc}")
+        return None
+    print(f"[server] 已归档完成任务到: {dest}")
+    return dest
 
 
 def _pick_next_run_id(base_root: Path) -> str:
@@ -316,24 +311,38 @@ def _build_task_list(
     return task_count
 
 
-def _run_summary_loop(
-    task_type: str,
-    paths: dict,
-    expected_total: int,
-    done_flag_path: Optional[Path] = None,
-) -> None:
+def _write_summary(task_type: str, paths: dict) -> None:
     results_dir = paths["results"]
     summary_dir = paths["summary"]
     summary_dir.mkdir(parents=True, exist_ok=True)
     summary_path = summary_dir / f"{task_type.lower()}_summary.csv"
-    seen_path = summary_dir / f"seen_ids_{task_type.lower()}.txt"
-    seen = set()
-    if seen_path.exists():
-        seen.update(seen_path.read_text(encoding="utf-8").splitlines())
-    if not summary_path.exists():
-        with open(summary_path, "w", encoding="utf-8", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["id", "mode", "p_arrive", "coinc", "valid", "timestamp"])
+    with open(summary_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["id", "mode", "p_arrive", "coinc", "valid", "timestamp"])
+        for meta_path in sorted(results_dir.glob("result_*/meta.json")):
+            try:
+                data = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            tid = data.get("id")
+            if not tid:
+                continue
+            m = data.get("metrics", {})
+            writer.writerow([
+                tid,
+                data.get("mode", task_type),
+                m.get("p_arrive"),
+                m.get("coinc"),
+                m.get("valid"),
+                data.get("timestamp"),
+            ])
+
+
+def _run_summary_task(
+    task_type: str,
+    paths: dict,
+    done_flag_path: Optional[Path] = None,
+) -> None:
     while True:
         now = time.time()
         for task_path in paths["inprogress"].glob("task_*.json"):
@@ -342,38 +351,17 @@ def _run_summary_loop(
                     task_path.replace(paths["pending"] / task_path.name)
             except FileNotFoundError:
                 continue
-        for meta_path in results_dir.glob("result_*/meta.json"):
-            try:
-                data = json.loads(meta_path.read_text(encoding="utf-8"))
-            except Exception:
-                continue
-            tid = data.get("id")
-            if not tid or tid in seen:
-                continue
-            m = data.get("metrics", {})
-            with open(summary_path, "a", encoding="utf-8", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    tid,
-                    data.get("mode", task_type),
-                    m.get("p_arrive"),
-                    m.get("coinc"),
-                    m.get("valid"),
-                    data.get("timestamp"),
-                ])
-            seen.add(tid)
-        seen_path.write_text("\n".join(sorted(seen)), encoding="utf-8")
-        if expected_total > 0 and len(seen) >= expected_total:
-            pending = list(paths["pending"].glob("task_*.json"))
-            inprogress = list(paths["inprogress"].glob("task_*.json"))
-            if not pending and not inprogress:
-                if done_flag_path is not None:
-                    try:
-                        done_flag_path.write_text("done", encoding="utf-8")
-                    except Exception:
-                        pass
-                break
+        pending = list(paths["pending"].glob("task_*.json"))
+        inprogress = list(paths["inprogress"].glob("task_*.json"))
+        if not pending and not inprogress:
+            break
         time.sleep(10)
+    _write_summary(task_type, paths)
+    if done_flag_path is not None:
+        try:
+            done_flag_path.write_text("done", encoding="utf-8")
+        except Exception:
+            pass
 
 
 def _run_worker_loop(
@@ -392,7 +380,13 @@ def _run_worker_loop(
     backoff = [5, 10, 30]
     backoff_idx = 0
     last_heartbeat = 0.0
+    seen_task = False
+    empty_rounds = 0
     while True:
+        if not auto_pick and paths is None and exit_when_done:
+            root_path = Path(queue_root)
+            if not root_path.exists():
+                break
         if auto_pick:
             picked = None
             for run_root in _discover_run_roots(base_root):
@@ -420,13 +414,21 @@ def _run_worker_loop(
             last_heartbeat = now
         pending = sorted(paths["pending"].glob("task_*.json"))
         if not pending:
-            if exit_when_done and done_flag and done_flag.exists():
-                inprogress = list(paths["inprogress"].glob("task_*.json"))
-                if not inprogress:
+            inprogress = list(paths["inprogress"].glob("task_*.json"))
+            if exit_when_done:
+                if done_flag and done_flag.exists() and not inprogress:
                     break
+                if seen_task and not inprogress:
+                    empty_rounds += 1
+                    if empty_rounds >= 5:
+                        break
+                else:
+                    empty_rounds = 0
             time.sleep(backoff[backoff_idx])
             backoff_idx = min(backoff_idx + 1, len(backoff) - 1)
             continue
+        seen_task = True
+        empty_rounds = 0
         task_path = None
         for cand in pending:
             dest = paths["inprogress"] / cand.name
@@ -555,10 +557,6 @@ def main():
     base_root = _resolve_queue_root(queue_root)
     if role in ("server", "both") and run_id is None:
         base_root.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now().strftime("%Y%m%d_%H%M")
-        outputs_root = PROJECT_ROOT / "outputs"
-        outputs_root.mkdir(parents=True, exist_ok=True)
-        _archive_completed_runs(base_root, outputs_root, stamp)
         run_id = _pick_next_run_id(base_root)
         print(f"[server] 未指定 run-id，自动选择: {run_id}")
     run_root = base_root / run_id if run_id else base_root
@@ -582,7 +580,8 @@ def main():
         expected_total = _build_task_list(task_type, config, config_hash, paths["pending"])
         print(f"[server] 任务总数: {expected_total} | queue: {paths['root']}")
         if role == "server":
-            _run_summary_loop(task_type, paths, expected_total, done_flag)
+            _run_summary_task(task_type, paths, done_flag)
+            _archive_run(run_root, PROJECT_ROOT / "outputs")
             return
 
     if role in ("worker", "both"):
@@ -603,9 +602,8 @@ def main():
 
         if role == "both":
             summary_thread = threading.Thread(
-                target=_run_summary_loop,
-                args=(task_type, paths, expected_total, done_flag),
-                daemon=True,
+                target=_run_summary_task,
+                args=(task_type, paths, done_flag),
             )
             summary_thread.start()
 
@@ -638,6 +636,9 @@ def main():
                     )
                 for future in futures:
                     future.result()
+        if role == "both":
+            summary_thread.join()
+            _archive_run(run_root, PROJECT_ROOT / "outputs")
 
 
 if __name__ == "__main__":
