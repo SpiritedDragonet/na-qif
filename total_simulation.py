@@ -341,8 +341,10 @@ def _write_summary(task_type: str, paths: dict) -> None:
 def _run_summary_task(
     task_type: str,
     paths: dict,
+    expected_total: int,
     done_flag_path: Optional[Path] = None,
 ) -> None:
+    last_report = 0.0
     while True:
         now = time.time()
         for task_path in paths["inprogress"].glob("task_*.json"):
@@ -353,7 +355,17 @@ def _run_summary_task(
                 continue
         pending = list(paths["pending"].glob("task_*.json"))
         inprogress = list(paths["inprogress"].glob("task_*.json"))
+        done_count = len(list(paths["done"].glob("task_*.json")))
+        if now - last_report >= 5:
+            total = expected_total if expected_total > 0 else done_count + len(pending) + len(inprogress)
+            msg = (
+                f"[server] 进度: completed {done_count}/{total} | "
+                f"inprogress {len(inprogress)} | pending {len(pending)}"
+            )
+            print(f"\r{msg}", end="", flush=True)
+            last_report = now
         if not pending and not inprogress:
+            print()
             break
         time.sleep(10)
     _write_summary(task_type, paths)
@@ -580,7 +592,7 @@ def main():
         expected_total = _build_task_list(task_type, config, config_hash, paths["pending"])
         print(f"[server] 任务总数: {expected_total} | queue: {paths['root']}")
         if role == "server":
-            _run_summary_task(task_type, paths, done_flag)
+            _run_summary_task(task_type, paths, expected_total, done_flag)
             _archive_run(run_root, PROJECT_ROOT / "outputs")
             return
 
@@ -612,7 +624,7 @@ def main():
         if role == "both":
             summary_thread = threading.Thread(
                 target=_run_summary_task,
-                args=(task_type, paths, done_flag),
+                args=(task_type, paths, expected_total, done_flag),
             )
             summary_thread.start()
 
