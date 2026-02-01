@@ -251,36 +251,6 @@ class MPSState:
 
         return mu
 
-    def apply_kraus_one_site_fixed(
-        self,
-        site: int,
-        kraus_op: np.ndarray,
-        eps: float = 1e-15,
-        canonicalize: bool = True,
-    ) -> float:
-        """
-        固定应用单个Kraus算符，并返回该分支概率。
-
-        用于后选 no-loss 分支：不再采样，只走指定Kraus。
-        """
-        d = self.d[site]
-        theta = self._mps.get_theta(site, n=1)  # Shape: (chiL, d, chiR)
-        theta_np = theta.to_ndarray()
-
-        K = np.asarray(kraus_op).reshape(d, d)
-        K_theta = np.einsum('ij,ajb->aib', K, theta_np)
-        p_mu = float(np.linalg.norm(K_theta) ** 2)
-        if p_mu < eps:
-            raise ValueError("固定Kraus分支概率过小，无法归一化")
-
-        theta_selected = K_theta / np.sqrt(p_mu)
-        theta_arr = Array.from_ndarray_trivial(theta_selected, labels=['vL', 'p', 'vR'])
-        self._mps.set_B(site, theta_arr, form='Th')
-        if canonicalize:
-            self._mps.canonical_form_finite(renormalize=True)
-
-        return p_mu
-
     # ========================================================================
     # 便捷方法（向后兼容）
     # ========================================================================

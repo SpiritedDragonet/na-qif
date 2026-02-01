@@ -172,10 +172,9 @@ def _run_hom_run(
     if debug and pipe.timings:
         timings.update(pipe.timings)
     if pipe.aborted:
-        return 0, True, 0.0, 0.0, []
+        return 0, True, 0.0, []
 
     result = pipe.emission
-    p_no_loss = pipe.p_no_loss
 
     bin_dt_s = result.dt_s
     bin_dt_ns = bin_dt_s * 1e9
@@ -202,6 +201,7 @@ def _run_hom_run(
         verbose=verbose,
         n_samples=shots_per_run,
         compute_metrics=False,
+        fiber_sample=pipe.fiber_sample,
     )
     p_arrive = pipeline.p_arrive
     for det_result in pipeline.samples:
@@ -216,11 +216,8 @@ def _run_hom_run(
         timing_order = [
             ("emission", "发射"),
             ("qfc", "QFC"),
-            ("filter_780", "780滤波"),
-            ("project_1517", "1517投影"),
             ("fiber", "光纤"),
             ("dephase", "退相干"),
-            ("bs", "BS"),
             ("detection_total", "探测抽样"),
         ]
         parts = []
@@ -230,7 +227,7 @@ def _run_hom_run(
         if parts:
             print(f"[HOM][调试耗时] tau={tau_ns:.3f} ns | " + " | ".join(parts))
 
-    return coincidences, False, p_arrive, p_no_loss, click_records
+    return coincidences, False, p_arrive, click_records
 
 
 def _run_hom_task_indexed(
@@ -322,7 +319,6 @@ def run_hom_experiment(
             "trials_total",
             "valid_runs",
             "arrive_trials",
-            "p_no_loss_avg",
             "early_abort_runs",
             "coinc_counts",
             "coinc_rate",
@@ -349,7 +345,6 @@ def run_hom_experiment(
             "early_abort": 0,
             "coincidences": 0,
             "p_arrive_sum": 0.0,
-            "p_no_loss_sum": 0.0,
             "arrive_trials": 0.0,
             "progress_next": progress_every,
         })
@@ -363,7 +358,7 @@ def run_hom_experiment(
     def _apply_result(idx: int, result: tuple) -> None:
         s = states[idx]
         s["completed"] += 1
-        coincid_run, early_abort, p_arrive, p_no_loss, _clicks = result
+        coincid_run, early_abort, p_arrive, _clicks = result
         if early_abort:
             s["early_abort"] += 1
         else:
@@ -371,7 +366,6 @@ def run_hom_experiment(
                 s["valid"] += 1
                 s["coincidences"] += coincid_run
                 s["p_arrive_sum"] += p_arrive
-                s["p_no_loss_sum"] += p_no_loss
                 s["arrive_trials"] += p_arrive * shots_per_run
         if idx == focus_idx and s["completed"] >= s["progress_next"]:
             print(
@@ -448,7 +442,6 @@ def run_hom_experiment(
         arrive_trials = s["arrive_trials"]
         coinc_rate = (s["coincidences"] / arrive_trials) if arrive_trials > 0 else 0.0
         p_arrive_avg = (s["p_arrive_sum"] / s["valid"]) if s["valid"] > 0 else 0.0
-        p_no_loss_avg = (s["p_no_loss_sum"] / s["valid"]) if s["valid"] > 0 else 0.0
         with open(summary_path, 'a', encoding='utf-8', newline='') as file:
             writer = csv.writer(file)
             writer.writerow([
@@ -457,7 +450,6 @@ def run_hom_experiment(
                 trials_total,
                 s["valid"],
                 f"{arrive_trials:.6f}",
-                f"{p_no_loss_avg:.8f}",
                 s["early_abort"],
                 s["coincidences"],
                 f"{coinc_rate:.8f}",

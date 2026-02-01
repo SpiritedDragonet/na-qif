@@ -215,9 +215,8 @@ def _apply_atomic_dephasing(
 class PipelineHooks:
     on_stage: Optional[Callable[[str], None]] = None
     after_emission: Optional[Callable[[Any], None]] = None
-    after_qfc_filter: Optional[Callable[[Any], None]] = None
+    after_qfc: Optional[Callable[[Any], None]] = None
     after_fiber: Optional[Callable[[Any, tuple], None]] = None
-    after_bs: Optional[Callable[[Any], None]] = None
 
 
 @dataclass
@@ -225,9 +224,6 @@ class PipelineResult:
     emission: Any
     mps: Any
     p_qubit_emit: float
-    p_no_loss_780: float
-    p_no_loss_fiber: float
-    p_no_loss: float
     fiber_sample: Optional[tuple]
     t_wait_us: float
     t2_us: float
@@ -251,16 +247,13 @@ def run_emission_to_bs(
     record_timings: bool = False,
 ) -> PipelineResult:
     """
-    统一的发射->QFC->滤波->投影->光纤->退相干->BS 流水线。
+    统一的发射->QFC->光纤(偏振/相位)->退相干 流水线。
     用于正常模式与HOM模式共用，避免重复逻辑。
     """
     from ..simulation import (
         run_dual_atom_emission,
         apply_qfc,
-        apply_780_filter,
         apply_fiber_channel,
-        project_to_1517,
-        apply_bs,
         extract_spin_state,
     )
 
@@ -306,7 +299,7 @@ def run_emission_to_bs(
     if hooks.after_emission is not None:
         hooks.after_emission(emission)
 
-    _call_stage("QFC + 780滤波 + 1517投影")
+    _call_stage("QFC")
     t0 = time.perf_counter() if timings is not None else None
     apply_qfc(
         mps=mps,
@@ -317,46 +310,12 @@ def run_emission_to_bs(
     )
     if timings is not None and t0 is not None:
         timings["qfc"] = time.perf_counter() - t0
-    t0 = time.perf_counter() if timings is not None else None
-    mps, p_no_loss_780 = apply_780_filter(
-        mps=mps,
-        n_bins=emission.get_n_bins(),
-        verbose=verbose,
-        rng=rng,
-    )
-    if timings is not None and t0 is not None:
-        timings["filter_780"] = time.perf_counter() - t0
-    if p_no_loss_780 <= 0.0:
-        return PipelineResult(
-            emission=emission,
-            mps=mps,
-            p_qubit_emit=p_qubit_emit,
-            p_no_loss_780=0.0,
-            p_no_loss_fiber=0.0,
-            p_no_loss=0.0,
-            fiber_sample=None,
-            t_wait_us=t_wait_us,
-            t2_us=t2_us,
-            p_dephase=0.0,
-            aborted=True,
-            abort_stage="After QFC + Filter",
-            abort_reason="780nm滤波后选概率为0，跳过后续计算",
-            timings=timings,
-        )
-    t0 = time.perf_counter() if timings is not None else None
-    project_to_1517(
-        mps=mps,
-        n_bins=emission.get_n_bins(),
-        verbose=verbose,
-    )
-    if timings is not None and t0 is not None:
-        timings["project_1517"] = time.perf_counter() - t0
-    if hooks.after_qfc_filter is not None:
-        hooks.after_qfc_filter(emission)
+    if hooks.after_qfc is not None:
+        hooks.after_qfc(emission)
 
     _call_stage("光纤信道")
     t0 = time.perf_counter() if timings is not None else None
-    mps, fiber_sample, p_no_loss_fiber = apply_fiber_channel(
+    mps, fiber_sample = apply_fiber_channel(
         mps=mps,
         n_bins=emission.get_n_bins(),
         fiber_params=fiber_params,
@@ -365,24 +324,6 @@ def run_emission_to_bs(
     )
     if timings is not None and t0 is not None:
         timings["fiber"] = time.perf_counter() - t0
-    p_no_loss = p_no_loss_780 * p_no_loss_fiber
-    if p_no_loss <= 0.0:
-        return PipelineResult(
-            emission=emission,
-            mps=mps,
-            p_qubit_emit=p_qubit_emit,
-            p_no_loss_780=p_no_loss_780,
-            p_no_loss_fiber=p_no_loss_fiber,
-            p_no_loss=0.0,
-            fiber_sample=fiber_sample,
-            t_wait_us=t_wait_us,
-            t2_us=t2_us,
-            p_dephase=0.0,
-            aborted=True,
-            abort_stage="After Fiber Channel",
-            abort_reason="光纤无损耗后选概率为0，跳过后续计算",
-            timings=timings,
-        )
     if hooks.after_fiber is not None:
         hooks.after_fiber(emission, fiber_sample)
 
@@ -397,27 +338,10 @@ def run_emission_to_bs(
     if timings is not None and t0 is not None:
         timings["dephase"] = time.perf_counter() - t0
 
-    _call_stage("分束器 + 诊断/可视化")
-    if verbose:
-        print("\n应用分束器（BS）...")
-    t0 = time.perf_counter() if timings is not None else None
-    apply_bs(
-        mps=mps,
-        n_bins=emission.get_n_bins(),
-        verbose=verbose,
-    )
-    if timings is not None and t0 is not None:
-        timings["bs"] = time.perf_counter() - t0
-    if hooks.after_bs is not None:
-        hooks.after_bs(emission)
-
     return PipelineResult(
         emission=emission,
         mps=mps,
         p_qubit_emit=p_qubit_emit,
-        p_no_loss_780=p_no_loss_780,
-        p_no_loss_fiber=p_no_loss_fiber,
-        p_no_loss=p_no_loss,
         fiber_sample=fiber_sample,
         t_wait_us=t_wait_us,
         t2_us=t2_us,

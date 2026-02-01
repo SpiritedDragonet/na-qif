@@ -9,10 +9,7 @@ from .trajectory import (
     EmissionResult,
     run_dual_atom_emission,
     apply_qfc,
-    apply_780_filter,
-    apply_bs,
     apply_fiber_channel,
-    project_to_1517,
 )
 from .detection import (
     DetectionEvent,
@@ -31,10 +28,7 @@ __all__ = [
     'run_dual_atom_emission',
     # apply_* functions
     'apply_qfc',
-    'apply_780_filter',
-    'apply_bs',
     'apply_fiber_channel',
-    'project_to_1517',
     # detection (POVM sampling)
     'DetectionEvent',
     'TwoPhotonDetectionResult',

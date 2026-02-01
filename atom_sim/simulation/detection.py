@@ -17,6 +17,8 @@ from dataclasses import dataclass
 
 from ..core.mps import MPSState
 from ..hilbert.basis import SUBSPACE_780, SUBSPACE_1517
+from ..physics.channels import loss_channel_both_subspaces
+from ..physics.gates import bs_gate_6d
 
 
 @dataclass
@@ -68,6 +70,9 @@ class DetectionPipelineResult:
 
 # 条件量在此阈值以下视为无效，避免数值噪声放大。
 P_ARRIVE_EPS = 1e-8
+
+DIM_780 = SUBSPACE_780.dim
+DIM_1517 = SUBSPACE_1517.dim
 
 
 def _order_two_port_detectors(detectors: List[str]) -> Tuple[str, ...]:
@@ -212,6 +217,48 @@ def build_detection_effects_6d(
     return effects_all, effects_true
 
 
+def _embed_1517_pair_effect(effect_1517: np.ndarray) -> np.ndarray:
+    """
+    将1517_A×1517_B的36x36算符嵌入到(780×1517)_A × (780×1517)_B的324x324空间。
+    """
+    if effect_1517.shape != (DIM_1517 * DIM_1517, DIM_1517 * DIM_1517):
+        raise ValueError("effect_1517 必须是36x36")
+    I_780 = np.eye(DIM_780, dtype=complex)
+    e = effect_1517.reshape(DIM_1517, DIM_1517, DIM_1517, DIM_1517)
+    # 输出索引顺序：(780A,1517A,780B,1517B | 780A',1517A',780B',1517B')
+    tensor = np.einsum("ab,cd,efgh->aecfbgdh", I_780, I_780, e, optimize=True)
+    return tensor.reshape(DIM_780 * DIM_1517 * DIM_780 * DIM_1517,
+                          DIM_780 * DIM_1517 * DIM_780 * DIM_1517)
+
+
+def _apply_loss_adj_pair(
+    effect_full: np.ndarray,
+    k_list_a: List[np.ndarray],
+    k_list_b: List[np.ndarray],
+    bin_dim: int,
+) -> np.ndarray:
+    """
+    对(A,B)双端口算符应用局域损耗通道的伴随映射。
+    """
+    I = np.eye(bin_dim, dtype=complex)
+
+    # 先对A臂应用
+    acc_a = np.zeros_like(effect_full)
+    for K in k_list_a:
+        KA = np.kron(K.conj().T, I)
+        KAr = np.kron(K, I)
+        acc_a += KA @ effect_full @ KAr
+
+    # 再对B臂应用
+    acc_b = np.zeros_like(acc_a)
+    for K in k_list_b:
+        KB = np.kron(I, K.conj().T)
+        KBr = np.kron(I, K)
+        acc_b += KB @ acc_a @ KBr
+
+    return acc_b
+
+
 def run_detection_pipeline(
     mps: MPSState,
     n_bins: int,
@@ -222,6 +269,7 @@ def run_detection_pipeline(
     verbose: bool = True,
     n_samples: int = 1,
     compute_metrics: bool = False,
+    fiber_sample: Optional[tuple] = None,
 ) -> DetectionPipelineResult:
     """
     POVM探测流水线：单次准备即可同时枚举成功率与抽样双点击。
@@ -231,104 +279,51 @@ def run_detection_pipeline(
 
     bin_start = 2 if (len(mps.d) >= 2 and mps.d[0] == 4 and mps.d[1] == 4) else 0
     bin_dim = mps.d[bin_start]
-    if bin_dim != 6:
-        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6.")
+    if bin_dim != DIM_780 * DIM_1517:
+        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 18.")
 
     if verbose and n_samples > 0:
         print("\n" + "=" * 60)
         print("双光子探测（POVM抽样）")
         print("=" * 60)
 
-    arrival_verbose = verbose and compute_metrics
-    # 使用P2投影的MPO计算两光子到达概率
-    mps._mps.canonical_form_finite(renormalize=True)
-    mps._mps.norm = 1.0
-    bin_sites = set()
-    for n in range(n_bins):
-        site_A = bin_start + 2 * n
-        site_B = bin_start + 2 * n + 1
-        if site_B >= mps.L:
-            raise ValueError(f"n_bins={n_bins} 超出MPS长度 {mps.L}")
-        bin_sites.add(site_A)
-        bin_sites.add(site_B)
+    # ==== 构造损耗与BS修正后的POVM effect ====
+    if fiber_sample is None:
+        eta_H_A = eta_V_A = eta_H_B = eta_V_B = 1.0
+    else:
+        eta_H_A = float(fiber_sample[2])
+        eta_V_A = float(fiber_sample[3])
+        eta_H_B = float(fiber_sample[4])
+        eta_V_B = float(fiber_sample[5])
 
-    pi0 = np.diag([1, 0, 0, 0, 0, 0]).astype(complex)
-    pi1 = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)
-    pi2 = np.diag([0, 0, 0, 1, 1, 1]).astype(complex)
-    w_bin = np.zeros((3, 3, bin_dim, bin_dim), dtype=complex)
-    w_bin[0, 0] = pi0
-    w_bin[0, 1] = pi1
-    w_bin[0, 2] = pi2
-    w_bin[1, 1] = pi0
-    w_bin[1, 2] = pi1
-    w_bin[2, 2] = pi0
+    k_list_a = loss_channel_both_subspaces(
+        eta_780=0.0,
+        eta_H_1517=eta_H_A,
+        eta_V_1517=eta_V_A,
+    )
+    k_list_b = loss_channel_both_subspaces(
+        eta_780=0.0,
+        eta_H_1517=eta_H_B,
+        eta_V_1517=eta_V_B,
+    )
 
-    w_identity_cache: dict[int, np.ndarray] = {}
-    env = np.zeros((3, 1, 1), dtype=complex)
-    env[0, 0, 0] = 1.0
-    for site in range(mps.L):
-        B = mps._mps.get_B(site, form='B').to_ndarray()
-        Bc = B.conj()
-        if site in bin_sites:
-            w = w_bin
-        else:
-            dim = mps.d[site]
-            if dim not in w_identity_cache:
-                pi0_id = np.eye(dim, dtype=complex)
-                pi1_zero = np.zeros((dim, dim), dtype=complex)
-                pi2_zero = np.zeros((dim, dim), dtype=complex)
-                w_id = np.zeros((3, 3, dim, dim), dtype=complex)
-                w_id[0, 0] = pi0_id
-                w_id[0, 1] = pi1_zero
-                w_id[0, 2] = pi2_zero
-                w_id[1, 1] = pi0_id
-                w_id[1, 2] = pi1_zero
-                w_id[2, 2] = pi0_id
-                w_identity_cache[dim] = w_id
-            w = w_identity_cache[dim]
-        env = np.einsum('aij,ipk,jql,abpq->bkl', env, B, Bc, w, optimize=True)
-    p_arrive = float(env[2, 0, 0].real)
-    if arrival_verbose:
-        print(f"  两光子到达概率 p_arrive={p_arrive:.6f}")
-    if p_arrive < P_ARRIVE_EPS:
-        p_arrive = 0.0
-
-    if p_arrive <= P_ARRIVE_EPS and p_dark <= 0.0:
-        if verbose:
-            print(f"  p_arrive<{P_ARRIVE_EPS:.1e} 且 p_dark=0，跳过POVM收缩")
-        metrics = None
-        if compute_metrics:
-            metrics = SuccessEnumerationResult(
-                p_arrive=p_arrive,
-                p_success=0.0,
-                p_success_true=0.0,
-                p_success_false=0.0,
-                p_success_given_arrival=0.0,
-                fidelity_declared=0.0,
-                fidelity_true=0.0,
-                fidelity_false=0.0,
-            )
-        samples = []
-        if n_samples > 0:
-            zero_spin = np.zeros((4, 4), dtype=complex)
-            samples = [
-                TwoPhotonDetectionResult(
-                    clicks=[],
-                    success=False,
-                    bell_state="",
-                    spin_state=zero_spin,
-                )
-                for _ in range(n_samples)
-            ]
-        return DetectionPipelineResult(
-            p_arrive=p_arrive,
-            metrics=metrics,
-            samples=samples,
-        )
-
-    effects_all, effects_true = build_detection_effects_6d(eta_det, p_dark)
+    effects_all_6d, effects_true_6d = build_detection_effects_6d(eta_det, p_dark)
     if verbose and n_samples > 0:
         print("  使用6D POVM effects (36x36) - 抽样双点击记录")
+
+    U_bs = bs_gate_6d()
+
+    def _transform_effects(effects_6d: dict) -> dict:
+        out = {}
+        for key, E in effects_6d.items():
+            E_bs = U_bs.conj().T @ E @ U_bs
+            E_full = _embed_1517_pair_effect(E_bs)
+            E_full = _apply_loss_adj_pair(E_full, k_list_a, k_list_b, bin_dim)
+            out[key] = E_full
+        return out
+
+    effects_all = _transform_effects(effects_all_6d)
+    effects_true = _transform_effects(effects_true_6d)
 
     empty_key = _order_two_port_detectors([])
     if not effects_all:
@@ -370,13 +365,108 @@ def run_detection_pipeline(
     if grouped_bins != n_bins:
         raise ValueError(f"n_bins={n_bins} 与分组后bin数量 {grouped_bins} 不一致")
 
+    L = len(B_list)
+
     dim_atom = B_list[0].shape[1]
     if dim_atom != 16:
         raise ValueError(f"Atom pair site dimension {dim_atom} != 16")
 
+    arrival_verbose = verbose and compute_metrics
+
+    # === 计算两光子到达概率（包含损耗+BS）===
+    n_1517 = np.array([0, 1, 1, 2, 2, 2], dtype=int)
+    n_pair = n_1517[:, None] + n_1517[None, :]
+    n_flat = n_pair.reshape(-1)
+    pi0_1517 = np.diag((n_flat == 0).astype(float))
+    pi1_1517 = np.diag((n_flat == 1).astype(float))
+    pi2_1517 = np.diag((n_flat == 2).astype(float))
+
+    pi0_bs = U_bs.conj().T @ pi0_1517 @ U_bs
+    pi1_bs = U_bs.conj().T @ pi1_1517 @ U_bs
+    pi2_bs = U_bs.conj().T @ pi2_1517 @ U_bs
+
+    pi0_full = _embed_1517_pair_effect(pi0_bs)
+    pi1_full = _embed_1517_pair_effect(pi1_bs)
+    pi2_full = _embed_1517_pair_effect(pi2_bs)
+    pi0_full = _apply_loss_adj_pair(pi0_full, k_list_a, k_list_b, bin_dim)
+    pi1_full = _apply_loss_adj_pair(pi1_full, k_list_a, k_list_b, bin_dim)
+    pi2_full = _apply_loss_adj_pair(pi2_full, k_list_a, k_list_b, bin_dim)
+
+    d_pair = bin_dim * bin_dim
+    w_bin = np.zeros((3, 3, d_pair, d_pair), dtype=complex)
+    w_bin[0, 0] = pi0_full
+    w_bin[0, 1] = pi1_full
+    w_bin[0, 2] = pi2_full
+    w_bin[1, 1] = pi0_full
+    w_bin[1, 2] = pi1_full
+    w_bin[2, 2] = pi0_full
+
+    w_identity_cache: dict[int, np.ndarray] = {}
+    env = np.zeros((3, 1, 1), dtype=complex)
+    env[0, 0, 0] = 1.0
+    for site in range(L):
+        B = B_list[site]
+        Bc = Bc_list[site]
+        if site == 0:
+            dim = B.shape[1]
+            if dim not in w_identity_cache:
+                pi0_id = np.eye(dim, dtype=complex)
+                pi1_zero = np.zeros((dim, dim), dtype=complex)
+                pi2_zero = np.zeros((dim, dim), dtype=complex)
+                w_id = np.zeros((3, 3, dim, dim), dtype=complex)
+                w_id[0, 0] = pi0_id
+                w_id[0, 1] = pi1_zero
+                w_id[0, 2] = pi2_zero
+                w_id[1, 1] = pi0_id
+                w_id[1, 2] = pi1_zero
+                w_id[2, 2] = pi0_id
+                w_identity_cache[dim] = w_id
+            w = w_identity_cache[dim]
+        else:
+            w = w_bin
+        env = np.einsum('aij,ipk,jql,abpq->bkl', env, B, Bc, w, optimize=True)
+
+    p_arrive = float(env[2, 0, 0].real)
+    if arrival_verbose:
+        print(f"  两光子到达概率 p_arrive={p_arrive:.6f}")
+    if p_arrive < P_ARRIVE_EPS:
+        p_arrive = 0.0
+
+    if p_arrive <= P_ARRIVE_EPS and p_dark <= 0.0:
+        if verbose:
+            print(f"  p_arrive<{P_ARRIVE_EPS:.1e} 且 p_dark=0，跳过POVM收缩")
+        metrics = None
+        if compute_metrics:
+            metrics = SuccessEnumerationResult(
+                p_arrive=p_arrive,
+                p_success=0.0,
+                p_success_true=0.0,
+                p_success_false=0.0,
+                p_success_given_arrival=0.0,
+                fidelity_declared=0.0,
+                fidelity_true=0.0,
+                fidelity_false=0.0,
+            )
+        samples = []
+        if n_samples > 0:
+            zero_spin = np.zeros((4, 4), dtype=complex)
+            samples = [
+                TwoPhotonDetectionResult(
+                    clicks=[],
+                    success=False,
+                    bell_state="",
+                    spin_state=zero_spin,
+                )
+                for _ in range(n_samples)
+            ]
+        return DetectionPipelineResult(
+            p_arrive=p_arrive,
+            metrics=metrics,
+            samples=samples,
+        )
+
     E_no = effects_all.get(empty_key, zero_effect)
     atom_I = np.eye(dim_atom, dtype=complex)
-    L = len(B_list)
 
     def _apply_env_left(
         B: np.ndarray,

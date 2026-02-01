@@ -46,7 +46,6 @@ SUMMARY_HEADER = [
     "p_dark_intrinsic",
     "p_bg",
     "p_noise",
-    "p_no_loss",
     "p_arrive",
     "p_success_given_arrival",
     "p_success_all",
@@ -74,7 +73,6 @@ SUMMARY_HEADER = [
     "p_dark_intrinsic",
     "p_bg",
     "p_noise",
-    "p_no_loss",
     "p_arrive",
     "p_success_given_arrival",
     "p_success_all",
@@ -191,7 +189,7 @@ def _run_single_trial(
     hooks: Optional[PipelineHooks],
 ):
     """
-    目的：抽出最小可复用的物理流程（发射->QFC->滤波->光纤->退相干->BS）。
+    目的：抽出最小可复用的物理流程（发射->QFC->光纤->退相干）。
     规则：delay_ns/delay_jitter_ns 优先采用显式传入，否则取配置默认。
     """
     run_rng = rng or np.random.default_rng()
@@ -228,7 +226,7 @@ def _run_single_simulation_core(
     ideal_det = config.detector.ideal_det
     run_tag = f"run{run_index:03d}"
     success_metrics = None
-    stage_total = 6
+    stage_total = 5
     plot_gate = {"claimed": False, "paths": []}
 
     @contextmanager
@@ -295,7 +293,6 @@ def _run_single_simulation_core(
             _fmt("p_dark_intrinsic", ".8f"),
             _fmt("p_bg", ".8f"),
             _fmt("p_noise", ".8f"),
-            _fmt("p_no_loss", ".8f"),
             _fmt("p_arrive", ".8f"),
             _fmt("p_success_given_arrival", ".8f"),
             _fmt("p_success_all", ".8f"),
@@ -350,8 +347,6 @@ def _run_single_simulation_core(
                 file.write(f"p_dephase = {metrics['p_dephase']:.6f}\n")
             if "p_qubit_emit" in metrics:
                 file.write(f"p_qubit_emit = {metrics['p_qubit_emit']:.6f}\n")
-            if "p_no_loss" in metrics:
-                file.write(f"p_no_loss = {metrics['p_no_loss']:.8f}\n")
 
             file.write(f"p_arrive = {metrics['p_arrive']:.8f}\n")
             if metrics.get("p_success_no_dark") is not None:
@@ -422,18 +417,16 @@ def _run_single_simulation_core(
     print(f"Run {run_index}/{n_runs} ({run_tag})")
     print("=" * 80)
     print(f"Output directory: {output_dir}")
-    print("运行发射 + QFC + 分束器 + 探测仿真...")
+    print("运行发射 + QFC + 光纤 + 探测仿真...")
 
     run_rng = np.random.default_rng(seed)
-    p_no_loss = 0.0
 
     stage_map = {
         "发射": 1,
-        "QFC + 780滤波 + 1517投影": 2,
+        "QFC": 2,
         "光纤信道": 3,
-        "分束器 + 诊断/可视化": 4,
-        "成功事件统计 (POVM)": 5,
-        "POVM抽样": 6,
+        "成功事件统计 (POVM)": 4,
+        "POVM抽样": 5,
     }
 
     # 目的：输出阶段日志；公式：显示 "阶段 idx / 总阶段数"。
@@ -487,13 +480,13 @@ def _run_single_simulation_core(
         debug_stage="After Emission",
         step_index=1,
     )
-    _after_qfc_filter = _make_plot_hook(
-        stage_name="After QFC + Filter",
+    _after_qfc = _make_plot_hook(
+        stage_name="After QFC",
         file_suffix="2_after_qfc",
         show_atomic=False,
         use_emission_obj=False,
         use_time_grid=True,
-        debug_stage="After QFC + Filter",
+        debug_stage="After QFC",
         step_index=2,
     )
     _after_fiber = _make_plot_hook(
@@ -504,15 +497,6 @@ def _run_single_simulation_core(
         use_time_grid=True,
         debug_stage="After Fiber Channel",
         step_index=3,
-    )
-    _after_bs = _make_plot_hook(
-        stage_name="After BS",
-        file_suffix="4_after_bs",
-        show_atomic=False,
-        use_emission_obj=False,
-        use_time_grid=True,
-        debug_stage="After BS",
-        step_index=4,
     )
 
     timings = {} if DEBUG_MODE else None
@@ -526,9 +510,8 @@ def _run_single_simulation_core(
         hooks=PipelineHooks(
             on_stage=_on_stage,
             after_emission=_after_emission,
-            after_qfc_filter=_after_qfc_filter,
+            after_qfc=_after_qfc,
             after_fiber=_after_fiber,
-            after_bs=_after_bs,
         ),
     )
     if DEBUG_MODE and pipe.timings:
@@ -536,7 +519,6 @@ def _run_single_simulation_core(
     if pipe.aborted:
         include_no_dark = (enum_mode == "no-dark")
         metrics = {
-            "p_no_loss": 0.0,
             "p_arrive": 0.0,
             "p_success_all": 0.0,
             "p_success_true": 0.0,
@@ -552,7 +534,6 @@ def _run_single_simulation_core(
             "false_fraction": 0.0,
             "false_fraction_approx": 0.0 if include_no_dark else None,
         }
-        metrics["p_no_loss"] = pipe.p_no_loss
         _plot_gate_finalize()
         reason = pipe.abort_reason or "流水线提前终止"
         print(f"\n[早停] {reason}")
@@ -583,7 +564,6 @@ def _run_single_simulation_core(
 
     result = pipe.emission
     p_qubit_emit = pipe.p_qubit_emit
-    p_no_loss = pipe.p_no_loss
     t_wait_us = pipe.t_wait_us
     t2_us = pipe.t2_us
     p_dephase = pipe.p_dephase
@@ -651,6 +631,7 @@ def _run_single_simulation_core(
             verbose=True,
             n_samples=0,
             compute_metrics=True,
+            fiber_sample=pipe.fiber_sample,
         )
         enum_no_dark = enum_pipeline.metrics
         if p_noise > 0.0:
@@ -673,6 +654,7 @@ def _run_single_simulation_core(
             verbose=True,
             n_samples=shots_per_run,
             compute_metrics=False,
+            fiber_sample=pipe.fiber_sample,
         )
         samples = sample_pipeline.samples
     else:
@@ -691,6 +673,7 @@ def _run_single_simulation_core(
             verbose=True,
             n_samples=shots_per_run,
             compute_metrics=True,
+            fiber_sample=pipe.fiber_sample,
         )
         enum_main = pipeline.metrics
         samples = pipeline.samples
@@ -707,7 +690,6 @@ def _run_single_simulation_core(
         "t2_us": t2_us,
         "p_dephase": p_dephase,
         "p_qubit_emit": p_qubit_emit,
-        "p_no_loss": p_no_loss,
         "p_arrive": enum_main.p_arrive,
         "p_success_all": enum_main.p_success,
         "p_success_true": enum_main.p_success_true,
@@ -840,11 +822,8 @@ def _run_single_simulation_core(
         timing_order = [
             ("emission", "发射"),
             ("qfc", "QFC"),
-            ("filter_780", "780滤波"),
-            ("project_1517", "1517投影"),
             ("fiber", "光纤"),
             ("dephase", "退相干"),
-            ("bs", "BS"),
             ("povm_enum", "成功事件枚举"),
             ("povm_effects", "POVM构建"),
             ("detection_total", "探测抽样"),

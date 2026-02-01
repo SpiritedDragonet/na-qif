@@ -390,7 +390,6 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 "shot_index",
                 "valid",
                 "p_arrive",
-                "p_no_loss",
                 "H1_bin",
                 "V1_bin",
                 "H2_bin",
@@ -413,7 +412,6 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 metrics = data.get("metrics", {})
                 valid = int(metrics.get("valid", 0) or 0)
                 p_arrive = metrics.get("p_arrive")
-                p_no_loss = metrics.get("p_no_loss")
                 tau_key = f"{tau_ns:.6f}"
                 state = tau_states.setdefault(
                     tau_key,
@@ -424,7 +422,6 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                         "early_abort": 0,
                         "coinc": 0,
                         "p_arrive_sum": 0.0,
-                        "p_no_loss_sum": 0.0,
                         "arrive_trials": 0.0,
                     },
                 )
@@ -437,8 +434,6 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                     if p_arrive is not None:
                         state["p_arrive_sum"] += float(p_arrive)
                         state["arrive_trials"] += float(p_arrive) * config.run.shots_per_run
-                    if p_no_loss is not None:
-                        state["p_no_loss_sum"] += float(p_no_loss)
                 else:
                     state["early_abort"] += 1
                 clicks_path = meta_path.parent / "raw" / "clicks.json"
@@ -449,18 +444,17 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                     except Exception:
                         clicks = []
                 if not clicks:
-                    trials_writer.writerow([
-                        f"{tau_ns:.6f}",
-                        run_index,
-                        -1,
-                        valid,
-                        p_arrive,
-                        p_no_loss,
-                        "",
-                        "",
-                        "",
-                        "",
-                    ])
+                        trials_writer.writerow([
+                            f"{tau_ns:.6f}",
+                            run_index,
+                            -1,
+                            valid,
+                            p_arrive,
+                            "",
+                            "",
+                            "",
+                            "",
+                        ])
                 else:
                     for shot_idx, shot_clicks in enumerate(clicks):
                         bins = {"H1": "", "V1": "", "H2": "", "V2": ""}
@@ -477,7 +471,6 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                             shot_idx,
                             valid,
                             p_arrive,
-                            p_no_loss,
                             bins["H1"],
                             bins["V1"],
                             bins["H2"],
@@ -494,7 +487,6 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 "coinc_counts",
                 "coinc_rate",
                 "p_arrive_avg",
-                "p_no_loss_avg",
                 "arrive_trials",
                 "window_ns",
                 "shots_per_run",
@@ -503,7 +495,6 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 s = tau_states[tau_key]
                 valid = s["valid"]
                 p_arrive_avg = (s["p_arrive_sum"] / valid) if valid > 0 else 0.0
-                p_no_loss_avg = (s["p_no_loss_sum"] / valid) if valid > 0 else 0.0
                 coinc_rate = (s["coinc"] / s["arrive_trials"]) if s["arrive_trials"] > 0 else 0.0
                 tau_writer.writerow([
                     f"{s['tau_ns']:.6f}",
@@ -514,7 +505,6 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                     s["coinc"],
                     f"{coinc_rate:.8f}",
                     f"{p_arrive_avg:.6f}",
-                    f"{p_no_loss_avg:.8f}",
                     f"{s['arrive_trials']:.6f}",
                     f"{config.hom.window_ns if config.hom else 0.0:.3f}",
                     config.run.shots_per_run,
@@ -729,7 +719,7 @@ def _run_worker_loop(
                 tau_ns = float(task.get("tau_ns", 0.0))
                 shots = int(task.get("shots", config.run.shots_per_run))
                 window_ns = float(task.get("window_ns", config.hom.window_ns if config.hom else 70.0))
-                coincid, early_abort, p_arrive, p_no_loss, click_records = _run_hom_run(
+                coincid, early_abort, p_arrive, click_records = _run_hom_run(
                     tau_ns,
                     shots,
                     config,
@@ -743,7 +733,6 @@ def _run_worker_loop(
                     "p_arrive": p_arrive,
                     "coinc": coincid,
                     "valid": 0 if early_abort else 1,
-                    "p_no_loss": p_no_loss,
                 }
                 if click_records is not None:
                     _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
