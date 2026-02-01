@@ -219,29 +219,83 @@ def _discover_run_roots(base_root: Path) -> list:
     return sorted(roots, key=lambda p: _run_id_sort_key(p.name))
 
 
-def _pick_output_root(outputs_root: Path, stamp: str) -> Path:
-    dest = outputs_root / stamp
+def _is_summary_task_path(path: Path) -> bool:
+    return path.name == "task_summary.json"
+
+
+def _is_run_complete(run_root: Path) -> bool:
+    pending = run_root / "tasks" / "pending"
+    inprogress = run_root / "tasks" / "inprogress"
+    done_flag = run_root / "summary" / "server_done.flag"
+    if not pending.exists() or not inprogress.exists():
+        return False
+    if not done_flag.exists():
+        return False
+    return (not any(pending.glob("task_*.json"))) and (not any(inprogress.glob("task_*.json")))
+
+
+def _is_run_active(run_root: Path, stale_seconds: int = 600) -> bool:
+    now = time.time()
+    heartbeat = run_root / "summary" / "server_heartbeat.txt"
+    if heartbeat.exists():
+        try:
+            if now - heartbeat.stat().st_mtime <= stale_seconds:
+                return True
+        except FileNotFoundError:
+            pass
+    inprogress_dir = run_root / "tasks" / "inprogress"
+    if inprogress_dir.exists():
+        for task_path in inprogress_dir.glob("task_*.json"):
+            try:
+                if now - task_path.stat().st_mtime <= stale_seconds:
+                    return True
+            except FileNotFoundError:
+                continue
+    return False
+
+
+def _pick_output_root(outputs_root: Path, name: str) -> Path:
+    dest = outputs_root / name
     if not dest.exists():
         return dest
     suffix = 1
-    while (outputs_root / f"{stamp}_{suffix}").exists():
+    while (outputs_root / f"{name}_{suffix}").exists():
         suffix += 1
-    return outputs_root / f"{stamp}_{suffix}"
+    return outputs_root / f"{name}_{suffix}"
 
 
-def _archive_run(run_root: Path, outputs_root: Path) -> Optional[Path]:
+def _archive_run(run_root: Path, outputs_root: Path, unfinished: bool = False) -> Optional[Path]:
     if not run_root.exists():
         return None
     outputs_root.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
-    dest = _pick_output_root(outputs_root, stamp)
+    name = f"{stamp}_u" if unfinished else stamp
+    dest = _pick_output_root(outputs_root, name)
     try:
         shutil.move(str(run_root), str(dest))
     except Exception as exc:
         print(f"[server] 归档失败: {exc}")
         return None
-    print(f"[server] 已归档完成任务到: {dest}")
+    label = "未完成任务" if unfinished else "完成任务"
+    print(f"[server] 已归档{label}到: {dest}")
     return dest
+
+
+def _archive_existing_runs(
+    base_root: Path,
+    outputs_root: Path,
+    exclude_run_id: Optional[str] = None,
+    stale_seconds: int = 600,
+) -> None:
+    for run_root in _discover_run_roots(base_root):
+        if exclude_run_id and run_root.name == exclude_run_id:
+            continue
+        if _is_run_complete(run_root):
+            _archive_run(run_root, outputs_root, unfinished=False)
+            continue
+        if _is_run_active(run_root, stale_seconds=stale_seconds):
+            continue
+        _archive_run(run_root, outputs_root, unfinished=True)
 
 
 def _pick_next_run_id(base_root: Path) -> str:
@@ -308,13 +362,164 @@ def _build_task_list(
             if not path.exists():
                 _write_json_atomic(path, task)
             task_count += 1
+    summary_task = {
+        "id": "summary",
+        "mode": "SUMMARY",
+        "summary_for": task_type,
+        "config_hash": config_hash,
+    }
+    summary_path = pending_dir / "task_summary.json"
+    if not summary_path.exists():
+        _write_json_atomic(summary_path, summary_task)
+    task_count += 1
     return task_count
 
 
-def _write_summary(task_type: str, paths: dict) -> None:
+def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
     results_dir = paths["results"]
     summary_dir = paths["summary"]
     summary_dir.mkdir(parents=True, exist_ok=True)
+    if task_type == "HOM":
+        trials_path = summary_dir / "hom_trials.csv"
+        tau_path = summary_dir / "hom_summary.csv"
+        with open(trials_path, "w", encoding="utf-8", newline="") as trials_file:
+            trials_writer = csv.writer(trials_file)
+            trials_writer.writerow([
+                "tau_ns",
+                "run_index",
+                "shot_index",
+                "valid",
+                "p_arrive",
+                "p_no_loss",
+                "H1_bin",
+                "V1_bin",
+                "H2_bin",
+                "V2_bin",
+            ])
+            tau_states = {}
+            for meta_path in sorted(results_dir.glob("result_*/meta.json")):
+                try:
+                    data = json.loads(meta_path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                if data.get("mode") != "HOM":
+                    continue
+                tid = data.get("id", "")
+                m = re.match(r"hom_tau_([+-]?\d+\.\d+)_run_(\d+)", tid)
+                if not m:
+                    continue
+                tau_ns = float(m.group(1))
+                run_index = int(m.group(2))
+                metrics = data.get("metrics", {})
+                valid = int(metrics.get("valid", 0) or 0)
+                p_arrive = metrics.get("p_arrive")
+                p_no_loss = metrics.get("p_no_loss")
+                tau_key = f"{tau_ns:.6f}"
+                state = tau_states.setdefault(
+                    tau_key,
+                    {
+                        "tau_ns": tau_ns,
+                        "runs_total": 0,
+                        "valid": 0,
+                        "early_abort": 0,
+                        "coinc": 0,
+                        "p_arrive_sum": 0.0,
+                        "p_no_loss_sum": 0.0,
+                        "arrive_trials": 0.0,
+                    },
+                )
+                state["runs_total"] += 1
+                if data.get("status") != "ok":
+                    continue
+                if valid:
+                    state["valid"] += 1
+                    state["coinc"] += int(metrics.get("coinc", 0) or 0)
+                    if p_arrive is not None:
+                        state["p_arrive_sum"] += float(p_arrive)
+                        state["arrive_trials"] += float(p_arrive) * config.run.shots_per_run
+                    if p_no_loss is not None:
+                        state["p_no_loss_sum"] += float(p_no_loss)
+                else:
+                    state["early_abort"] += 1
+                clicks_path = meta_path.parent / "raw" / "clicks.json"
+                clicks = []
+                if clicks_path.exists():
+                    try:
+                        clicks = json.loads(clicks_path.read_text(encoding="utf-8")).get("clicks", [])
+                    except Exception:
+                        clicks = []
+                if not clicks:
+                    trials_writer.writerow([
+                        f"{tau_ns:.6f}",
+                        run_index,
+                        -1,
+                        valid,
+                        p_arrive,
+                        p_no_loss,
+                        "",
+                        "",
+                        "",
+                        "",
+                    ])
+                else:
+                    for shot_idx, shot_clicks in enumerate(clicks):
+                        bins = {"H1": "", "V1": "", "H2": "", "V2": ""}
+                        for click in shot_clicks:
+                            if len(click) < 2:
+                                continue
+                            det = click[0]
+                            bin_idx = click[1]
+                            if det in bins:
+                                bins[det] = f"{bin_idx}" if bins[det] == "" else f"{bins[det]};{bin_idx}"
+                        trials_writer.writerow([
+                            f"{tau_ns:.6f}",
+                            run_index,
+                            shot_idx,
+                            valid,
+                            p_arrive,
+                            p_no_loss,
+                            bins["H1"],
+                            bins["V1"],
+                            bins["H2"],
+                            bins["V2"],
+                        ])
+        with open(tau_path, "w", encoding="utf-8", newline="") as tau_file:
+            tau_writer = csv.writer(tau_file)
+            tau_writer.writerow([
+                "tau_ns",
+                "runs_target",
+                "runs_total",
+                "valid_runs",
+                "early_abort_runs",
+                "coinc_counts",
+                "coinc_rate",
+                "p_arrive_avg",
+                "p_no_loss_avg",
+                "arrive_trials",
+                "window_ns",
+                "shots_per_run",
+            ])
+            for tau_key in sorted(tau_states, key=lambda x: float(x)):
+                s = tau_states[tau_key]
+                valid = s["valid"]
+                p_arrive_avg = (s["p_arrive_sum"] / valid) if valid > 0 else 0.0
+                p_no_loss_avg = (s["p_no_loss_sum"] / valid) if valid > 0 else 0.0
+                coinc_rate = (s["coinc"] / s["arrive_trials"]) if s["arrive_trials"] > 0 else 0.0
+                tau_writer.writerow([
+                    f"{s['tau_ns']:.6f}",
+                    config.run.runs,
+                    s["runs_total"],
+                    valid,
+                    s["early_abort"],
+                    s["coinc"],
+                    f"{coinc_rate:.8f}",
+                    f"{p_arrive_avg:.6f}",
+                    f"{p_no_loss_avg:.8f}",
+                    f"{s['arrive_trials']:.6f}",
+                    f"{config.hom.window_ns if config.hom else 0.0:.3f}",
+                    config.run.shots_per_run,
+                ])
+        return
     summary_path = summary_dir / f"{task_type.lower()}_summary.csv"
     with open(summary_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
@@ -338,42 +543,48 @@ def _write_summary(task_type: str, paths: dict) -> None:
             ])
 
 
-def _run_summary_task(
-    task_type: str,
+def _recover_stale_tasks(paths: dict, stale_seconds: int = 600) -> None:
+    now = time.time()
+    for task_path in paths["inprogress"].glob("task_*.json"):
+        try:
+            if now - task_path.stat().st_mtime > stale_seconds:
+                task_path.replace(paths["pending"] / task_path.name)
+        except FileNotFoundError:
+            continue
+
+
+def _run_server_monitor(
     paths: dict,
     expected_total: int,
     done_flag_path: Optional[Path] = None,
 ) -> None:
     last_report = 0.0
+    last_heartbeat = 0.0
+    heartbeat_path = paths["summary"] / "server_heartbeat.txt"
     while True:
         now = time.time()
-        for task_path in paths["inprogress"].glob("task_*.json"):
+        if now - last_heartbeat >= 30:
             try:
-                if now - task_path.stat().st_mtime > 600:
-                    task_path.replace(paths["pending"] / task_path.name)
-            except FileNotFoundError:
-                continue
+                heartbeat_path.write_text(str(int(now)), encoding="utf-8")
+            except Exception:
+                pass
+            last_heartbeat = now
+        _recover_stale_tasks(paths)
         pending = list(paths["pending"].glob("task_*.json"))
         inprogress = list(paths["inprogress"].glob("task_*.json"))
         done_count = len(list(paths["done"].glob("task_*.json")))
         if now - last_report >= 5:
             total = expected_total if expected_total > 0 else done_count + len(pending) + len(inprogress)
             msg = (
-                f"[server] 进度: completed {done_count}/{total} | "
-                f"inprogress {len(inprogress)} | pending {len(pending)}"
+                f"[server] 进度: 已完成 {done_count}/{total} | "
+                f"进行中 {len(inprogress)} | 待完成 {len(pending)}"
             )
             print(f"\r{msg}", end="", flush=True)
             last_report = now
-        if not pending and not inprogress:
+        if done_flag_path is not None and done_flag_path.exists():
             print()
             break
-        time.sleep(10)
-    _write_summary(task_type, paths)
-    if done_flag_path is not None:
-        try:
-            done_flag_path.write_text("done", encoding="utf-8")
-        except Exception:
-            pass
+        time.sleep(5)
 
 
 def _run_worker_loop(
@@ -403,8 +614,15 @@ def _run_worker_loop(
             picked = None
             for run_root in _discover_run_roots(base_root):
                 run_paths = _queue_paths(run_root)
-                pending = list(run_paths["pending"].glob("task_*.json"))
-                if pending:
+                _recover_stale_tasks(run_paths)
+                pending_all = list(run_paths["pending"].glob("task_*.json"))
+                if not pending_all:
+                    continue
+                non_summary_pending = [p for p in pending_all if not _is_summary_task_path(p)]
+                non_summary_inprogress = [
+                    p for p in run_paths["inprogress"].glob("task_*.json") if not _is_summary_task_path(p)
+                ]
+                if non_summary_pending or not non_summary_inprogress:
                     picked = run_paths
                     break
             if picked is None:
@@ -424,8 +642,9 @@ def _run_worker_loop(
             if heartbeat_path is not None:
                 heartbeat_path.write_text(str(int(now)), encoding="utf-8")
             last_heartbeat = now
-        pending = sorted(paths["pending"].glob("task_*.json"))
-        if not pending:
+        _recover_stale_tasks(paths)
+        pending_all = sorted(paths["pending"].glob("task_*.json"))
+        if not pending_all:
             inprogress = list(paths["inprogress"].glob("task_*.json"))
             if exit_when_done:
                 if done_flag and done_flag.exists() and not inprogress:
@@ -436,6 +655,18 @@ def _run_worker_loop(
                         break
                 else:
                     empty_rounds = 0
+            time.sleep(backoff[backoff_idx])
+            backoff_idx = min(backoff_idx + 1, len(backoff) - 1)
+            continue
+        non_summary_pending = [p for p in pending_all if not _is_summary_task_path(p)]
+        non_summary_inprogress = [
+            p for p in paths["inprogress"].glob("task_*.json") if not _is_summary_task_path(p)
+        ]
+        if non_summary_pending:
+            pending = non_summary_pending
+        elif not non_summary_inprogress:
+            pending = pending_all
+        else:
             time.sleep(backoff[backoff_idx])
             backoff_idx = min(backoff_idx + 1, len(backoff) - 1)
             continue
@@ -478,14 +709,23 @@ def _run_worker_loop(
         try:
             task = json.loads(task_path.read_text(encoding="utf-8"))
             task_id = task.get("id", task_path.stem.replace("task_", ""))
-            seed = task.get("seed")
-            seed = int(seed) if seed is not None else None
             result_dir = paths["results"] / f"result_{task_id}"
             plots_dir = result_dir / "plots"
             raw_dir = result_dir / "raw"
             plots_dir.mkdir(parents=True, exist_ok=True)
             raw_dir.mkdir(parents=True, exist_ok=True)
-            if task.get("mode") == "HOM":
+            if task.get("mode") == "SUMMARY" or _is_summary_task_path(task_path):
+                summary_for = str(task.get("summary_for", "SIM")).upper()
+                _write_summary(summary_for, paths, config)
+                done_flag = paths["summary"] / "server_done.flag"
+                try:
+                    done_flag.write_text("done", encoding="utf-8")
+                except Exception:
+                    pass
+                metrics = {"summary_for": summary_for}
+            elif task.get("mode") == "HOM":
+                seed = task.get("seed")
+                seed = int(seed) if seed is not None else None
                 tau_ns = float(task.get("tau_ns", 0.0))
                 shots = int(task.get("shots", config.run.shots_per_run))
                 window_ns = float(task.get("window_ns", config.hom.window_ns if config.hom else 70.0))
@@ -508,6 +748,8 @@ def _run_worker_loop(
                 if click_records is not None:
                     _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
             else:
+                seed = task.get("seed")
+                seed = int(seed) if seed is not None else None
                 run_index = int(task.get("run_index", 1))
                 run_stats, success_metrics = single_run._run_single_simulation_core(
                     output_dir=raw_dir,
@@ -567,10 +809,14 @@ def main():
     config_hash = _resolve_config_hash(config_hash)
     task_type = task_type.upper()
     base_root = _resolve_queue_root(queue_root)
-    if role in ("server", "both") and run_id is None:
+    outputs_root = PROJECT_ROOT / "outputs"
+    if role in ("server", "both"):
         base_root.mkdir(parents=True, exist_ok=True)
-        run_id = _pick_next_run_id(base_root)
-        print(f"[server] 未指定 run-id，自动选择: {run_id}")
+        outputs_root.mkdir(parents=True, exist_ok=True)
+        _archive_existing_runs(base_root, outputs_root, exclude_run_id=run_id)
+        if run_id is None:
+            run_id = _pick_next_run_id(base_root)
+            print(f"[server] 未指定 run-id，自动选择: {run_id}")
     run_root = base_root / run_id if run_id else base_root
     paths = _queue_paths(run_root)
     if role in ("server", "both"):
@@ -592,8 +838,8 @@ def main():
         expected_total = _build_task_list(task_type, config, config_hash, paths["pending"])
         print(f"[server] 任务总数: {expected_total} | queue: {paths['root']}")
         if role == "server":
-            _run_summary_task(task_type, paths, expected_total, done_flag)
-            _archive_run(run_root, PROJECT_ROOT / "outputs")
+            _run_server_monitor(paths, expected_total, done_flag)
+            _archive_run(run_root, outputs_root)
             return
 
     if role in ("worker", "both"):
@@ -622,11 +868,11 @@ def main():
         print(f"[worker] cores={core_budget} | workers={worker_count} | queue={queue_hint}")
 
         if role == "both":
-            summary_thread = threading.Thread(
-                target=_run_summary_task,
-                args=(task_type, paths, expected_total, done_flag),
+            monitor_thread = threading.Thread(
+                target=_run_server_monitor,
+                args=(paths, expected_total, done_flag),
             )
-            summary_thread.start()
+            monitor_thread.start()
 
         exit_when_done = role == "both" or (role == "worker" and run_id is not None)
         done_flag_arg = str(done_flag) if run_id is not None else None
@@ -658,8 +904,8 @@ def main():
                 for future in futures:
                     future.result()
         if role == "both":
-            summary_thread.join()
-            _archive_run(run_root, PROJECT_ROOT / "outputs")
+            monitor_thread.join()
+            _archive_run(run_root, outputs_root)
 
 
 if __name__ == "__main__":
