@@ -34,6 +34,11 @@ from atom_sim.experiment import single_run  # noqa: E402
 
 
 def _parse_run_params(argv):
+    # 目的：解析 CLI 参数并构造统一的 SimConfig。
+    # 复杂点：mode/task_type/role 三套概念并存——
+    #   - role: server/worker/both（调度角色）
+    #   - mode/task_type: SIM/HOM（物理任务类型）
+    #   - queue_root/run_id: 决定任务目录隔离与任务回收策略
     parser = argparse.ArgumentParser(
         prog="python total_simulation.py",
         formatter_class=argparse.RawTextHelpFormatter,
@@ -80,11 +85,13 @@ def _parse_run_params(argv):
     parser.add_argument("--bg-std-hz", dest="bg_rate_std_hz", type=float, help="背景噪声标准差 (Hz)")
     parser.add_argument("--enum-mode", dest="enum_mode", type=str, help="成功事件枚举模式：dark/no-dark")
     parser.add_argument("--plot-all", dest="plot_all", action="store_true", help="所有 run 都绘图（默认仅保留一个）")
+    parser.add_argument("--no-plot", dest="no_plot", action="store_true", help="完全禁止绘图（覆盖 plot-all）")
     parser.add_argument("--eta-det", dest="eta_det", type=float, help="探测效率 η (0~1)")
     parser.add_argument("--ideal-det", dest="ideal_det", action="store_true", help="理想探测（eta_det=1, 无噪声）")
     parser.add_argument("--debug", dest="debug", action="store_true", help="开启调试模式（输出耗时等）")
     args = parser.parse_args(argv[1:])
 
+    # run-id 仅用于目录命名，因此要严格限制为“非路径字符串”
     run_id = args.run_id.strip() if args.run_id else None
     if run_id:
         if "/" in run_id or "\\" in run_id:
@@ -92,6 +99,7 @@ def _parse_run_params(argv):
         if run_id in (".", ".."):
             parser.error("run-id 不能为 . 或 ..")
 
+    # 构造默认配置，然后用 CLI 覆盖。注意：SimConfig 是“可序列化的仿真输入快照”。
     config = SimConfig()
 
     if args.dark_rate_intrinsic_hz is not None:
@@ -101,16 +109,21 @@ def _parse_run_params(argv):
     if args.bg_rate_std_hz is not None:
         config.noise.bg_rate_std_hz = args.bg_rate_std_hz
 
+    # runs/shots/cores 是“任务粒度 + 并发预算”的核心参数
     config.run.runs = args.n_runs if args.n_runs is not None else config.run.runs
     config.run.shots_per_run = (
         args.shots_per_run if args.shots_per_run is not None else config.run.shots_per_run
     )
     config.run.cores = args.cores if args.cores is not None else config.run.cores
+    # mode 与 task_type 的一致性约束：
+    #   - mode 代表“当前命令意图”，task_type 代表“写入任务的类型”
+    #   - 若两者同时给出，必须完全一致，否则会造成任务与执行逻辑错配
     mode = (args.mode or config.mode).upper()
     task_type = (args.task_type or mode).upper()
     if args.task_type is not None and args.mode is not None and task_type != mode:
         parser.error("task-type 与 mode 冲突，请保持一致")
     config.mode = task_type
+    # 光纤噪声开关（注意：这会影响到统计与物理可解释性）
     config.fiber.noise_enabled = not args.no_fiber_noise
 
     if config.run.runs < 1:
@@ -120,10 +133,14 @@ def _parse_run_params(argv):
     if config.run.cores < 1:
         parser.error("cores 必须 >= 1")
 
+    # 成功事件枚举模式：
+    #   - dark: 含暗计数
+    #   - no-dark: 用于基线对比
     config.run.enum_mode = (args.enum_mode or config.run.enum_mode).strip().lower()
     if config.run.enum_mode not in ("dark", "no-dark"):
         parser.error("enum-mode 仅支持 dark / no-dark")
 
+    # 探测效率与理想探测的互斥/覆盖逻辑
     if args.eta_det is not None:
         config.detector.eta_det = float(args.eta_det)
     config.detector.ideal_det = bool(args.ideal_det)
@@ -139,11 +156,14 @@ def _parse_run_params(argv):
         config.hom = None
 
     config.run.plot_all = bool(args.plot_all)
+    config.run.plot_enabled = not bool(args.no_plot)
     config.run.debug = bool(args.debug)
     return config, args.role, args.queue_root, run_id, task_type, args.config_hash
 
 
 def _resolve_config_hash(explicit: Optional[str]) -> str:
+    # 目的：给任务打一个“配置版本号”标签，便于结果可追溯。
+    # 优先级：显式传入 > git HEAD > 简化字符串。
     if explicit:
         return explicit
     git_dir = PROJECT_ROOT / ".git"
@@ -168,6 +188,7 @@ def _resolve_config_hash(explicit: Optional[str]) -> str:
 
 
 def _resolve_queue_root(path_str: str) -> Path:
+    # 规则：相对路径一律解释为“项目根目录下的 queue 子树”
     path = Path(path_str)
     if not path.is_absolute():
         return (PROJECT_ROOT / path).resolve()
@@ -175,6 +196,7 @@ def _resolve_queue_root(path_str: str) -> Path:
 
 
 def _queue_paths(queue_root: Path) -> dict:
+    # 约定目录结构（server/worker 通过这些目录交换任务与结果）
     root = Path(queue_root)
     return {
         "root": root,
@@ -189,6 +211,7 @@ def _queue_paths(queue_root: Path) -> dict:
 
 
 def _ensure_queue_dirs(paths: dict) -> None:
+    # 任务目录必须全部存在，避免 worker race condition
     paths["pending"].mkdir(parents=True, exist_ok=True)
     paths["inprogress"].mkdir(parents=True, exist_ok=True)
     paths["done"].mkdir(parents=True, exist_ok=True)
@@ -198,6 +221,7 @@ def _ensure_queue_dirs(paths: dict) -> None:
 
 
 def _run_id_sort_key(run_id: str) -> tuple:
+    # 规则：纯数字 run_id 优先排序，其次按前缀数字排序，再按字典序
     if run_id.isdigit():
         return (0, int(run_id), run_id)
     m = re.match(r"(\d+)", run_id)
@@ -207,6 +231,7 @@ def _run_id_sort_key(run_id: str) -> tuple:
 
 
 def _discover_run_roots(base_root: Path) -> list:
+    # 扫描所有可能的 run 目录（以 tasks/pending 为识别特征）
     if not base_root.exists():
         return []
     roots = []
@@ -220,10 +245,12 @@ def _discover_run_roots(base_root: Path) -> list:
 
 
 def _is_summary_task_path(path: Path) -> bool:
+    # summary 任务是整个 run 的“最终汇总步骤”
     return path.name == "task_summary.json"
 
 
 def _is_run_complete(run_root: Path) -> bool:
+    # 完成判定：pending/inprogress 均空 + server_done.flag 存在
     pending = run_root / "tasks" / "pending"
     inprogress = run_root / "tasks" / "inprogress"
     done_flag = run_root / "summary" / "server_done.flag"
@@ -235,6 +262,7 @@ def _is_run_complete(run_root: Path) -> bool:
 
 
 def _is_run_active(run_root: Path, stale_seconds: int = 600) -> bool:
+    # 活跃判定：server heartbeat 或 inprogress 文件近期被 touch
     now = time.time()
     heartbeat = run_root / "summary" / "server_heartbeat.txt"
     if heartbeat.exists():
@@ -255,6 +283,7 @@ def _is_run_active(run_root: Path, stale_seconds: int = 600) -> bool:
 
 
 def _pick_output_root(outputs_root: Path, name: str) -> Path:
+    # 归档命名冲突处理：若同名存在，则追加 _1, _2, ...
     dest = outputs_root / name
     if not dest.exists():
         return dest
@@ -265,6 +294,7 @@ def _pick_output_root(outputs_root: Path, name: str) -> Path:
 
 
 def _archive_run(run_root: Path, outputs_root: Path, unfinished: bool = False) -> Optional[Path]:
+    # 将一个 run_root 目录整体移动到 outputs/<timestamp>（未完成则加 _u）
     if not run_root.exists():
         return None
     outputs_root.mkdir(parents=True, exist_ok=True)
@@ -287,6 +317,10 @@ def _archive_existing_runs(
     exclude_run_id: Optional[str] = None,
     stale_seconds: int = 600,
 ) -> None:
+    # 扫描所有 run 根目录：
+    #   - 已完成 -> 直接归档
+    #   - 活跃 -> 保留
+    #   - 非活跃 -> 归档为未完成（_u）
     for run_root in _discover_run_roots(base_root):
         if exclude_run_id and run_root.name == exclude_run_id:
             continue
@@ -299,6 +333,7 @@ def _archive_existing_runs(
 
 
 def _pick_next_run_id(base_root: Path) -> str:
+    # 规则：从 1 开始找最小未使用的纯数字 run_id
     used = set()
     for child in base_root.iterdir():
         if not child.is_dir():
@@ -312,6 +347,7 @@ def _pick_next_run_id(base_root: Path) -> str:
 
 
 def _write_json_atomic(path: Path, payload: dict) -> None:
+    # 原子写入：先写临时文件，再 replace，避免读到半写入文件
     tmp = path.with_suffix(path.suffix + ".tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False)
@@ -324,31 +360,44 @@ def _build_task_list(
     config_hash: str,
     pending_dir: Path,
 ) -> int:
+    # ------------------------------------------------------------------
+    # 任务生成规则：
+    #   - SIM：每个 run 一个 task
+    #   - HOM：每个 τ × run 一个 task
+    #   - SUMMARY：最后追加一个汇总任务（由 worker 执行）
+    #
+    # 所有任务只写入 pending/task_*.json，执行由 worker 完成。
+    # ------------------------------------------------------------------
     n_runs = config.run.runs
     shots_per_run = config.run.shots_per_run
     task_count = 0
     if task_type == "HOM":
         if config.hom is None:
             raise ValueError("HOM 任务需要 --mode HOM 并提供 tau 参数")
+        # τ 列表由 hom 配置决定（可能是随机或扫描）
         tau_values = _build_hom_tau_values(config.hom)
         for tau in tau_values:
             for run_index in range(n_runs):
+                # id 编码 tau 与 run_index，保证唯一性
                 tid = f"hom_tau_{tau:+.3f}_run_{run_index:06d}"
                 task = {
                     "id": tid,
                     "mode": "HOM",
                     "tau_ns": float(tau),
                     "shots": shots_per_run,
+                    # seed 用于保证可重现；与 task_count 绑定
                     "seed": 100000 + task_count + 1,
                     "config_hash": config_hash,
                     "window_ns": config.hom.window_ns,
                 }
                 path = pending_dir / f"task_{tid}.json"
                 if not path.exists():
+                    # 不覆盖已有任务，便于断点续算
                     _write_json_atomic(path, task)
                 task_count += 1
     else:
         for run_index in range(n_runs):
+            # SIM：仅按 run_index 划分
             tid = f"sim_run_{run_index:06d}"
             task = {
                 "id": tid,
@@ -362,6 +411,7 @@ def _build_task_list(
             if not path.exists():
                 _write_json_atomic(path, task)
             task_count += 1
+    # SUMMARY 任务：由 worker 在最后执行汇总
     summary_task = {
         "id": "summary",
         "mode": "SUMMARY",
@@ -376,12 +426,19 @@ def _build_task_list(
 
 
 def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
+    # ------------------------------------------------------------------
+    # 汇总任务（SUMMARY）：
+    #   - 遍历 results/result_*/meta.json
+    #   - HOM：额外读取 raw/clicks.json 生成 hom_trials.csv / hom_summary.csv
+    #   - SIM：生成 sim_summary.csv
+    # ------------------------------------------------------------------
     results_dir = paths["results"]
     summary_dir = paths["summary"]
     summary_dir.mkdir(parents=True, exist_ok=True)
     if task_type == "HOM":
         trials_path = summary_dir / "hom_trials.csv"
         tau_path = summary_dir / "hom_summary.csv"
+        # hom_trials：逐 run × shot 的明细（含点击 bin）
         with open(trials_path, "w", encoding="utf-8", newline="") as trials_file:
             trials_writer = csv.writer(trials_file)
             trials_writer.writerow([
@@ -390,6 +447,7 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 "shot_index",
                 "valid",
                 "p_arrive",
+                "p_no_loss",
                 "H1_bin",
                 "V1_bin",
                 "H2_bin",
@@ -412,7 +470,9 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 metrics = data.get("metrics", {})
                 valid = int(metrics.get("valid", 0) or 0)
                 p_arrive = metrics.get("p_arrive")
+                p_no_loss = metrics.get("p_no_loss")
                 tau_key = f"{tau_ns:.6f}"
+                # tau_states 用于汇总每个 τ 的统计
                 state = tau_states.setdefault(
                     tau_key,
                     {
@@ -422,6 +482,7 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                         "early_abort": 0,
                         "coinc": 0,
                         "p_arrive_sum": 0.0,
+                        "p_no_loss_sum": 0.0,
                         "arrive_trials": 0.0,
                     },
                 )
@@ -433,7 +494,10 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                     state["coinc"] += int(metrics.get("coinc", 0) or 0)
                     if p_arrive is not None:
                         state["p_arrive_sum"] += float(p_arrive)
+                        # arrive_trials：按 p_arrive 估算有效试验数
                         state["arrive_trials"] += float(p_arrive) * config.run.shots_per_run
+                    if p_no_loss is not None:
+                        state["p_no_loss_sum"] += float(p_no_loss)
                 else:
                     state["early_abort"] += 1
                 clicks_path = meta_path.parent / "raw" / "clicks.json"
@@ -443,19 +507,22 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                         clicks = json.loads(clicks_path.read_text(encoding="utf-8")).get("clicks", [])
                     except Exception:
                         clicks = []
+                # 无点击记录也写一行占位，便于对齐 run_index
                 if not clicks:
-                        trials_writer.writerow([
-                            f"{tau_ns:.6f}",
-                            run_index,
-                            -1,
-                            valid,
-                            p_arrive,
-                            "",
-                            "",
-                            "",
-                            "",
-                        ])
+                    trials_writer.writerow([
+                        f"{tau_ns:.6f}",
+                        run_index,
+                        -1,
+                        valid,
+                        p_arrive,
+                        p_no_loss,
+                        "",
+                        "",
+                        "",
+                        "",
+                    ])
                 else:
+                    # 每个 shot 一行，点击 bin 以分号拼接
                     for shot_idx, shot_clicks in enumerate(clicks):
                         bins = {"H1": "", "V1": "", "H2": "", "V2": ""}
                         for click in shot_clicks:
@@ -471,11 +538,13 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                             shot_idx,
                             valid,
                             p_arrive,
+                            p_no_loss,
                             bins["H1"],
                             bins["V1"],
                             bins["H2"],
                             bins["V2"],
                         ])
+        # hom_summary：按 τ 汇总统计
         with open(tau_path, "w", encoding="utf-8", newline="") as tau_file:
             tau_writer = csv.writer(tau_file)
             tau_writer.writerow([
@@ -487,6 +556,7 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 "coinc_counts",
                 "coinc_rate",
                 "p_arrive_avg",
+                "p_no_loss_avg",
                 "arrive_trials",
                 "window_ns",
                 "shots_per_run",
@@ -494,7 +564,10 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
             for tau_key in sorted(tau_states, key=lambda x: float(x)):
                 s = tau_states[tau_key]
                 valid = s["valid"]
+                # 平均值只对有效 run 取均值
                 p_arrive_avg = (s["p_arrive_sum"] / valid) if valid > 0 else 0.0
+                p_no_loss_avg = (s["p_no_loss_sum"] / valid) if valid > 0 else 0.0
+                # coinc_rate：符合数 / 预计到达试验数
                 coinc_rate = (s["coinc"] / s["arrive_trials"]) if s["arrive_trials"] > 0 else 0.0
                 tau_writer.writerow([
                     f"{s['tau_ns']:.6f}",
@@ -505,6 +578,7 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                     s["coinc"],
                     f"{coinc_rate:.8f}",
                     f"{p_arrive_avg:.6f}",
+                    f"{p_no_loss_avg:.8f}",
                     f"{s['arrive_trials']:.6f}",
                     f"{config.hom.window_ns if config.hom else 0.0:.3f}",
                     config.run.shots_per_run,
@@ -534,9 +608,15 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
 
 
 def _recover_stale_tasks(paths: dict, stale_seconds: int = 600) -> None:
+    # ------------------------------------------------------------------
+    # 任务回收：
+    #   - inprogress 中若超过 stale_seconds 未更新，视为失联
+    #   - 回滚到 pending 以便其他 worker 重新领取
+    # ------------------------------------------------------------------
     now = time.time()
     for task_path in paths["inprogress"].glob("task_*.json"):
         try:
+            # 以 mtime 作为“心跳”，超时则回收
             if now - task_path.stat().st_mtime > stale_seconds:
                 task_path.replace(paths["pending"] / task_path.name)
         except FileNotFoundError:
@@ -548,6 +628,12 @@ def _run_server_monitor(
     expected_total: int,
     done_flag_path: Optional[Path] = None,
 ) -> None:
+    # ------------------------------------------------------------------
+    # server 监控：
+    #   - 维护 server_heartbeat
+    #   - 回收 stale inprogress
+    #   - 定期打印进度：done / inprogress / pending
+    # ------------------------------------------------------------------
     last_report = 0.0
     last_heartbeat = 0.0
     heartbeat_path = paths["summary"] / "server_heartbeat.txt"
@@ -555,6 +641,7 @@ def _run_server_monitor(
         now = time.time()
         if now - last_heartbeat >= 30:
             try:
+                # server 心跳：用于“活动判断”和过期回收
                 heartbeat_path.write_text(str(int(now)), encoding="utf-8")
             except Exception:
                 pass
@@ -564,6 +651,7 @@ def _run_server_monitor(
         inprogress = list(paths["inprogress"].glob("task_*.json"))
         done_count = len(list(paths["done"].glob("task_*.json")))
         if now - last_report >= 5:
+            # total 以 expected_total 为优先（避免被回收/新增波动）
             total = expected_total if expected_total > 0 else done_count + len(pending) + len(inprogress)
             msg = (
                 f"[server] 进度: 已完成 {done_count}/{total} | "
@@ -585,6 +673,16 @@ def _run_worker_loop(
     done_flag_path: Optional[str] = None,
     auto_pick: bool = False,
 ) -> None:
+    # ------------------------------------------------------------------
+    # worker 执行循环：
+    #   - 从 pending 抢任务 -> inprogress
+    #   - 执行 SIM/HOM/SUMMARY
+    #   - 生成 meta.json / raw 输出
+    #   - 完成后移入 done
+    #
+    # auto_pick=True:
+    #   - 不指定 run_id 时，自动从最小可用 run_root 中挑任务
+    # ------------------------------------------------------------------
     base_root = Path(queue_root)
     paths = None
     host = os.environ.get("HOSTNAME") or os.environ.get("COMPUTERNAME") or "worker"
@@ -601,6 +699,7 @@ def _run_worker_loop(
             if not root_path.exists():
                 break
         if auto_pick:
+            # auto_pick：在多个 run_root 之间挑选可执行的任务
             picked = None
             for run_root in _discover_run_roots(base_root):
                 run_paths = _queue_paths(run_root)
@@ -608,6 +707,7 @@ def _run_worker_loop(
                 pending_all = list(run_paths["pending"].glob("task_*.json"))
                 if not pending_all:
                     continue
+                # 优先抢“非 summary”任务；summary 只有在无人执行时才领
                 non_summary_pending = [p for p in pending_all if not _is_summary_task_path(p)]
                 non_summary_inprogress = [
                     p for p in run_paths["inprogress"].glob("task_*.json") if not _is_summary_task_path(p)
@@ -623,6 +723,7 @@ def _run_worker_loop(
             _ensure_queue_dirs(paths)
             heartbeat_path = paths["heartbeat"] / f"worker_{host}_{worker_id}.txt"
         elif paths is None:
+            # 非 auto_pick：固定使用指定 run_root
             paths = _queue_paths(base_root)
             _ensure_queue_dirs(paths)
             heartbeat_path = paths["heartbeat"] / f"worker_{host}_{worker_id}.txt"
@@ -637,8 +738,10 @@ def _run_worker_loop(
         if not pending_all:
             inprogress = list(paths["inprogress"].glob("task_*.json"))
             if exit_when_done:
+                # 退出条件：done_flag + 无 inprogress
                 if done_flag and done_flag.exists() and not inprogress:
                     break
+                # 若曾经领过任务，连续空转 N 轮后退出
                 if seen_task and not inprogress:
                     empty_rounds += 1
                     if empty_rounds >= 5:
@@ -648,6 +751,7 @@ def _run_worker_loop(
             time.sleep(backoff[backoff_idx])
             backoff_idx = min(backoff_idx + 1, len(backoff) - 1)
             continue
+        # pending 优先非 summary；若只剩 summary 且无非 summary 在跑则领
         non_summary_pending = [p for p in pending_all if not _is_summary_task_path(p)]
         non_summary_inprogress = [
             p for p in paths["inprogress"].glob("task_*.json") if not _is_summary_task_path(p)
@@ -666,6 +770,7 @@ def _run_worker_loop(
         for cand in pending:
             dest = paths["inprogress"] / cand.name
             try:
+                # 原子“抢占”：rename 成功即视为领取
                 cand.replace(dest)
                 task_path = dest
                 break
@@ -685,6 +790,7 @@ def _run_worker_loop(
             while not stop_flag.is_set():
                 ts = int(time.time())
                 heartbeat_path.write_text(str(ts), encoding="utf-8")
+                # touch task_path：避免被回收为 stale
                 if task_path.exists():
                     task_path.touch()
                 time.sleep(60)
@@ -705,6 +811,7 @@ def _run_worker_loop(
             plots_dir.mkdir(parents=True, exist_ok=True)
             raw_dir.mkdir(parents=True, exist_ok=True)
             if task.get("mode") == "SUMMARY" or _is_summary_task_path(task_path):
+                # SUMMARY 任务：集中汇总 CSV
                 summary_for = str(task.get("summary_for", "SIM")).upper()
                 _write_summary(summary_for, paths, config)
                 done_flag = paths["summary"] / "server_done.flag"
@@ -714,12 +821,13 @@ def _run_worker_loop(
                     pass
                 metrics = {"summary_for": summary_for}
             elif task.get("mode") == "HOM":
+                # HOM 任务：单 τ × run 的统计
                 seed = task.get("seed")
                 seed = int(seed) if seed is not None else None
                 tau_ns = float(task.get("tau_ns", 0.0))
                 shots = int(task.get("shots", config.run.shots_per_run))
                 window_ns = float(task.get("window_ns", config.hom.window_ns if config.hom else 70.0))
-                coincid, early_abort, p_arrive, click_records = _run_hom_run(
+                coincid, early_abort, p_arrive, p_no_loss, click_records = _run_hom_run(
                     tau_ns,
                     shots,
                     config,
@@ -733,10 +841,13 @@ def _run_worker_loop(
                     "p_arrive": p_arrive,
                     "coinc": coincid,
                     "valid": 0 if early_abort else 1,
+                    "p_no_loss": p_no_loss,
                 }
                 if click_records is not None:
+                    # 每个 shot 的点击记录写入 raw/clicks.json
                     _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
             else:
+                # SIM 任务：单 run 的成功统计与点击抽样
                 seed = task.get("seed")
                 seed = int(seed) if seed is not None else None
                 run_index = int(task.get("run_index", 1))
@@ -794,16 +905,25 @@ def main():
     """
     主函数：基于共享目录的 server/worker 调度。
     """
+    # ------------------------------------------------------------------
+    # 运行角色说明：
+    #   server：建队列 + 监控 + 归档
+    #   worker：执行任务
+    #   both  ：本机同时承担 server+worker
+    # ------------------------------------------------------------------
     config, role, queue_root, run_id, task_type, config_hash = _parse_run_params(sys.argv)
     config_hash = _resolve_config_hash(config_hash)
     task_type = task_type.upper()
+    # queue_root 支持相对路径（相对项目根目录）
     base_root = _resolve_queue_root(queue_root)
     outputs_root = PROJECT_ROOT / "outputs"
     if role in ("server", "both"):
         base_root.mkdir(parents=True, exist_ok=True)
         outputs_root.mkdir(parents=True, exist_ok=True)
+        # 启动前归档旧 run（未完成则加 _u）
         _archive_existing_runs(base_root, outputs_root, exclude_run_id=run_id)
         if run_id is None:
+            # 未指定 run-id 则自动找最小可用数字
             run_id = _pick_next_run_id(base_root)
             print(f"[server] 未指定 run-id，自动选择: {run_id}")
     run_root = base_root / run_id if run_id else base_root
@@ -824,6 +944,7 @@ def main():
                 done_flag.unlink()
             except Exception:
                 pass
+        # 生成任务列表（含 SUMMARY）
         expected_total = _build_task_list(task_type, config, config_hash, paths["pending"])
         print(f"[server] 任务总数: {expected_total} | queue: {paths['root']}")
         if role == "server":
@@ -832,6 +953,7 @@ def main():
             return
 
     if role in ("worker", "both"):
+        # 核数预算：留 1 核给系统
         core_budget = max(1, min(config.run.cores, os.cpu_count() or 1))
         reserve = 1
         effective_budget = max(1, core_budget - reserve)
@@ -849,6 +971,7 @@ def main():
         else:
             worker_count = effective_budget
         if worker_count > 1:
+            # 防止 BLAS 内部线程叠加导致过度并发
             os.environ["OMP_NUM_THREADS"] = "1"
             os.environ["MKL_NUM_THREADS"] = "1"
             os.environ["OPENBLAS_NUM_THREADS"] = "1"
@@ -876,6 +999,7 @@ def main():
                 auto_pick,
             )
         else:
+            # 多进程并行：每个进程独立抢任务
             with ProcessPoolExecutor(max_workers=worker_count) as executor:
                 futures = []
                 for idx in range(worker_count):

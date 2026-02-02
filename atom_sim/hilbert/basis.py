@@ -56,6 +56,7 @@ class ProductSpace:
     @property
     def dim(self) -> int:
         """积空间的总维度。"""
+        # 维度按张量积相乘：dim(H1⊗H2⊗...)=∏ dim(Hi)
         result = 1
         for s in self.subspaces:
             result *= s.dim
@@ -98,6 +99,14 @@ SYSTEM_SPACE = ProductSpace((ATOM_A, ATOM_B))  # 16D
 # Bin格点：780 x 1517
 BIN_SPACE = ProductSpace((SUBSPACE_780, SUBSPACE_1517))  # 18D
 
+# ----------------------------------------------------------------------
+# 约定：
+#   - 780 子空间基序：|vac>, |H>, |V>
+#   - 1517 子空间基序：|vac>, |H>, |V>, |2H>, |2V>, |HV>
+#   - Bin 空间基序为 780 ⊗ 1517（先 780 后 1517）
+# 该约定贯穿 gates / channels / detection / visualization。
+# ----------------------------------------------------------------------
+
 
 def get_bin_space() -> ProductSpace:
     """获取标准的18D bin空间（780 x 1517）。"""
@@ -105,5 +114,5 @@ def get_bin_space() -> ProductSpace:
 
 
 def get_system_space() -> ProductSpace:
-    """获取标准的9D系统空间（atom_A x atom_B）。"""
+    """获取标准的16D系统空间（atom_A x atom_B）。"""
     return SYSTEM_SPACE

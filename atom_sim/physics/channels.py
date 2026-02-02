@@ -38,6 +38,11 @@ def loss_channel_both_subspaces(
     List[np.ndarray]
         作用于18D bin空间的Kraus算符列表
     """
+    # ------------------------------------------------------------------
+    # 该信道用于“780 × 1517”联合损耗：
+    #   K_total = K_780 ⊗ K_1517
+    # 其中 K_780 / K_1517 分别是各自子空间的损耗 Kraus。
+    # ------------------------------------------------------------------
     # 获取每个子空间的Kraus算符（未嵌入）
     K_780_list = loss_channel_780_general(eta_780)  # 3x3 矩阵
     K_1517_list = loss_channel_1517_raw(eta_H_1517, eta_V_1517)  # 6x6 矩阵
@@ -68,6 +73,12 @@ def loss_channel_1517_raw(eta_H: float, eta_V: float) -> List[np.ndarray]:
     List[np.ndarray]
         仅作用于1517子空间的6x6 Kraus算符列表
     """
+    # ------------------------------------------------------------------
+    # 6D 基 (vac, H, V, 2H, 2V, HV) 上的振幅阻尼模型：
+    #   - 对每个偏振分别施加损耗
+    #   - 通过 (kH, kV) 枚举“损失的 H/V 光子数”
+    #   - 组合系数为二项分布的振幅形式
+    # ------------------------------------------------------------------
     K_list_1517 = []
 
     basis = [
@@ -95,6 +106,8 @@ def loss_channel_1517_raw(eta_H: float, eta_V: float) -> List[np.ndarray]:
                     j = basis.index(target)
 
                     from math import comb
+                    # 二项分布的振幅系数：
+                    #   sqrt(C(n, k)) * eta^{(n-k)/2} * (1-eta)^{k/2}
                     coeff_H = np.sqrt(comb(nH, kH)) * (eta_H ** ((nH - kH) / 2)) * ((1 - eta_H) ** (kH / 2))
                     coeff_V = np.sqrt(comb(nV, kV)) * (eta_V ** ((nV - kV) / 2)) * ((1 - eta_V) ** (kV / 2))
                     K[j, i] = coeff_H * coeff_V
@@ -123,6 +136,12 @@ def loss_channel_780_general(eta: float) -> List[np.ndarray]:
     List[np.ndarray]
         780子空间的Kraus算符（3x3矩阵）
     """
+    # ------------------------------------------------------------------
+    # 780 子空间只截断到单光子：
+    #   - eta=0: 完全损耗 -> |H>,|V> 都映射到 |vac>
+    #   - eta=1: 无损耗 -> 单位
+    #   - 0<eta<1: “不损耗”+“损耗到真空”两类 Kraus
+    # ------------------------------------------------------------------
     # 基：|vac>, |H>, |V>
 
     K_list = []

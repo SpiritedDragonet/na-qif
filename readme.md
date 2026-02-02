@@ -23,7 +23,6 @@ atom_sim/
 │       │   ├── apply_bond_op()
 │       │   ├── apply_kraus_one_site()
 │       │   ├── apply_one_site_gate()
-│       │   ├── apply_two_site_kraus()
 │       │   ├── swap_sites()
 │       │   ├── get_reduced_density()
 │       │   ├── chi
@@ -37,7 +36,6 @@ atom_sim/
 │   ├── basis.py                   # 空间定义和张量积
 │   │   ├── class SubSpace          # 单子空间（780, 1517, atom）
 │   │   ├── class ProductSpace      # 张量积空间 [s1, s2, ...]
-│   │   ├── subspace_gate()         # 将子空间门嵌入到积空间
 │   │   ├── get_bin_space()
 │   │   └── get_system_space()
 │   │
@@ -69,7 +67,6 @@ atom_sim/
 │   │   ├── apply_qfc()
 │   │   ├── apply_780_filter()
 │   │   ├── project_to_1517()
-│   │   ├── apply_bs()
 │   │   ├── _print_header()
 │   │   ├── _print_progress()
 │   │   ├── _print_footer()
@@ -79,30 +76,11 @@ atom_sim/
 │       ├── DetectionEvent
 │       ├── TwoPhotonDetectionResult
 │       ├── SuccessEnumerationResult
-│       ├── _order_detectors()
 │       ├── _order_two_port_detectors()
-│       ├── _split_with_dark()
-│       ├── _build_port_kraus_entries_6d()
-│       ├── _build_detection_kraus()
-│       ├── build_detection_kraus_6d()
-│       ├── run_two_photon_detection()   # POVM抽样
+│       ├── build_detection_effects_6d()
+│       ├── run_detection_pipeline()     # POVM 枚举 + 抽样
 │       ├── extract_spin_state()
-│       ├── check_bsm_success()
 │       ├── compute_fidelity_with_bell()
-│       ├── _infer_bin_start()
-│       ├── _get_bin_sites()
-│       ├── _build_photon_number_projectors()
-│       ├── compute_two_photon_arrival_prob()
-│       ├── _build_detection_effects()
-│       ├── _bell_projector_full()
-│       ├── _prepare_grouped_mps_pairs()
-│       ├── _apply_env_left()
-│       ├── _apply_env_right()
-│       ├── _build_left_envs()
-│       ├── _build_right_envs()
-│       ├── enumerate_success_events()   # POVM 枚举
-│       ├── _compute_photon_statistics_global()
-│       ├── _build_sum_mpo()
 │       └── compute_photon_statistics()
 │
 ├── visualization/                 # 可视化层
@@ -124,11 +102,21 @@ atom_sim/
 
 outputs/                           # 仿真输出目录（已 gitignore）
 └── <YYYYMMDD_HHMM>/               # 时间戳输出文件夹
-    ├── runXXX_1_after_emission.png
-    ├── runXXX_2_after_qfc.png
-    ├── runXXX_3_after_fiber.png
-    ├── runXXX_4_after_bs.png
-    └── all_clicks_summary.csv
+    ├── results/
+    │   └── result_<task_id>/
+    │       ├── meta.json
+    │       ├── raw/               # clicks.json / 调试输出等
+    │       └── plots/             # after_emission/after_qfc 等热图
+    ├── summary/
+    │   ├── hom_trials.csv
+    │   ├── hom_summary.csv
+    │   ├── sim_summary.csv
+    │   └── server_done.flag
+    ├── tasks/
+    │   ├── pending/
+    │   ├── inprogress/
+    │   └── done/
+    └── heartbeat/
 ```
 
 ## 层次职责
@@ -140,6 +128,29 @@ outputs/                           # 仿真输出目录（已 gitignore）
 | `physics/` | 物理：门矩阵、Kraus 通道 | MPS 更新 |
 | `simulation/` | 编排：调用顺序、条件 | 矩阵如何计算 |
 | `visualization/` | 结果可视化、数据提取 | - |
+
+## 运行模式与任务队列
+
+### 物理模式（task_type / mode）
+- **SIM**：单次/多次仿真（输出点击记录、成功率、保真度等）
+- **HOM**：HOM 扫描（输出 `hom_trials.csv` / `hom_summary.csv`）
+- **SUMMARY**：内部汇总任务（不是 CLI 模式，由 worker 执行）
+
+### 运行角色（role）
+- **server**：生成任务、监控进度、归档输出
+- **worker**：抢任务执行（SIM/HOM/SUMMARY）
+- **both**：本机同时承担 server + worker
+
+### 常用 CLI 选项（片段）
+```
+--role server|worker|both
+--task-type SIM|HOM
+--run-id <id>                 # 不传则自动选择最小可用 id
+--queue-root <path>           # 默认 ./queue
+--runs N --shots M
+--plot-all                    # 每个 run 都画图
+--no-plot                     # 禁止绘图（覆盖 plot-all）
+```
 
 ## 数据流
 
@@ -153,9 +164,9 @@ simulation/trajectory.py → core/mps.py → 张量网络更新（仅局域！�
 
 ### 1. 非幺正操作不用 `apply_local_op`
 所有 Kraus 和测量操作必须使用局域 theta + SVD 更新以避免 canonical sweep。使用：
-- `apply_bond_op(i, op)` 用于双格点门
-- `apply_kraus_one_site(i, {Kμ}, rng)` 用于单格点 Kraus
-- `apply_two_site_kraus(i, {Kμ}, rng)` 用于双格点测量
+- `apply_bond_op(i, op)` 用于双格点酉门
+- `apply_kraus_one_site(i, {Kμ}, rng)` 用于单格点 Kraus 采样
+- `apply_kraus_one_site_fixed(i, Kμ)` 用于固定分支（如“无损耗”）
 
 ### 2. 格点类型：有限维格点，非 BosonSite
 使用自定义的 `FiniteDimSite(d)` 配合算符字典，而非 TeNPy 的 `BosonSite`（语义不兼容）。
@@ -165,10 +176,11 @@ simulation/trajectory.py → core/mps.py → 张量网络更新（仅局域！�
 
 ## 物理模型
 
-### 原子能级（3D）
+### 原子能级（4D）
 - `|e>`: 5P_{3/2}, F'=0, m_F=0 （激发态）
 - `|0>`: 5S_{1/2}, F=1, m_F=+1 （基态）
 - `|1>`: 5S_{1/2}, F=1, m_F=-1 （基态）
+- `|u>`: 5S_{1/2}, F=1, m_F=0 （基态）
 
 ### 选择定则
 - `|e> → |0>`: Δm = +1 → σ+ 光子（右圆偏振）
@@ -181,7 +193,7 @@ simulation/trajectory.py → core/mps.py → 张量网络更新（仅局域！�
 ### 希尔伯特空间分解
 
 ```
-系统格点: H_S = H_atom_A(3D) ⊗ H_atom_B(3D) = 9D
+系统格点: H_S = H_atom_A(4D) ⊗ H_atom_B(4D) = 16D
 Bin 格点: H_bin = H_780(3D) ⊗ H_1517(6D) = 18D
 ```
 
@@ -191,10 +203,10 @@ Bin 格点: H_bin = H_780(3D) ⊗ H_1517(6D) = 18D
 
 **发射后（SWAP conveyor belt 完成）：**
 ```
-A1(18D) - B1(18D) - A2(18D) - B2(18D) - ... - AN(18D) - BN(18D) - atomA(3D) - atomB(3D)
+atomA(4D) - atomB(4D) - A1(18D) - B1(18D) - A2(18D) - B2(18D) - ... - AN(18D) - BN(18D)
 ```
 
-相邻的 (A_n, B_n) 对方便进行分束器和探测操作。
+相邻的 (A_n, B_n) 对用于在测量端构造 BS+POVM 的联合效果。
 
 ## 仿真流程
 
@@ -210,13 +222,14 @@ apply_qfc(mps, n_bins, theta_H=π/4, theta_V=π/4)
 # (3) 780nm 滤波：移除未转换的光子
 apply_780_filter(mps, n_bins)
 
-# (4) 分束器：干涉 A_n 与 B_n
-apply_bs(mps, n_bins)
-# 结果：每个 bin 对的 HOM 干涉
+# (4) 分束器并入测量端：构造 U_BS^† E U_BS
+# 结果：在不显式作用 BS 的情况下获取端口点击分布
 
-# (5) 探测：on/off 光子探测
-det_result = run_two_photon_detection(mps, n_bins, eta_det, rng)
-# 结果：点击事件列表
+# (5) 探测：POVM 枚举 + 抽样（BS 已并入测量端）
+pipeline = run_detection_pipeline(
+    mps, n_bins, eta_det=eta_det, p_dark=p_noise, bs_unitary=bs_gate_6d()
+)
+# 结果：点击事件列表 / 成功率 / 保真度
 
 # (6) BSM 宣告：检查成功模式
 # Ψ+: (H1, V2) 或 (V1, H2) - 跨端口不同偏振（反聚束）
@@ -260,11 +273,12 @@ M = |sum_n (xi_A_n^H* xi_B_n^H + xi_A_n^V* xi_B_n^V)|^2
 
 - `numpy` - 数组操作
 - `physics-tenpy` - 张量网络后端
+- `matplotlib` - 可视化（热图/联合分布）
 
 ## 参考资料
 
-详见 `docs/` 目录中的详细规范：
-- `总设计图纸.md` - 整体架构
-- `逐行流水表.md` - 详细执行流程
-- `要模拟的对象与输出.md` - 实现规范
-- `有关空间排列与直积构造相关修改建议.md` - 设计修正和说明
+详见 `docs/` 目录中的详细规范（文件名含编号与状态标记）：
+- `3(部分完成_差PMD)_总设计图纸.md` - 整体架构
+- `5(已过时)_逐行流水表.md` - 早期执行流程（已淘汰）
+- `4(部分完成_差参数)_要模拟的对象与输出.md` - 实现规范
+- `6(部分完成_部分废案_差站点)_有关空间排列与直积构造相关修改建议.md` - 设计修正与历史方案

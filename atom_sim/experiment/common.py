@@ -7,9 +7,6 @@ from __future__ import annotations
 
 from typing import Optional, Callable, Any, Tuple
 from dataclasses import dataclass, field
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from contextlib import redirect_stdout
-import os
 import time
 import numpy as np
 
@@ -78,6 +75,7 @@ class RunConfig:
     cores: int = 1
     enum_mode: str = "dark"
     plot_all: bool = False
+    plot_enabled: bool = True
     debug: bool = False
 
 
@@ -113,6 +111,9 @@ def _resolve_emission_delay(
     delay_ns: Optional[float],
     delay_jitter_ns: Optional[float],
 ) -> tuple:
+    # 统一解析 delay / delay_jitter：
+    #   - 若调用方给了明确值，优先使用
+    #   - 否则用 config 默认（或随机范围）
     if delay_ns is None:
         if emission.delay_ns is None:
             low, high = emission.delay_random_range
@@ -125,6 +126,7 @@ def _resolve_emission_delay(
 
 
 def _build_fiber_params(cfg: FiberParams) -> FiberChannelParams:
+    # 将实验配置转换成 FiberChannelParams（用于采样每次光纤漂移）
     if not cfg.noise_enabled:
         return FiberChannelParams(
             polarization_model=cfg.polarization_model,
@@ -149,6 +151,7 @@ def _build_fiber_params(cfg: FiberParams) -> FiberChannelParams:
 
 
 def _compute_window_bins(window_ns: float, bin_dt_ns: float) -> int:
+    # 将物理时间窗口映射为 bin 数
     if bin_dt_ns <= 0:
         return 0
     return int(round(window_ns / bin_dt_ns))
@@ -159,6 +162,12 @@ def _compute_noise_params(
     bin_dt_s: float,
     rng: np.random.Generator,
 ) -> dict:
+    # ------------------------------------------------------------------
+    # 暗计数与背景噪声的合成：
+    #   - 本底暗计数：dark_rate_intrinsic_hz
+    #   - 背景噪声：在每次 run 采样一个 rate (高斯分布)
+    #   - 合并：p_noise = 1 - (1-p_dark)(1-p_bg)
+    # ------------------------------------------------------------------
     if noise_cfg is None:
         noise_cfg = NoiseParams()
     dark_rate_intrinsic_hz = max(0.0, float(noise_cfg.dark_rate_intrinsic_hz))
@@ -189,6 +198,8 @@ def _apply_atomic_dephasing(
     """
     对双原子施加纯退相干通道（Z退相干）。
     """
+    # 退相干通道：ρ -> (1-p)ρ + p ZρZ
+    # 这里的 Z 只作用在 |0>/<1> 子空间，相当于相位噪声。
     if p_dephase <= 0.0:
         if verbose:
             print("原子退相干：p_dephase=0，跳过。")
@@ -215,8 +226,9 @@ def _apply_atomic_dephasing(
 class PipelineHooks:
     on_stage: Optional[Callable[[str], None]] = None
     after_emission: Optional[Callable[[Any], None]] = None
-    after_qfc: Optional[Callable[[Any], None]] = None
+    after_qfc_filter: Optional[Callable[[Any], None]] = None
     after_fiber: Optional[Callable[[Any, tuple], None]] = None
+    after_bs: Optional[Callable[[Any], None]] = None
 
 
 @dataclass
@@ -224,6 +236,9 @@ class PipelineResult:
     emission: Any
     mps: Any
     p_qubit_emit: float
+    p_no_loss_780: float
+    p_no_loss_fiber: float
+    p_no_loss: float
     fiber_sample: Optional[tuple]
     t_wait_us: float
     t2_us: float
@@ -247,13 +262,26 @@ def run_emission_to_bs(
     record_timings: bool = False,
 ) -> PipelineResult:
     """
-    统一的发射->QFC->光纤(偏振/相位)->退相干 流水线。
+    统一的发射->QFC->滤波->投影->光纤->退相干->(BS并入测量) 流水线。
     用于正常模式与HOM模式共用，避免重复逻辑。
     """
+    # ------------------------------------------------------------------
+    # 这是“物理链路主流程”的统一入口：
+    #   1) 发射 (TEBD on time bins)
+    #   2) QFC + 780 滤波 + 投影到 1517
+    #   3) 光纤漂移 + 损耗
+    #   4) 原子退相干
+    #
+    # 注意：
+    #   - BS 已经并入测量端 (Heisenberg side)；
+    #   - 这里不再对 MPS 显式 apply_bs。
+    # ------------------------------------------------------------------
     from ..simulation import (
         run_dual_atom_emission,
         apply_qfc,
+        apply_780_filter,
         apply_fiber_channel,
+        project_to_1517,
         extract_spin_state,
     )
 
@@ -299,7 +327,7 @@ def run_emission_to_bs(
     if hooks.after_emission is not None:
         hooks.after_emission(emission)
 
-    _call_stage("QFC")
+    _call_stage("QFC + 780滤波 + 1517投影")
     t0 = time.perf_counter() if timings is not None else None
     apply_qfc(
         mps=mps,
@@ -310,12 +338,46 @@ def run_emission_to_bs(
     )
     if timings is not None and t0 is not None:
         timings["qfc"] = time.perf_counter() - t0
-    if hooks.after_qfc is not None:
-        hooks.after_qfc(emission)
+    t0 = time.perf_counter() if timings is not None else None
+    mps, p_no_loss_780 = apply_780_filter(
+        mps=mps,
+        n_bins=emission.get_n_bins(),
+        verbose=verbose,
+        rng=rng,
+    )
+    if timings is not None and t0 is not None:
+        timings["filter_780"] = time.perf_counter() - t0
+    if p_no_loss_780 <= 0.0:
+        return PipelineResult(
+            emission=emission,
+            mps=mps,
+            p_qubit_emit=p_qubit_emit,
+            p_no_loss_780=0.0,
+            p_no_loss_fiber=0.0,
+            p_no_loss=0.0,
+            fiber_sample=None,
+            t_wait_us=t_wait_us,
+            t2_us=t2_us,
+            p_dephase=0.0,
+            aborted=True,
+            abort_stage="After QFC + Filter",
+            abort_reason="780nm滤波后选概率为0，跳过后续计算",
+            timings=timings,
+        )
+    t0 = time.perf_counter() if timings is not None else None
+    project_to_1517(
+        mps=mps,
+        n_bins=emission.get_n_bins(),
+        verbose=verbose,
+    )
+    if timings is not None and t0 is not None:
+        timings["project_1517"] = time.perf_counter() - t0
+    if hooks.after_qfc_filter is not None:
+        hooks.after_qfc_filter(emission)
 
     _call_stage("光纤信道")
     t0 = time.perf_counter() if timings is not None else None
-    mps, fiber_sample = apply_fiber_channel(
+    mps, fiber_sample, p_no_loss_fiber = apply_fiber_channel(
         mps=mps,
         n_bins=emission.get_n_bins(),
         fiber_params=fiber_params,
@@ -324,6 +386,24 @@ def run_emission_to_bs(
     )
     if timings is not None and t0 is not None:
         timings["fiber"] = time.perf_counter() - t0
+    p_no_loss = p_no_loss_780 * p_no_loss_fiber
+    if p_no_loss <= 0.0:
+        return PipelineResult(
+            emission=emission,
+            mps=mps,
+            p_qubit_emit=p_qubit_emit,
+            p_no_loss_780=p_no_loss_780,
+            p_no_loss_fiber=p_no_loss_fiber,
+            p_no_loss=0.0,
+            fiber_sample=fiber_sample,
+            t_wait_us=t_wait_us,
+            t2_us=t2_us,
+            p_dephase=0.0,
+            aborted=True,
+            abort_stage="After Fiber Channel",
+            abort_reason="光纤无损耗后选概率为0，跳过后续计算",
+            timings=timings,
+        )
     if hooks.after_fiber is not None:
         hooks.after_fiber(emission, fiber_sample)
 
@@ -338,10 +418,21 @@ def run_emission_to_bs(
     if timings is not None and t0 is not None:
         timings["dephase"] = time.perf_counter() - t0
 
+    # 这里仅触发“after_bs”可视化 hook；
+    # 真正的 BS 已在测量端 effect 中处理。
+    _call_stage("分束器(测量端) + 诊断/可视化")
+    if verbose:
+        print("\n分束器并入测量算符（Heisenberg 端口），不对态显式作用 BS。")
+    if hooks.after_bs is not None:
+        hooks.after_bs(emission)
+
     return PipelineResult(
         emission=emission,
         mps=mps,
         p_qubit_emit=p_qubit_emit,
+        p_no_loss_780=p_no_loss_780,
+        p_no_loss_fiber=p_no_loss_fiber,
+        p_no_loss=p_no_loss,
         fiber_sample=fiber_sample,
         t_wait_us=t_wait_us,
         t2_us=t2_us,
@@ -353,70 +444,3 @@ def run_emission_to_bs(
     )
 
 
-def run_task_queue(
-    jobs: int,
-    task_fn: Callable[..., Any],
-    next_task: Callable[[], Optional[tuple]],
-    on_result: Callable[[tuple, Any], None],
-    focus_task: Optional[tuple] = None,
-    focus_fn: Optional[Callable[..., Any]] = None,
-) -> None:
-    """
-    统一的进程任务调度器：
-    - next_task(): 返回一个任务参数元组，或 None 表示无任务
-    - task_fn(*task): 在子进程执行
-    - on_result(task, result): 主进程汇总
-    - focus_task: 可选的前台任务（主进程执行一次）
-    """
-    if jobs <= 1:
-        if focus_task is not None:
-            if focus_fn is None:
-                focus_fn = task_fn
-            result = focus_fn(*focus_task)
-            on_result(focus_task, result)
-        while True:
-            task = next_task()
-            if task is None:
-                break
-            result = task_fn(*task)
-            on_result(task, result)
-        return
-
-    worker_jobs = jobs - 1 if focus_task is not None and jobs > 1 else jobs
-    if worker_jobs <= 0:
-        worker_jobs = 1
-
-    if worker_jobs > 1:
-        # 避免多进程叠加 BLAS 线程导致过度并发。
-        os.environ["OMP_NUM_THREADS"] = "1"
-        os.environ["MKL_NUM_THREADS"] = "1"
-        os.environ["OPENBLAS_NUM_THREADS"] = "1"
-        os.environ["NUMEXPR_NUM_THREADS"] = "1"
-
-    def _run_task_silent(fn: Callable[..., Any], *task: Any) -> Any:
-        # 只让前台任务输出，避免多进程 stdout 阻塞。
-        with open(os.devnull, "w", encoding="utf-8") as devnull:
-            with redirect_stdout(devnull):
-                return fn(*task)
-
-    with ProcessPoolExecutor(max_workers=worker_jobs) as executor:
-        pending = {}
-
-        def _fill_pending() -> None:
-            while len(pending) < worker_jobs:
-                task = next_task()
-                if task is None:
-                    break
-                pending[executor.submit(_run_task_silent, task_fn, *task)] = task
-
-        _fill_pending()
-        if focus_task is not None:
-            if focus_fn is None:
-                focus_fn = task_fn
-            result = focus_fn(*focus_task)
-            on_result(focus_task, result)
-        while pending:
-            future = next(as_completed(pending))
-            task = pending.pop(future)
-            on_result(task, future.result())
-            _fill_pending()

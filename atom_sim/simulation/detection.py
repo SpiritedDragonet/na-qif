@@ -17,8 +17,6 @@ from dataclasses import dataclass
 
 from ..core.mps import MPSState
 from ..hilbert.basis import SUBSPACE_780, SUBSPACE_1517
-from ..physics.channels import loss_channel_both_subspaces
-from ..physics.gates import bs_gate_6d
 
 
 @dataclass
@@ -71,9 +69,6 @@ class DetectionPipelineResult:
 # 条件量在此阈值以下视为无效，避免数值噪声放大。
 P_ARRIVE_EPS = 1e-8
 
-DIM_780 = SUBSPACE_780.dim
-DIM_1517 = SUBSPACE_1517.dim
-
 
 def _order_two_port_detectors(detectors: List[str]) -> Tuple[str, ...]:
     order = {"H1": 0, "V1": 1, "H2": 2, "V2": 3}
@@ -94,6 +89,21 @@ def build_detection_effects_6d(
     effects_true : dict
         不含暗计数的 effect（仅真实点击）
     """
+    # ------------------------------------------------------------------
+    # 该函数的核心目标：
+    #   - 为每个“点击模式”(outcome) 生成 POVM effect E_r
+    #   - E_r = sum_mu K_{r,mu}^\dagger K_{r,mu}
+    # 其中 K_{r,mu} 是桶式探测器 (on/off) 的 Kraus 分解。
+    #
+    # 物理含义（单端口）：
+    #   - 输入基：|vac>, |H>, |V>, |2H>, |2V>, |HV>
+    #   - 输出结果：H click / V click / 双击 / 无点击
+    #   - 暗计数：在“本应不点击”的 detector 上独立叠加
+    #
+    # 最终输出两个字典：
+    #   effects_all: 含暗计数的 E_r
+    #   effects_true: 仅真实点击 (无暗计数贡献) 的 E_r
+    # ------------------------------------------------------------------
     def _order_detectors(detectors: List[str]) -> List[str]:
         order = {"H": 0, "V": 1}
         return sorted(detectors, key=lambda d: order[d])
@@ -103,6 +113,9 @@ def build_detection_effects_6d(
         detectors: List[str],
         p_dark_local: float,
     ) -> List[Tuple[np.ndarray, List[str], List[str]]]:
+        # 将“暗计数”作为独立 Bernoulli 过程附加到 Kraus：
+        # - 对于未点击的 detector，按 p_dark_local 拆成“暗点击”分支
+        # - 这里等价于在 Kraus 前乘以 sqrt(prob)
         if not 0 <= p_dark_local <= 1:
             raise ValueError(f"p_dark必须在[0, 1]内，得到 {p_dark_local}")
 
@@ -131,6 +144,13 @@ def build_detection_effects_6d(
         eta_local: float,
         p_dark_local: float,
     ) -> List[Tuple[np.ndarray, List[str], List[str]]]:
+        # 单端口 Kraus 分解：使用“桶式探测器”的最简模型。
+        # 注意：这是“测量结果”层面的 Kraus，而非物理光电倍增的细节模型。
+        #
+        # 1517nm 6D 基：[vac, H, V, 2H, 2V, HV]
+        # - K00: 无点击
+        # - K10*, K01*：H / V 单击
+        # - K11: H 与 V 同时点击
         # 1517nm 基：vac=0, H=1, V=2, 2H=3, 2V=4, HV=5
         K00_6d = np.diag([
             1.0,                # |vac>: always no click
@@ -184,6 +204,11 @@ def build_detection_effects_6d(
     outcome_detectors: List[List[str]] = []
     outcome_dark: List[List[str]] = []
 
+    # ------------------------------------------------------------------
+    # 双端口组合：
+    # 将 port1 与 port2 的 Kraus 通过张量积合成 (36x36)。
+    # 结果 detector 标签用 H1/V1, H2/V2 统一编码。
+    # ------------------------------------------------------------------
     for K1, det1, dark1 in port_entries:
         for K2, det2, dark2 in port_entries:
             K_two = np.kron(K1, K2)
@@ -205,6 +230,10 @@ def build_detection_effects_6d(
             outcome_detectors.append(dets)
             outcome_dark.append(dark_dets)
 
+    # ------------------------------------------------------------------
+    # 将 Kraus 分支聚合成 effect：E_r = sum K^\dagger K
+    # 同时拆出“无暗计数”的 pure-true effect。
+    # ------------------------------------------------------------------
     effects_all = {}
     effects_true = {}
     for K, detectors, dark_detectors in zip(kraus_list, outcome_detectors, outcome_dark):
@@ -217,48 +246,6 @@ def build_detection_effects_6d(
     return effects_all, effects_true
 
 
-def _embed_1517_pair_effect(effect_1517: np.ndarray) -> np.ndarray:
-    """
-    将1517_A×1517_B的36x36算符嵌入到(780×1517)_A × (780×1517)_B的324x324空间。
-    """
-    if effect_1517.shape != (DIM_1517 * DIM_1517, DIM_1517 * DIM_1517):
-        raise ValueError("effect_1517 必须是36x36")
-    I_780 = np.eye(DIM_780, dtype=complex)
-    e = effect_1517.reshape(DIM_1517, DIM_1517, DIM_1517, DIM_1517)
-    # 输出索引顺序：(780A,1517A,780B,1517B | 780A',1517A',780B',1517B')
-    tensor = np.einsum("ab,cd,efgh->aecfbgdh", I_780, I_780, e, optimize=True)
-    return tensor.reshape(DIM_780 * DIM_1517 * DIM_780 * DIM_1517,
-                          DIM_780 * DIM_1517 * DIM_780 * DIM_1517)
-
-
-def _apply_loss_adj_pair(
-    effect_full: np.ndarray,
-    k_list_a: List[np.ndarray],
-    k_list_b: List[np.ndarray],
-    bin_dim: int,
-) -> np.ndarray:
-    """
-    对(A,B)双端口算符应用局域损耗通道的伴随映射。
-    """
-    I = np.eye(bin_dim, dtype=complex)
-
-    # 先对A臂应用
-    acc_a = np.zeros_like(effect_full)
-    for K in k_list_a:
-        KA = np.kron(K.conj().T, I)
-        KAr = np.kron(K, I)
-        acc_a += KA @ effect_full @ KAr
-
-    # 再对B臂应用
-    acc_b = np.zeros_like(acc_a)
-    for K in k_list_b:
-        KB = np.kron(I, K.conj().T)
-        KBr = np.kron(I, K)
-        acc_b += KB @ acc_a @ KBr
-
-    return acc_b
-
-
 def run_detection_pipeline(
     mps: MPSState,
     n_bins: int,
@@ -269,146 +256,69 @@ def run_detection_pipeline(
     verbose: bool = True,
     n_samples: int = 1,
     compute_metrics: bool = False,
-    fiber_sample: Optional[tuple] = None,
+    bs_unitary: Optional[np.ndarray] = None,
 ) -> DetectionPipelineResult:
     """
     POVM探测流水线：单次准备即可同时枚举成功率与抽样双点击。
+
+    若提供 bs_unitary，则在测量端使用 U^† E U 处理点击 POVM，
+    等价于不对态显式作用 BS（Heisenberg 绘景）。
     """
     if rng is None:
         rng = np.random.default_rng()
 
+    # 约定：若链前两个站点为原子(4D)，bin 从 index=2 开始；
+    # 否则认为整个链都是 bin。
     bin_start = 2 if (len(mps.d) >= 2 and mps.d[0] == 4 and mps.d[1] == 4) else 0
     bin_dim = mps.d[bin_start]
-    if bin_dim != DIM_780 * DIM_1517:
-        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 18.")
+    if bin_dim != 6:
+        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6.")
 
     if verbose and n_samples > 0:
         print("\n" + "=" * 60)
         print("双光子探测（POVM抽样）")
         print("=" * 60)
 
-    # ==== 构造损耗与BS修正后的POVM effect ====
-    if fiber_sample is None:
-        eta_H_A = eta_V_A = eta_H_B = eta_V_B = 1.0
-    else:
-        eta_H_A = float(fiber_sample[2])
-        eta_V_A = float(fiber_sample[3])
-        eta_H_B = float(fiber_sample[4])
-        eta_V_B = float(fiber_sample[5])
-
-    k_list_a = loss_channel_both_subspaces(
-        eta_780=0.0,
-        eta_H_1517=eta_H_A,
-        eta_V_1517=eta_V_A,
-    )
-    k_list_b = loss_channel_both_subspaces(
-        eta_780=0.0,
-        eta_H_1517=eta_H_B,
-        eta_V_1517=eta_V_B,
-    )
-
-    effects_all_6d, effects_true_6d = build_detection_effects_6d(eta_det, p_dark)
-    if verbose and n_samples > 0:
-        print("  使用6D POVM effects (36x36) - 抽样双点击记录")
-
-    U_bs = bs_gate_6d()
-
-    def _transform_effects(effects_6d: dict) -> dict:
-        out = {}
-        for key, E in effects_6d.items():
-            E_bs = U_bs.conj().T @ E @ U_bs
-            E_full = _embed_1517_pair_effect(E_bs)
-            E_full = _apply_loss_adj_pair(E_full, k_list_a, k_list_b, bin_dim)
-            out[key] = E_full
-        return out
-
-    effects_all = _transform_effects(effects_all_6d)
-    effects_true = _transform_effects(effects_true_6d)
-
-    empty_key = _order_two_port_detectors([])
-    if not effects_all:
-        raise ValueError("空的探测effect，无法进行POVM计算")
-    dim_pair = next(iter(effects_all.values())).shape[0]
-    zero_effect = np.zeros((dim_pair, dim_pair), dtype=complex)
-    required_keys = [
-        empty_key,
-        _order_two_port_detectors(["H1"]),
-        _order_two_port_detectors(["V1"]),
-        _order_two_port_detectors(["H2"]),
-        _order_two_port_detectors(["V2"]),
-        _order_two_port_detectors(["H1", "V2"]),
-        _order_two_port_detectors(["V1", "H2"]),
-        _order_two_port_detectors(["H1", "V1"]),
-        _order_two_port_detectors(["H2", "V2"]),
-    ]
-    for key in required_keys:
-        if key not in effects_all:
-            raise ValueError(f"缺少探测结果: detectors={list(key)}")
-
-    def _prepare_grouped_pairs(state: MPSState) -> Tuple[List[np.ndarray], List[np.ndarray]]:
-        psi = state._mps.copy()
-        if psi.L % 2 != 0:
-            raise ValueError("MPS sites 数量必须为偶数，才能按 (atomA,atomB),(A1,B1),... 分组")
-        psi.group_sites(n=2)
-        psi.canonical_form_finite(renormalize=True)
-        psi.norm = 1.0
-        B_list_local = []
-        Bc_list_local = []
-        for i in range(psi.L):
-            B = psi.get_B(i, form='B').to_ndarray()
-            B_list_local.append(B)
-            Bc_list_local.append(B.conj())
-        return B_list_local, Bc_list_local
-
-    B_list, Bc_list = _prepare_grouped_pairs(mps)
-    grouped_bins = len(B_list) - 1
-    if grouped_bins != n_bins:
-        raise ValueError(f"n_bins={n_bins} 与分组后bin数量 {grouped_bins} 不一致")
-
-    L = len(B_list)
-
-    dim_atom = B_list[0].shape[1]
-    if dim_atom != 16:
-        raise ValueError(f"Atom pair site dimension {dim_atom} != 16")
-
     arrival_verbose = verbose and compute_metrics
+    # ------------------------------------------------------------------
+    # 两光子到达概率 p_arrive：
+    # 用 MPO 收缩实现对“总光子数=2”的投影。
+    # 形式上相当于：
+    #   p_arrive = Tr[ Π_{n}(P0 + P1 + P2) ρ ] 中选出 2 光子总数项
+    # 这里用小维度的“计数器” MPO (3x3) 来追踪 0/1/2 光子数。
+    # ------------------------------------------------------------------
+    mps._mps.canonical_form_finite(renormalize=True)
+    mps._mps.norm = 1.0
+    bin_sites = set()
+    for n in range(n_bins):
+        site_A = bin_start + 2 * n
+        site_B = bin_start + 2 * n + 1
+        if site_B >= mps.L:
+            raise ValueError(f"n_bins={n_bins} 超出MPS长度 {mps.L}")
+        bin_sites.add(site_A)
+        bin_sites.add(site_B)
 
-    # === 计算两光子到达概率（包含损耗+BS）===
-    n_1517 = np.array([0, 1, 1, 2, 2, 2], dtype=int)
-    n_pair = n_1517[:, None] + n_1517[None, :]
-    n_flat = n_pair.reshape(-1)
-    pi0_1517 = np.diag((n_flat == 0).astype(float))
-    pi1_1517 = np.diag((n_flat == 1).astype(float))
-    pi2_1517 = np.diag((n_flat == 2).astype(float))
-
-    pi0_bs = U_bs.conj().T @ pi0_1517 @ U_bs
-    pi1_bs = U_bs.conj().T @ pi1_1517 @ U_bs
-    pi2_bs = U_bs.conj().T @ pi2_1517 @ U_bs
-
-    pi0_full = _embed_1517_pair_effect(pi0_bs)
-    pi1_full = _embed_1517_pair_effect(pi1_bs)
-    pi2_full = _embed_1517_pair_effect(pi2_bs)
-    pi0_full = _apply_loss_adj_pair(pi0_full, k_list_a, k_list_b, bin_dim)
-    pi1_full = _apply_loss_adj_pair(pi1_full, k_list_a, k_list_b, bin_dim)
-    pi2_full = _apply_loss_adj_pair(pi2_full, k_list_a, k_list_b, bin_dim)
-
-    d_pair = bin_dim * bin_dim
-    w_bin = np.zeros((3, 3, d_pair, d_pair), dtype=complex)
-    w_bin[0, 0] = pi0_full
-    w_bin[0, 1] = pi1_full
-    w_bin[0, 2] = pi2_full
-    w_bin[1, 1] = pi0_full
-    w_bin[1, 2] = pi1_full
-    w_bin[2, 2] = pi0_full
+    pi0 = np.diag([1, 0, 0, 0, 0, 0]).astype(complex)
+    pi1 = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)
+    pi2 = np.diag([0, 0, 0, 1, 1, 1]).astype(complex)
+    w_bin = np.zeros((3, 3, bin_dim, bin_dim), dtype=complex)
+    w_bin[0, 0] = pi0
+    w_bin[0, 1] = pi1
+    w_bin[0, 2] = pi2
+    w_bin[1, 1] = pi0
+    w_bin[1, 2] = pi1
+    w_bin[2, 2] = pi0
 
     w_identity_cache: dict[int, np.ndarray] = {}
     env = np.zeros((3, 1, 1), dtype=complex)
     env[0, 0, 0] = 1.0
-    for site in range(L):
-        B = B_list[site]
-        Bc = Bc_list[site]
-        if site == 0:
-            dim = B.shape[1]
+    for site in range(mps.L):
+        B = mps._mps.get_B(site, form='B').to_ndarray()
+        Bc = B.conj()
+        if site in bin_sites:
+            w = w_bin
+        else:
+            dim = mps.d[site]
             if dim not in w_identity_cache:
                 pi0_id = np.eye(dim, dtype=complex)
                 pi1_zero = np.zeros((dim, dim), dtype=complex)
@@ -422,16 +332,14 @@ def run_detection_pipeline(
                 w_id[2, 2] = pi0_id
                 w_identity_cache[dim] = w_id
             w = w_identity_cache[dim]
-        else:
-            w = w_bin
         env = np.einsum('aij,ipk,jql,abpq->bkl', env, B, Bc, w, optimize=True)
-
     p_arrive = float(env[2, 0, 0].real)
     if arrival_verbose:
         print(f"  两光子到达概率 p_arrive={p_arrive:.6f}")
     if p_arrive < P_ARRIVE_EPS:
         p_arrive = 0.0
 
+    # 若几乎不可能到达且无暗计数，则可直接短路，避免数值噪声。
     if p_arrive <= P_ARRIVE_EPS and p_dark <= 0.0:
         if verbose:
             print(f"  p_arrive<{P_ARRIVE_EPS:.1e} 且 p_dark=0，跳过POVM收缩")
@@ -465,8 +373,77 @@ def run_detection_pipeline(
             samples=samples,
         )
 
+    # ------------------------------------------------------------------
+    # 构造“点击记录 → effect”的映射。
+    # 注意：此处只是端口级 POVM，不包含 BS/fiber 等光学链路。
+    # 若传入 bs_unitary，则在测量端做 U^† E U 的共轭变换。
+    # ------------------------------------------------------------------
+    effects_all, effects_true = build_detection_effects_6d(eta_det, p_dark)
+    if bs_unitary is not None:
+        if bin_dim != 6:
+            raise ValueError("bs_unitary 仅支持 6D bin (1517nm)")
+        bs_unitary = np.asarray(bs_unitary, dtype=complex)
+        dim_pair = bin_dim * bin_dim
+        if bs_unitary.shape != (dim_pair, dim_pair):
+            raise ValueError(
+                f"bs_unitary shape {bs_unitary.shape} != ({dim_pair},{dim_pair})"
+            )
+        U_dag = bs_unitary.conj().T
+        effects_all = {k: U_dag @ E @ bs_unitary for k, E in effects_all.items()}
+        effects_true = {k: U_dag @ E @ bs_unitary for k, E in effects_true.items()}
+    if verbose and n_samples > 0:
+        print("  使用6D POVM effects (36x36) - 抽样双点击记录")
+
+    empty_key = _order_two_port_detectors([])
+    if not effects_all:
+        raise ValueError("空的探测effect，无法进行POVM计算")
+    dim_pair = next(iter(effects_all.values())).shape[0]
+    zero_effect = np.zeros((dim_pair, dim_pair), dtype=complex)
+    required_keys = [
+        empty_key,
+        _order_two_port_detectors(["H1"]),
+        _order_two_port_detectors(["V1"]),
+        _order_two_port_detectors(["H2"]),
+        _order_two_port_detectors(["V2"]),
+        _order_two_port_detectors(["H1", "V2"]),
+        _order_two_port_detectors(["V1", "H2"]),
+        _order_two_port_detectors(["H1", "V1"]),
+        _order_two_port_detectors(["H2", "V2"]),
+    ]
+    for key in required_keys:
+        if key not in effects_all:
+            raise ValueError(f"缺少探测结果: detectors={list(key)}")
+
+    def _prepare_grouped_pairs(state: MPSState) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+        # 把 (atomA,atomB),(A1,B1),... 两两成组：
+        # - 便于一次性对每个 bin 的 (A_n,B_n) 做 2-site effect 收缩
+        # - 这样 left/right environment 的构造更简洁
+        psi = state._mps.copy()
+        if psi.L % 2 != 0:
+            raise ValueError("MPS sites 数量必须为偶数，才能按 (atomA,atomB),(A1,B1),... 分组")
+        psi.group_sites(n=2)
+        psi.canonical_form_finite(renormalize=True)
+        psi.norm = 1.0
+        B_list_local = []
+        Bc_list_local = []
+        for i in range(psi.L):
+            B = psi.get_B(i, form='B').to_ndarray()
+            B_list_local.append(B)
+            Bc_list_local.append(B.conj())
+        return B_list_local, Bc_list_local
+
+    B_list, Bc_list = _prepare_grouped_pairs(mps)
+    grouped_bins = len(B_list) - 1
+    if grouped_bins != n_bins:
+        raise ValueError(f"n_bins={n_bins} 与分组后bin数量 {grouped_bins} 不一致")
+
+    dim_atom = B_list[0].shape[1]
+    if dim_atom != 16:
+        raise ValueError(f"Atom pair site dimension {dim_atom} != 16")
+
     E_no = effects_all.get(empty_key, zero_effect)
     atom_I = np.eye(dim_atom, dtype=complex)
+    L = len(B_list)
 
     def _apply_env_left(
         B: np.ndarray,
@@ -474,6 +451,8 @@ def run_detection_pipeline(
         op: np.ndarray,
         env_left: np.ndarray,
     ) -> np.ndarray:
+        # 左环境推进：env' = <env| B op B^†
+        # 这里的 op 是当前 site 的测量算符（或单位）。
         return np.einsum('ij,ipk,jql,pq->kl', env_left, B, Bc, op, optimize=True)
 
     def _apply_env_right(
@@ -482,9 +461,12 @@ def run_detection_pipeline(
         op: np.ndarray,
         env_right: np.ndarray,
     ) -> np.ndarray:
+        # 右环境推进：env' = B op B^† |env>
         return np.einsum('ipk,jql,pq,kl->ij', B, Bc, op, env_right, optimize=True)
 
     def _build_left_envs(atom_op: np.ndarray) -> List[np.ndarray]:
+        # 构造左环境序列，便于在任意 bin 插入测量算符。
+        # 左边第一站点是 atom-pair，需要插入 atom_op（如 Bell 投影或 I）。
         left_envs_local = [None] * (L + 1)
         left_envs_local[0] = np.array([[1.0 + 0.0j]])
         left_envs_local[1] = _apply_env_left(B_list[0], Bc_list[0], atom_op, left_envs_local[0])
@@ -493,6 +475,7 @@ def run_detection_pipeline(
         return left_envs_local
 
     def _build_right_envs() -> List[np.ndarray]:
+        # 构造右环境序列：默认所有 bin 都是“无点击”(E_no)。
         right_envs_local = [None] * (L + 1)
         right_envs_local[L] = np.array([[1.0 + 0.0j]])
         for s in range(L - 1, 0, -1):
@@ -544,6 +527,7 @@ def run_detection_pipeline(
             left_envs: List[np.ndarray],
             op_pair: np.ndarray,
         ) -> float:
+            # 同 bin 双击：对每个 bin 插入二端口 effect
             total = 0.0
             for s in range(1, n_bins + 1):
                 env_mid = _apply_env_left(B_list[s], Bc_list[s], op_pair, left_envs[s])
@@ -556,6 +540,7 @@ def run_detection_pipeline(
             op_a: np.ndarray,
             op_b: np.ndarray,
         ) -> float:
+            # 不同 bin 双击：先插入 detector A，再在后续 bin 插入 detector B
             total = 0.0
             for i in range(1, n_bins):
                 env_mid = _apply_env_left(B_list[i], Bc_list[i], op_a, left_envs[i])
@@ -570,6 +555,9 @@ def run_detection_pipeline(
                         env_mid = _apply_env_left(B_list[j], Bc_list[j], E_no, env_mid)
             return total
 
+        # BSM 成功模式（按你当前定义）：
+        # Psi-: 交叉端口不同偏振
+        # Psi+: 同端口不同偏振
         patterns = [
             ("Psi-", ("H1", "V2")),
             ("Psi-", ("V1", "H2")),
@@ -643,6 +631,8 @@ def run_detection_pipeline(
     if n_samples <= 0:
         return DetectionPipelineResult(p_arrive=p_arrive, metrics=metrics, samples=samples)
 
+    # 抽样用的“候选双点击模式集合”：
+    # - 覆盖 Psi± 与部分失败模式
     patterns_records = [
         ("Psi-", ("H1", "V2")),
         ("Psi-", ("V1", "H2")),
@@ -660,6 +650,7 @@ def run_detection_pipeline(
         det_a: str,
         det_b: str,
     ) -> List[TwoClickRecord]:
+        # 逐 bin 收集“同 bin 双击”的权重分布
         records_local = []
         for s in range(1, n_bins + 1):
             env_mid = _apply_env_left(B_list[s], Bc_list[s], op_pair, left_envs_id[s])
@@ -674,6 +665,7 @@ def run_detection_pipeline(
         det_first: str,
         det_second: str,
     ) -> List[TwoClickRecord]:
+        # 逐 (i<j) 收集“跨 bin 双击”的权重分布
         records_local = []
         for i in range(1, n_bins):
             env_mid = _apply_env_left(B_list[i], Bc_list[i], op_first, left_envs_id[i])
@@ -686,6 +678,7 @@ def run_detection_pipeline(
                     env_mid = _apply_env_left(B_list[j], Bc_list[j], E_no, env_mid)
         return records_local
 
+    # 汇总所有可选双点击记录，组成离散分布供抽样
     for _, (det_a, det_b) in patterns_records:
         key_pair = _order_two_port_detectors([det_a, det_b])
         key_a = _order_two_port_detectors([det_a])
@@ -718,6 +711,7 @@ def run_detection_pipeline(
             samples=samples,
         )
 
+    # 将权重归一化为概率分布 p_r，随后按 p_r 抽样
     weights = np.array([max(0.0, r.weight) for r in records], dtype=float)
     total_weight = float(weights.sum())
     if total_weight <= weight_eps:
@@ -748,6 +742,8 @@ def run_detection_pipeline(
         op_a: np.ndarray,
         op_b: np.ndarray,
     ) -> complex:
+        # 计算某一条“点击记录 r”的未归一化原子态矩阵元：
+        #   sigma_ij = Tr[ (|i><j| ⊗ E_r) ρ ]
         if record_local.bin_a == record_local.bin_b:
             s = record_local.bin_a + 1
             env_mid = _apply_env_left(B_list[s], Bc_list[s], op_pair, left_envs[s])
@@ -782,6 +778,8 @@ def run_detection_pipeline(
     left_envs_qubit: Optional[List[List[List[np.ndarray]]]] = None
 
     def _ensure_left_envs_qubit() -> None:
+        # 为原子 4x4 子空间的每个 |i><j| 构造 left_env
+        # 便于高效组装 4x4 原子后验态矩阵
         nonlocal left_envs_qubit
         if left_envs_qubit is not None:
             return
@@ -793,6 +791,8 @@ def run_detection_pipeline(
                 left_envs_qubit[i][j] = _build_left_envs(atom_op)
 
     def _compute_record_qubit_state(record_local: TwoClickRecord) -> np.ndarray:
+        # 返回该记录对应的原子 4x4 未归一化密度矩阵
+        # 注意：这是 effect-only 的 Lüders 更新结果
         _ensure_left_envs_qubit()
         op_pair = effects_all.get(
             _order_two_port_detectors([record_local.detector_a, record_local.detector_b]),

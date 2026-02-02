@@ -23,6 +23,7 @@ from ..simulation import (
     compute_fidelity_with_bell,
 )
 from ..visualization import plot_dual_arm_heatmap
+from ..physics.gates import bs_gate_6d
 from .common import (
     SimConfig,
     PipelineHooks,
@@ -46,6 +47,7 @@ SUMMARY_HEADER = [
     "p_dark_intrinsic",
     "p_bg",
     "p_noise",
+    "p_no_loss",
     "p_arrive",
     "p_success_given_arrival",
     "p_success_all",
@@ -73,6 +75,7 @@ SUMMARY_HEADER = [
     "p_dark_intrinsic",
     "p_bg",
     "p_noise",
+    "p_no_loss",
     "p_arrive",
     "p_success_given_arrival",
     "p_success_all",
@@ -189,9 +192,11 @@ def _run_single_trial(
     hooks: Optional[PipelineHooks],
 ):
     """
-    目的：抽出最小可复用的物理流程（发射->QFC->光纤->退相干）。
+    目的：抽出最小可复用的物理流程（发射->QFC->滤波->光纤->退相干->BS并入测量）。
     规则：delay_ns/delay_jitter_ns 优先采用显式传入，否则取配置默认。
     """
+    # 该函数只负责“物理链路”部分，不包含探测统计；
+    # 便于 SIM/HOM 复用并减少重复代码。
     run_rng = rng or np.random.default_rng()
     pipe = run_emission_to_bs(
         emission=config.emission,
@@ -220,18 +225,25 @@ def _run_single_simulation_core(
     n_runs = run_cfg.runs
     shots_per_run = run_cfg.shots_per_run
     plot_all = run_cfg.plot_all
+    plot_enabled = run_cfg.plot_enabled
     enum_mode = run_cfg.enum_mode
     noise_cfg = config.noise
     eta_det = config.detector.eta_det
     ideal_det = config.detector.ideal_det
     run_tag = f"run{run_index:03d}"
     success_metrics = None
-    stage_total = 5
+    stage_total = 6
     plot_gate = {"claimed": False, "paths": []}
 
     @contextmanager
     # 目的：并发写 CSV/占位时的互斥锁；规则：锁文件超时 stale_s 视为僵死并回收。
     def _file_lock(lock_path: Path, stale_s: float = 120.0) -> None:
+        # --------------------------------------------------------------
+        # 简易文件锁：
+        #   - 创建 lock 文件即视为占用
+        #   - 超过 stale_s 未更新视为僵死锁
+        # 目的是保证多进程写 CSV 时不互相覆盖。
+        # --------------------------------------------------------------
         lock_fd = None
         while True:
             try:
@@ -267,7 +279,9 @@ def _run_single_simulation_core(
     ) -> None:
         if summary_path is None or lock_path is None:
             return
-        # 目的：记录单次点击结果；公式：F_full = <Bell|ρ|Bell>（未归一化保真度）。
+        # 目的：记录单次点击结果。
+        # 公式：F_full = <Bell|ρ|Bell>（未归一化保真度）
+        # 这里的 ρ 为“点击记录 r”条件化后的原子态（未归一化）。
         def _fmt(key: str, fmt: str) -> str:
             if not metrics or key not in metrics:
                 return ""
@@ -293,6 +307,7 @@ def _run_single_simulation_core(
             _fmt("p_dark_intrinsic", ".8f"),
             _fmt("p_bg", ".8f"),
             _fmt("p_noise", ".8f"),
+            _fmt("p_no_loss", ".8f"),
             _fmt("p_arrive", ".8f"),
             _fmt("p_success_given_arrival", ".8f"),
             _fmt("p_success_all", ".8f"),
@@ -347,6 +362,8 @@ def _run_single_simulation_core(
                 file.write(f"p_dephase = {metrics['p_dephase']:.6f}\n")
             if "p_qubit_emit" in metrics:
                 file.write(f"p_qubit_emit = {metrics['p_qubit_emit']:.6f}\n")
+            if "p_no_loss" in metrics:
+                file.write(f"p_no_loss = {metrics['p_no_loss']:.8f}\n")
 
             file.write(f"p_arrive = {metrics['p_arrive']:.8f}\n")
             if metrics.get("p_success_no_dark") is not None:
@@ -375,6 +392,12 @@ def _run_single_simulation_core(
     # 目的：绘图占位与清理逻辑集中，避免散落多个函数。
     # 目的：占用/判断是否允许绘图；规则：plot_all 或首次抢占成功。
     def _plot_gate_allow() -> bool:
+        # --------------------------------------------------------------
+        # 逻辑：默认只保留一个 run 的图，避免多进程 I/O 爆炸。
+        # plot_all=True 时不做限制。
+        # --------------------------------------------------------------
+        if not plot_enabled:
+            return False
         if plot_all:
             return True
         if plot_gate["claimed"]:
@@ -390,6 +413,7 @@ def _run_single_simulation_core(
 
     # 目的：记录本 run 的图路径（仅占位 run 保留）。
     def _plot_gate_register(path: Path) -> None:
+        # 记录当前 run 产出的图路径，便于后续清理。
         if plot_all:
             return
         if plot_gate["claimed"]:
@@ -397,6 +421,7 @@ def _run_single_simulation_core(
 
     # 目的：清理非占位 run 图 + 释放占位锁。
     def _plot_gate_finalize() -> None:
+        # 清理非占位 run 产生的图，避免磁盘膨胀。
         if plot_all or not plot_gate["claimed"]:
             return
         for path in plot_gate["paths"]:
@@ -417,16 +442,18 @@ def _run_single_simulation_core(
     print(f"Run {run_index}/{n_runs} ({run_tag})")
     print("=" * 80)
     print(f"Output directory: {output_dir}")
-    print("运行发射 + QFC + 光纤 + 探测仿真...")
+    print("运行发射 + QFC + 分束器 + 探测仿真...")
 
     run_rng = np.random.default_rng(seed)
+    p_no_loss = 0.0
 
     stage_map = {
         "发射": 1,
-        "QFC": 2,
+        "QFC + 780滤波 + 1517投影": 2,
         "光纤信道": 3,
-        "成功事件统计 (POVM)": 4,
-        "POVM抽样": 5,
+        "分束器(测量端) + 诊断/可视化": 4,
+        "成功事件统计 (POVM)": 5,
+        "POVM抽样": 6,
     }
 
     # 目的：输出阶段日志；公式：显示 "阶段 idx / 总阶段数"。
@@ -444,7 +471,14 @@ def _run_single_simulation_core(
         use_time_grid: bool,
         debug_stage: str,
         step_index: int,
+        bs_unitary: Optional[np.ndarray] = None,
     ):
+        # --------------------------------------------------------------
+        # 统一封装可视化 hook：
+        #   - 只在“允许绘图”的 run 上执行
+        #   - 输出命名规则统一，便于汇总
+        #   - bs_unitary 用于 Heisenberg 端口“after BS”热图
+        # --------------------------------------------------------------
         def _hook(emission, *_args):
             if _plot_gate_allow():
                 print(f"\n生成{stage_name}的可视化图...")
@@ -458,6 +492,8 @@ def _run_single_simulation_core(
                 )
                 if use_time_grid:
                     kwargs["time_grid"] = {"dt_s": emission.dt_s}
+                if bs_unitary is not None:
+                    kwargs["bs_unitary"] = bs_unitary
                 plot_dual_arm_heatmap(target, **kwargs)
                 _plot_gate_register(plot_path)
             if DEBUG_MODE:
@@ -480,13 +516,13 @@ def _run_single_simulation_core(
         debug_stage="After Emission",
         step_index=1,
     )
-    _after_qfc = _make_plot_hook(
-        stage_name="After QFC",
+    _after_qfc_filter = _make_plot_hook(
+        stage_name="After QFC + Filter",
         file_suffix="2_after_qfc",
         show_atomic=False,
         use_emission_obj=False,
         use_time_grid=True,
-        debug_stage="After QFC",
+        debug_stage="After QFC + Filter",
         step_index=2,
     )
     _after_fiber = _make_plot_hook(
@@ -497,6 +533,16 @@ def _run_single_simulation_core(
         use_time_grid=True,
         debug_stage="After Fiber Channel",
         step_index=3,
+    )
+    _after_bs = _make_plot_hook(
+        stage_name="After BS",
+        file_suffix="4_after_bs",
+        show_atomic=False,
+        use_emission_obj=False,
+        use_time_grid=True,
+        debug_stage="After BS (measurement pre-state)",
+        step_index=4,
+        bs_unitary=bs_gate_6d(),
     )
 
     timings = {} if DEBUG_MODE else None
@@ -510,8 +556,9 @@ def _run_single_simulation_core(
         hooks=PipelineHooks(
             on_stage=_on_stage,
             after_emission=_after_emission,
-            after_qfc=_after_qfc,
+            after_qfc_filter=_after_qfc_filter,
             after_fiber=_after_fiber,
+            after_bs=_after_bs,
         ),
     )
     if DEBUG_MODE and pipe.timings:
@@ -519,6 +566,7 @@ def _run_single_simulation_core(
     if pipe.aborted:
         include_no_dark = (enum_mode == "no-dark")
         metrics = {
+            "p_no_loss": 0.0,
             "p_arrive": 0.0,
             "p_success_all": 0.0,
             "p_success_true": 0.0,
@@ -534,6 +582,7 @@ def _run_single_simulation_core(
             "false_fraction": 0.0,
             "false_fraction_approx": 0.0 if include_no_dark else None,
         }
+        metrics["p_no_loss"] = pipe.p_no_loss
         _plot_gate_finalize()
         reason = pipe.abort_reason or "流水线提前终止"
         print(f"\n[早停] {reason}")
@@ -564,6 +613,7 @@ def _run_single_simulation_core(
 
     result = pipe.emission
     p_qubit_emit = pipe.p_qubit_emit
+    p_no_loss = pipe.p_no_loss
     t_wait_us = pipe.t_wait_us
     t2_us = pipe.t2_us
     p_dephase = pipe.p_dephase
@@ -571,17 +621,19 @@ def _run_single_simulation_core(
     # =========================================================================
     # 探测
     # =========================================================================
-    # 探测参数（基于Nature 2022实验）
+    # 探测参数（基于 Nature 2022 实验设置）
     if ideal_det:
         eta_det = 1.0
     # 符合窗口：默认采用论文中数据分析窗口 70 ns
     coincidence_window_ns = 70.0
     bin_dt_s = result.dt_s
     bin_dt_ns = bin_dt_s * 1e9
+    # 将时间窗映射到 bin 数，决定“符合”判定的最大 bin 差
     window_bins = _compute_window_bins(coincidence_window_ns, bin_dt_ns)
 
     # QFC 背景噪声 + 探测器本底暗计数（两者独立）
     if ideal_det:
+        # 理想探测：噪声全关
         noise = {
             "dark_rate_intrinsic_hz": 0.0,
             "bg_rate_mean_hz": 0.0,
@@ -592,6 +644,7 @@ def _run_single_simulation_core(
             "p_noise": 0.0,
         }
     else:
+        # 现实探测：每次 run 采样背景噪声率（正态扰动）
         noise = _compute_noise_params(noise_cfg, bin_dt_s, run_rng)
     dark_rate_intrinsic_hz = noise["dark_rate_intrinsic_hz"]
     bg_rate_mean_hz = noise["bg_rate_mean_hz"]
@@ -605,6 +658,8 @@ def _run_single_simulation_core(
     print(f"QFC 背景噪声率: {dark_rate_bg_hz:.3f} Hz -> p_bg={p_bg:.3e}")
     print(f"合并噪声概率 p_noise={p_noise:.3e}")
     print(f"点击时间窗 window_bins = {window_bins} (~{window_bins * bin_dt_ns:.1f} ns)")
+    # 重要：BS 已并入测量端。这里传入 U_BS，用 U^† E U 计算点击分布。
+    bs_unitary = bs_gate_6d()
 
     _on_stage("成功事件统计 (POVM)")
     print(f"\n成功事件枚举模式: {enum_mode}")
@@ -621,6 +676,7 @@ def _run_single_simulation_core(
     enum_start = time.perf_counter() if DEBUG_MODE else None
     if enum_mode == "no-dark":
         print("\n枚举成功事件（无暗计数）...")
+        # 枚举阶段：只计算统计量，不做抽样
         enum_pipeline = run_detection_pipeline(
             mps=result.mps,
             n_bins=result.get_n_bins(),
@@ -631,7 +687,7 @@ def _run_single_simulation_core(
             verbose=True,
             n_samples=0,
             compute_metrics=True,
-            fiber_sample=pipe.fiber_sample,
+            bs_unitary=bs_unitary,
         )
         enum_no_dark = enum_pipeline.metrics
         if p_noise > 0.0:
@@ -644,6 +700,7 @@ def _run_single_simulation_core(
         _on_stage("POVM抽样")
         print("\n运行探测和BSM（POVM抽样）...")
         detect_start = time.perf_counter() if DEBUG_MODE else None
+        # 抽样阶段：按噪声概率 p_noise 生成点击记录
         sample_pipeline = run_detection_pipeline(
             mps=result.mps,
             n_bins=result.get_n_bins(),
@@ -654,7 +711,7 @@ def _run_single_simulation_core(
             verbose=True,
             n_samples=shots_per_run,
             compute_metrics=False,
-            fiber_sample=pipe.fiber_sample,
+            bs_unitary=bs_unitary,
         )
         samples = sample_pipeline.samples
     else:
@@ -663,6 +720,7 @@ def _run_single_simulation_core(
         _on_stage("POVM抽样")
         print("\n运行探测和BSM（POVM抽样）...")
         detect_start = time.perf_counter() if DEBUG_MODE else None
+        # 直接在“含暗计数”的统计上枚举并抽样
         pipeline = run_detection_pipeline(
             mps=result.mps,
             n_bins=result.get_n_bins(),
@@ -673,11 +731,12 @@ def _run_single_simulation_core(
             verbose=True,
             n_samples=shots_per_run,
             compute_metrics=True,
-            fiber_sample=pipe.fiber_sample,
+            bs_unitary=bs_unitary,
         )
         enum_main = pipeline.metrics
         samples = pipeline.samples
 
+    # 汇总统计量（跨 shots）
     success_metrics = {
         "eta_det": eta_det,
         "window_bins": window_bins,
@@ -690,6 +749,7 @@ def _run_single_simulation_core(
         "t2_us": t2_us,
         "p_dephase": p_dephase,
         "p_qubit_emit": p_qubit_emit,
+        "p_no_loss": p_no_loss,
         "p_arrive": enum_main.p_arrive,
         "p_success_all": enum_main.p_success,
         "p_success_true": enum_main.p_success_true,
@@ -701,12 +761,14 @@ def _run_single_simulation_core(
         "p_success_no_dark": enum_no_dark.p_success if enum_no_dark is not None else None,
         "fidelity_no_dark": enum_no_dark.fidelity_declared if enum_no_dark is not None else None,
     }
+    # 误判占比：false / all
     success_metrics["false_fraction"] = (
         success_metrics["p_success_false"] / success_metrics["p_success_all"]
         if success_metrics["p_success_all"] > 0
         else 0.0
     )
     if enum_no_dark is not None:
+        # 粗略估计：将暗计数引入的“额外成功”视为 false
         success_metrics["p_false_approx"] = max(
             0.0, success_metrics["p_success_all"] - success_metrics["p_success_no_dark"]
         )
@@ -822,8 +884,11 @@ def _run_single_simulation_core(
         timing_order = [
             ("emission", "发射"),
             ("qfc", "QFC"),
+            ("filter_780", "780滤波"),
+            ("project_1517", "1517投影"),
             ("fiber", "光纤"),
             ("dephase", "退相干"),
+            ("bs", "BS"),
             ("povm_enum", "成功事件枚举"),
             ("povm_effects", "POVM构建"),
             ("detection_total", "探测抽样"),

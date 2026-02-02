@@ -106,6 +106,14 @@ class MPSState:
         normalize : bool
             若为True，应用后归一化（用于Kraus结果）
         """
+        # ------------------------------------------------------------------
+        # 核心思想：
+        #   仅在局部 (i,i+1) 上做更新，避免全链 canonical sweep。
+        #   等价于 TEBD 的“局部门 + SVD 截断”流程：
+        #     1) 取出两点张量 theta
+        #     2) 在物理腿上施加 op
+        #     3) 合并腿做 SVD，写回左右张量
+        # ------------------------------------------------------------------
         # 获取两格点的theta：腿为 (vL, p0, p1, vR)
         theta = self._mps.get_theta(i, n=2)
 
@@ -170,6 +178,10 @@ class MPSState:
         """
         d1, d2 = self.d[i], self.d[i + 1]
 
+        # ------------------------------------------------------------------
+        # 将任意 2-site 算符统一整理成 (d1,d2,d1,d2) 形式，
+        # 以便与 TeNPy 的标签约定对齐。
+        # ------------------------------------------------------------------
         # 重塑为4D: (d1, d2, d1, d2)
         op = np.asarray(op)
         if op.ndim == 2:
@@ -207,6 +219,14 @@ class MPSState:
         int
             采样的Kraus算符索引
         """
+        # ------------------------------------------------------------------
+        # 单格点量子轨迹 (quantum trajectory)：
+        #   1) 对每个 Kraus K_mu 计算概率 p_mu = ||K_mu |psi>||^2
+        #   2) 按 p_mu 采样一个分支
+        #   3) 归一化并写回该格点的张量
+        #
+        # 这等价于对 CPTP 信道进行一次“测量记录”的随机展开。
+        # ------------------------------------------------------------------
         if rng is None:
             rng = np.random.default_rng()
 
@@ -251,6 +271,42 @@ class MPSState:
 
         return mu
 
+    def apply_kraus_one_site_fixed(
+        self,
+        site: int,
+        kraus_op: np.ndarray,
+        eps: float = 1e-15,
+        canonicalize: bool = True,
+    ) -> float:
+        """
+        固定应用单个Kraus算符，并返回该分支概率。
+
+        用于后选 no-loss 分支：不再采样，只走指定Kraus。
+        """
+        # ------------------------------------------------------------------
+        # 固定分支后选：
+        #   - 不做随机采样，只走指定 K
+        #   - 适用于“强制无损耗轨迹”的调试/近似情形
+        #   - 返回该分支概率 p_mu，便于外部做权重补偿
+        # ------------------------------------------------------------------
+        d = self.d[site]
+        theta = self._mps.get_theta(site, n=1)  # Shape: (chiL, d, chiR)
+        theta_np = theta.to_ndarray()
+
+        K = np.asarray(kraus_op).reshape(d, d)
+        K_theta = np.einsum('ij,ajb->aib', K, theta_np)
+        p_mu = float(np.linalg.norm(K_theta) ** 2)
+        if p_mu < eps:
+            raise ValueError("固定Kraus分支概率过小，无法归一化")
+
+        theta_selected = K_theta / np.sqrt(p_mu)
+        theta_arr = Array.from_ndarray_trivial(theta_selected, labels=['vL', 'p', 'vR'])
+        self._mps.set_B(site, theta_arr, form='Th')
+        if canonicalize:
+            self._mps.canonical_form_finite(renormalize=True)
+
+        return p_mu
+
     # ========================================================================
     # 便捷方法（向后兼容）
     # ========================================================================
@@ -288,6 +344,11 @@ class MPSState:
         i : int
             左格点索引（交换i和i+1）
         """
+        # ------------------------------------------------------------------
+        # 这一步非常关键：
+        #   - TeNPy 的 swap_sites 会更新张量，但不会自动更新我们维护的 self.d。
+        #   - 若不同步 self.d，会导致后续门的维度错配。
+        # ------------------------------------------------------------------
         trunc_params = {'chi_max': self.max_bond, 'svd_min': 1e-13}
         self._mps.swap_sites(i, trunc_par=trunc_params)
 
@@ -306,6 +367,8 @@ class MPSState:
         使用TeNPy的get_rho_segment()，它能正确处理
         施密特权重和规范条件。
         """
+        # get_rho_segment 会自动包含左右环境的施密特系数，
+        # 比直接收缩 B 张量更稳健（尤其在非规范态时）。
         rho_array = self._mps.get_rho_segment(sites)
         return rho_array.to_ndarray()
 

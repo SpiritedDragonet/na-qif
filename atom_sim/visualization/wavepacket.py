@@ -168,6 +168,51 @@ def _get_bin6_state_labels() -> List[str]:
     return ['|vac>', '|H>', '|V>', '|2H>', '|2V>', '|HV>']
 
 
+def _build_port_effects(
+    bin_dim: int,
+    bs_unitary: Optional[np.ndarray] = None,
+) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+    """
+    Build per-port measurement effects.
+
+    - 无 BS：E1=P⊗I, E2=I⊗P
+    - 有 BS：E1=U^†(P⊗I)U, E2=U^†(I⊗P)U
+
+    Returns
+    -------
+    Tuple[List[np.ndarray], List[np.ndarray]]
+        (effects_port1, effects_port2) where each list has length bin_dim.
+    """
+    # ------------------------------------------------------------------
+    # 统一“单一路径”：
+    #   无论是否有 BS，都用端口测量的 effect 来取概率。
+    #   bs_unitary=None 时即退化为对原臂的测量。
+    # ------------------------------------------------------------------
+    dim_pair = bin_dim * bin_dim
+    eye = np.eye(bin_dim, dtype=complex)
+
+    projectors = []
+    for idx in range(bin_dim):
+        P = np.zeros((bin_dim, bin_dim), dtype=complex)
+        P[idx, idx] = 1.0
+        projectors.append(P)
+
+    if bs_unitary is not None:
+        bs_unitary = np.asarray(bs_unitary, dtype=complex)
+        if bs_unitary.shape != (dim_pair, dim_pair):
+            raise ValueError(
+                f"bs_unitary shape {bs_unitary.shape} != ({dim_pair},{dim_pair})"
+            )
+        U_dag = bs_unitary.conj().T
+        effects_port1 = [U_dag @ np.kron(P, eye) @ bs_unitary for P in projectors]
+        effects_port2 = [U_dag @ np.kron(eye, P) @ bs_unitary for P in projectors]
+        return effects_port1, effects_port2
+
+    effects_port1 = [np.kron(P, eye) for P in projectors]
+    effects_port2 = [np.kron(eye, P) for P in projectors]
+    return effects_port1, effects_port2
+
+
 def _infer_first_bin_site(mps: MPSState) -> int:
     """Infer the first bin site index based on 4D atom sites."""
     n_atom_sites = sum(1 for d in mps.d if d == 4)
@@ -214,6 +259,8 @@ def plot_dual_arm_heatmap(
     show: bool = True,
     validate: bool = True,
     trace_tol: float = 1e-6,
+    bs_unitary: Optional[np.ndarray] = None,
+    arm_labels: Optional[Tuple[str, str]] = None,
 ) -> None:
     """
     可视化双臂仓状态概率，可选显示原子状态。
@@ -253,7 +300,20 @@ def plot_dual_arm_heatmap(
         若为 True，先检查单 bin 约化密度矩阵的归一化
     trace_tol : float
         归一化检查的误差阈值
+    bs_unitary : np.ndarray, optional
+        若提供，则在测量端使用 U^† (P ⊗ I) U / U^† (I ⊗ P) U 计算端口概率，
+        可在不显式作用 BS 的情况下绘制 after-BS 热图。
+        仅支持 6D bin（1517nm）。
+    arm_labels : Tuple[str, str], optional
+        自定义左右臂标题标签，默认使用 ("Arm A","Arm B")；
+        若 bs_unitary 给出且未显式设置，则默认 ("Port 1","Port 2")。
     """
+    # ------------------------------------------------------------------
+    # 该热图可以工作在两种模式：
+    #   1) 直接从 MPS 的单臂约化密度矩阵取对角元 (默认)
+    #   2) 若传入 bs_unitary，则用 U^† P U 在测量端求概率，
+    #      从而得到“After BS”的端口分布而无需显式 apply_bs。
+    # ------------------------------------------------------------------
     import matplotlib as mpl
 
     mpl.rcParams['image.interpolation'] = 'nearest'
@@ -363,23 +423,29 @@ def plot_dual_arm_heatmap(
     else:
         raise ValueError(f"Unsupported bin dimension: {first_bin_dim}. Expected 18 or 6.")
 
-    # 提取仓概率
+    # 提取仓概率（统一使用端口 effect 计算）
     probs_A = np.zeros((n_bins, bin_dim))
     probs_B = np.zeros((n_bins, bin_dim))
 
+    if bs_unitary is not None and bin_dim != 6:
+        raise ValueError("bs_unitary 模式仅支持 6D bin (1517nm)")
+
+    effects_port1, effects_port2 = _build_port_effects(bin_dim, bs_unitary)
+    dim_pair = bin_dim * bin_dim
     for n in range(n_bins):
         # 链布局：[atomA, atomB, A1, B1, A2, B2, ..., AN, BN]
-        # 原子占据前2个站点（如果存在），bin从站点2开始
         site_A = first_bin_site + 2 * n
         site_B = first_bin_site + 2 * n + 1
-
-        if site_A < len(mps.d) and site_B < len(mps.d):
-            rho_A = mps.get_reduced_density([site_A])
-            rho_B = mps.get_reduced_density([site_B])
-            if rho_A.shape[0] == bin_dim:
-                probs_A[n, :] = np.diag(rho_A).real
-            if rho_B.shape[0] == bin_dim:
-                probs_B[n, :] = np.diag(rho_B).real
+        if site_A >= len(mps.d) or site_B >= len(mps.d):
+            continue
+        rho_pair = mps.get_reduced_density([site_A, site_B])
+        if rho_pair.ndim == 4:
+            rho_pair = rho_pair.reshape(dim_pair, dim_pair)
+        for idx in range(bin_dim):
+            p1 = np.real(np.trace(effects_port1[idx] @ rho_pair))
+            p2 = np.real(np.trace(effects_port2[idx] @ rho_pair))
+            probs_A[n, idx] = max(0.0, float(p1))
+            probs_B[n, idx] = max(0.0, float(p2))
 
     # Calculate vmax EXCLUDING (vac,vac) row (index 0)
     vmax_A = max(0.01, probs_A[:, 1:].max() * vmax_scale_factor)
@@ -449,6 +515,14 @@ def plot_dual_arm_heatmap(
         # 无原子态：增加底部边距，减少顶部边距，让行填满整个区域
         plt.subplots_adjust(left=0.04, right=0.85, top=0.92, bottom=0.08, wspace=0.50)
 
+    # Resolve labels for plotting
+    if arm_labels is not None:
+        label_A, label_B = arm_labels
+    elif bs_unitary is not None:
+        label_A, label_B = "Port 1", "Port 2"
+    else:
+        label_A, label_B = "Arm A", "Arm B"
+
     # Plot arm A
     # First plot all bin states with plasma colormap
     im_A = axes[0].imshow(
@@ -489,7 +563,7 @@ def plot_dual_arm_heatmap(
     axes[0].set_yticks(range(total_rows))
     axes[0].set_yticklabels(combined_labels_A, fontsize=8)
     axes[0].set_ylabel('State', fontsize=10)
-    axes[0].set_title(f'Arm A - Bin State Probabilities (vmax={vmax:.3f})', fontsize=11)
+    axes[0].set_title(f'{label_A} - Bin State Probabilities (vmax={vmax:.3f})', fontsize=11)
 
     if display_atomic:
         # 黑色实线分隔原子态（行0-3）和仓态（行4+），应该在第3行下方（y=4）
@@ -548,7 +622,7 @@ def plot_dual_arm_heatmap(
     axes[1].set_yticks(range(total_rows))
     axes[1].set_yticklabels(combined_labels_B, fontsize=8)
     axes[1].set_ylabel('State', fontsize=10)
-    axes[1].set_title(f'Arm B - Bin State Probabilities (vmax={vmax:.3f})', fontsize=11)
+    axes[1].set_title(f'{label_B} - Bin State Probabilities (vmax={vmax:.3f})', fontsize=11)
 
     if display_atomic:
         # 黑色实线分隔原子态（行0-3）和仓态（行4+），应该在第3行下方（y=4）
@@ -770,6 +844,7 @@ def plot_cross_bin_joint_heatmap(
     np.ndarray
         joint 分布矩阵，形状 (n_bins, n_bins)
     """
+    # 约定：arm_pair 只能是 A/B 两臂（端口或原臂皆可）
     arm_left = arm_pair[0].upper()
     arm_right = arm_pair[1].upper()
     if arm_left not in ("A", "B") or arm_right not in ("A", "B"):
@@ -782,6 +857,7 @@ def plot_cross_bin_joint_heatmap(
     first_bin_site = _infer_first_bin_site(mps)
 
     def _site_index(arm: str, n: int) -> int:
+        # arm=A -> offset 0, arm=B -> offset 1（链布局：A1,B1,A2,B2,...）
         return first_bin_site + 2 * n + (0 if arm == "A" else 1)
 
     # 识别 bin 维度并构造单光子索引
@@ -789,13 +865,16 @@ def plot_cross_bin_joint_heatmap(
         raise ValueError("Cannot find bin sites in MPS.")
     bin_dim = mps.d[first_bin_site]
     if bin_dim == 6:
+        # 6D: [vac, H, V, 2H, 2V, HV]
         n_diag = np.array([0, 1, 1, 2, 2, 2], dtype=float)
     elif bin_dim == 18:
+        # 18D: 780(3D) ⊗ 1517(6D)，用 N_1517 嵌入后的对角元识别
         _, n_bin, _, _, _, _ = telecom_ops_bin18()
         n_diag = np.real(np.diag(n_bin))
     else:
         raise ValueError(f"Unsupported bin dimension: {bin_dim}. Expected 6 or 18.")
 
+    # 单光子索引：n_diag == 1 的基态
     single_photon_idx = [i for i, n in enumerate(n_diag) if np.isclose(n, 1.0)]
     if not single_photon_idx:
         raise ValueError("No single-photon indices found for the bin basis.")
@@ -803,6 +882,7 @@ def plot_cross_bin_joint_heatmap(
     joint = np.zeros((n_bins, n_bins), dtype=float)
 
     for i in range(n_bins):
+        # 左臂固定 i，右臂遍历 j
         site_i = _site_index(arm_left, i)
         if site_i >= mps.L:
             continue
@@ -813,10 +893,12 @@ def plot_cross_bin_joint_heatmap(
             if site_i == site_j:
                 raise ValueError("arm_pair refers to the same site; choose different arms.")
 
+            # 提取两站点约化密度矩阵 ρ_{ij}
             sites = [site_i, site_j]
             if site_i > site_j:
                 sites = [site_j, site_i]
             rho_ij = mps.get_reduced_density(sites)
+            # joint[i,j] = sum_{a∈1ph} sum_{b∈1ph} ρ_{ab,ab}
             prob = 0.0
             for a in single_photon_idx:
                 for b in single_photon_idx:
@@ -824,6 +906,7 @@ def plot_cross_bin_joint_heatmap(
             joint[i, j] = prob
 
     if normalize:
+        # 归一化到总概率 = 1（若非零）
         total = joint.sum()
         if total > 0:
             joint = joint / total

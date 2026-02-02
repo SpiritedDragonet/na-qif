@@ -36,6 +36,12 @@ def annihilation_op(space: SubSpace, mode_id: int = 0) -> np.ndarray:
     >>> a_780_H = annihilation_op(SUBSPACE_780, mode_id=0)  # 780 H模式
     >>> a_1517_V = annihilation_op(SUBSPACE_1517, mode_id=1)  # 1517 V模式
     """
+    # ------------------------------------------------------------------
+    # 这里不是一般无限维 Fock 空间，而是“截断基”：
+    #   - 780：最多单光子
+    #   - 1517：最多双光子 (2H,2V,HV)
+    # 因此湮灭算符以显式矩阵形式构造。
+    # ------------------------------------------------------------------
     dim = space.dim
 
     if space == SUBSPACE_780:
@@ -57,6 +63,13 @@ def annihilation_op(space: SubSpace, mode_id: int = 0) -> np.ndarray:
         # vac: (0,0), H: (1,0), V: (0,1), 2H: (2,0), 2V: (0,2), HV: (1,1)
         # mode_id=0 (H), mode_id=1 (V)
         op = np.zeros((dim, dim), dtype=complex)
+        # 1517 子空间基序：
+        #   0: |vac>   (0,0)
+        #   1: |H>     (1,0)
+        #   2: |V>     (0,1)
+        #   3: |2H>    (2,0)
+        #   4: |2V>    (0,2)
+        #   5: |HV>    (1,1)
         basis_order = [
             (0, 0),  # 0: vac
             (1, 0),  # 1: H

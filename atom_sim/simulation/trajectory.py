@@ -3,7 +3,7 @@
 单轨迹执行模块
 
 本模块实现时间仓仿真的"传送带"主循环。
-每个时间仓按顺序处理：发射、QFC、损耗、琼斯旋转、分束器、探测。
+每个时间仓按顺序处理：发射、QFC、损耗、琼斯旋转、探测（分束器并入测量端）。
 """
 
 from typing import Optional, Tuple
@@ -16,6 +16,9 @@ from ..hilbert.basis import BIN_SPACE, SUBSPACE_780, SUBSPACE_1517
 from ..physics.gates import (
     emission_gate, jones_gate
 )
+from ..physics.channels import (
+    loss_channel_both_subspaces, loss_channel_1517_raw,
+)
 
 
 # 维度常量，便于代码阅读
@@ -23,6 +26,28 @@ DIM_ATOM = 4
 DIM_BIN = BIN_SPACE.dim  # 18
 DIM_780 = SUBSPACE_780.dim  # 3
 DIM_1517 = SUBSPACE_1517.dim  # 6
+
+
+class LossBranchWeight:
+    """记录后选分支权重（用log概率避免下溢）。"""
+    def __init__(self) -> None:
+        self._log_p = 0.0
+        self._is_zero = False
+
+    def update(self, p_mu: float) -> None:
+        if p_mu <= 0.0:
+            self._is_zero = True
+            return
+        self._log_p += math.log(p_mu)
+
+    def mark_zero(self) -> None:
+        self._is_zero = True
+
+    @property
+    def value(self) -> float:
+        if self._is_zero:
+            return 0.0
+        return float(math.exp(self._log_p))
 
 
 @dataclass
@@ -174,6 +199,12 @@ def apply_qfc(
     MPSState
         应用了QFC的MPS态（原地修改）
     """
+    # ------------------------------------------------------------------
+    # QFC (Quantum Frequency Conversion) 视为“频域分束器”：
+    #   U_qfc = exp[ θ_H (b_H c_H^† - b_H^† c_H) + θ_V (b_V c_V^† - b_V^† c_V) ]
+    # 其中 b 对应 780nm，c 对应 1517nm。
+    # 在数值上，这是对 18D bin 的局域幺正门。
+    # ------------------------------------------------------------------
     from ..physics.gates import qfc_gate
 
     _print_header("QFC", verbose)
@@ -204,6 +235,174 @@ def apply_qfc(
     return mps
 
 
+def apply_780_filter(
+    mps: MPSState,
+    n_bins: int,
+    verbose: bool = True,
+    rng: Optional[np.random.Generator] = None,
+) -> tuple:
+    """
+    应用100%损耗滤波器从所有仓中移除780nm光子（no-loss 后选）。
+
+    QFC之后，任何剩余的780nm光子（|H,vac>, |V,vac>）无法在光纤中
+    传播，必须被滤除。这里使用固定的“无780残留”Kraus分支进行
+    后选，并记录对应的后选概率。
+
+    Parameters
+    ----------
+    mps : MPSState
+        MPS态（布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN）
+    n_bins : int
+        时间仓数量
+    verbose : bool
+        是否打印进度
+
+    Returns
+    -------
+    tuple
+        (mps, p_no_loss_780) - 后选后的MPS态与对应概率
+    """
+    # ------------------------------------------------------------------
+    # 这里是“后选 no-loss 分支”的实现：
+    #   - 780nm 通道设为 100% 损耗 (eta_780 = 0)
+    #   - 仅保留 Kraus 中“不含 780 光子残留”的分支
+    #   - p_no_loss_780 记录该后选分支概率
+    #
+    # 注意：这是“轨迹层”的后选近似；在 B 方案中，
+    #       更严格的做法是把损耗推到 POVM 的对偶映射上。
+    # ------------------------------------------------------------------
+    _print_header("780nm Filter", verbose)
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    # 780nm子空间完全损耗，1517nm子空间无损耗
+    K_list = loss_channel_both_subspaces(
+        eta_780=0.0,
+        eta_H_1517=1.0,
+        eta_V_1517=1.0,
+    )
+
+    if verbose:
+        print(f"  Kraus ops: {len(K_list)} (18x18)")
+        print("  仅保留无780nm残留的分支（后选）")
+
+    # 固定选择无780残留Kraus分支，记录后选概率
+    K_noloss = K_list[0]
+    no_loss_weight = LossBranchWeight()
+
+    # 应用到所有仓：后选无780残留分支
+    # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
+    for n in range(n_bins):
+        site_A = 2 + 2 * n
+        site_B = 2 + 2 * n + 1
+
+        try:
+            pA = mps.apply_kraus_one_site_fixed(site_A, K_noloss, canonicalize=False)
+            pB = mps.apply_kraus_one_site_fixed(site_B, K_noloss, canonicalize=False)
+            no_loss_weight.update(pA)
+            no_loss_weight.update(pB)
+        except ValueError:
+            no_loss_weight.mark_zero()
+            break
+
+        _print_progress(n + 1, n_bins, verbose)
+
+    if no_loss_weight.value > 0.0:
+        # 只在完成后做一次规范化，避免每bin扫链
+        mps._mps.canonical_form_finite(renormalize=True)
+
+    _print_footer(mps, verbose, stage="780nm Filter")
+    return mps, no_loss_weight.value
+
+
+def project_to_1517(
+    mps: MPSState,
+    n_bins: int,
+    verbose: bool = True,
+) -> MPSState:
+    """
+    将所有bin从18D（780×1517）降维到6D（仅1517nm）。
+
+    在apply_780_filter之后，780nm子空间只有|vac>分量。
+    此函数通过投影移除780nm子空间，将每个bin从18D降到6D。
+    这大幅减少后续BS和探测的计算量（324x324 -> 36x36）。
+
+    物理意义：
+    - 780nm滤波后，每个bin的态为 |vac>_780 ⊗ |ψ>_1517
+    - 投影后只保留 |ψ>_1517（6D）
+
+    Parameters
+    ----------
+    mps : MPSState
+        MPS态（布局：atomA, atomB, A1, B1, ..., AN, BN）
+        bin维度必须为18D
+    n_bins : int
+        时间仓数量
+    verbose : bool
+        是否打印进度
+
+    Returns
+    -------
+    MPSState
+        降维后的MPS态（bin从18D变为6D）
+    """
+    # ------------------------------------------------------------------
+    # 物理意义：
+    #   在 780nm 滤波后，bin 的 780 子空间仅剩 |vac> 分量，
+    #   因此可以安全投影到 1517 子空间 (6D)。
+    #
+    # 数值意义：
+    #   从 18D 降到 6D，后续 BS/测量/收缩成本显著降低。
+    # ------------------------------------------------------------------
+    from tenpy.linalg.np_conserved import Array
+    from tenpy.networks.site import BosonSite
+
+    _print_header("Project to 1517nm (18D -> 6D)", verbose)
+
+    if verbose:
+        print("  Before: bin dims = 18D (780×1517)")
+        print("  After:  bin dims = 6D (1517 only)")
+
+    # 构造投影矩阵 P: 18D -> 6D
+    # 18D基序：(780_idx * 6 + 1517_idx)
+    # 780基：vac=0, H=1, V=2
+    # 只保留780=vac的分量，即索引 0*6+j = j for j=0..5
+    P_18to6 = np.zeros((6, 18), dtype=complex)
+    for j in range(6):
+        P_18to6[j, j] = 1.0  # 780=vac, 1517=j
+
+    # 对每个bin应用投影并更新MPS结构
+    # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
+    for n in range(n_bins):
+        site_A = 2 + 2 * n
+        site_B = 2 + 2 * n + 1
+
+        for site in [site_A, site_B]:
+            # 获取当前格点张量
+            B = mps._mps.get_B(site, form='B')
+            B_np = B.to_ndarray()  # shape: (chi_L, 18, chi_R)
+
+            # 应用投影: (chi_L, 6, chi_R) = P @ (chi_L, 18, chi_R)
+            B_new_np = np.einsum('ij,ajb->aib', P_18to6, B_np)
+
+            # 创建新的TeNPy Array（6D物理维度）
+            B_new = Array.from_ndarray_trivial(B_new_np, labels=['vL', 'p', 'vR'])
+
+            # 更新MPS格点
+            mps._mps.sites[site] = BosonSite(5, None)  # 6D = Nmax=5
+            mps._mps.set_B(site, B_new, form='B')
+
+            # 更新MPSState的维度记录
+            mps.d[site] = 6
+
+        _print_progress(n + 1, n_bins, verbose)
+
+    # 投影后需要恢复规范形式，否则后续的测量/约化密度会不可靠
+    mps._mps.canonical_form_finite(renormalize=True)
+
+    _print_footer(mps, verbose, stage="Project to 1517nm")
+    return mps
 # 一致打印格式的辅助函数
 def _print_header(stage: str, verbose: bool):
     """以一致格式打印阶段标题。"""
@@ -233,7 +432,7 @@ def apply_fiber_channel(
     bin_start: Optional[int] = None,
 ) -> tuple:
     """
-    应用光纤信道效应：琼斯旋转 + 相位漂移（含随机采样）。
+    应用光纤信道效应：琼斯旋转 + 损耗（含随机采样）。
 
     这一步同时处理琼斯旋转与损耗，并从 FiberChannelParams
     为每次轨迹采样参数（模拟光纤漂移）。
@@ -257,9 +456,18 @@ def apply_fiber_channel(
     Returns
     -------
     tuple
-        (mps, sampled_params) 其中 sampled_params =
+        (mps, sampled_params, p_no_loss) 其中 sampled_params =
         (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std)
     """
+    # ------------------------------------------------------------------
+    # 光纤信道 = 偏振漂移 (Jones) + 损耗 (amplitude damping) + 相位漂移：
+    #   - Jones: unitary -> 直接作用于态
+    #   - 相位：仅对 B 臂加相对相位 (模拟路径失配)
+    #   - 损耗：目前仍走“固定 no-loss 分支”的轨迹近似
+    #
+    # 在 B 方案下，损耗应推到 POVM 的对偶映射上；
+    # 这里保留轨迹版用于对照/回退。
+    # ------------------------------------------------------------------
     _print_header("Fiber Channel", verbose)
 
     # 为本次轨迹采样参数（残余Jones旋转 + 小PDL）
@@ -289,8 +497,8 @@ def apply_fiber_channel(
         raise ValueError(f"bin_start={bin_start} 超出MPS长度 {mps.L}")
 
     bin_dim = mps.d[bin_start]
-    if bin_dim not in (DIM_BIN, DIM_1517):
-        raise ValueError(f"Unsupported bin dimension: {bin_dim}. Expected 18 or 6.")
+    if bin_dim != DIM_1517:
+        raise ValueError(f"Unsupported bin dimension: {bin_dim}. Expected 6.")
 
     def _to_tuple(U: np.ndarray) -> Tuple[Tuple[complex, complex], Tuple[complex, complex]]:
         return (
@@ -298,19 +506,21 @@ def apply_fiber_channel(
             (complex(U[1, 0]), complex(U[1, 1])),
         )
 
-    # 应用琼斯旋转（仅作用于1517子空间）
-    U_J_1517_A = jones_gate(_to_tuple(U_A))
-    U_J_1517_B = jones_gate(_to_tuple(U_B))
-    if bin_dim == DIM_BIN:
-        I_780 = np.eye(DIM_780, dtype=complex)
-        U_J_A = np.kron(I_780, U_J_1517_A)
-        U_J_B = np.kron(I_780, U_J_1517_B)
-    else:
-        U_J_A = U_J_1517_A
-        U_J_B = U_J_1517_B
+    # 应用琼斯旋转
+    U_J_A = jones_gate(_to_tuple(U_A))
+    U_J_B = jones_gate(_to_tuple(U_B))
 
     phase_center = 0.5 * (n_bins - 1)
     apply_phase_profile = abs(phase_slope) > 0.0 or phase_jitter_std > 0.0
+
+    # 应用损耗（6D：只作用于1517）
+    K_list_A = loss_channel_1517_raw(eta_H_A, eta_V_A)
+    K_list_B = loss_channel_1517_raw(eta_H_B, eta_V_B)
+
+    # 固定选择无损耗Kraus分支，记录后选概率 p_no_loss
+    K_noloss_A = K_list_A[0]
+    K_noloss_B = K_list_B[0]
+    no_loss_weight = LossBranchWeight()
 
     for n in range(n_bins):
         site_A = bin_start + 2 * n
@@ -326,18 +536,29 @@ def apply_fiber_channel(
                 phase_n += rng.normal(0.0, phase_jitter_std)
             if abs(phase_n) > 0.0:
                 phase_factor = np.exp(1j * phase_n)
-                U_phase_1517 = jones_gate(((phase_factor, 0.0), (0.0, phase_factor)))
-                if bin_dim == DIM_BIN:
-                    U_phase = np.kron(I_780, U_phase_1517)
-                else:
-                    U_phase = U_phase_1517
+                U_phase = jones_gate(((phase_factor, 0.0), (0.0, phase_factor)))
                 # 只对B臂施加时间相关相位，形成相对失配
                 mps.apply_one_site_gate(site_B, U_phase)
 
+        # 再应用无损耗Kraus分支
+        try:
+            pA = mps.apply_kraus_one_site_fixed(site_A, K_noloss_A, canonicalize=False)
+            pB = mps.apply_kraus_one_site_fixed(site_B, K_noloss_B, canonicalize=False)
+            no_loss_weight.update(pA)
+            no_loss_weight.update(pB)
+        except ValueError:
+            no_loss_weight.mark_zero()
+            break
+
         _print_progress(n + 1, n_bins, verbose)
 
+    if no_loss_weight.value > 0.0:
+        # 只在完成后做一次规范化，避免每bin扫链
+        mps._mps.canonical_form_finite(renormalize=True)
+
     _print_footer(mps, verbose, stage="Fiber Channel")
-    return mps, (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std)
+
+    return mps, (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std), no_loss_weight.value
 
 
 # ============================================================================
@@ -345,8 +566,13 @@ def apply_fiber_channel(
 # ============================================================================
 
 def _omega_gaussian(t_ns: float, t0_ns: float, sigma_ns: float, omega_peak: float) -> complex:
+    # 物理含义：驱动场的复 Rabi 频率包络 Ω(t)
+    # 公式：Ω(t) = Ω_peak * exp(- (t - t0)^2 / (2σ^2))
+    # 允许 t_ns 为标量或数组（numpy 广播），统一返回复数数组/标量。
     if sigma_ns <= 0.0:
+        # σ<=0 视为“无脉冲”，直接返回 0
         return np.zeros_like(t_ns, dtype=complex)
+    # 乘以 omega_peak（可为复数），得到完整的驱动项
     return complex(omega_peak) * np.exp(-0.5 * ((t_ns - t0_ns) / sigma_ns) ** 2)
 
 def _effective_gamma_per_channel(
@@ -359,9 +585,12 @@ def _effective_gamma_per_channel(
     在坏腔近似下估计原子到外耦合通道的有效耦合率（单通道）。
     L_eff ≈ sqrt(2*kappa_ex) * g / kappa，因此 gamma ≈ |L_eff|^2。
     """
+    # κ = κ_ex + κ_in：总腔衰减率（外耦合 + 内损耗）
     kappa = kappa_ex + kappa_in
+    # 若耦合或外耦合为零，等价于没有可用的外输出通道
     if kappa <= eps or kappa_ex <= 0.0:
         return 0.0
+    # |L_eff|^2 = 2 κ_ex (g/κ)^2
     return 2.0 * kappa_ex * (g / kappa) ** 2
 
 
@@ -369,9 +598,13 @@ def _build_h_sys(omega: complex, delta_u: float, delta_e: float) -> np.ndarray:
     """
     构造单原子 H_sys（基顺序：|0>, |1>, |e>, |u>）。
     """
+    # H_sys 只作用在激发态 |e> 与光学辅助态 |u> 子空间，
+    # 逻辑基态 |0>, |1> 在这里保持能量 0（旋转参考系下）。
     h_sys = np.zeros((DIM_ATOM, DIM_ATOM), dtype=complex)
+    # 对角线：失谐项（在旋转系中表现为能级偏移）
     h_sys[2, 2] = delta_e
     h_sys[3, 3] = delta_u
+    # 非对角：驱动耦合 Ω |e><u| + h.c.
     h_sys[2, 3] = omega
     h_sys[3, 2] = np.conj(omega)
     return h_sys
@@ -466,6 +699,16 @@ def run_dual_atom_emission(
     EmissionResult
         仿真结果容器
     """
+    # ------------------------------------------------------------------
+    # 物理/数值要点（简版）：
+    #   - “碰撞模型”：每个 time-bin 视为一段真空浴，与原子短时相互作用
+    #   - 原子沿链移动，使每个 bin 依次与原子相互作用
+    #   - 在每一步：对 (atom, bin) 施加 emission_gate（TEBD 局部更新）
+    #   - 记录每个 bin 的发射概率与原子态演化
+    #
+    # 近似：把连续输出场离散化为 N 个 time-bin
+    #   dt = Δt，离散化误差由 dt、chi_max 控制
+    # ------------------------------------------------------------------
     if verbose:
         print("=" * 70)
         print("双原子发射仿真（原子向左移动方案）")
@@ -473,6 +716,7 @@ def run_dual_atom_emission(
 
     # 时间参数
     dt_s = dt_ns * 1e-9
+    # t_sec / t_ns 用于构造高斯脉冲包络
     t_sec = np.arange(n_bins) * dt_s
     t_ns = t_sec * 1e9
 
@@ -490,6 +734,7 @@ def run_dual_atom_emission(
     if delay_jitter_ns > 0.0:
         if rng is None:
             rng = np.random.default_rng()
+        # 延迟抖动：一次采样，作用于整条波包（而非逐 bin）
         delay_jitter_actual_ns = rng.uniform(-delay_jitter_ns, delay_jitter_ns)
         delay_ns_used = delay_ns + delay_jitter_actual_ns
 
@@ -498,12 +743,14 @@ def run_dual_atom_emission(
 
     omega_A_values = _omega_gaussian(t_ns, t0_A, sigma, gamma_peak_A)
     omega_B_values = _omega_gaussian(t_ns, t0_B, sigma, gamma_peak_B)
+    # 有效耦合率：每个时间步共用（坏腔近似）
     gamma_per_channel = _effective_gamma_per_channel(g, kappa_ex, kappa_in)
     p_source_A = 0.0
     p_source_B = 0.0
 
     # 设置默认Alpha矩阵
     if Alpha_A is None:
+        # Alpha 是 2×2 偏振耦合矩阵（默认单位阵）
         Alpha_A = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=complex)
     if Alpha_B is None:
         Alpha_B = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=complex)
@@ -541,12 +788,14 @@ def run_dual_atom_emission(
     for i in range(n_bins):
         local_dims.append(DIM_BIN)  # A_i
         local_dims.append(DIM_BIN)  # B_i
+        # 初态：时间仓真空（索引 0）
         init_state.append(0)  # A_i 真空
         init_state.append(0)  # B_i 真空
 
     # 添加两个原子
     local_dims.append(DIM_ATOM)  # atomA
     local_dims.append(DIM_ATOM)  # atomB
+    # 初态：原子在 |u>（索引 3）
     init_state.append(3)  # atomA 在 |u>
     init_state.append(3)  # atomB 在 |u>
 
@@ -568,6 +817,7 @@ def run_dual_atom_emission(
         print(f"\n预处理：交换 BN({2*n_bins-1}) 和 atomA({2*n_bins})...")
 
     # 使用 swap_sites 方法（自动更新维度）
+    # 目的：让 atomA 位于 BN 的左侧，方便“向左移动”发射流程
     mps.swap_sites(2*n_bins-1)
 
     # 当前原子位置
@@ -601,12 +851,20 @@ def run_dual_atom_emission(
         return (n_bins - 1) - bin_index
 
     for n in range(n_bins-1, -1, -1):  # 从 n_bins-1 到 0（空间索引）
+        # --------------------------------------------------------------
+        # 这里用“反向遍历”来对齐物理时间顺序：
+        #   - 空间索引 n 大的 bin 对应更早的发射时间
+        #   - time_idx = (N-1)-n
+        # --------------------------------------------------------------
         # 物理图景：先发射的光子先到达 QFC/BS，存储在空间上靠后的 bin
         time_idx = _bin_to_time_index(n)
+        # 从预计算的高斯包络里取出当前时间步的驱动幅度
         omega_A_n = omega_A_values[time_idx]
         omega_B_n = omega_B_values[time_idx]
+        # 构造当前时刻的单原子哈密顿量（含失谐与驱动）
         h_sys_A = _build_h_sys(omega_A_n, delta_u, delta_e)
         h_sys_B = _build_h_sys(omega_B_n, delta_u, delta_e)
+        # 发射率：坏腔近似下视作常数
         gamma_A_n = gamma_per_channel
         gamma_B_n = gamma_per_channel
 
@@ -617,6 +875,7 @@ def run_dual_atom_emission(
         # 记录发射前的原子状态
         rho_A = mps.get_reduced_density([site_atomA])
         rho_B = mps.get_reduced_density([site_atomB])
+        # 仅记录对角（占据概率）用于演化可视化
         atom_A_evolution.append(np.diag(rho_A).real)
         atom_B_evolution.append(np.diag(rho_B).real)
 
@@ -635,6 +894,7 @@ def run_dual_atom_emission(
                 H_sys=h_sys_A,
                 bin_first=True  # bin × atom（仓在左，原子在右）
             )
+            # 作用在 (bin, atom) 相邻键上：bin 在左、atom 在右
             mps.apply_bond_op(site_atomA - 1, U_emit_A)
 
         # ====================================================================
@@ -651,6 +911,7 @@ def run_dual_atom_emission(
                 H_sys=h_sys_B,
                 bin_first=True  # bin × atom
             )
+            # B 臂：作用在 (B_n, atomB) 的相邻键上
             mps.apply_bond_op(site_atomB - 1, U_emit_B)
 
         # ====================================================================
@@ -715,6 +976,7 @@ def run_dual_atom_emission(
         site_B_n = 2 + 2 * n + 1  # B_n 在位置 2 + 2n + 1
 
         # 计算非真空概率
+        # 约化密度矩阵的 vacuum 元素 = P(vac)，非真空概率 = 1 - P(vac)
         rho_A_n = mps.get_reduced_density([site_A_n])
         per_bin_prob_A[n] = 1.0 - rho_A_n[0, 0].real
 
@@ -750,6 +1012,8 @@ def run_dual_atom_emission(
         )
     p_source_A = float(per_bin_prob_A.sum())
     p_source_B = float(per_bin_prob_B.sum())
+    # 注意：这里的“总发射概率”是各 bin 非真空概率的求和，
+    # 并非严格的总光子数（它会受到截断和多光子分量的影响）。
 
     if verbose:
         print("\n总发射概率:")
