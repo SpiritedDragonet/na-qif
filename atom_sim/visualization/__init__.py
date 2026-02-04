@@ -8,11 +8,9 @@
 
 from .wavepacket import (
     plot_dual_arm_heatmap,
-    plot_cross_bin_joint_heatmap,
 )
 
 __all__ = [
     # wavepacket
     'plot_dual_arm_heatmap',
-    'plot_cross_bin_joint_heatmap',
 ]

@@ -10,4 +10,23 @@
 \bottomrule[1.5pt]
 \end{tabular}
 \end{table}
+
+\begin{table}[h]
+\caption{本文常用符号与统计量定义}
+\vspace{0.5em}\centering\wuhao
+\begin{tabular}{cll}
+\toprule[1.5pt]
+符号 & 含义 & 备注 \\
+\midrule[1pt]
+$p_{\mathrm{arrive}}$ & 两光子到达概率 & 链路损耗后的到达概率 \\
+$p_{\mathrm{success}}^{\mathrm{abs}}$ & 绝对成功率 & 每次尝试的宣告成功概率 \\
+$p_{\mathrm{success}}^{\mathrm{true}}$ & 真实成功率 & 排除暗计数分支 \\
+$p_{\mathrm{success}}^{\mathrm{false}}$ & 假成功率 & 由暗计数/背景导致 \\
+$p_{\mathrm{success}}^{\mathrm{true}\mid\mathrm{arrive}}$ & 条件成功率 & $p_{\mathrm{success}}^{\mathrm{true}}/p_{\mathrm{arrive}}$ \\
+$f_{\mathrm{false}}$ & 假成功占比 & $p_{\mathrm{success}}^{\mathrm{false}}/p_{\mathrm{success}}^{\mathrm{abs}}$ \\
+$F_{\mathrm{true}}$ & 条件保真度 & 成功事件条件下的保真度 \\
+$S$ & CHSH 指标 & $S>2$ 为非定域性证据 \\
+\bottomrule[1.5pt]
+\end{tabular}
+\end{table}
 \end{denotation}

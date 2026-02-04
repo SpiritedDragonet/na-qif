@@ -86,18 +86,11 @@ class ProductSpace:
 # 本项目的预定义子空间
 # 这些与 README 中的物理模型对应
 
-ATOM_4D = SubSpace('atom', 4, ('|0>', '|1>', '|e>', '|u>'))  # |u>: 5S1/2, F=1, m_F=0
-ATOM_A = SubSpace('atom_A', 4, ('|0>', '|1>', '|e>', '|u>'))
-ATOM_B = SubSpace('atom_B', 4, ('|0>', '|1>', '|e>', '|u>'))
-
 SUBSPACE_780 = SubSpace('780', 3, ('vac', 'H', 'V'))
 SUBSPACE_1517 = SubSpace('1517', 6, ('vac', 'H', 'V', '2H', '2V', 'HV'))
 
 # 5D bin 基序：vac, H780, V780, H1517, V1517
 SUBSPACE_BIN5 = SubSpace('bin', 5, ('vac', 'H_780', 'V_780', 'H_1517', 'V_1517'))
-
-# 系统格点：两个原子
-SYSTEM_SPACE = ProductSpace((ATOM_A, ATOM_B))  # 16D
 
 # Bin格点：5D（单光子截断的 780/1517 账本）
 BIN_SPACE = SUBSPACE_BIN5  # 5D
@@ -111,11 +104,3 @@ BIN_SPACE = SUBSPACE_BIN5  # 5D
 # ----------------------------------------------------------------------
 
 
-def get_bin_space() -> SubSpace:
-    """获取标准的5D bin空间（单光子截断的 780/1517 账本）。"""
-    return BIN_SPACE
-
-
-def get_system_space() -> ProductSpace:
-    """获取标准的16D系统空间（atom_A x atom_B）。"""
-    return SYSTEM_SPACE

@@ -8,8 +8,6 @@
 from .trajectory import (
     EmissionResult,
     run_dual_atom_emission,
-    apply_qfc,
-    apply_bs,
     apply_fiber_channel,
 )
 from .detection import (
@@ -20,7 +18,6 @@ from .detection import (
     build_detection_effects_6d,
     extract_spin_state,
     compute_fidelity_with_bell,
-    compute_photon_statistics,
 )
 
 __all__ = [
@@ -28,8 +25,6 @@ __all__ = [
     'EmissionResult',
     'run_dual_atom_emission',
     # apply_* functions
-    'apply_qfc',
-    'apply_bs',
     'apply_fiber_channel',
     # detection (POVM sampling)
     'DetectionEvent',
@@ -39,5 +34,4 @@ __all__ = [
     'build_detection_effects_6d',
     'extract_spin_state',
     'compute_fidelity_with_bell',
-    'compute_photon_statistics',
 ]

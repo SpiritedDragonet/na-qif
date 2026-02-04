@@ -33,7 +33,6 @@ class EmissionParams:
     g: float = 2 * np.pi * 20e6
     kappa_ex: float = 2 * np.pi * 20e6
     kappa_in: float = 2 * np.pi * 1e6
-    gamma_atom: float = 2 * np.pi * 3e6
     delta_u: float = 0.0
     delta_e: float = 0.0
     delay_ns: Optional[float] = None
@@ -93,7 +92,6 @@ class HomConfig:
     tau_random: bool = False
     tau_random_range: Tuple[float, float] = (-10.0, 10.0)
     window_ns: float = 70.0
-    max_attempts: Optional[int] = None
 
 
 @dataclass
@@ -239,9 +237,6 @@ class PipelineResult:
     emission: Any
     mps: Any
     p_qubit_emit: float
-    p_no_loss_780: Optional[float]
-    p_no_loss_fiber: Optional[float]
-    p_no_loss: Optional[float]
     fiber_sample: Optional[tuple]
     qfc_theta_H: float
     qfc_theta_V: float
@@ -249,9 +244,6 @@ class PipelineResult:
     t_wait_us: float
     t2_us: float
     p_dephase: float
-    aborted: bool
-    abort_stage: Optional[str]
-    abort_reason: Optional[str]
     timings: Optional[dict] = None
 
 
@@ -280,11 +272,10 @@ def run_emission_to_bs(
     #
     # 注意：
     #   - BS 已经并入测量端 (Heisenberg side)；
-    #   - 这里不再对 MPS 显式 apply_bs。
+    #   - 这里不再对 MPS 显式作用 BS 门。
     # ------------------------------------------------------------------
     from ..simulation import (
         run_dual_atom_emission,
-        apply_qfc,
         apply_fiber_channel,
         extract_spin_state,
     )
@@ -318,7 +309,6 @@ def run_emission_to_bs(
         g=emission.g,
         kappa_ex=emission.kappa_ex,
         kappa_in=emission.kappa_in,
-        gamma_atom=emission.gamma_atom,
         delta_u=emission.delta_u,
         delta_e=emission.delta_e,
         rng=rng,
@@ -335,17 +325,8 @@ def run_emission_to_bs(
     t0 = time.perf_counter() if timings is not None else None
     qfc_theta_H = DEFAULT_QFC_THETA_H
     qfc_theta_V = DEFAULT_QFC_THETA_V
-    apply_qfc(
-        mps=mps,
-        n_bins=emission.get_n_bins(),
-        theta_H=qfc_theta_H,
-        theta_V=qfc_theta_V,
-        verbose=verbose,
-    )
     if timings is not None and t0 is not None:
         timings["qfc"] = time.perf_counter() - t0
-    # 方案B：不再做 780 后选/1517 投影，损耗统一推到测量端 effect。
-    p_no_loss_780 = None
     if hooks.after_qfc_filter is not None:
         hooks.after_qfc_filter(
             emission,
@@ -355,7 +336,7 @@ def run_emission_to_bs(
 
     _call_stage("光纤信道")
     t0 = time.perf_counter() if timings is not None else None
-    mps, fiber_sample, p_no_loss_fiber = apply_fiber_channel(
+    mps, fiber_sample = apply_fiber_channel(
         mps=mps,
         n_bins=emission.get_n_bins(),
         fiber_params=fiber_params,
@@ -364,7 +345,6 @@ def run_emission_to_bs(
     )
     if timings is not None and t0 is not None:
         timings["fiber"] = time.perf_counter() - t0
-    p_no_loss = None
     if hooks.after_fiber is not None:
         hooks.after_fiber(
             emission,
@@ -401,9 +381,6 @@ def run_emission_to_bs(
         emission=emission,
         mps=mps,
         p_qubit_emit=p_qubit_emit,
-        p_no_loss_780=p_no_loss_780,
-        p_no_loss_fiber=p_no_loss_fiber,
-        p_no_loss=p_no_loss,
         fiber_sample=fiber_sample,
         qfc_theta_H=qfc_theta_H,
         qfc_theta_V=qfc_theta_V,
@@ -411,9 +388,6 @@ def run_emission_to_bs(
         t_wait_us=t_wait_us,
         t2_us=t2_us,
         p_dephase=p_dephase,
-        aborted=False,
-        abort_stage=None,
-        abort_reason=None,
         timings=timings,
     )
 

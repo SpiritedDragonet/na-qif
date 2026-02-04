@@ -36,10 +36,11 @@
 \contentsline {section}{\numberline {2.5}量子信道与 Kraus 算符的张量网络处理}{16}{section.2.5}%
 \contentsline {subsection}{\numberline {2.5.1}从幺正演化���量子信道}{16}{subsection.2.5.1}%
 \contentsline {subsection}{\numberline {2.5.2}纯态 MPS 上的信道作用}{17}{subsection.2.5.2}%
-\contentsline {subsection}{\numberline {2.5.3}测量与条件化}{17}{subsection.2.5.3}%
-\contentsline {subsection}{\numberline {2.5.4}POVM 与测量记录}{17}{subsection.2.5.4}%
-\contentsline {subsection}{\numberline {2.5.5}噪声通道的 Kraus 构造}{18}{subsection.2.5.5}%
-\contentsline {section}{\numberline {2.6}本章小结}{18}{section.2.6}%
+\contentsline {subsection}{\numberline {2.5.3}Heisenberg 视角与 POVM 推回}{17}{subsection.2.5.3}%
+\contentsline {subsection}{\numberline {2.5.4}测量与条件化}{17}{subsection.2.5.4}%
+\contentsline {subsection}{\numberline {2.5.5}POVM 与测量记录}{18}{subsection.2.5.5}%
+\contentsline {subsection}{\numberline {2.5.6}噪声通道的 Kraus 构造}{18}{subsection.2.5.6}%
+\contentsline {section}{\numberline {2.6}本章小结}{19}{section.2.6}%
 \contentsline {chapter}{\numberline {第3章}量子接口的端到端仿真模型与实现}{20}{chapter.3}%
 \contentsline {section}{\numberline {3.1}时间 bin 与系统表示}{20}{section.3.1}%
 \contentsline {section}{\numberline {3.2}发射门与第一性原理推导}{20}{section.3.2}%
@@ -47,33 +48,37 @@
 \contentsline {subsection}{\numberline {3.2.2}发射门的矩阵形式与有效演化}{21}{subsection.3.2.2}%
 \contentsline {section}{\numberline {3.3}链路模块与测量判据}{22}{section.3.3}%
 \contentsline {subsection}{\numberline {3.3.1}传输与干涉模块}{22}{subsection.3.3.1}%
-\contentsline {subsection}{\numberline {3.3.2}探测与成功事件}{22}{subsection.3.3.2}%
-\contentsline {section}{\numberline {3.4}数值实现与调度}{23}{section.3.4}%
-\contentsline {subsection}{\numberline {3.4.1}链布局与交换调度}{23}{subsection.3.4.1}%
-\contentsline {subsection}{\numberline {3.4.2}POVM 抽样与统计}{23}{subsection.3.4.2}%
-\contentsline {section}{\numberline {3.5}本章小结}{24}{section.3.5}%
-\contentsline {chapter}{\numberline {第4章}仿真结果与参数依赖性分析}{25}{chapter.4}%
-\contentsline {section}{\numberline {4.1}参数与实验设置}{25}{section.4.1}%
-\contentsline {paragraph}{原子系统参数}{25}{table.4.1}%
-\contentsline {paragraph}{光学链路参数}{25}{table.4.2}%
-\contentsline {paragraph}{探测器参数}{26}{table.4.3}%
-\contentsline {paragraph}{数值仿真参数}{26}{table.4.4}%
-\contentsline {section}{\numberline {4.2}核心指标与验证}{26}{section.4.2}%
-\contentsline {paragraph}{单臂发射验证}{26}{paragraph*.23}%
-\contentsline {paragraph}{双臂纠缠与 HOM 验证}{28}{paragraph*.24}%
-\contentsline {section}{\numberline {4.3}参数依赖与误差来源}{28}{section.4.3}%
-\contentsline {paragraph}{QFC 噪声}{28}{paragraph*.25}%
-\contentsline {paragraph}{光纤长度}{29}{paragraph*.26}%
-\contentsline {paragraph}{探测器效率与时间分辨}{30}{paragraph*.27}%
-\contentsline {paragraph}{误差预算与损耗分解}{30}{paragraph*.28}%
-\contentsline {section}{\numberline {4.4}优化策略与取舍}{30}{section.4.4}%
-\contentsline {section}{\numberline {4.5}本章小结}{31}{section.4.5}%
-\contentsline {chapter}{\heiti 结\hspace {\ccwd }论}{32}{section*.29}%
-\contentsline {chapter}{\heiti 参考文献}{33}{section*.32}%
-\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{35}{section*.34}%
-\contentsline {chapter}{\heiti 致\hspace {\ccwd }谢}{36}{section*.36}%
-\contentsline {chapter}{\numberline {附录 A}补充数学推导}{37}{appendix.A}%
-\contentsline {section}{\numberline {A.1}时间 bin 离散化与量子门构造}{37}{section.A.1}%
-\contentsline {section}{\numberline {A.2}Kraus 算符与 MPS 截断}{37}{section.A.2}%
-\contentsline {chapter}{\heiti 攻读硕士学位期间发表的论文及其他成果}{39}{section*.39}%
-\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{40}{section*.41}%
+\contentsline {subsection}{\numberline {3.3.2}Heisenberg 端口的 POVM 推入与维度闭环}{22}{subsection.3.3.2}%
+\contentsline {subsection}{\numberline {3.3.3}探测与成功事件}{23}{subsection.3.3.3}%
+\contentsline {section}{\numberline {3.4}数值实现与调度}{24}{section.3.4}%
+\contentsline {subsection}{\numberline {3.4.1}链布局与交换调度}{24}{subsection.3.4.1}%
+\contentsline {subsection}{\numberline {3.4.2}POVM 抽样与统计}{24}{subsection.3.4.2}%
+\contentsline {section}{\numberline {3.5}本章小结}{25}{section.3.5}%
+\contentsline {chapter}{\numberline {第4章}仿真结果与参数依赖性分析}{26}{chapter.4}%
+\contentsline {section}{\numberline {4.1}参数与实验设置}{26}{section.4.1}%
+\contentsline {paragraph}{原子系统参数}{26}{table.4.1}%
+\contentsline {paragraph}{光学链路参数}{26}{table.4.2}%
+\contentsline {paragraph}{探测器参数}{27}{table.4.3}%
+\contentsline {paragraph}{数值仿真参数}{27}{table.4.4}%
+\contentsline {section}{\numberline {4.2}核心指标与验证}{27}{section.4.2}%
+\contentsline {paragraph}{单臂发射验证}{28}{paragraph*.23}%
+\contentsline {paragraph}{单光子到达时间直方图与接受窗优化}{29}{paragraph*.24}%
+\contentsline {paragraph}{双臂纠缠与 HOM 验证}{29}{paragraph*.25}%
+\contentsline {paragraph}{BSM 点击模式与真假事件拆分}{30}{paragraph*.26}%
+\contentsline {paragraph}{原子关联曲线与 CHSH 指标}{30}{paragraph*.27}%
+\contentsline {section}{\numberline {4.3}参数依赖与误差来源}{31}{section.4.3}%
+\contentsline {paragraph}{QFC 噪声}{32}{paragraph*.28}%
+\contentsline {paragraph}{光纤长度}{32}{paragraph*.29}%
+\contentsline {paragraph}{探测器效率与时间分辨}{32}{paragraph*.30}%
+\contentsline {paragraph}{误差预算与损耗分解}{34}{paragraph*.31}%
+\contentsline {section}{\numberline {4.4}优化策略与取舍}{34}{section.4.4}%
+\contentsline {section}{\numberline {4.5}本章小结}{35}{section.4.5}%
+\contentsline {chapter}{\heiti 结\hspace {\ccwd }论}{36}{section*.32}%
+\contentsline {chapter}{\heiti 参考文献}{37}{section*.35}%
+\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{39}{section*.37}%
+\contentsline {chapter}{\heiti 致\hspace {\ccwd }谢}{40}{section*.39}%
+\contentsline {chapter}{\numberline {附录 A}补充数学推导}{41}{appendix.A}%
+\contentsline {section}{\numberline {A.1}时间 bin 离散化与量子门构造}{41}{section.A.1}%
+\contentsline {section}{\numberline {A.2}Kraus 算符与 MPS 截断}{41}{section.A.2}%
+\contentsline {chapter}{\heiti 攻读硕士学位期间发表的论文及其他成果}{43}{section*.42}%
+\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{44}{section*.44}%

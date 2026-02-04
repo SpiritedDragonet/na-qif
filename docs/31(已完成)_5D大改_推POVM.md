@@ -1,7 +1,7 @@
 ﻿# 5D 大改（QFC/光纤/BS 推入 POVM）修改计划
 
 > 目标：取消 18D bin，改为 5D bin；发射之后的 **QFC + 780 过滤 + 光纤噪声/损耗 + BS** 全部缩进 POVM（Heisenberg/对偶映射）。  
-> 约束：不保留旧方案残留；注释量保持现有风格；同一功能不改函数名（`apply_qfc` 保留，则 `apply_bs` 也必须保留）。
+> 约束：不保留旧方案残留；注释量保持现有风格；不保留 `apply_qfc/apply_bs` 占位接口。
 
 ---
 
@@ -14,10 +14,10 @@
 - `atom_sim/visualization/wavepacket.py`
 - `atom_sim/experiment/single_run.py`, `hom.py`
 - `total_simulation.py`
-- `docs/28(未完成)_专家对于当前程序的修改意见3.md`
-- `docs/30_有关更前面的780nmQFC等门推到POVM的正确性的探讨.md`
+- `docs/28(已完成)_专家对于当前程序的修改意见3.md`
+- `docs/30(已过时)_有关更前面的780nmQFC等门推到POVM的正确性的探讨.md`
 - `docs/32_各povm的维度.md`
-- `docs/33_各povm的维度讨论2.md`
+- `docs/33(已过时)_各povm的维度讨论2.md`
 
 ---
 
@@ -55,8 +55,6 @@ atom_sim/
 │   ├── basis.py                   # 空间定义和张量积
 │   │   ├── class SubSpace          # 单子空间（780, 1517, atom）
 │   │   ├── class ProductSpace      # 张量积空间 [s1, s2, ...]
-│   │   ├── get_bin_space()
-│   │   └── get_system_space()
 │   │
 │   └── operators.py               # 基本算符工厂
 │       ├── annihilation_op()      # 湮灭算符 a[i]（复用实现）
@@ -74,8 +72,7 @@ atom_sim/
 │   │
 │   └── channels.py                # 所有 Kraus 通道
 │       ├── loss_channel_both_subspaces() # 780+1517 联合损耗
-│       ├── loss_channel_780_general()    # 780nm 损耗
-│       ├── loss_channel_1517_raw()       # 1517nm 振幅阻尼（6D）
+│       ├── loss_channel_1517_single_photon() # 1517nm 单光子损耗（3D）
 │       └── FiberChannelParams            # 光纤漂移模型（琼斯+损耗）
 │
 ├── simulation/                    # 仿真流程层（编排）
@@ -83,10 +80,7 @@ atom_sim/
 │   ├── trajectory.py              # 单轨迹执行
 │   │   ├── EmissionResult
 │   │   ├── run_dual_atom_emission()
-│   │   ├── apply_qfc()            # Heisenberg 端口占位（不改态）
-│   │   ├── apply_bs()             # Heisenberg 端口占位（不改态）
 │   │   ├── _print_header()
-│   │   ├── _print_progress()
 │   │   ├── _print_footer()
 │   │   └── apply_fiber_channel()
 │   │
@@ -99,7 +93,6 @@ atom_sim/
 │       ├── run_detection_pipeline()     # POVM 枚举 + 抽样
 │       ├── extract_spin_state()
 │       ├── compute_fidelity_with_bell()
-│       └── compute_photon_statistics()
 │
 ├── visualization/                 # 可视化层
 │   ├── __init__.py
@@ -112,7 +105,6 @@ atom_sim/
 │       ├── _infer_first_bin_site()
 │       ├── _validate_bin_rho_traces()
 │       ├── plot_dual_arm_heatmap()       # 绘制双臂热图
-│       └── plot_cross_bin_joint_heatmap()# 跨 bin 联合分布热图
 │
 ├── docs/                          # 设计文档与讨论
 └── thesis/                        # 论文材料
@@ -152,8 +144,6 @@ atom_sim/
 │   ├── basis.py
 │   │   ├── class SubSpace
 │   │   ├── class ProductSpace
-│   │   ├── get_bin_space()            # 返回 5D bin
-│   │   └── get_system_space()
 │   └── operators.py
 │       ├── annihilation_op()          # 5D 版本（含 780 / 1517 单光子）
 │       ├── creation_op()
@@ -168,18 +158,15 @@ atom_sim/
 │   │   └── emission_gate()
 │   └── channels.py
 │       ├── loss_channel_both_subspaces() # 改为 5D 版 Kraus（780/1517 单光子）
-│       ├── loss_channel_780_general()    # 3D 保留
-│       ├── loss_channel_1517_raw()       # 6D 保留（测量端）
+│       ├── loss_channel_1517_single_photon() # 3D 版（测量端）
 │       └── class FiberChannelParams
 │
 ├── simulation/
 │   ├── trajectory.py
 │   │   ├── class EmissionResult
 │   │   ├── run_dual_atom_emission()   # 发射仍是态端唯一演化
-│   │   ├── apply_qfc()                # 保留名字，但不对 MPS 做后选/损耗
-│   │   ├── apply_bs()                 # 保留名字，与 apply_qfc 语义对齐（不改态）
 │   │   ├── apply_fiber_channel()      # 只采样参数（U_A/U_B/eta/phase）
-│   │   ├── _print_header/_progress/_footer
+│   │   ├── _print_header/_footer
 │   │   └── (删除 apply_780_filter / project_to_1517)
 │   └── detection.py
 │       ├── DetectionEvent / TwoPhotonDetectionResult / SuccessEnumerationResult
@@ -187,7 +174,6 @@ atom_sim/
 │       ├── run_detection_pipeline()       # 输入 bin_dim=5
 │       ├── _project_6d_to_3d()
 │       ├── _embed_3d_to_5d()
-│       └── compute_photon_statistics()    # 5D 版本
 │
 ├── visualization/
 │   └── wavepacket.py
@@ -197,7 +183,6 @@ atom_sim/
 │       ├── _infer_first_bin_site()
 │       ├── _validate_bin_rho_traces()
 │       ├── plot_dual_arm_heatmap()        # 局域重建热图
-│       └── plot_cross_bin_joint_heatmap()
 │
 ├── experiment/
 │   ├── single_run.py
@@ -212,7 +197,7 @@ atom_sim/
     └── 31(计划)_5D大改_推POVM.md
 ```
 
-> 关键一致性：`apply_qfc` 与 `apply_bs` 同层级保留（均不再“改态”），用于提供算符与可视化阶段标记，避免接口混乱。
+> 关键一致性：QFC/BS 全部在测量端处理；态端不再保留 `apply_qfc/apply_bs` 占位接口。
 
 ---
 
@@ -293,7 +278,7 @@ atom_sim/
 | 探测 POVM | `build_detection_effects_6d()` | 6D | 6×6 | 36×36 | **起点**（直接构造） |
 | BS | `bs_gate_6d()` | 6D | 6×6 | 36×36 | `E ← U_BS^† E U_BS` |
 | 光纤 Jones/相位 | `jones_gate()`（3D 版：`diag(1,U_2×2)` 或由 6D 投影） | 3D | 3×3 | 9×9 | `E ← U^† E U` |
-| 光纤损耗 | `loss_channel_1517_raw()`（3D 版或由 6D 投影） | 3D | 3×3 | 9×9 | `E ← Σ K^† E K` |
+| 光纤损耗 | `loss_channel_1517_single_photon()` | 3D | 3×3 | 9×9 | `E ← Σ K^† E K` |
 | 780 过滤 | `loss_channel_both_subspaces()` | 5D | 5×5 | 25×25 | `E ← Σ K^† E K` |
 | QFC | `qfc_gate()` | 5D | 5×5 | 25×25 | `E ← U_qfc^† E U_qfc` |
 
@@ -410,12 +395,12 @@ R(θ) = [[cosθ, -sinθ], [sinθ, cosθ]]
 
 ### 7.3 `physics/channels.py`
 - `loss_channel_both_subspaces()` 改成 5D 版 Kraus（780/1517 单光子）。
-- `loss_channel_1517_raw()` 保留 6D（测量端），并提供 3D 版本（或用投影得到 3D）供 effect 链条使用。
+- `loss_channel_1517_single_photon()` 提供 3D 损耗 Kraus，直接用于 effect 链条。
 
 ### 7.4 `simulation/trajectory.py`
 - 发射仍是唯一的态端演化。
-- `apply_qfc()` 保留名字但不再对 MPS 执行后选/损耗。
-- `apply_bs()` **保留名字**，与 `apply_qfc()` 同语义：只返回/记录算符。
+- `apply_qfc()` 删除：QFC 完全在测量端 effect 中处理。
+- `apply_bs()` 删除：BS 完全在测量端 effect 中处理。
 - `apply_fiber_channel()` 只采样光纤参数（Jones/eta/phase），不修改 MPS。
 - 删除 `apply_780_filter()` / `project_to_1517()`。
 

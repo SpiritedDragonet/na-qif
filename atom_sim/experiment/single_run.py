@@ -14,7 +14,6 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 from collections import Counter
-from types import SimpleNamespace
 
 import numpy as np
 
@@ -47,7 +46,6 @@ SUMMARY_HEADER = [
     "p_dark_intrinsic",
     "p_bg",
     "p_noise",
-    "p_no_loss",
     "p_arrive",
     "p_success_true_given_arrival",
     "p_success_abs",
@@ -63,33 +61,6 @@ SUMMARY_HEADER = [
     "fidelity_no_dark",
     "p_qubit_emit",
     "fidelity_shot_full",
-    "runs",
-    "shots_per_run",
-    "total_shots",
-    "success",
-    "success_rate",
-    "bell_counts",
-    "click_count_dist",
-    "dark_rate_intrinsic_hz",
-    "dark_rate_bg_hz",
-    "p_dark_intrinsic",
-    "p_bg",
-    "p_noise",
-    "p_no_loss",
-    "p_arrive",
-    "p_success_true_given_arrival",
-    "p_success_abs",
-    "p_success_true_abs",
-    "p_success_false_abs",
-    "p_success_no_dark_abs",
-    "p_false_approx",
-    "false_fraction",
-    "false_fraction_approx",
-    "avg_p_qubit_emit",
-    "avg_fidelity_true",
-    "avg_fidelity_false",
-    "avg_fidelity_all",
-    "avg_fidelity_no_dark",
 ]
 
 def save_debug_info(
@@ -117,7 +88,6 @@ def save_debug_info(
         步骤索引
     """
     from atom_sim.simulation.detection import (
-        compute_photon_statistics,
         extract_spin_state, compute_fidelity_with_bell
     )
 
@@ -132,10 +102,6 @@ def save_debug_info(
     info['n_bins'] = n_bins
     info['bond_dimensions'] = f'chi_min={min(chi_list)}, chi_max={max(chi_list)}, chi_mean={np.mean(chi_list):.1f}'
     info['local_dimensions'] = f'first_5={d_list[:5]}, last_5={d_list[-5:]}'
-
-    # 光子统计
-    stats = compute_photon_statistics(mps, n_bins, verbose=False)
-    info['photon_stats'] = stats
 
     # 原子态信息
     spin_state, p_qubit = extract_spin_state(mps, n_bins)
@@ -165,11 +131,6 @@ def save_debug_info(
         f.write(f'  n_bins = {info["n_bins"]}\n')
         f.write(f'  {info["bond_dimensions"]}\n')
         f.write(f'  {info["local_dimensions"]}\n\n')
-        f.write('光子统计:\n')
-        f.write(f'  总期望光子数 = {stats["n_total"]:.4f}\n')
-        f.write(f'  780nm: H={stats.get("n_780_H", 0):.4f}, V={stats.get("n_780_V", 0):.4f}, total={stats.get("n_780_total", 0):.4f}\n')
-        f.write(f'  1517nm: H={stats.get("n_1517_H", 0):.4f}, V={stats.get("n_1517_V", 0):.4f}, total={stats.get("n_1517_total", 0):.4f}\n')
-        f.write(f'  期望损耗光子数 = {stats["loss_expected"]:.4f}\n\n')
         f.write('原子态信息:\n')
         f.write(f'  对角元: {info["spin_state_diag"]}\n')
         f.write(f'  p_qubit: {info["p_qubit"]:.4f}\n')
@@ -307,7 +268,6 @@ def _run_single_simulation_core(
             _fmt("p_dark_intrinsic", ".8f"),
             _fmt("p_bg", ".8f"),
             _fmt("p_noise", ".8f"),
-            _fmt("p_no_loss", ".8f"),
             _fmt("p_arrive", ".8f"),
             _fmt("p_success_true_given_arrival", ".8f"),
             _fmt("p_success_abs", ".8f"),
@@ -362,11 +322,6 @@ def _run_single_simulation_core(
                 file.write(f"p_dephase = {metrics['p_dephase']:.6f}\n")
             if "p_qubit_emit" in metrics:
                 file.write(f"p_qubit_emit = {metrics['p_qubit_emit']:.6f}\n")
-            if metrics.get("p_no_loss") is not None:
-                file.write(f"p_no_loss = {metrics['p_no_loss']:.8f}\n")
-            else:
-                file.write("p_no_loss = N/A\n")
-
             if metrics.get("p_arrive") is not None:
                 file.write(f"p_arrive = {metrics['p_arrive']:.8f}\n")
             else:
@@ -474,7 +429,6 @@ def _run_single_simulation_core(
     print("运行发射 + QFC + 分束器 + 探测仿真...")
 
     run_rng = np.random.default_rng(seed)
-    p_no_loss = 0.0
 
     stage_map = {
         "发射": 1,
@@ -601,57 +555,9 @@ def _run_single_simulation_core(
     )
     if DEBUG_MODE and pipe.timings:
         timings.update(pipe.timings)
-    if pipe.aborted:
-        include_no_dark = (enum_mode == "no-dark")
-        metrics = {
-            "p_no_loss": 0.0,
-            "p_arrive": 0.0,
-            "p_success_abs": 0.0,
-            "p_success_true_abs": 0.0,
-            "p_success_false_abs": 0.0,
-            "p_success_true_given_arrival": 0.0,
-            "fidelity_all": 0.0,
-            "fidelity_true": 0.0,
-            "fidelity_false": 0.0,
-            "p_success_no_dark_abs": 0.0 if include_no_dark else None,
-            "fidelity_no_dark": 0.0 if include_no_dark else None,
-            "p_qubit_emit": pipe.p_qubit_emit,
-            "p_false_approx": 0.0 if include_no_dark else None,
-            "false_fraction": 0.0,
-            "false_fraction_approx": 0.0 if include_no_dark else None,
-        }
-        metrics["p_no_loss"] = pipe.p_no_loss
-        _plot_gate_finalize()
-        reason = pipe.abort_reason or "流水线提前终止"
-        print(f"\n[早停] {reason}")
-        run_stats = {
-            "shots": 0,
-            "success": 0,
-            "bell": Counter(),
-            "clicks": Counter(),
-        }
-        det_result = SimpleNamespace(
-            clicks=[],
-            success=False,
-            bell_state="",
-            spin_state=np.zeros((4, 4), dtype=complex),
-        )
-        for shot_index in range(1, shots_per_run + 1):
-            _append_click_summary(
-                summary_path,
-                summary_lock_path,
-                run_index,
-                shot_index,
-                det_result,
-                metrics,
-            )
-            run_stats["shots"] += 1
-            run_stats["clicks"][0] += 1
-        return run_stats, metrics
 
     result = pipe.emission
     p_qubit_emit = pipe.p_qubit_emit
-    p_no_loss = pipe.p_no_loss
     t_wait_us = pipe.t_wait_us
     t2_us = pipe.t2_us
     p_dephase = pipe.p_dephase
@@ -799,7 +705,6 @@ def _run_single_simulation_core(
         "t2_us": t2_us,
         "p_dephase": p_dephase,
         "p_qubit_emit": p_qubit_emit,
-        "p_no_loss": p_no_loss,
         "p_arrive": enum_main.p_arrive,
         "p_success_abs": enum_main.p_success,
         "p_success_true_abs": enum_main.p_success_true,

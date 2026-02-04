@@ -107,7 +107,6 @@ def parse_hom_cli(args, parser) -> HomConfig:
             tau_random=True,
             tau_random_range=DEFAULT_TAU_RANDOM_RANGE_NS,
             window_ns=window_ns,
-            max_attempts=args.max_attempts,
         )
     if tau is not None:
         if (
@@ -135,7 +134,6 @@ def parse_hom_cli(args, parser) -> HomConfig:
         tau_random=False,
         tau_random_range=DEFAULT_TAU_RANDOM_RANGE_NS,
         window_ns=window_ns,
-        max_attempts=args.max_attempts,
     )
 
 def validate_no_hom_args(args, parser) -> None:
@@ -147,7 +145,6 @@ def validate_no_hom_args(args, parser) -> None:
         or args.tau_step is not None
         or args.tau_points is not None
         or args.window_ns is not None
-        or args.max_attempts is not None
     ):
         parser.error("非 HOM 模式不接受 HOM 参数")
 
@@ -182,12 +179,8 @@ def _run_hom_run(
     )
     if debug and pipe.timings:
         timings.update(pipe.timings)
-    if pipe.aborted:
-        # 发射/光纤等阶段提前中止：视为无效 run
-        return 0, True, 0.0, 0.0, []
 
     result = pipe.emission
-    p_no_loss = pipe.p_no_loss
 
     bin_dt_s = result.dt_s
     bin_dt_ns = bin_dt_s * 1e9
@@ -256,4 +249,4 @@ def _run_hom_run(
         if parts:
             print(f"[HOM][调试耗时] tau={tau_ns:.3f} ns | " + " | ".join(parts))
 
-    return coincidences, False, p_arrive, p_no_loss, click_records
+    return coincidences, p_arrive, click_records

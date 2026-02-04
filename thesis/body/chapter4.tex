@@ -79,7 +79,7 @@ QFC 噪声光子率 & $\mu_{\mathrm{noise}}$ & $10^{-3}$/bin \\
 总 bin 数 & $N$ & 100--200 \\
 Fock 空间截断 & $n_{\max}$ & 2--3 \\
 MPS 键维度 & $\chi_{\max}$ & 50--64 \\
-量子轨迹数 & $N_{\mathrm{traj}}$ & $10^3$--$10^5$ \\
+POVM 抽样次数 & $N_{\mathrm{shot}}$ & $10^2$--$10^5$ \\
 \hline
 \end{tabular}
 \end{table}
@@ -88,7 +88,14 @@ MPS 键维度 & $\chi_{\max}$ & 50--64 \\
 
 \section{核心指标与验证}[Core Metrics and Verification]
 
-端到端评估采用三项核心指标：两光子到达概率 $p_{\mathrm{arrive}}$、条件成功率 $P(\mathrm{success}\,|\,\mathrm{arrive})$、以及成功样本的条件保真度 $F_{\mathrm{true}}$。$p_{\mathrm{arrive}}$ 反映通道与器件的总损耗，条件成功率刻画测量判据与噪声对“宣告成功”的影响，而 $F_{\mathrm{true}}$ 直接回答纠缠质量是否跨过经典极限。该口径与实验中“符合门控后统计”一致，也便于把“到达损失”和“测量误判”分开讨论。
+端到端评估采用三类核心指标：两光子到达概率 $p_{\mathrm{arrive}}$、成功率的绝对与条件分解，以及成功样本的条件保真度 $F_{\mathrm{true}}$。具体而言，
+\begin{align}
+p_{\mathrm{success}}^{\mathrm{abs}} &= \sum_{m\in\mathcal{S}}\mathrm{Tr}(E_m\rho),\\
+p_{\mathrm{success}}^{\mathrm{true}} &= \sum_{m\in\mathcal{S}}\mathrm{Tr}(E_m^{\mathrm{true}}\rho),\\
+p_{\mathrm{success}}^{\mathrm{false}} &= p_{\mathrm{success}}^{\mathrm{abs}}-p_{\mathrm{success}}^{\mathrm{true}},\\
+p_{\mathrm{success}}^{\mathrm{true}\mid\mathrm{arrive}} &= p_{\mathrm{success}}^{\mathrm{true}}/p_{\mathrm{arrive}}.
+\end{align}
+$p_{\mathrm{arrive}}$ 反映通道与器件的总损耗，$p_{\mathrm{success}}^{\mathrm{abs}}$ 给出每次尝试的实验可观测成功率，$p_{\mathrm{success}}^{\mathrm{false}}$ 刻画暗计数/背景导致的假成功占比，而 $F_{\mathrm{true}}$ 直接回答纠缠质量是否跨过经典极限。该口径与实验中“符合门控后统计”一致，也便于把“到达损失”和“测量误判”分开讨论。
 
 \paragraph{单臂发射验证}
 发射波包由驱动脉冲 $\Omega(t)$ 与腔参数给出的有效耦合率 $\gamma_{\mathrm{eff}}$ 共同决定，离散门通过 $H_{\mathrm{sys}}(t_n)$ 与 $L_\mu$ 直接生成波包。这里主要检查三件事：波包形状是否随驱动改变而合理移动/展宽，按 bin 统计的非真空概率之和是否与预期发射概率一致，以及 $\langle \hat{n}(t_n) \rangle$ 的形状是否与驱动包络吻合。图 \ref{fig:wavepacket} 给出示例。为控制数值成本与精度，进一步观察 MPS 键维度随时间变化（图 \ref{fig:bond_dim}），并据此选择 $\chi_{\max}$。
@@ -107,6 +114,24 @@ MPS 键维度 & $\chi_{\max}$ & 50--64 \\
 \label{fig:bond_dim}
 \end{figure}
 
+\paragraph{单光子到达时间直方图与接受窗优化}
+实验上最直接的标定量之一是“到达时间直方图 + 接受窗口”。在仿真中以点击记录的 bin 分布构造单臂时间直方图，并在其上叠加接受窗口宽度 $\Delta t_{\mathrm{win}}$。对每个窗口宽度扫描输出：
+单臂/双臂的信噪比（SBR）、窗口接受率（接受事件占比）、$p_{\mathrm{success}}^{\mathrm{abs}}$ 与 $F_{\mathrm{true}}$ 的变化趋势。该扫描给出“速率—保真度”在窗口选择上的直接权衡，是对实验调参最具指导意义的图之一。
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\linewidth]{fig_accept_hist}
+\caption{单臂点击时间直方图与接受窗口示意（含背景噪声）。}
+\label{fig:accept_hist}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\linewidth]{fig_window_tradeoff}
+\caption{接受窗口宽度扫描：接受率、SBR、$F_{\mathrm{true}}$ 与假成功占比的权衡示意。}
+\label{fig:window_tradeoff}
+\end{figure}
+
 \paragraph{双臂纠缠与 HOM 验证}
 理想情况下，BSM 成功概率为
 \begin{equation}
@@ -116,13 +141,41 @@ P_{\mathrm{success}}^{\mathrm{ideal}} = \frac{1}{2}|\langle\phi_A|\phi_B\rangle|
 \begin{equation}
 P_{\mathrm{coinc}}(\delta t) = \frac{1}{2}\left[1 - V \cdot e^{-|\delta t|/\tau_c}\right],
 \end{equation}
-图 \ref{fig:hom} 给出示例曲线。若 dip 的宽度或中心位置与单臂波包统计不一致，通常意味着时延标定、相位漂移或偏振失配未被充分补偿；可见度下降则主要来自背景噪声与探测器时间响应的不理想。
+图 \ref{fig:hom} 给出示例曲线（通常以 wrong coincidences 归一化计数表示）。若 dip 的宽度或中心位置与单臂波包统计不一致，通常意味着时延标定、相位漂移或偏振失配未被充分补偿；可见度下降则主要来自背景噪声、时间抖动与模式不匹配。
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.85\linewidth]{fig_hom}
 \caption{HOM 干涉曲线}
 \label{fig:hom}
+\end{figure}
+
+\paragraph{BSM 点击模式与真假事件拆分}
+中心站四探测器的点击模式统计是检验模型可信度的关键。仿真中输出每个双击模式的概率分布（成功模式与失败模式分开），并用暗计数拆分给出
+\begin{equation}
+f_{\mathrm{false}}=\frac{p_{\mathrm{success}}^{\mathrm{false}}}{p_{\mathrm{success}}^{\mathrm{abs}}},
+\end{equation}
+从而直接评估“成功事件里有多少是暗计数/背景伪造”。该统计可随链路长度、接受窗口与背景噪声扫描，形成对实验最直观的误判预算。
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\linewidth]{fig_bsm_patterns}
+\caption{中心站双击模式分布与暗计数拆分示意。}
+\label{fig:bsm_patterns}
+\end{figure}
+
+\paragraph{原子关联曲线与 CHSH 指标}
+对纠缠质量的实验表述通常采用三基相关曲线（X/Y/Z）或 CHSH 不等式。仿真中可对后验原子态计算相关函数 $E(\theta_A,\theta_B)$ 并给出
+\begin{equation}
+S = E(\theta_A,\theta_B)-E(\theta_A,\theta_B')+E(\theta_A',\theta_B)+E(\theta_A',\theta_B'),
+\end{equation}
+以量化纠缠是否超出经典界 $S>2$。在存在泄漏态或读出误差时，可同时给出“物理态 fidelity”与“可观测 fidelity”的分离结果，为实验读出提供对照。
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\linewidth]{fig_chsh}
+\caption{CHSH 量 $S$ 随链路长度变化的示意曲线（虚线为经典上界 $S=2$）。}
+\label{fig:chsh}
 \end{figure}
 
 \section{参数依赖与误差来源}[Parameter Dependence and Error Sources]
@@ -135,7 +188,7 @@ P_{\mathrm{coinc}}(\delta t) = \frac{1}{2}\left[1 - V \cdot e^{-|\delta t|/\tau_
 F(\mu_{\mathrm{noise}}) \approx F_0 - \alpha_{\mathrm{noise}}\mu_{\mathrm{noise}}.
 \end{equation}
 图 \ref{fig:qfc_noise} 给出趋势示例。该趋势反映了“假成功事件”占比上升对条件态的直接污染。
-在这一过程中，$p_{\mathrm{arrive}}$ 主要由链路损耗决定，变化不大；下降更明显的是 $P(\mathrm{success}\,|\,\mathrm{arrive})$ 与 $F_{\mathrm{true}}$，它们直接反映噪声对宣告成功的稀释效应。
+在这一过程中，$p_{\mathrm{arrive}}$ 主要由链路损耗决定，变化不大；下降更明显的是 $p_{\mathrm{success}}^{\mathrm{true}\mid\mathrm{arrive}}$ 与 $F_{\mathrm{true}}$，而 $f_{\mathrm{false}}$（假成功占比）随噪声显著上升，直接反映噪声对宣告成功的稀释效应。
 
 \begin{figure}[htbp]
 \centering
@@ -147,10 +200,10 @@ F(\mu_{\mathrm{noise}}) \approx F_0 - \alpha_{\mathrm{noise}}\mu_{\mathrm{noise}
 \paragraph{光纤长度}
 成功率随距离指数衰减：
 \begin{equation}
-P_{\mathrm{success}}(L) = P_{\mathrm{success}}(0)\times 10^{-\alpha L/5}.
+p_{\mathrm{success}}^{\mathrm{abs}}(L) = p_{\mathrm{success}}^{\mathrm{abs}}(0)\times 10^{-\alpha L/5}.
 \end{equation}
 图 \ref{fig:distance} 展示成功率与保真度随距离的变化。远距离下噪声占比上升，保真度出现拐点，这是链路极限的主要判据之一。
-从指标分解上看，$p_{\mathrm{arrive}}$ 会随距离快速下降，而 $F_{\mathrm{true}}$ 在中短距离内相对稳定，直到噪声与信号可比时才明显下降。
+从指标分解上看，$p_{\mathrm{arrive}}$ 会随距离快速下降，而 $F_{\mathrm{true}}$ 在中短距离内相对稳定，直到噪声与信号可比时才明显下降；此时 $f_{\mathrm{false}}$ 的上升成为性能转折的主要信号。
 
 \begin{figure}[htbp]
 \centering
@@ -177,15 +230,22 @@ P_{\mathrm{success}}(L) = P_{\mathrm{success}}(0)\times 10^{-\alpha L/5}.
 \end{equation}
 成功率损失可分解为
 \begin{equation}
-\frac{P_{\mathrm{success}}}{P_{\mathrm{success}}^{\mathrm{ideal}}} = \eta_{\mathrm{QFC}}^2 \times \eta_{\mathrm{fiber}}^2 \times \eta_d^2 \times \eta_{\mathrm{other}}.
+\frac{p_{\mathrm{success}}^{\mathrm{abs}}}{p_{\mathrm{success}}^{\mathrm{ideal}}} = \eta_{\mathrm{QFC}}^2 \times \eta_{\mathrm{fiber}}^2 \times \eta_d^2 \times \eta_{\mathrm{other}}.
 \end{equation}
-通过逐一关闭或单独开启噪声源并比较 $\Delta F$，即可建立误差预算并识别主导瓶颈。
+通过逐一关闭或单独开启噪声源并比较 $\Delta F$ 与 $f_{\mathrm{false}}$，即可建立误差预算并识别主导瓶颈。
 
 \section{优化策略与取舍}[Optimization and Trade-offs]
 
-提升保真度的关键路径是降低背景噪声（QFC 噪声与暗计数）、缩小符合窗口并提升偏振/相位稳定性；提升成功率则依赖高效率 QFC、低损耗光纤与复用策略。二者间的取舍主要由窗口选择与实验目标决定：宽窗口提高成功率但引入噪声，窄窗口提升保真度但牺牲速率。
+提升保真度的关键路径是降低背景噪声（QFC 噪声与暗计数）、缩小符合窗口并提升偏振/相位稳定性；提升成功率则依赖高效率 QFC、低损耗光纤与复用策略。二者间的取舍主要由窗口选择与实验目标决定：宽窗口提高成功率但引入噪声，窄窗口提升保真度但牺牲速率。实际应用中可用“rate–fidelity 前沿曲线”来选工作点：横轴为事件率（$p_{\mathrm{success}}^{\mathrm{abs}}\times$重复频率），纵轴为 $F_{\mathrm{true}}$ 或 CHSH $S$。
 
-更实际的做法是先判断系统处于“损耗主导”还是“噪声主导”：若 $p_{\mathrm{arrive}}$ 极低且噪声占比小，则应优先提高收集与传输效率；若噪声占比已接近或超过信号，则应优先压噪并收紧判据。该判断可直接从 $p_{\mathrm{arrive}}$、$P(\mathrm{success}|\mathrm{arrive})$ 与 $F_{\mathrm{true}}$ 的相对变化中读出。
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\linewidth]{fig_rate_fidelity}
+\caption{事件率–保真度前沿示意（不同工作点的权衡曲线）。}
+\label{fig:rate_fidelity}
+\end{figure}
+
+更实际的做法是先判断系统处于“损耗主导”还是“噪声主导”：若 $p_{\mathrm{arrive}}$ 极低且 $f_{\mathrm{false}}$ 仍小，则应优先提高收集与传输效率；若 $f_{\mathrm{false}}$ 已接近或超过信号，则应优先压噪并收紧判据。该判断可直接从 $p_{\mathrm{arrive}}$、$p_{\mathrm{success}}^{\mathrm{true}\mid\mathrm{arrive}}$ 与 $F_{\mathrm{true}}$ 的相对变化中读出。
 
 \section{本章小结}[Chapter Summary]
 

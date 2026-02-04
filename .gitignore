@@ -49,6 +49,7 @@ tmpclaude-*
 # Project specific
 *.log
 outputs/
+queue/
 
 # Test outputs in root directory (but keep notebooks/*.png)
 /test_*.png

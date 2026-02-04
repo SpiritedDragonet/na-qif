@@ -123,7 +123,6 @@ def _parse_run_params(argv):
     parser.add_argument("--tau-step", dest="tau_step", type=float, help="(HOM) τ 步长 (ns)")
     parser.add_argument("--tau-points", dest="tau_points", type=int, help="(HOM) τ 采样点数")
     parser.add_argument("--window-ns", dest="window_ns", type=float, help="(HOM) 符合窗口 (ns)")
-    parser.add_argument("--max-attempts", dest="max_attempts", type=int, help="(HOM) 每个 τ 的最大尝试次数")
 
     parser.add_argument("--dark-hz", dest="dark_rate_intrinsic_hz", type=float, help="探测器本底暗计数率 (Hz)")
     parser.add_argument("--bg-mean-hz", dest="bg_rate_mean_hz", type=float, help="背景噪声均值 (Hz)")
@@ -514,9 +513,7 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 "tau_ns",
                 "run_index",
                 "shot_index",
-                "valid",
                 "p_arrive",
-                "p_no_loss",
                 "H1_bin",
                 "V1_bin",
                 "H2_bin",
@@ -541,9 +538,7 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 tau_ns = float(m.group(1))
                 run_index = int(m.group(2))
                 metrics = data.get("metrics", {})
-                valid = int(metrics.get("valid", 0) or 0)
                 p_arrive = metrics.get("p_arrive")
-                p_no_loss = metrics.get("p_no_loss")
                 tau_key = f"{tau_ns:.6f}"
                 # tau_states 用于汇总每个 τ 的统计
                 state = tau_states.setdefault(
@@ -551,11 +546,8 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                     {
                         "tau_ns": tau_ns,
                         "runs_total": 0,
-                        "valid": 0,
-                        "early_abort": 0,
                         "coinc": 0,
                         "p_arrive_sum": 0.0,
-                        "p_no_loss_sum": 0.0,
                         "arrive_trials": 0.0,
                         "shots_total": 0,
                         "coinc_true": 0,
@@ -569,17 +561,11 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 state["runs_total"] += 1
                 if data.get("status") != "ok":
                     continue
-                if valid:
-                    state["valid"] += 1
-                    state["coinc"] += int(metrics.get("coinc", 0) or 0)
-                    if p_arrive is not None:
-                        state["p_arrive_sum"] += float(p_arrive)
-                        # arrive_trials：按 p_arrive 估算有效试验数
-                        state["arrive_trials"] += float(p_arrive) * config.run.shots_per_run
-                    if p_no_loss is not None:
-                        state["p_no_loss_sum"] += float(p_no_loss)
-                else:
-                    state["early_abort"] += 1
+                state["coinc"] += int(metrics.get("coinc", 0) or 0)
+                if p_arrive is not None:
+                    state["p_arrive_sum"] += float(p_arrive)
+                    # arrive_trials：按 p_arrive 估算有效试验数
+                    state["arrive_trials"] += float(p_arrive) * config.run.shots_per_run
                 clicks_path = meta_path.parent / "raw" / "clicks.json"
                 clicks = []
                 if clicks_path.exists():
@@ -595,9 +581,7 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                         f"{tau_ns:.6f}",
                         run_index,
                         -1,
-                        valid,
                         p_arrive,
-                        p_no_loss,
                         "",
                         "",
                         "",
@@ -641,9 +625,7 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                             f"{tau_ns:.6f}",
                             run_index,
                             shot_idx,
-                            valid,
                             p_arrive,
-                            p_no_loss,
                             bins["H1"],
                             bins["V1"],
                             bins["H2"],
@@ -660,12 +642,9 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 "tau_ns",
                 "runs_target",
                 "runs_total",
-                "valid_runs",
-                "early_abort_runs",
                 "coinc_counts",
                 "coinc_rate",
                 "p_arrive_avg",
-                "p_no_loss_avg",
                 "arrive_trials",
                 "window_ns",
                 "shots_per_run",
@@ -681,10 +660,9 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
             ])
             for tau_key in sorted(tau_states, key=lambda x: float(x)):
                 s = tau_states[tau_key]
-                valid = s["valid"]
-                # 平均值只对有效 run 取均值
-                p_arrive_avg = (s["p_arrive_sum"] / valid) if valid > 0 else 0.0
-                p_no_loss_avg = (s["p_no_loss_sum"] / valid) if valid > 0 else 0.0
+                runs_total = s["runs_total"]
+                # 平均值对全部已完成 run 取均值
+                p_arrive_avg = (s["p_arrive_sum"] / runs_total) if runs_total > 0 else 0.0
                 # coinc_rate：符合数 / 预计到达试验数
                 coinc_rate = (s["coinc"] / s["arrive_trials"]) if s["arrive_trials"] > 0 else 0.0
                 dark_click_rate = (s["dark_clicks_total"] / s["clicks_total"]) if s["clicks_total"] > 0 else 0.0
@@ -697,12 +675,9 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                     f"{s['tau_ns']:.6f}",
                     config.run.runs,
                     s["runs_total"],
-                    valid,
-                    s["early_abort"],
                     s["coinc"],
                     f"{coinc_rate:.8f}",
                     f"{p_arrive_avg:.6f}",
-                    f"{p_no_loss_avg:.8f}",
                     f"{s['arrive_trials']:.6f}",
                     f"{config.hom.window_ns if config.hom else 0.0:.3f}",
                     config.run.shots_per_run,
@@ -720,7 +695,7 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
     summary_path = summary_dir / f"{task_type.lower()}_summary.csv"
     with open(summary_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["id", "mode", "p_arrive", "coinc", "valid", "timestamp"])
+        writer.writerow(["id", "mode", "p_arrive", "coinc", "timestamp"])
         for meta_path in sorted(results_dir.glob("result_*/meta.json")):
             try:
                 data = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -735,7 +710,6 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 data.get("mode", task_type),
                 m.get("p_arrive"),
                 m.get("coinc"),
-                m.get("valid"),
                 data.get("timestamp"),
             ])
 
@@ -1005,7 +979,7 @@ def _run_worker_loop(
                 tau_ns = float(task.get("tau_ns", 0.0))
                 shots = int(task.get("shots", config.run.shots_per_run))
                 window_ns = float(task.get("window_ns", config.hom.window_ns if config.hom else 70.0))
-                coincid, early_abort, p_arrive, p_no_loss, click_records = _run_hom_run(
+                coincid, p_arrive, click_records = _run_hom_run(
                     tau_ns,
                     shots,
                     config,
@@ -1018,8 +992,6 @@ def _run_worker_loop(
                 metrics = {
                     "p_arrive": p_arrive,
                     "coinc": coincid,
-                    "valid": 0 if early_abort else 1,
-                    "p_no_loss": p_no_loss,
                 }
                 if click_records is not None:
                     # 每个 shot 的点击记录写入 raw/clicks.json

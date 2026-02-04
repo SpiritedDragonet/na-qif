@@ -7,10 +7,15 @@
 \contentsline {figure}{\numberline {2-2}{\ignorespaces TEBD 奇偶键交替更新示意}}{16}{figure.2.2}%
 \addvspace {10.0pt}
 \addvspace {10.0pt}
-\contentsline {figure}{\numberline {4-1}{\ignorespaces 发射波包时间结构}}{27}{figure.4.1}%
-\contentsline {figure}{\numberline {4-2}{\ignorespaces 发射过程中 MPS 键维度的演化}}{27}{figure.4.2}%
-\contentsline {figure}{\numberline {4-3}{\ignorespaces HOM 干涉曲线}}{28}{figure.4.3}%
-\contentsline {figure}{\numberline {4-4}{\ignorespaces 保真度随噪声率变化}}{29}{figure.4.4}%
-\contentsline {figure}{\numberline {4-5}{\ignorespaces 成功率与保真度随光纤长度变化}}{29}{figure.4.5}%
-\contentsline {figure}{\numberline {4-6}{\ignorespaces 探测器效率对成功率与保真度的影响}}{30}{figure.4.6}%
+\contentsline {figure}{\numberline {4-1}{\ignorespaces 发射波包时间结构}}{28}{figure.4.1}%
+\contentsline {figure}{\numberline {4-2}{\ignorespaces 发射过程中 MPS 键维度的演化}}{28}{figure.4.2}%
+\contentsline {figure}{\numberline {4-3}{\ignorespaces 单臂点击时间直方图与接受窗口示意（含背景噪声）。}}{29}{figure.4.3}%
+\contentsline {figure}{\numberline {4-4}{\ignorespaces 接受窗口宽度扫描：接受率、SBR、$F_{\mathrm {true}}$ 与假成功占比的权衡示意。}}{29}{figure.4.4}%
+\contentsline {figure}{\numberline {4-5}{\ignorespaces HOM 干涉曲线}}{30}{figure.4.5}%
+\contentsline {figure}{\numberline {4-6}{\ignorespaces 中心站双击模式分布与暗计数拆分示意。}}{31}{figure.4.6}%
+\contentsline {figure}{\numberline {4-7}{\ignorespaces CHSH 量 $S$ 随链路长度变化的示意曲线（虚线为经典上界 $S=2$）。}}{31}{figure.4.7}%
+\contentsline {figure}{\numberline {4-8}{\ignorespaces 保真度随噪声率变化}}{32}{figure.4.8}%
+\contentsline {figure}{\numberline {4-9}{\ignorespaces 成功率与保真度随光纤长度变化}}{33}{figure.4.9}%
+\contentsline {figure}{\numberline {4-10}{\ignorespaces 探测器效率对成功率与保真度的影响}}{33}{figure.4.10}%
+\contentsline {figure}{\numberline {4-11}{\ignorespaces 事件率–保真度前沿示意（不同工作点的权衡曲线）。}}{34}{figure.4.11}%
 \addvspace {10.0pt}

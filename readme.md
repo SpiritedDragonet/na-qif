@@ -36,8 +36,6 @@ atom_sim/
 │   ├── basis.py                   # 空间定义和张量积
 │   │   ├── class SubSpace          # 单子空间（780, 1517, atom）
 │   │   ├── class ProductSpace      # 张量积空间 [s1, s2, ...]
-│   │   ├── get_bin_space()
-│   │   └── get_system_space()
 │   │
 │   └── operators.py               # 基本算符工厂
 │       ├── annihilation_op()      # 湮灭算符 a[i]（复用实现）
@@ -55,8 +53,7 @@ atom_sim/
 │   │
 │   └── channels.py                # 所有 Kraus 通道
 │       ├── loss_channel_both_subspaces() # 5D bin 联合损耗
-│       ├── loss_channel_780_general()    # 780nm 损耗
-│       ├── loss_channel_1517_raw()       # 1517nm 振幅阻尼（6D）
+│       ├── loss_channel_1517_single_photon() # 1517nm 单光子损耗（3D）
 │       └── FiberChannelParams            # 光纤漂移模型（琼斯+损耗）
 │
 ├── simulation/                    # 仿真流程层（编排）
@@ -64,10 +61,7 @@ atom_sim/
 │   ├── trajectory.py              # 单轨迹执行
 │   │   ├── EmissionResult
 │   │   ├── run_dual_atom_emission()
-│   │   ├── apply_qfc()            # Heisenberg 端口占位（不改态）
-│   │   ├── apply_bs()             # Heisenberg 端口占位（不改态）
 │   │   ├── _print_header()
-│   │   ├── _print_progress()
 │   │   ├── _print_footer()
 │   │   └── apply_fiber_channel()
 │   │
@@ -79,8 +73,7 @@ atom_sim/
 │       ├── build_detection_effects_6d()
 │       ├── run_detection_pipeline()     # POVM 枚举 + 抽样
 │       ├── extract_spin_state()
-│       ├── compute_fidelity_with_bell()
-│       └── compute_photon_statistics()
+│       └── compute_fidelity_with_bell()
 │
 ├── visualization/                 # 可视化层
 │   ├── __init__.py
@@ -93,7 +86,6 @@ atom_sim/
 │       ├── _infer_first_bin_site()
 │       ├── _validate_bin_rho_traces()
 │       ├── plot_dual_arm_heatmap()       # 绘制双臂热图
-│       └── plot_cross_bin_joint_heatmap()# 跨 bin 联合分布热图
 │
 ├── docs/                          # 设计文档与讨论
 └── thesis/                        # 论文材料
@@ -214,25 +206,20 @@ atomA(4D) - atomB(4D) - A1(5D) - B1(5D) - A2(5D) - B2(5D) - ... - AN(5D) - BN(5D
 result = run_dual_atom_emission(n_bins=100, ...)
 # 结果：原子在末尾，bins 包含 780nm 光子
 
-# (2) QFC：780nm ↔ 1517nm 频率转换
-apply_qfc(mps, n_bins, theta_H=π/4, theta_V=π/4)
-# 注：QFC/过滤/光纤/BS 已整体推入 POVM（Heisenberg 端口），
-#     apply_qfc 仅记录参数并输出日志，不改动 MPS。
-
-# (3) 光纤采样（不改态）
-mps, fiber_sample, _ = apply_fiber_channel(...)
+# (2) 光纤采样（不改态）
+mps, fiber_sample = apply_fiber_channel(...)
 # 注：光纤的 Jones/损耗/相位漂移在 POVM 端使用 fiber_sample 重建。
 
-# (4) 分束器并入测量端：构造 U_BS^† E U_BS
+# (3) 分束器并入测量端：构造 U_BS^† E U_BS
 # 结果：在不显式作用 BS 的情况下获取端口点击分布
 
-# (5) 探测：POVM 枚举 + 抽样（QFC/过滤/光纤/BS 都已并入测量端）
+# (4) 探测：POVM 枚举 + 抽样（QFC/过滤/光纤/BS 都已并入测量端）
 pipeline = run_detection_pipeline(
     mps, n_bins, eta_det=eta_det, p_dark=p_noise, bs_unitary=bs_gate_6d()
 )
 # 结果：点击事件列表 / 成功率 / 保真度
 
-# (6) BSM 宣告：检查成功模式
+# (5) BSM 宣告：检查成功模式
 # Ψ-: (H1, V2) 或 (V1, H2) - 跨端口不同偏振（反聚束）
 # Ψ+: (H1, V1) 或 (H2, V2) - 同端口不同偏振（聚束）
 ```

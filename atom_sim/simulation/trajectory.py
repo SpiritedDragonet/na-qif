@@ -52,18 +52,6 @@ class EmissionResult:
         原子B的状态演化（形状：4 x 2*n_bins）
         行：P(|0>), P(|1>), P(|e>), P(|u>)
         列：每次SWAP后的记录
-    delay_ns_base : float
-        设定的A-B时间延迟（纳秒）
-    delay_jitter_ns : float
-        延迟随机抖动范围（纳秒，均匀分布的半宽）
-    delay_jitter_actual_ns : float
-        本次采样的延迟抖动（纳秒）
-    delay_ns_used : float
-        实际使用的A-B时间延迟（纳秒）
-    p_source_A : float
-        A臂外耦合通道的出射成功概率（由波包生成器估计）
-    p_source_B : float
-        B臂外耦合通道的出射成功概率（由波包生成器估计）
     """
     mps: MPSState
     dt_s: float
@@ -72,12 +60,6 @@ class EmissionResult:
     atom_states: dict
     atom_A_state_evolution: np.ndarray = field(default_factory=lambda: np.zeros((4, 1)))
     atom_B_state_evolution: np.ndarray = field(default_factory=lambda: np.zeros((4, 1)))
-    delay_ns_base: float = 0.0
-    delay_jitter_ns: float = 0.0
-    delay_jitter_actual_ns: float = 0.0
-    delay_ns_used: float = 0.0
-    p_source_A: float = 0.0
-    p_source_B: float = 0.0
 
     def get_bin_indices(self, n: int) -> Tuple[int, int]:
         """
@@ -141,66 +123,6 @@ class EmissionResult:
 #   - 打印格式：所有函数保持一致
 # ============================================================================
 
-def apply_qfc(
-    mps: MPSState,
-    n_bins: int,
-    theta_H: float = np.pi/4,
-    theta_V: float = np.pi/4,
-    verbose: bool = True,
-) -> MPSState:
-    """
-    对所有仓应用QFC门。
-
-    Parameters
-    ----------
-    mps : MPSState
-        MPS态（布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN）
-    n_bins : int
-        时间仓数量
-    theta_H : float
-        H偏振的QFC角度（sin² = 转换概率）
-    theta_V : float
-        V偏振的QFC角度
-    verbose : bool
-        是否打印进度
-
-    Returns
-    -------
-    MPSState
-        应用了QFC的MPS态（原地修改）
-    """
-    # ------------------------------------------------------------------
-    # 方案B：QFC 不再作用于态端（推入 POVM 对偶映射）。
-    # 这里保留接口与日志，仅记录参数。
-    # ------------------------------------------------------------------
-    _print_header("QFC", verbose)
-    if verbose:
-        print("  [Heisenberg] QFC 推入测量端，不对 MPS 显式作用。")
-        print(f"  theta_H = {theta_H:.4f} (sin² = {np.sin(theta_H)**2:.3f})")
-        print(f"  theta_V = {theta_V:.4f} (sin² = {np.sin(theta_V)**2:.3f})")
-        print(f"  n_bins={n_bins}, MPS L={mps.L}")
-        print(f"  MPS d[:5]={mps.d[:5]}, d[-5:]={mps.d[-5:]}")
-
-    _print_footer(mps, verbose, stage="QFC")
-    return mps
-
-
-def apply_bs(
-    mps: MPSState,
-    n_bins: int,
-    verbose: bool = True,
-) -> MPSState:
-    """
-    分束器阶段占位（Heisenberg端口）。不对态端显式作用。
-    """
-    _print_header("BS", verbose)
-    if verbose:
-        print("  [Heisenberg] BS 推入测量端，不对 MPS 显式作用。")
-        print(f"  n_bins={n_bins}, MPS L={mps.L}")
-    _print_footer(mps, verbose, stage="BS")
-    return mps
-
-
 # 一致打印格式的辅助函数
 def _print_header(stage: str, verbose: bool):
     """以一致格式打印阶段标题。"""
@@ -208,11 +130,6 @@ def _print_header(stage: str, verbose: bool):
         print(f"\n{'='*60}")
         print(f"{stage:>56} <<<")
         print(f"{'='*60}")
-
-def _print_progress(current: int, total: int, verbose: bool):
-    """以一致格式打印进度。"""
-    if verbose and (current % 50 == 0 or current == total):
-        print(f"  Processed {current}/{total} bins...")
 
 def _print_footer(mps: MPSState, verbose: bool, stage: str = ""):
     """以一致格式打印阶段尾部。"""
@@ -248,7 +165,7 @@ def apply_fiber_channel(
     Returns
     -------
     tuple
-        (mps, sampled_params, p_no_loss) 其中 sampled_params =
+        (mps, sampled_params) 其中 sampled_params =
         (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std)
     """
     # ------------------------------------------------------------------
@@ -275,7 +192,7 @@ def apply_fiber_channel(
 
     _print_footer(mps, verbose, stage="Fiber Channel")
 
-    return mps, (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std), None
+    return mps, (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std)
 
 
 # ============================================================================
@@ -350,7 +267,6 @@ def run_dual_atom_emission(
     g: float = 2 * np.pi * 20e6,
     kappa_ex: float = 2 * np.pi * 20e6,
     kappa_in: float = 2 * np.pi * 1e6,
-    gamma_atom: float = 2 * np.pi * 3e6,
     delta_u: float = 0.0,
     delta_e: float = 0.0,
     rng: Optional[np.random.Generator] = None,
@@ -400,8 +316,6 @@ def run_dual_atom_emission(
         腔外耦合衰减率（rad/s）
     kappa_in : float
         腔内损耗衰减率（rad/s）
-    gamma_atom : float
-        原子极化衰减率（rad/s）
     delta_u : float
         |u> 态失谐（rad/s）
     delta_e : float
@@ -462,9 +376,6 @@ def run_dual_atom_emission(
     omega_B_values = _omega_gaussian(t_ns, t0_B, sigma, gamma_peak_B)
     # 有效耦合率：每个时间步共用（坏腔近似）
     gamma_per_channel = _effective_gamma_per_channel(g, kappa_ex, kappa_in)
-    p_source_A = 0.0
-    p_source_B = 0.0
-
     # 设置默认Alpha矩阵
     if Alpha_A is None:
         # Alpha 是 2×2 偏振耦合矩阵（默认单位阵）
@@ -481,7 +392,7 @@ def run_dual_atom_emission(
         print(f"  原子A: Omega_peak={gamma_peak_A:.3e} rad/s, t0={t0_A:.1f} ns, sigma={sigma:.1f} ns")
         print(f"  原子B: Omega_peak={gamma_peak_B:.3e} rad/s, t0={t0_B:.1f} ns, sigma={sigma:.1f} ns")
         print(f"  g={g:.3e} rad/s, kappa_ex={kappa_ex:.3e} rad/s, kappa_in={kappa_in:.3e} rad/s")
-        print(f"  gamma_atom={gamma_atom:.3e} rad/s（暂未显式引入）, delta_u={delta_u:.3e}, delta_e={delta_e:.3e}")
+        print(f"  delta_u={delta_u:.3e}, delta_e={delta_e:.3e}")
         print(f"  有效耦合速率: gamma_eff={gamma_per_channel:.3e} 1/s (单通道)")
         if delay_jitter_ns > 0.0:
             print(
@@ -727,16 +638,6 @@ def run_dual_atom_emission(
             f"P(|e>)={rho_B_final[2,2].real:.4f}, "
             f"P(|u>)={rho_B_final[3,3].real:.4f}"
         )
-    p_source_A = float(per_bin_prob_A.sum())
-    p_source_B = float(per_bin_prob_B.sum())
-    # 注意：这里的“总发射概率”是各 bin 非真空概率的求和，
-    # 并非严格的总光子数（它会受到截断和多光子分量的影响）。
-
-    if verbose:
-        print("\n总发射概率:")
-        print(f"  A臂: {p_source_A:.4f}")
-        print(f"  B臂: {p_source_B:.4f}")
-
     # ========================================================================
     # 构造返回结果
     # ========================================================================
@@ -751,12 +652,6 @@ def run_dual_atom_emission(
         atom_states=atom_states,
         atom_A_state_evolution=atom_A_evolution_array,
         atom_B_state_evolution=atom_B_evolution_array,
-        delay_ns_base=delay_ns,
-        delay_jitter_ns=delay_jitter_ns,
-        delay_jitter_actual_ns=delay_jitter_actual_ns,
-        delay_ns_used=delay_ns_used,
-        p_source_A=p_source_A,
-        p_source_B=p_source_B,
     )
 
     if verbose:
