@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 from ..core.mps import MPSState
 from ..hilbert.basis import SUBSPACE_780, SUBSPACE_1517
+from ..physics.channels import loss_channel_both_subspaces, loss_channel_1517_raw
 
 
 @dataclass
@@ -246,6 +247,82 @@ def build_detection_effects_6d(
     return effects_all, effects_true
 
 
+def _embed_two_port_1517_to_18(op_6d: np.ndarray) -> np.ndarray:
+    """
+    将 1517 双端口算符 (36x36) 嵌入到 18D 双端口空间 (324x324)。
+
+    目标空间的单端口基序：
+      |i_780> ⊗ |j_1517>，索引 = i_780 * 6 + j_1517
+    双端口基序：
+      (780A, 1517A, 780B, 1517B)
+
+    这里等价于：
+      E_18 = (I_780A ⊗ I_780B) ⊗ E_1517
+    但要做一次维度重排，使其与 (780A,1517A,780B,1517B) 的索引一致。
+    """
+    op_6d = np.asarray(op_6d, dtype=complex)
+    if op_6d.shape != (36, 36):
+        raise ValueError(f"op_6d shape {op_6d.shape} != (36,36)")
+
+    I_780 = np.eye(3, dtype=complex)
+    # 先按 (780A,780B,1517A,1517B) 的顺序做张量积
+    op_tmp = np.kron(I_780, np.kron(I_780, op_6d))
+    # reshape 成 4+4 个指标，再交换 (780B,1517A) 以匹配实际基序
+    op_tmp = op_tmp.reshape(3, 3, 6, 6, 3, 3, 6, 6)
+    op_perm = op_tmp.transpose(0, 2, 1, 3, 4, 6, 5, 7)
+    return op_perm.reshape(18 * 18, 18 * 18)
+
+
+def _apply_local_channel_adjoint(
+    effects: dict,
+    K_list_A: List[np.ndarray],
+    K_list_B: List[np.ndarray],
+) -> dict:
+    """
+    将局域信道 (A,B) 的对偶映射作用到所有 effect：
+
+      E' = sum_{mu,nu} (K_A^mu ⊗ K_B^nu)^\dagger E (K_A^mu ⊗ K_B^nu)
+
+    注意：该函数仅做线性变换，不做归一化或截断。
+    """
+    if not effects:
+        return {}
+    K_pairs = [np.kron(KA, KB) for KA in K_list_A for KB in K_list_B]
+    new_effects = {}
+    for key, E in effects.items():
+        acc = np.zeros_like(E)
+        for K in K_pairs:
+            acc += K.conj().T @ E @ K
+        new_effects[key] = acc
+    return new_effects
+
+
+def _build_arrival_projectors(bin_dim: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    构造用于 p_arrive 统计的 (pi0, pi1, pi2)。
+
+    约定：
+      - 6D: 1517nm 子空间 (vac, H, V, 2H, 2V, HV)
+      - 18D: 780 × 1517；只统计 1517 光子数（780 视为“不可见”）
+    """
+    if bin_dim == 6:
+        pi0 = np.diag([1, 0, 0, 0, 0, 0]).astype(complex)
+        pi1 = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)
+        pi2 = np.diag([0, 0, 0, 1, 1, 1]).astype(complex)
+        return pi0, pi1, pi2
+    if bin_dim == 18:
+        pi0_6 = np.diag([1, 0, 0, 0, 0, 0]).astype(complex)
+        pi1_6 = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)
+        pi2_6 = np.diag([0, 0, 0, 1, 1, 1]).astype(complex)
+        I_780 = np.eye(3, dtype=complex)
+        return (
+            np.kron(I_780, pi0_6),
+            np.kron(I_780, pi1_6),
+            np.kron(I_780, pi2_6),
+        )
+    raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6 or 18.")
+
+
 def run_detection_pipeline(
     mps: MPSState,
     n_bins: int,
@@ -257,12 +334,16 @@ def run_detection_pipeline(
     n_samples: int = 1,
     compute_metrics: bool = False,
     bs_unitary: Optional[np.ndarray] = None,
+    fiber_sample: Optional[tuple] = None,
+    apply_filter_780: bool = True,
 ) -> DetectionPipelineResult:
     """
     POVM探测流水线：单次准备即可同时枚举成功率与抽样双点击。
 
     若提供 bs_unitary，则在测量端使用 U^† E U 处理点击 POVM，
     等价于不对态显式作用 BS（Heisenberg 绘景）。
+    若 bin_dim=18 且提供 fiber_sample，则会把 780 过滤与光纤损耗
+    推到测量端的对偶映射上（方案B）。
     """
     if rng is None:
         rng = np.random.default_rng()
@@ -271,8 +352,33 @@ def run_detection_pipeline(
     # 否则认为整个链都是 bin。
     bin_start = 2 if (len(mps.d) >= 2 and mps.d[0] == 4 and mps.d[1] == 4) else 0
     bin_dim = mps.d[bin_start]
-    if bin_dim != 6:
-        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6.")
+    if bin_dim not in (6, 18):
+        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6 or 18.")
+
+    # ------------------------------------------------------------------
+    # bs_unitary 支持两种输入：
+    #   - 6D 的 BS (36x36)：用于 1517 子空间，后续可嵌入 18D
+    #   - 18D 的 BS (324x324)：已嵌入到 780×1517 空间
+    # ------------------------------------------------------------------
+    bs_unitary_6d = None
+    bs_unitary_18d = None
+    if bs_unitary is not None:
+        bs_unitary = np.asarray(bs_unitary, dtype=complex)
+        if bin_dim == 6:
+            if bs_unitary.shape != (36, 36):
+                raise ValueError(
+                    f"bs_unitary shape {bs_unitary.shape} != (36,36) for 6D bin"
+                )
+            bs_unitary_6d = bs_unitary
+        else:
+            if bs_unitary.shape == (36, 36):
+                bs_unitary_6d = bs_unitary
+            elif bs_unitary.shape == (18 * 18, 18 * 18):
+                bs_unitary_18d = bs_unitary
+            else:
+                raise ValueError(
+                    "bs_unitary 需为 36x36(6D) 或 324x324(18D)"
+                )
 
     if verbose and n_samples > 0:
         print("\n" + "=" * 60)
@@ -298,9 +404,8 @@ def run_detection_pipeline(
         bin_sites.add(site_A)
         bin_sites.add(site_B)
 
-    pi0 = np.diag([1, 0, 0, 0, 0, 0]).astype(complex)
-    pi1 = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)
-    pi2 = np.diag([0, 0, 0, 1, 1, 1]).astype(complex)
+    # 按 bin_dim 构造“0/1/2 光子(1517子空间)”的投影
+    pi0, pi1, pi2 = _build_arrival_projectors(bin_dim)
     w_bin = np.zeros((3, 3, bin_dim, bin_dim), dtype=complex)
     w_bin[0, 0] = pi0
     w_bin[0, 1] = pi1
@@ -374,25 +479,61 @@ def run_detection_pipeline(
         )
 
     # ------------------------------------------------------------------
-    # 构造“点击记录 → effect”的映射。
-    # 注意：此处只是端口级 POVM，不包含 BS/fiber 等光学链路。
-    # 若传入 bs_unitary，则在测量端做 U^† E U 的共轭变换。
+    # 构造“点击记录 → effect”的映射：
+    #   1) 先在 6D(1517) 子空间构造桶式探测 POVM
+    #   2) 若提供 BS(6D)，先做 U^† E U
+    #   3) 若 bin_dim=18，则嵌入到 780×1517 并合并损耗通道的对偶映射
     # ------------------------------------------------------------------
     effects_all, effects_true = build_detection_effects_6d(eta_det, p_dark)
-    if bs_unitary is not None:
-        if bin_dim != 6:
-            raise ValueError("bs_unitary 仅支持 6D bin (1517nm)")
-        bs_unitary = np.asarray(bs_unitary, dtype=complex)
-        dim_pair = bin_dim * bin_dim
-        if bs_unitary.shape != (dim_pair, dim_pair):
-            raise ValueError(
-                f"bs_unitary shape {bs_unitary.shape} != ({dim_pair},{dim_pair})"
+
+    # BS 并入测量端：优先在 6D 子空间处理，便于嵌入
+    if bs_unitary_6d is not None:
+        U_dag = bs_unitary_6d.conj().T
+        effects_all = {k: U_dag @ E @ bs_unitary_6d for k, E in effects_all.items()}
+        effects_true = {k: U_dag @ E @ bs_unitary_6d for k, E in effects_true.items()}
+
+    # 18D：嵌入到 780×1517，并把“损耗/过滤”推到 POVM 对偶映射上
+    if bin_dim == 18:
+        effects_all = {k: _embed_two_port_1517_to_18(E) for k, E in effects_all.items()}
+        effects_true = {k: _embed_two_port_1517_to_18(E) for k, E in effects_true.items()}
+
+        # 若传入 18D BS，则在嵌入后再共轭（等价于 U^† E U）
+        if bs_unitary_18d is not None:
+            U_dag_18 = bs_unitary_18d.conj().T
+            effects_all = {k: U_dag_18 @ E @ bs_unitary_18d for k, E in effects_all.items()}
+            effects_true = {k: U_dag_18 @ E @ bs_unitary_18d for k, E in effects_true.items()}
+
+        # 1) QFC 后的 780 滤波：eta_780=0, 1517 透过率=1
+        if apply_filter_780:
+            K_filter = loss_channel_both_subspaces(
+                eta_780=0.0,
+                eta_H_1517=1.0,
+                eta_V_1517=1.0,
             )
-        U_dag = bs_unitary.conj().T
-        effects_all = {k: U_dag @ E @ bs_unitary for k, E in effects_all.items()}
-        effects_true = {k: U_dag @ E @ bs_unitary for k, E in effects_true.items()}
+            effects_all = _apply_local_channel_adjoint(effects_all, K_filter, K_filter)
+            effects_true = _apply_local_channel_adjoint(effects_true, K_filter, K_filter)
+
+        # 2) 光纤损耗（仅 1517 子空间）
+        if fiber_sample is None:
+            if verbose:
+                print("  [warn] bin_dim=18 但未提供 fiber_sample，忽略光纤损耗")
+        else:
+            try:
+                _, _, eta_H_A, eta_V_A, eta_H_B, eta_V_B, *_ = fiber_sample
+            except ValueError as exc:
+                raise ValueError("fiber_sample 格式不正确，无法解析 eta_H/V") from exc
+
+            K_A = loss_channel_1517_raw(float(eta_H_A), float(eta_V_A))
+            K_B = loss_channel_1517_raw(float(eta_H_B), float(eta_V_B))
+            I_780 = np.eye(3, dtype=complex)
+            K_A = [np.kron(I_780, K) for K in K_A]
+            K_B = [np.kron(I_780, K) for K in K_B]
+            effects_all = _apply_local_channel_adjoint(effects_all, K_A, K_B)
+            effects_true = _apply_local_channel_adjoint(effects_true, K_A, K_B)
+
     if verbose and n_samples > 0:
-        print("  使用6D POVM effects (36x36) - 抽样双点击记录")
+        dim_pair = bin_dim * bin_dim
+        print(f"  使用{bin_dim}D POVM effects ({dim_pair}x{dim_pair}) - 抽样双点击记录")
 
     empty_key = _order_two_port_detectors([])
     if not effects_all:
@@ -488,7 +629,8 @@ def run_detection_pipeline(
     metrics = None
     if compute_metrics:
         if verbose:
-            print("  使用6D Kraus operators (36x36) - POVM收缩")
+            dim_pair = bin_dim * bin_dim
+            print(f"  使用{bin_dim}D Kraus operators ({dim_pair}x{dim_pair}) - POVM收缩")
 
         def _bell_projector_full(target_bell: str) -> np.ndarray:
             bell_states = {

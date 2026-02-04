@@ -449,7 +449,7 @@ def _run_single_simulation_core(
 
     stage_map = {
         "发射": 1,
-        "QFC + 780滤波 + 1517投影": 2,
+        "QFC": 2,
         "光纤信道": 3,
         "分束器(测量端) + 诊断/可视化": 4,
         "成功事件统计 (POVM)": 5,
@@ -517,12 +517,12 @@ def _run_single_simulation_core(
         step_index=1,
     )
     _after_qfc_filter = _make_plot_hook(
-        stage_name="After QFC + Filter",
+        stage_name="After QFC",
         file_suffix="2_after_qfc",
         show_atomic=False,
         use_emission_obj=False,
         use_time_grid=True,
-        debug_stage="After QFC + Filter",
+        debug_stage="After QFC",
         step_index=2,
     )
     _after_fiber = _make_plot_hook(

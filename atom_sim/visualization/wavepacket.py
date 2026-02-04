@@ -213,6 +213,22 @@ def _build_port_effects(
     return effects_port1, effects_port2
 
 
+def _embed_two_port_1517_to_18(op_6d: np.ndarray) -> np.ndarray:
+    """
+    将 1517 双端口算符 (36x36) 嵌入到 18D 双端口空间 (324x324)。
+
+    基序与仿真一致：单端口 = 780 ⊗ 1517，双端口 = (780A,1517A,780B,1517B)。
+    """
+    op_6d = np.asarray(op_6d, dtype=complex)
+    if op_6d.shape != (36, 36):
+        raise ValueError(f"op_6d shape {op_6d.shape} != (36,36)")
+    I_780 = np.eye(3, dtype=complex)
+    op_tmp = np.kron(I_780, np.kron(I_780, op_6d))
+    op_tmp = op_tmp.reshape(3, 3, 6, 6, 3, 3, 6, 6)
+    op_perm = op_tmp.transpose(0, 2, 1, 3, 4, 6, 5, 7)
+    return op_perm.reshape(18 * 18, 18 * 18)
+
+
 def _infer_first_bin_site(mps: MPSState) -> int:
     """Infer the first bin site index based on 4D atom sites."""
     n_atom_sites = sum(1 for d in mps.d if d == 4)

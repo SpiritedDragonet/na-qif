@@ -8,38 +8,38 @@
 
 你现在的物理链路（抽象掉细节）可以写成：
 
-- 初态（原子+光子） ：(\rho)
-- 光学链路（BS、相位、偏振旋转、损耗、QFC+滤波……）看成一个整体量子信道：(\mathcal{E})
-- 探测器给出一组 POVM：({E_r})，其中 (r) 就是你说的“bin + 四个探测器哪两个点了”的标签
+- 初态（原子+光子） ：$\rho$
+- 光学链路（BS、相位、偏振旋转、损耗、QFC+滤波……）看成一个整体量子信道：$\mathcal{E}$
+- 探测器给出一组 POVM：${E_r}$，其中 (r) 就是你说的“bin + 四个探测器哪两个点了”的标签
 
 那么**输出端**点击记录 (r) 的概率是标准 Born 规则：
 
-[
+$$
 p(r)=\mathrm{Tr}!\big[E_r,\mathcal{E}(\rho)\big].
-]
+$$
 
-海森堡绘景做的事是：把 (\mathcal{E}) 从“作用在态上”挪到“作用在算符上”，定义对偶（adjoint / dual）映射 (\mathcal{E}^*) 使得
+海森堡绘景做的事是：把 $\mathcal{E}$ 从“作用在态上”挪到“作用在算符上”，定义对偶（adjoint / dual）映射 $\mathcal{E}^*$ 使得
 
-# [ \mathrm{Tr}!\big[A,\mathcal{E}(\rho)\big]
+# [ \mathrm{Tr}!\big[A,\mathcal{E}$\rho$\big]
 
 \mathrm{Tr}!\big[\mathcal{E}^*(A),\rho\big].
 ]
 
-在 Kraus 形式 (\mathcal{E}(\rho)=\sum_a M_a\rho M_a^\dagger) 下，
+在 Kraus 形式 $\mathcal{E}(\rho)=\sum_a M_a\rho M_a^\dagger$ 下，
 
-[
+$$
 \mathcal{E}^*(A)=\sum_a M_a^\dagger A M_a.
-]
+$$
 
-这些等式和定义在John Preskill的讲义里是直接给出来的（他在“Quantum channels in the Heisenberg picture”一节把 (\mathcal{E}^*) 写得很明确）。([Preskill Laboratory](https://www.preskill.caltech.edu/ph219/chap3_15.pdf))
+这些等式和定义在John Preskill的讲义里是直接给出来的$他在“Quantum channels in the Heisenberg picture”一节把 $\mathcal{E}^*$ 写得很明确$。([Preskill Laboratory](https://www.preskill.caltech.edu/ph219/chap3_15.pdf))
 
 于是你可以定义“输入端等效 POVM”：
 
-[
+$$
 E_r^{\rm eff}=\mathcal{E}^*(E_r),
 \quad\Rightarrow\quad
 p(r)=\mathrm{Tr}!\big[E_r^{\rm eff},\rho\big].
-]
+$$
 
 **结论：BS/损耗/QFC/滤波都没有消失**，只是它们不再出现在“更新 MPS 的步骤”里，而是出现在“构造要收缩的测量算符”里。
 
@@ -47,38 +47,38 @@ p(r)=\mathrm{Tr}!\big[E_r^{\rm eff},\rho\big].
 
 ## 2）你最担心的点：那原子后验态还对吗？
 
-你现在在 `detection.py` 里做的事情，本质上是：给定一个点击记录 (r)，你用 effect（你代码里就是 `E_*`）去收缩光子自由度，得到一个**非归一化**的两原子密度矩阵 (\sigma_r)，最后再除以概率归一化。
+你现在在 `detection.py` 里做的事情，本质上是：给定一个点击记录 (r)，你用 effect$你代码里就是 `E_*`$去收缩光子自由度，得到一个**非归一化**的两原子密度矩阵 $\sigma_r$，最后再除以概率归一化。
 
 关键事实是：
 
-> **只要你最终把光子系统 trace 掉（你就是这么做的），那么对于只需要该分支的 effect (E_r=\sum_\alpha M_{r\alpha}^\dagger M_{r\alpha})，不需要知道每个 Kraus (M_{r\alpha}) 的细节。**
+> **只要你最终把光子系统 trace 掉（你就是这么做的），那么对于只需要该分支的 effect $E_r=\sum_\alpha M_{r\alpha}^\dagger M_{r\alpha}$，不需要知道每个 Kraus $M_{r\alpha}$ 的细节。**
 
-更形式化一点：若测量结果 (r) 的 CP 分支是 (\mathcal{J}*r(\cdot)=\sum*\alpha M_{r\alpha}(\cdot)M_{r\alpha}^\dagger)，则点击后原子系统（A）的非归一化态为
+更形式化一点：若测量结果 (r) 的 CP 分支是 $\mathcal{J}*r(\cdot)=\sum*\alpha M_{r\alpha}(\cdot)M_{r\alpha}^\dagger$，则点击后原子系统（A）的非归一化态为
 
-[
+$$
 \sigma_r=\mathrm{Tr}_{\rm phot}!\big[(I\otimes \mathcal{J}_r)(\rho)\big].
-]
+$$
 
 而对任何原子可观测量 (A)，
 
 # [ \mathrm{Tr}[A\sigma_r]
 
-# \mathrm{Tr}!\big[(A\otimes \sum_\alpha M_{r\alpha}^\dagger M_{r\alpha}),\rho\big]
+# \mathrm{Tr}!\big[$A\otimes \sum_\alpha M_{r\alpha}^\dagger M_{r\alpha}$,\rho\big]
 
-\mathrm{Tr}!\big[(A\otimes E_r)\rho\big].
+\mathrm{Tr}!\big[$A\otimes E_r$\rho\big].
 ]
 
 这说明
-[
+$$
 \sigma_r=\mathrm{Tr}_{\rm phot}!\big[(I\otimes E_r)\rho\big].
-]
+$$
 
-所以当你把链路信道 (\mathcal{E}) 推到 effect 上，得到 (E_r^{\rm eff})，你的原子后验态也按同样方式变成
+所以当你把链路信道 $\mathcal{E}$ 推到 effect 上，得到 $E_r^{\rm eff}$，你的原子后验态也按同样方式变成
 
-[
+$$
 \sigma_r'=\mathrm{Tr}_{\rm phot}!\big[(I\otimes E_r^{\rm eff}),\rho\big],
-]
-并且它和“先对光子做 (\mathcal{E})，再用 (E_r) 收缩”的结果一致（本质还是上面那条对偶关系）。([Preskill Laboratory](https://www.preskill.caltech.edu/ph219/chap3_15.pdf))
+$$
+并且它和“先对光子做 $\mathcal{E}$，再用 $E_r$ 收缩”的结果一致（本质还是上面那条对偶关系）。([Preskill Laboratory](https://www.preskill.caltech.edu/ph219/chap3_15.pdf))
 
 **这正好解释了为什么你现在的 `detection.py` “effect-only 收缩”是自洽的，也解释了为什么 B 方案不会把原子后验态弄错。**
 
@@ -88,7 +88,7 @@ p(r)=\mathrm{Tr}!\big[E_r^{\rm eff},\rho\big].
 
 针对你最直观的担心，我用最具体的形式说：
 
-- 若 BS 是 unitary (U_{\rm BS})，那么
+- 若 BS 是 unitary $U_{\rm BS}$，那么
   rm BS}^\dagger E^{\rm out} U_{\rm BS}.
   ]
   这就是“把 BS 并入 POVM”。([Preskill Laboratory](https://www.preskill.caltech.edu/ph219/chap3_15.pdf))
@@ -124,7 +124,7 @@ p(r)=\mathrm{Tr}!\big[E_r^{\rm eff},\rho\big].
 ### B 方案严格等价的目标量
 
 - 每个点击记录 (r) 的概率 (p(r))
-- 以及你现在这种“收缩光子、只看原子”的条件化两原子态 (\sigma_r)（然后归一化）
+- 以及你现在这种“收缩光子、只看原子”的条件化两原子态 $\sigma_r$（然后归一化）
 
 在这些目标上，推到 effect 侧是严格等价的。([Preskill Laboratory](https://www.preskill.caltech.edu/ph219/chap3_15.pdf))
 
@@ -142,28 +142,28 @@ p(r)=\mathrm{Tr}!\big[E_r^{\rm eff},\rho\big].
 
 ### Test 1：BS 的等价性（不含损耗）
 
-- 随机取一个两模（36D）纯态 (\rho)
+- 随机取一个两模（36D）纯态 $\rho$
 - 用你现在的路径算：
-  [
+  $$
   p_{\rm out}(r)=\mathrm{Tr}[E_r,U_{\rm BS}\rho U_{\rm BS}^\dagger]
-  ]
+  $$
 - 用 Heisenberg 算：
-  [
+  $$
   p_{\rU_{\rm BS}^\dagger E_r U_{\rm BS},\rho]
-  ]
+  $$
   两者必须数值一致（浮点误差量级）。([Preskill Laboratory](https://www.preskill.caltech.edu/ph219/chap3_15.pdf))
 
 ### Test 2：损耗信道的等价性（含 Kraus 和对偶）
 
-- 随机取 (\rho) 和一个 effect (E)
+- 随机取 $\rho$ 和一个 effect (E)
 - 显式算
-  [
+  $$
   p=\mathrm{Tr}[E,\sum_a M_a\rho M_a^\dagger]
-  ]
+  $$
 - 对偶算
-  [
+  $$
   p=\mathrm{Tr}[(\sum_a M_a^\dagger E M_a)\rho]
-  ]
+  $$
   同样必须一致。([Preskill Laboratory](https://www.preskill.caltech.edu/ph219/chap3_15.pdf))
 
 这两步一过，你就不会再把“缩进 POVM”理解成“删器件”了——它就是绘景选择。
@@ -180,7 +180,7 @@ p(r)=\mathrm{Tr}!\big[E_r^{\rm eff},\rho\big].
   - 要么 effect 端 backprop（海森堡）
   - **绝不能两边都做**（会双重计入）
 
-为了避免“旧逻辑残留”，最干净的方法确实是：把 `apply_kraus_one_site_fixed(K0)` 这类后选路径从主线路移除/禁用，改为 effect 侧的 (\sum K^\dagger E K)。因为你现在的后选逻辑已经在 `trajectory.py` 明确写成“仅保留无损耗分支”。
+为了避免“旧逻辑残留”，最干净的方法确实是：把 `apply_kraus_one_site_fixed(K0)` 这类后选路径从主线路移除/禁用，改为 effect 侧的 $\sum K^\dagger E K$。因为你现在的后选逻辑已经在 `trajectory.py` 明确写成“仅保留无损耗分支”。
 
 ------
 

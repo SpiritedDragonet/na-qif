@@ -17,7 +17,7 @@ from ..physics.gates import (
     emission_gate, jones_gate
 )
 from ..physics.channels import (
-    loss_channel_both_subspaces, loss_channel_1517_raw,
+    loss_channel_1517_raw,
 )
 
 
@@ -235,174 +235,6 @@ def apply_qfc(
     return mps
 
 
-def apply_780_filter(
-    mps: MPSState,
-    n_bins: int,
-    verbose: bool = True,
-    rng: Optional[np.random.Generator] = None,
-) -> tuple:
-    """
-    应用100%损耗滤波器从所有仓中移除780nm光子（no-loss 后选）。
-
-    QFC之后，任何剩余的780nm光子（|H,vac>, |V,vac>）无法在光纤中
-    传播，必须被滤除。这里使用固定的“无780残留”Kraus分支进行
-    后选，并记录对应的后选概率。
-
-    Parameters
-    ----------
-    mps : MPSState
-        MPS态（布局：atomA, atomB, A1, B1, A2, B2, ..., AN, BN）
-    n_bins : int
-        时间仓数量
-    verbose : bool
-        是否打印进度
-
-    Returns
-    -------
-    tuple
-        (mps, p_no_loss_780) - 后选后的MPS态与对应概率
-    """
-    # ------------------------------------------------------------------
-    # 这里是“后选 no-loss 分支”的实现：
-    #   - 780nm 通道设为 100% 损耗 (eta_780 = 0)
-    #   - 仅保留 Kraus 中“不含 780 光子残留”的分支
-    #   - p_no_loss_780 记录该后选分支概率
-    #
-    # 注意：这是“轨迹层”的后选近似；在 B 方案中，
-    #       更严格的做法是把损耗推到 POVM 的对偶映射上。
-    # ------------------------------------------------------------------
-    _print_header("780nm Filter", verbose)
-
-    if rng is None:
-        rng = np.random.default_rng()
-
-    # 780nm子空间完全损耗，1517nm子空间无损耗
-    K_list = loss_channel_both_subspaces(
-        eta_780=0.0,
-        eta_H_1517=1.0,
-        eta_V_1517=1.0,
-    )
-
-    if verbose:
-        print(f"  Kraus ops: {len(K_list)} (18x18)")
-        print("  仅保留无780nm残留的分支（后选）")
-
-    # 固定选择无780残留Kraus分支，记录后选概率
-    K_noloss = K_list[0]
-    no_loss_weight = LossBranchWeight()
-
-    # 应用到所有仓：后选无780残留分支
-    # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
-    for n in range(n_bins):
-        site_A = 2 + 2 * n
-        site_B = 2 + 2 * n + 1
-
-        try:
-            pA = mps.apply_kraus_one_site_fixed(site_A, K_noloss, canonicalize=False)
-            pB = mps.apply_kraus_one_site_fixed(site_B, K_noloss, canonicalize=False)
-            no_loss_weight.update(pA)
-            no_loss_weight.update(pB)
-        except ValueError:
-            no_loss_weight.mark_zero()
-            break
-
-        _print_progress(n + 1, n_bins, verbose)
-
-    if no_loss_weight.value > 0.0:
-        # 只在完成后做一次规范化，避免每bin扫链
-        mps._mps.canonical_form_finite(renormalize=True)
-
-    _print_footer(mps, verbose, stage="780nm Filter")
-    return mps, no_loss_weight.value
-
-
-def project_to_1517(
-    mps: MPSState,
-    n_bins: int,
-    verbose: bool = True,
-) -> MPSState:
-    """
-    将所有bin从18D（780×1517）降维到6D（仅1517nm）。
-
-    在apply_780_filter之后，780nm子空间只有|vac>分量。
-    此函数通过投影移除780nm子空间，将每个bin从18D降到6D。
-    这大幅减少后续BS和探测的计算量（324x324 -> 36x36）。
-
-    物理意义：
-    - 780nm滤波后，每个bin的态为 |vac>_780 ⊗ |ψ>_1517
-    - 投影后只保留 |ψ>_1517（6D）
-
-    Parameters
-    ----------
-    mps : MPSState
-        MPS态（布局：atomA, atomB, A1, B1, ..., AN, BN）
-        bin维度必须为18D
-    n_bins : int
-        时间仓数量
-    verbose : bool
-        是否打印进度
-
-    Returns
-    -------
-    MPSState
-        降维后的MPS态（bin从18D变为6D）
-    """
-    # ------------------------------------------------------------------
-    # 物理意义：
-    #   在 780nm 滤波后，bin 的 780 子空间仅剩 |vac> 分量，
-    #   因此可以安全投影到 1517 子空间 (6D)。
-    #
-    # 数值意义：
-    #   从 18D 降到 6D，后续 BS/测量/收缩成本显著降低。
-    # ------------------------------------------------------------------
-    from tenpy.linalg.np_conserved import Array
-    from tenpy.networks.site import BosonSite
-
-    _print_header("Project to 1517nm (18D -> 6D)", verbose)
-
-    if verbose:
-        print("  Before: bin dims = 18D (780×1517)")
-        print("  After:  bin dims = 6D (1517 only)")
-
-    # 构造投影矩阵 P: 18D -> 6D
-    # 18D基序：(780_idx * 6 + 1517_idx)
-    # 780基：vac=0, H=1, V=2
-    # 只保留780=vac的分量，即索引 0*6+j = j for j=0..5
-    P_18to6 = np.zeros((6, 18), dtype=complex)
-    for j in range(6):
-        P_18to6[j, j] = 1.0  # 780=vac, 1517=j
-
-    # 对每个bin应用投影并更新MPS结构
-    # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
-    for n in range(n_bins):
-        site_A = 2 + 2 * n
-        site_B = 2 + 2 * n + 1
-
-        for site in [site_A, site_B]:
-            # 获取当前格点张量
-            B = mps._mps.get_B(site, form='B')
-            B_np = B.to_ndarray()  # shape: (chi_L, 18, chi_R)
-
-            # 应用投影: (chi_L, 6, chi_R) = P @ (chi_L, 18, chi_R)
-            B_new_np = np.einsum('ij,ajb->aib', P_18to6, B_np)
-
-            # 创建新的TeNPy Array（6D物理维度）
-            B_new = Array.from_ndarray_trivial(B_new_np, labels=['vL', 'p', 'vR'])
-
-            # 更新MPS格点
-            mps._mps.sites[site] = BosonSite(5, None)  # 6D = Nmax=5
-            mps._mps.set_B(site, B_new, form='B')
-
-            # 更新MPSState的维度记录
-            mps.d[site] = 6
-
-        _print_progress(n + 1, n_bins, verbose)
-
-    # 投影后需要恢复规范形式，否则后续的测量/约化密度会不可靠
-    mps._mps.canonical_form_finite(renormalize=True)
-
-    _print_footer(mps, verbose, stage="Project to 1517nm")
-    return mps
 # 一致打印格式的辅助函数
 def _print_header(stage: str, verbose: bool):
     """以一致格式打印阶段标题。"""
@@ -430,13 +262,14 @@ def apply_fiber_channel(
     rng: np.random.Generator,
     verbose: bool = True,
     bin_start: Optional[int] = None,
+    apply_loss: bool = True,
 ) -> tuple:
     """
     应用光纤信道效应：琼斯旋转 + 损耗（含随机采样）。
 
     这一步同时处理琼斯旋转与损耗，并从 FiberChannelParams
     为每次轨迹采样参数（模拟光纤漂移）。
-    仅支持6D（1517-only）bin空间。
+    支持6D（1517-only）或18D（780×1517）bin空间。
 
     Parameters
     ----------
@@ -463,7 +296,7 @@ def apply_fiber_channel(
     # 光纤信道 = 偏振漂移 (Jones) + 损耗 (amplitude damping) + 相位漂移：
     #   - Jones: unitary -> 直接作用于态
     #   - 相位：仅对 B 臂加相对相位 (模拟路径失配)
-    #   - 损耗：目前仍走“固定 no-loss 分支”的轨迹近似
+    #   - 损耗：默认仍走“固定 no-loss 分支”的轨迹近似
     #
     # 在 B 方案下，损耗应推到 POVM 的对偶映射上；
     # 这里保留轨迹版用于对照/回退。
@@ -497,8 +330,8 @@ def apply_fiber_channel(
         raise ValueError(f"bin_start={bin_start} 超出MPS长度 {mps.L}")
 
     bin_dim = mps.d[bin_start]
-    if bin_dim != DIM_1517:
-        raise ValueError(f"Unsupported bin dimension: {bin_dim}. Expected 6.")
+    if bin_dim not in (DIM_1517, DIM_BIN):
+        raise ValueError(f"Unsupported bin dimension: {bin_dim}. Expected 6 or 18.")
 
     def _to_tuple(U: np.ndarray) -> Tuple[Tuple[complex, complex], Tuple[complex, complex]]:
         return (
@@ -506,21 +339,35 @@ def apply_fiber_channel(
             (complex(U[1, 0]), complex(U[1, 1])),
         )
 
-    # 应用琼斯旋转
-    U_J_A = jones_gate(_to_tuple(U_A))
-    U_J_B = jones_gate(_to_tuple(U_B))
+    # 应用琼斯旋转（1517 子空间；18D 时嵌入到 780×1517）
+    U_J_A_6 = jones_gate(_to_tuple(U_A))
+    U_J_B_6 = jones_gate(_to_tuple(U_B))
+    if bin_dim == DIM_BIN:
+        I_780 = np.eye(3, dtype=complex)
+        U_J_A = np.kron(I_780, U_J_A_6)
+        U_J_B = np.kron(I_780, U_J_B_6)
+    else:
+        U_J_A = U_J_A_6
+        U_J_B = U_J_B_6
 
     phase_center = 0.5 * (n_bins - 1)
     apply_phase_profile = abs(phase_slope) > 0.0 or phase_jitter_std > 0.0
 
-    # 应用损耗（6D：只作用于1517）
-    K_list_A = loss_channel_1517_raw(eta_H_A, eta_V_A)
-    K_list_B = loss_channel_1517_raw(eta_H_B, eta_V_B)
-
-    # 固定选择无损耗Kraus分支，记录后选概率 p_no_loss
-    K_noloss_A = K_list_A[0]
-    K_noloss_B = K_list_B[0]
+    # 应用损耗（只作用于1517）；方案B下可关闭 apply_loss
     no_loss_weight = LossBranchWeight()
+    if apply_loss:
+        K_list_A = loss_channel_1517_raw(eta_H_A, eta_V_A)
+        K_list_B = loss_channel_1517_raw(eta_H_B, eta_V_B)
+        if bin_dim == DIM_BIN:
+            I_780 = np.eye(3, dtype=complex)
+            K_list_A = [np.kron(I_780, K) for K in K_list_A]
+            K_list_B = [np.kron(I_780, K) for K in K_list_B]
+        # 固定选择无损耗Kraus分支，记录后选概率 p_no_loss
+        K_noloss_A = K_list_A[0]
+        K_noloss_B = K_list_B[0]
+    else:
+        K_noloss_A = None
+        K_noloss_B = None
 
     for n in range(n_bins):
         site_A = bin_start + 2 * n
@@ -536,19 +383,25 @@ def apply_fiber_channel(
                 phase_n += rng.normal(0.0, phase_jitter_std)
             if abs(phase_n) > 0.0:
                 phase_factor = np.exp(1j * phase_n)
-                U_phase = jones_gate(((phase_factor, 0.0), (0.0, phase_factor)))
+                U_phase_6 = jones_gate(((phase_factor, 0.0), (0.0, phase_factor)))
+                if bin_dim == DIM_BIN:
+                    I_780 = np.eye(3, dtype=complex)
+                    U_phase = np.kron(I_780, U_phase_6)
+                else:
+                    U_phase = U_phase_6
                 # 只对B臂施加时间相关相位，形成相对失配
                 mps.apply_one_site_gate(site_B, U_phase)
 
-        # 再应用无损耗Kraus分支
-        try:
-            pA = mps.apply_kraus_one_site_fixed(site_A, K_noloss_A, canonicalize=False)
-            pB = mps.apply_kraus_one_site_fixed(site_B, K_noloss_B, canonicalize=False)
-            no_loss_weight.update(pA)
-            no_loss_weight.update(pB)
-        except ValueError:
-            no_loss_weight.mark_zero()
-            break
+        if apply_loss:
+            # 再应用无损耗Kraus分支
+            try:
+                pA = mps.apply_kraus_one_site_fixed(site_A, K_noloss_A, canonicalize=False)
+                pB = mps.apply_kraus_one_site_fixed(site_B, K_noloss_B, canonicalize=False)
+                no_loss_weight.update(pA)
+                no_loss_weight.update(pB)
+            except ValueError:
+                no_loss_weight.mark_zero()
+                break
 
         _print_progress(n + 1, n_bins, verbose)
 
@@ -558,7 +411,8 @@ def apply_fiber_channel(
 
     _print_footer(mps, verbose, stage="Fiber Channel")
 
-    return mps, (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std), no_loss_weight.value
+    p_no_loss = no_loss_weight.value if apply_loss else None
+    return mps, (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std), p_no_loss
 
 
 # ============================================================================
