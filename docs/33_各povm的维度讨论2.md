@@ -247,8 +247,8 @@ p(r)=\mathrm{Tr}\big[E^{(r)}*{\text{eff}};\rho*{\text{emission}}\big]
 
 ### 前提 2：BS/光纤不跨 bin（无色散/无时间混叠）
 
-你现在的 BS 是逐 bin 作用在 (A_n,B_n) 上的 `apply_bs()`。
-光纤相位 profile 也是逐 bin 单站点门。
+你现在的 BS 已经推入测量端（Heisenberg 端口），不再逐 bin `apply_bs()`。
+光纤相位 profile 仍是逐 bin 采样。
 在这个假设下，“把它们推到 POVM”仍然是逐 bin 的（只是变成逐 bin 的 effect 变换）。
 
 但如果你真的要研究色散（跨 bin 卷积），那你说得对：
@@ -270,7 +270,7 @@ p(r)=\mathrm{Tr}\big[E^{(r)}*{\text{eff}};\rho*{\text{emission}}\big]
 - `effects_true` 是“没有 dark_detectors 的那部分 Kraus”累加出来的 effect
 - `effects_all` 是把 dark 也包含后的总 effect
 
-你在 `single_run.py` 里输出的 `p_success_true / p_success_false` 也是基于这套拆分做的。
+你在 `single_run.py` 里输出的 `p_success_true_abs / p_success_false_abs` 也是基于这套拆分做的。
 
 把损耗/QFC 失败推到 POVM 后，这种拆分反而更“物理正确”，因为你终于把
 [

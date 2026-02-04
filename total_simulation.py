@@ -15,6 +15,7 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
+from types import SimpleNamespace
 from concurrent.futures import ProcessPoolExecutor
 
 # Add project root to path (for running as standalone script)
@@ -23,14 +24,38 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from atom_sim.experiment.common import (  # noqa: E402
     SimConfig,
+    _compute_window_bins,
 )
 from atom_sim.experiment.hom import (  # noqa: E402
     parse_hom_cli,
     validate_no_hom_args,
     _build_hom_tau_values,
     _run_hom_run,
+    _is_port_samepol_coincidence,
 )
 from atom_sim.experiment import single_run  # noqa: E402
+
+
+def _install_output_tracker(marker_path: Optional[Path]) -> None:
+    """安装输出追踪器：每次 print 更新 marker_path 的 mtime。"""
+    if marker_path is None:
+        return
+    import builtins
+
+    if getattr(builtins, "_qsim_print_wrapped", False):
+        return
+    original_print = builtins.print
+
+    def _tracked_print(*args, **kwargs):
+        try:
+            marker_path.parent.mkdir(parents=True, exist_ok=True)
+            marker_path.touch()
+        except Exception:
+            pass
+        return original_print(*args, **kwargs)
+
+    builtins.print = _tracked_print
+    builtins._qsim_print_wrapped = True
 
 
 def _parse_run_params(argv):
@@ -57,6 +82,26 @@ def _parse_run_params(argv):
         ),
     )
     parser.add_argument("--role", dest="role", choices=["server", "worker", "both"], default="both", help="运行角色：server/worker/both（默认 both）")
+    progress_group = parser.add_mutually_exclusive_group()
+    progress_group.add_argument(
+        "--server-progress",
+        dest="server_progress",
+        action="store_true",
+        help="server 定期输出进度（默认 server-only 开启，both 关闭）",
+    )
+    progress_group.add_argument(
+        "--no-server-progress",
+        dest="server_progress",
+        action="store_false",
+        help="禁用 server 进度输出（避免与 worker 输出混行）",
+    )
+    parser.set_defaults(server_progress=None)
+    parser.add_argument(
+        "--server-progress-quiet-secs",
+        dest="server_progress_quiet_secs",
+        type=float,
+        help="server 进度输出的静默窗口（秒）；在此期间检测到 worker 输出则跳过显示",
+    )
     parser.add_argument("--queue-root", dest="queue_root", type=str, default="queue", help="任务队列根目录（默认项目根目录下的 queue）")
     parser.add_argument("--run-id", dest="run_id", type=str, help="运行ID（用于隔离多次任务；未提供则自动选择最小可用ID）")
     parser.add_argument("--task-type", dest="task_type", type=str, choices=["SIM", "HOM"], help="任务类型：SIM 或 HOM（默认随 --mode）")
@@ -158,7 +203,26 @@ def _parse_run_params(argv):
     config.run.plot_all = bool(args.plot_all)
     config.run.plot_enabled = not bool(args.no_plot)
     config.run.debug = bool(args.debug)
-    return config, args.role, args.queue_root, run_id, task_type, args.config_hash
+    if args.server_progress is None:
+        server_progress = True
+    else:
+        server_progress = bool(args.server_progress)
+    if args.server_progress_quiet_secs is None:
+        progress_quiet_secs = 20.0 if args.role == "both" else 0.0
+    else:
+        progress_quiet_secs = max(0.0, float(args.server_progress_quiet_secs))
+    progress_inline = args.role == "server"
+    return (
+        config,
+        args.role,
+        args.queue_root,
+        run_id,
+        task_type,
+        args.config_hash,
+        server_progress,
+        progress_quiet_secs,
+        progress_inline,
+    )
 
 
 def _resolve_config_hash(explicit: Optional[str]) -> str:
@@ -438,6 +502,9 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
     summary_dir = paths["summary"]
     summary_dir.mkdir(parents=True, exist_ok=True)
     if task_type == "HOM":
+        window_bins = None
+        if config.hom is not None:
+            window_bins = _compute_window_bins(config.hom.window_ns, config.emission.dt_ns)
         trials_path = summary_dir / "hom_trials.csv"
         tau_path = summary_dir / "hom_summary.csv"
         # hom_trials：逐 run × shot 的明细（含点击 bin）
@@ -454,6 +521,10 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 "V1_bin",
                 "H2_bin",
                 "V2_bin",
+                "H1_dark",
+                "V1_dark",
+                "H2_dark",
+                "V2_dark",
             ])
             tau_states = {}
             for meta_path in sorted(results_dir.glob("result_*/meta.json")):
@@ -486,6 +557,13 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                         "p_arrive_sum": 0.0,
                         "p_no_loss_sum": 0.0,
                         "arrive_trials": 0.0,
+                        "shots_total": 0,
+                        "coinc_true": 0,
+                        "coinc_dark_any": 0,
+                        "coinc_dark_single": 0,
+                        "coinc_dark_double": 0,
+                        "dark_clicks_total": 0,
+                        "clicks_total": 0,
                     },
                 )
                 state["runs_total"] += 1
@@ -509,6 +587,8 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                         clicks = json.loads(clicks_path.read_text(encoding="utf-8")).get("clicks", [])
                     except Exception:
                         clicks = []
+                shots_in_run = len(clicks) if clicks else config.run.shots_per_run
+                state["shots_total"] += shots_in_run
                 # 无点击记录也写一行占位，便于对齐 run_index
                 if not clicks:
                     trials_writer.writerow([
@@ -522,18 +602,41 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                         "",
                         "",
                         "",
+                        "",
+                        "",
+                        "",
+                        "",
                     ])
                 else:
                     # 每个 shot 一行，点击 bin 以分号拼接
                     for shot_idx, shot_clicks in enumerate(clicks):
                         bins = {"H1": "", "V1": "", "H2": "", "V2": ""}
+                        darks = {"H1": "", "V1": "", "H2": "", "V2": ""}
+                        events = []
                         for click in shot_clicks:
-                            if len(click) < 2:
-                                continue
+                            if len(click) < 3:
+                                raise ValueError("HOM clicks 必须包含 is_dark 字段 (det, bin, is_dark)")
                             det = click[0]
                             bin_idx = click[1]
+                            is_dark = bool(click[2])
+                            events.append(SimpleNamespace(detector=det, bin_index=bin_idx, is_dark=is_dark))
                             if det in bins:
                                 bins[det] = f"{bin_idx}" if bins[det] == "" else f"{bins[det]};{bin_idx}"
+                                flag = "1" if is_dark else "0"
+                                darks[det] = flag if darks[det] == "" else f"{darks[det]};{flag}"
+
+                        dark_clicks = sum(1 for e in events if e.is_dark)
+                        state["dark_clicks_total"] += dark_clicks
+                        state["clicks_total"] += len(events)
+                        if events and _is_port_samepol_coincidence(events, window_bins):
+                            if dark_clicks == 0:
+                                state["coinc_true"] += 1
+                            else:
+                                state["coinc_dark_any"] += 1
+                                if dark_clicks == 1:
+                                    state["coinc_dark_single"] += 1
+                                else:
+                                    state["coinc_dark_double"] += 1
                         trials_writer.writerow([
                             f"{tau_ns:.6f}",
                             run_index,
@@ -545,6 +648,10 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                             bins["V1"],
                             bins["H2"],
                             bins["V2"],
+                            darks["H1"],
+                            darks["V1"],
+                            darks["H2"],
+                            darks["V2"],
                         ])
         # hom_summary：按 τ 汇总统计
         with open(tau_path, "w", encoding="utf-8", newline="") as tau_file:
@@ -562,6 +669,15 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 "arrive_trials",
                 "window_ns",
                 "shots_per_run",
+                "shots_total",
+                "coinc_true",
+                "coinc_dark_any",
+                "coinc_dark_single",
+                "coinc_dark_double",
+                "dark_clicks_total",
+                "clicks_total",
+                "dark_click_rate",
+                "dark_click_rate_per_det",
             ])
             for tau_key in sorted(tau_states, key=lambda x: float(x)):
                 s = tau_states[tau_key]
@@ -571,6 +687,12 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 p_no_loss_avg = (s["p_no_loss_sum"] / valid) if valid > 0 else 0.0
                 # coinc_rate：符合数 / 预计到达试验数
                 coinc_rate = (s["coinc"] / s["arrive_trials"]) if s["arrive_trials"] > 0 else 0.0
+                dark_click_rate = (s["dark_clicks_total"] / s["clicks_total"]) if s["clicks_total"] > 0 else 0.0
+                dark_click_rate_per_det = (
+                    s["dark_clicks_total"] / (s["shots_total"] * 4)
+                    if s["shots_total"] > 0
+                    else 0.0
+                )
                 tau_writer.writerow([
                     f"{s['tau_ns']:.6f}",
                     config.run.runs,
@@ -584,6 +706,15 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                     f"{s['arrive_trials']:.6f}",
                     f"{config.hom.window_ns if config.hom else 0.0:.3f}",
                     config.run.shots_per_run,
+                    s["shots_total"],
+                    s["coinc_true"],
+                    s["coinc_dark_any"],
+                    s["coinc_dark_single"],
+                    s["coinc_dark_double"],
+                    s["dark_clicks_total"],
+                    s["clicks_total"],
+                    f"{dark_click_rate:.8f}",
+                    f"{dark_click_rate_per_det:.8f}",
                 ])
         return
     summary_path = summary_dir / f"{task_type.lower()}_summary.csv"
@@ -625,10 +756,22 @@ def _recover_stale_tasks(paths: dict, stale_seconds: int = 600) -> None:
             continue
 
 
+def _format_duration(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
 def _run_server_monitor(
     paths: dict,
     expected_total: int,
     done_flag_path: Optional[Path] = None,
+    show_progress: bool = True,
+    quiet_output_path: Optional[Path] = None,
+    quiet_secs: float = 0.0,
+    inline: bool = True,
 ) -> None:
     # ------------------------------------------------------------------
     # server 监控：
@@ -639,6 +782,7 @@ def _run_server_monitor(
     last_report = 0.0
     last_heartbeat = 0.0
     heartbeat_path = paths["summary"] / "server_heartbeat.txt"
+    start_ts = time.time()
     while True:
         now = time.time()
         if now - last_heartbeat >= 30:
@@ -653,18 +797,33 @@ def _run_server_monitor(
         inprogress = list(paths["inprogress"].glob("task_*.json"))
         done_count = len(list(paths["done"].glob("task_*.json")))
         error_count = len(list(paths["error"].glob("task_*.json")))
-        if now - last_report >= 5:
+        quiet_recent = False
+        if quiet_output_path is not None and quiet_secs > 0:
+            try:
+                quiet_recent = (now - quiet_output_path.stat().st_mtime) < quiet_secs
+            except FileNotFoundError:
+                quiet_recent = False
+        if show_progress and (not quiet_recent) and now - last_report >= 5:
             # total 以 expected_total 为优先（避免被回收/新增波动）
             total = (
                 expected_total
                 if expected_total > 0
                 else done_count + len(pending) + len(inprogress) + error_count
             )
+            elapsed = now - start_ts
+            eta = "--:--:--"
+            if done_count > 0 and total > done_count:
+                rate = done_count / max(elapsed, 1e-9)
+                eta = _format_duration((total - done_count) / max(rate, 1e-9))
             msg = (
                 f"[server] 进度: 已完成 {done_count}/{total} | "
-                f"进行中 {len(inprogress)} | 待完成 {len(pending)} | 失败 {error_count}"
+                f"进行中 {len(inprogress)} | 待完成 {len(pending)} | 失败 {error_count} | "
+                f"用时 {_format_duration(elapsed)} | ETA {eta}"
             )
-            print(f"\r{msg}", end="", flush=True)
+            if inline:
+                print(f"\r{msg}", end="", flush=True)
+            else:
+                print(msg, flush=True)
             last_report = now
         if done_flag_path is not None and done_flag_path.exists():
             print()
@@ -679,6 +838,7 @@ def _run_worker_loop(
     exit_when_done: bool = False,
     done_flag_path: Optional[str] = None,
     auto_pick: bool = False,
+    output_tracker_path: Optional[Path] = None,
 ) -> None:
     # ------------------------------------------------------------------
     # worker 执行循环：
@@ -695,6 +855,7 @@ def _run_worker_loop(
     host = os.environ.get("HOSTNAME") or os.environ.get("COMPUTERNAME") or "worker"
     heartbeat_path = None
     done_flag = Path(done_flag_path) if done_flag_path else None
+    tracker_installed = False
     backoff = [5, 10, 30]
     backoff_idx = 0
     last_heartbeat = 0.0
@@ -729,11 +890,21 @@ def _run_worker_loop(
             paths = picked
             _ensure_queue_dirs(paths)
             heartbeat_path = paths["heartbeat"] / f"worker_{host}_{worker_id}.txt"
+            if not tracker_installed:
+                if output_tracker_path is None:
+                    output_tracker_path = paths["heartbeat"] / "worker_output.txt"
+                _install_output_tracker(output_tracker_path)
+                tracker_installed = True
         elif paths is None:
             # 非 auto_pick：固定使用指定 run_root
             paths = _queue_paths(base_root)
             _ensure_queue_dirs(paths)
             heartbeat_path = paths["heartbeat"] / f"worker_{host}_{worker_id}.txt"
+            if not tracker_installed:
+                if output_tracker_path is None:
+                    output_tracker_path = paths["heartbeat"] / "worker_output.txt"
+                _install_output_tracker(output_tracker_path)
+                tracker_installed = True
 
         now = time.time()
         if now - last_heartbeat > 60:
@@ -875,9 +1046,9 @@ def _run_worker_loop(
                 }
                 if success_metrics:
                     metrics["p_arrive"] = success_metrics.get("p_arrive")
-                    metrics["p_success_all"] = success_metrics.get("p_success_all")
-                    metrics["p_success_true"] = success_metrics.get("p_success_true")
-                    metrics["p_success_false"] = success_metrics.get("p_success_false")
+                    metrics["p_success_abs"] = success_metrics.get("p_success_abs")
+                    metrics["p_success_true_abs"] = success_metrics.get("p_success_true_abs")
+                    metrics["p_success_false_abs"] = success_metrics.get("p_success_false_abs")
         except Exception as exc:
             status = "error"
             err_msg = str(exc)
@@ -922,7 +1093,17 @@ def main():
     #   worker：执行任务
     #   both  ：本机同时承担 server+worker
     # ------------------------------------------------------------------
-    config, role, queue_root, run_id, task_type, config_hash = _parse_run_params(sys.argv)
+    (
+        config,
+        role,
+        queue_root,
+        run_id,
+        task_type,
+        config_hash,
+        server_progress,
+        progress_quiet_secs,
+        progress_inline,
+    ) = _parse_run_params(sys.argv)
     config_hash = _resolve_config_hash(config_hash)
     task_type = task_type.upper()
     # queue_root 支持相对路径（相对项目根目录）
@@ -959,7 +1140,15 @@ def main():
         expected_total = _build_task_list(task_type, config, config_hash, paths["pending"])
         print(f"[server] 任务总数: {expected_total} | queue: {paths['root']}")
         if role == "server":
-            _run_server_monitor(paths, expected_total, done_flag)
+            _run_server_monitor(
+                paths,
+                expected_total,
+                done_flag,
+                show_progress=server_progress,
+                quiet_output_path=None,
+                quiet_secs=0.0,
+                inline=progress_inline,
+            )
             _archive_run(run_root, outputs_root)
             return
 
@@ -991,15 +1180,25 @@ def main():
         print(f"[worker] cores={core_budget} | workers={worker_count} | queue={queue_hint}")
 
         if role == "both":
+            output_tracker_path = paths["heartbeat"] / "worker_output.txt"
             monitor_thread = threading.Thread(
                 target=_run_server_monitor,
-                args=(paths, expected_total, done_flag),
+                args=(
+                    paths,
+                    expected_total,
+                    done_flag,
+                    server_progress,
+                    output_tracker_path,
+                    progress_quiet_secs,
+                    progress_inline,
+                ),
             )
             monitor_thread.start()
 
         exit_when_done = role == "both" or (role == "worker" and run_id is not None)
         done_flag_arg = str(done_flag) if run_id is not None else None
         auto_pick = run_id is None
+        tracker_path = None if run_id is None else (paths["heartbeat"] / "worker_output.txt")
         if worker_count == 1:
             _run_worker_loop(
                 1,
@@ -1008,6 +1207,7 @@ def main():
                 exit_when_done,
                 done_flag_arg,
                 auto_pick,
+                tracker_path,
             )
         else:
             # 多进程并行：每个进程独立抢任务
@@ -1023,6 +1223,7 @@ def main():
                             exit_when_done,
                             done_flag_arg,
                             auto_pick,
+                            tracker_path,
                         )
                     )
                 for future in futures:

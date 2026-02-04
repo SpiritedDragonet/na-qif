@@ -13,7 +13,7 @@
 import numpy as np
 from itertools import product
 from typing import Tuple, List, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..core.mps import MPSState
 from ..physics.gates import qfc_gate
@@ -29,6 +29,7 @@ class DetectionEvent:
     detector: str  # "H1", "V1", "H2", "V2"
     bin_index: int
     site: int
+    is_dark: bool = False
 
 
 @dataclass
@@ -38,6 +39,9 @@ class TwoPhotonDetectionResult:
     success: bool
     bell_state: str  # "Psi+", "Psi-", "" (if not success)
     spin_state: np.ndarray  # 4x4 qubit-block density matrix (unnormalized)
+    dark_detectors: List[str] = field(default_factory=list)
+    dark_count: int = 0
+    p_true_given_record: float = 0.0
 
 
 @dataclass
@@ -82,7 +86,7 @@ def _order_two_port_detectors(detectors: List[str]) -> Tuple[str, ...]:
 def build_detection_effects_6d(
     eta: float,
     p_dark: float = 0.0,
-) -> Tuple[dict, dict]:
+) -> Tuple[dict, dict, dict]:
     """
     构造6D探测 POVM effects（包含暗计数拆分）。
 
@@ -92,6 +96,9 @@ def build_detection_effects_6d(
         所有点击记录的 effect（含暗计数）
     effects_true : dict
         不含暗计数的 effect（仅真实点击）
+    effects_by_darkmask : dict
+        按暗计数 mask 细分的 effect：
+        {key -> {mask_tuple -> E}}
     """
     # ------------------------------------------------------------------
     # 该函数的核心目标：
@@ -240,14 +247,18 @@ def build_detection_effects_6d(
     # ------------------------------------------------------------------
     effects_all = {}
     effects_true = {}
+    effects_by_darkmask = {}
     for K, detectors, dark_detectors in zip(kraus_list, outcome_detectors, outcome_dark):
         key = _order_two_port_detectors(detectors)
+        mask = _order_two_port_detectors(dark_detectors)
         K_mat = np.asarray(K)
         E = K_mat.conj().T @ K_mat
         effects_all[key] = effects_all.get(key, 0) + E
         if not dark_detectors:
             effects_true[key] = effects_true.get(key, 0) + E
-    return effects_all, effects_true
+        mask_map = effects_by_darkmask.setdefault(key, {})
+        mask_map[mask] = mask_map.get(mask, 0) + E
+    return effects_all, effects_true, effects_by_darkmask
 
 
 def _proj_3_from_6() -> np.ndarray:
@@ -307,6 +318,28 @@ def _apply_unitary_adjoint(effects: dict, U: np.ndarray) -> dict:
     return {k: U_dag @ E @ U for k, E in effects.items()}
 
 
+def _map_effects_masked(effects_by_mask: dict, fn) -> dict:
+    """对按暗计数 mask 分组的 effect 做逐项映射。"""
+    if not effects_by_mask:
+        return {}
+    new_effects = {}
+    for key, mask_map in effects_by_mask.items():
+        mapped_masks = {}
+        for mask, E in mask_map.items():
+            mapped_masks[mask] = fn(E)
+        new_effects[key] = mapped_masks
+    return new_effects
+
+
+def _apply_unitary_adjoint_masked(effects_by_mask: dict, U: np.ndarray) -> dict:
+    """对按暗计数 mask 分组的 effect 做 E <- U^† E U。"""
+    if not effects_by_mask:
+        return {}
+    U = np.asarray(U, dtype=complex)
+    U_dag = U.conj().T
+    return _map_effects_masked(effects_by_mask, lambda E: U_dag @ E @ U)
+
+
 def _apply_local_channel_adjoint(
     effects: dict,
     K_list_A: List[np.ndarray],
@@ -330,6 +363,24 @@ def _apply_local_channel_adjoint(
         new_effects[key] = acc
     return new_effects
 
+
+def _apply_local_channel_adjoint_masked(
+    effects_by_mask: dict,
+    K_list_A: List[np.ndarray],
+    K_list_B: List[np.ndarray],
+) -> dict:
+    """将局域信道对偶映射作用到按暗计数 mask 分组的 effect。"""
+    if not effects_by_mask:
+        return {}
+    K_pairs = [np.kron(KA, KB) for KA in K_list_A for KB in K_list_B]
+
+    def _apply(E: np.ndarray) -> np.ndarray:
+        acc = np.zeros_like(E)
+        for K in K_pairs:
+            acc += K.conj().T @ E @ K
+        return acc
+
+    return _map_effects_masked(effects_by_mask, _apply)
 
 def _apply_channel_adjoint_single(op: np.ndarray, K_list: List[np.ndarray]) -> np.ndarray:
     """单端口对偶映射：E <- sum K^† E K。"""
@@ -586,20 +637,23 @@ def run_detection_pipeline(
     #   5) 嵌入到 5D 账本
     #   6) 推入 780 过滤 + QFC
     # ------------------------------------------------------------------
-    effects_all_6d, effects_true_6d = build_detection_effects_6d(eta_det, p_dark)
+    effects_all_6d, effects_true_6d, effects_mask_6d = build_detection_effects_6d(eta_det, p_dark)
 
     if bs_unitary_6d is not None:
         effects_all_6d = _apply_unitary_adjoint(effects_all_6d, bs_unitary_6d)
         effects_true_6d = _apply_unitary_adjoint(effects_true_6d, bs_unitary_6d)
+        effects_mask_6d = _apply_unitary_adjoint_masked(effects_mask_6d, bs_unitary_6d)
 
     effects_all_3d = {k: _project_6d_to_3d(E) for k, E in effects_all_6d.items()}
     effects_true_3d = {k: _project_6d_to_3d(E) for k, E in effects_true_6d.items()}
+    effects_mask_3d = _map_effects_masked(effects_mask_6d, _project_6d_to_3d)
 
     # 光纤损耗（单光子 3D）
     K_A_3 = loss_channel_1517_single_photon(float(eta_H_A), float(eta_V_A))
     K_B_3 = loss_channel_1517_single_photon(float(eta_H_B), float(eta_V_B))
     effects_all_3d = _apply_local_channel_adjoint(effects_all_3d, K_A_3, K_B_3)
     effects_true_3d = _apply_local_channel_adjoint(effects_true_3d, K_A_3, K_B_3)
+    effects_mask_3d = _apply_local_channel_adjoint_masked(effects_mask_3d, K_A_3, K_B_3)
 
     # 780 过滤（5D）与 QFC（5D）
     K_filter = None
@@ -615,6 +669,7 @@ def run_detection_pipeline(
     # 逐 bin 构造 effect（包含相位斜率/抖动）
     effects_all_by_bin: List[dict] = []
     effects_true_by_bin: List[dict] = []
+    effects_mask_by_bin: List[dict] = []
 
     phase_center = 0.5 * (n_bins - 1)
     use_phase_profile = abs(phase_slope) > 0.0 or phase_jitter_std > 0.0
@@ -634,19 +689,24 @@ def run_detection_pipeline(
 
         eff_all_3 = _apply_unitary_adjoint(effects_all_3d, U_pair_3)
         eff_true_3 = _apply_unitary_adjoint(effects_true_3d, U_pair_3)
+        eff_mask_3 = _apply_unitary_adjoint_masked(effects_mask_3d, U_pair_3)
 
         eff_all_5 = {k: _embed_3d_to_5d(E) for k, E in eff_all_3.items()}
         eff_true_5 = {k: _embed_3d_to_5d(E) for k, E in eff_true_3.items()}
+        eff_mask_5 = _map_effects_masked(eff_mask_3, _embed_3d_to_5d)
 
         if K_filter is not None:
             eff_all_5 = _apply_local_channel_adjoint(eff_all_5, K_filter, K_filter)
             eff_true_5 = _apply_local_channel_adjoint(eff_true_5, K_filter, K_filter)
+            eff_mask_5 = _apply_local_channel_adjoint_masked(eff_mask_5, K_filter, K_filter)
 
         eff_all_5 = _apply_unitary_adjoint(eff_all_5, U_qfc_pair)
         eff_true_5 = _apply_unitary_adjoint(eff_true_5, U_qfc_pair)
+        eff_mask_5 = _apply_unitary_adjoint_masked(eff_mask_5, U_qfc_pair)
 
         effects_all_by_bin.append(eff_all_5)
         effects_true_by_bin.append(eff_true_5)
+        effects_mask_by_bin.append(eff_mask_5)
 
     if verbose and n_samples > 0:
         dim_pair = bin_dim * bin_dim
@@ -1005,13 +1065,14 @@ def run_detection_pipeline(
     def _contract_record(
         left_envs: List[np.ndarray],
         record_local: TwoClickRecord,
+        effects_by_bin: List[dict],
     ) -> complex:
         # 计算某一条“点击记录 r”的未归一化原子态矩阵元：
         #   sigma_ij = Tr[ (|i><j| ⊗ E_r) ρ ]
         if record_local.bin_a == record_local.bin_b:
             s = record_local.bin_a + 1
             key_pair = _order_two_port_detectors([record_local.detector_a, record_local.detector_b])
-            op_pair = effects_all_by_bin[record_local.bin_a].get(key_pair, zero_effect)
+            op_pair = effects_by_bin[record_local.bin_a].get(key_pair, zero_effect)
             env_mid = _apply_env_left(B_list[s], Bc_list[s], op_pair, left_envs[s])
             return np.einsum('ij,ij->', env_mid, right_envs[s + 1])
 
@@ -1020,15 +1081,15 @@ def run_detection_pipeline(
             j = record_local.bin_b + 1
             key_first = _order_two_port_detectors([record_local.detector_a])
             key_second = _order_two_port_detectors([record_local.detector_b])
-            op_first = effects_all_by_bin[record_local.bin_a].get(key_first, zero_effect)
-            op_second = effects_all_by_bin[record_local.bin_b].get(key_second, zero_effect)
+            op_first = effects_by_bin[record_local.bin_a].get(key_first, zero_effect)
+            op_second = effects_by_bin[record_local.bin_b].get(key_second, zero_effect)
         else:
             i = record_local.bin_b + 1
             j = record_local.bin_a + 1
             key_first = _order_two_port_detectors([record_local.detector_b])
             key_second = _order_two_port_detectors([record_local.detector_a])
-            op_first = effects_all_by_bin[record_local.bin_b].get(key_first, zero_effect)
-            op_second = effects_all_by_bin[record_local.bin_a].get(key_second, zero_effect)
+            op_first = effects_by_bin[record_local.bin_b].get(key_first, zero_effect)
+            op_second = effects_by_bin[record_local.bin_a].get(key_second, zero_effect)
 
         env_mid = _apply_env_left(B_list[i], Bc_list[i], op_first, left_envs[i])
         for s in range(i + 1, j):
@@ -1071,26 +1132,101 @@ def run_detection_pipeline(
                 sigma[i, j] = _contract_record(
                     left_envs,
                     record_local,
+                    effects_all_by_bin,
                 )
         return sigma
+
+    def _weight_record_masked(
+        record_local: TwoClickRecord,
+        dark_mask: Tuple[str, ...],
+    ) -> float:
+        """
+        使用按暗计数 mask 分组的 effect 计算某条记录的权重。
+
+        dark_mask: e.g. (), ("H1",), ("V2",), ("H1","V2")
+        """
+        mask_set = set(dark_mask)
+        if record_local.bin_a == record_local.bin_b:
+            s = record_local.bin_a + 1
+            key_pair = _order_two_port_detectors([record_local.detector_a, record_local.detector_b])
+            op_pair = (
+                effects_mask_by_bin[record_local.bin_a]
+                .get(key_pair, {})
+                .get(dark_mask, zero_effect)
+            )
+            env_mid = _apply_env_left(B_list[s], Bc_list[s], op_pair, left_envs_id[s])
+            return float(np.einsum('ij,ij->', env_mid, right_envs[s + 1]).real)
+
+        if record_local.bin_a < record_local.bin_b:
+            i = record_local.bin_a + 1
+            j = record_local.bin_b + 1
+            det_first = record_local.detector_a
+            det_second = record_local.detector_b
+            bin_first = record_local.bin_a
+            bin_second = record_local.bin_b
+        else:
+            i = record_local.bin_b + 1
+            j = record_local.bin_a + 1
+            det_first = record_local.detector_b
+            det_second = record_local.detector_a
+            bin_first = record_local.bin_b
+            bin_second = record_local.bin_a
+
+        key_first = _order_two_port_detectors([det_first])
+        key_second = _order_two_port_detectors([det_second])
+        mask_first = _order_two_port_detectors([det_first]) if det_first in mask_set else empty_key
+        mask_second = _order_two_port_detectors([det_second]) if det_second in mask_set else empty_key
+
+        op_first = effects_mask_by_bin[bin_first].get(key_first, {}).get(mask_first, zero_effect)
+        op_second = effects_mask_by_bin[bin_second].get(key_second, {}).get(mask_second, zero_effect)
+
+        env_mid = _apply_env_left(B_list[i], Bc_list[i], op_first, left_envs_id[i])
+        for s in range(i + 1, j):
+            env_mid = _apply_env_left(B_list[s], Bc_list[s], E_no_list[s - 1], env_mid)
+        env_mid = _apply_env_left(B_list[j], Bc_list[j], op_second, env_mid)
+        return float(np.einsum('ij,ij->', env_mid, right_envs[j + 1]).real)
 
     for sample_index in range(1, n_samples + 1):
         pick = int(rng.choice(len(records), p=probs))
         record = records[pick]
+        det_a = record.detector_a
+        det_b = record.detector_b
+
+        mask_candidates = [
+            empty_key,
+            _order_two_port_detectors([det_a]),
+            _order_two_port_detectors([det_b]),
+            _order_two_port_detectors([det_a, det_b]),
+        ]
+        mask_weights = [
+            max(0.0, _weight_record_masked(record, mask)) for mask in mask_candidates
+        ]
+        total_mask_weight = float(sum(mask_weights))
+        if total_mask_weight <= weight_eps:
+            mask_choice = empty_key
+            p_true_given_record = 1.0 if record.weight > 0 else 0.0
+        else:
+            mask_probs = np.array(mask_weights, dtype=float) / total_mask_weight
+            mask_choice = mask_candidates[int(rng.choice(len(mask_candidates), p=mask_probs))]
+            p_true_given_record = mask_weights[0] / total_mask_weight
+
         base_a = bin_start + 2 * record.bin_a
         base_b = bin_start + 2 * record.bin_b
         site_a = base_a if record.detector_a in ("H1", "V1") else base_a + 1
         site_b = base_b if record.detector_b in ("H1", "V1") else base_b + 1
+        dark_detectors = list(mask_choice) if mask_choice else []
         clicks = [
             DetectionEvent(
                 detector=record.detector_a,
                 bin_index=record.bin_a,
                 site=site_a,
+                is_dark=record.detector_a in dark_detectors,
             ),
             DetectionEvent(
                 detector=record.detector_b,
                 bin_index=record.bin_b,
                 site=site_b,
+                is_dark=record.detector_b in dark_detectors,
             ),
         ]
         success = False
@@ -1110,7 +1246,9 @@ def run_detection_pipeline(
                 print(f"\n  [POVM抽样 {sample_index}/{n_samples}]")
             print("\n  结果：")
             print("    抽样自双点击分布（条件在两次点击）")
-            print(f"    点击：{[(c.detector, c.bin_index) for c in clicks]}")
+            print(f"    点击：{[(c.detector, c.bin_index, 'dark' if c.is_dark else 'true') for c in clicks]}")
+            if dark_detectors:
+                print(f"    暗计数点击：{dark_detectors}")
             print(f"    BSM成功：{success}")
             if success:
                 print(f"    Bell态：{bell_state}")
@@ -1121,6 +1259,9 @@ def run_detection_pipeline(
                 success=success,
                 bell_state=bell_state,
                 spin_state=spin_state,
+                dark_detectors=dark_detectors,
+                dark_count=len(dark_detectors),
+                p_true_given_record=float(p_true_given_record),
             )
         )
 

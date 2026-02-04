@@ -195,7 +195,7 @@ $我会用“每个时间 bin 的两臂 A_n、B_n 形成的一对模式”作为
 | 光纤偏振旋转（Jones）                    | `jones_gate()`；`apply_fiber_channel()`                      | 单臂单 bin（6D）              | 幺正门                                 | **6×6**                   |
 | 光纤相位轮廓（phase drift/slope/jitter） | 在 `apply_fiber_channel()` 用 `jones_gate(diag(e^{iφ}))`     | 单臂单 bin（6D）              | 幺正门                                 | **6×6**                   |
 | 光纤损耗（1517）                         | `loss_channel_1517_raw()`；`apply_fiber_channel()` 固定取 K0 后选 | 单臂单 bin（6D）              | Kraus 信道（目前后选）                 | 每个 Kraus **6×6**        |
-| BS（两臂干涉）                           | `bs_gate_6d()`；`apply_bs()`                                 | 同一 bin 的 $A_n 6D$⊗$B_n 6D$ | 两体幺正门                             | **36×36**                 |
+| BS（两臂干涉）                           | `bs_gate_6d()`；`apply_bs()`(占位)                           | 同一 bin 的 $A_n 6D$⊗$B_n 6D$ | 两体幺正门                             | **36×36**                 |
 | 探测 POVM（含效率/暗计数拆分）           | `build_detection_effects_6d()`                               | 同一 bin 的两输出端口 (6D⊗6D) | POVM effects（由 Kraus K†K 聚合）      | 每个 effect **36×36**     |
 | 原子退相干（等待）                       | `_apply_atomic_dephasing()`                                  | atomA、atomB 各 4D            | Kraus 信道（采样）                     | 每个 Kraus **4×4**        |
 
@@ -539,7 +539,7 @@ $$
 
 并且在 `compute_metrics` 时输出：
 
-- `p_success_true / p_success_false`
+- `p_success_true_abs / p_success_false_abs`
 - `fidelity_true / fidelity_false / fidelity_declared`
   这些就是回答“宣告成功里有多少是假成功、它把保真度拉低多少”的量。
 

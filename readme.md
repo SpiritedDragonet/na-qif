@@ -64,8 +64,8 @@ atom_sim/
 │   ├── trajectory.py              # 单轨迹执行
 │   │   ├── EmissionResult
 │   │   ├── run_dual_atom_emission()
-│   │   ├── apply_qfc()
-│   │   ├── apply_bs()
+│   │   ├── apply_qfc()            # Heisenberg 端口占位（不改态）
+│   │   ├── apply_bs()             # Heisenberg 端口占位（不改态）
 │   │   ├── _print_header()
 │   │   ├── _print_progress()
 │   │   ├── _print_footer()
@@ -220,7 +220,7 @@ apply_qfc(mps, n_bins, theta_H=π/4, theta_V=π/4)
 #     apply_qfc 仅记录参数并输出日志，不改动 MPS。
 
 # (3) 光纤采样（不改态）
-mps, fiber_sample, p_no_loss_fiber = apply_fiber_channel(...)
+mps, fiber_sample, _ = apply_fiber_channel(...)
 # 注：光纤的 Jones/损耗/相位漂移在 POVM 端使用 fiber_sample 重建。
 
 # (4) 分束器并入测量端：构造 U_BS^† E U_BS
@@ -233,9 +233,29 @@ pipeline = run_detection_pipeline(
 # 结果：点击事件列表 / 成功率 / 保真度
 
 # (6) BSM 宣告：检查成功模式
-# Ψ+: (H1, V2) 或 (V1, H2) - 跨端口不同偏振（反聚束）
-# Ψ-: (H1, V1) 或 (H2, V2) - 同端口不同偏振（聚束）
+# Ψ-: (H1, V2) 或 (V1, H2) - 跨端口不同偏振（反聚束）
+# Ψ+: (H1, V1) 或 (H2, V2) - 同端口不同偏振（聚束）
 ```
+
+### 点击记录格式
+
+SIM/HOM 产生的点击记录（`raw/clicks.json` 与 `sim_summary.csv`）格式为：
+
+```
+[(detector, bin_index, is_dark), ...]
+```
+
+- `detector`: `H1` / `V1` / `H2` / `V2`
+- `bin_index`: 点击发生的时间仓索引
+- `is_dark`: 是否为暗记数触发的点击（True/False）
+
+### 成功率字段（SIM / sim_summary.csv）
+
+- `p_success_abs`：每次尝试的**总成功率**（含暗计数）
+- `p_success_true_abs`：成功中“纯真实点击”的部分
+- `p_success_false_abs`：成功中“含暗计数”的部分（=`p_success_abs - p_success_true_abs`）
+- `p_success_true_given_arrival`：在“两光子到达”条件下的真实成功率（`p_success_true_abs / p_arrive`）
+- `p_success_no_dark_abs`：暗计数关掉时的成功率基线（若枚举 no-dark）
 
 ### FiberChannelParams
 

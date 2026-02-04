@@ -49,11 +49,11 @@ SUMMARY_HEADER = [
     "p_noise",
     "p_no_loss",
     "p_arrive",
-    "p_success_given_arrival",
-    "p_success_all",
-    "p_success_true",
-    "p_success_false",
-    "p_success_no_dark",
+    "p_success_true_given_arrival",
+    "p_success_abs",
+    "p_success_true_abs",
+    "p_success_false_abs",
+    "p_success_no_dark_abs",
     "p_false_approx",
     "false_fraction",
     "false_fraction_approx",
@@ -77,11 +77,11 @@ SUMMARY_HEADER = [
     "p_noise",
     "p_no_loss",
     "p_arrive",
-    "p_success_given_arrival",
-    "p_success_all",
-    "p_success_true",
-    "p_success_false",
-    "p_success_no_dark",
+    "p_success_true_given_arrival",
+    "p_success_abs",
+    "p_success_true_abs",
+    "p_success_false_abs",
+    "p_success_no_dark_abs",
     "p_false_approx",
     "false_fraction",
     "false_fraction_approx",
@@ -290,7 +290,7 @@ def _run_single_simulation_core(
                 return ""
             return format(value, fmt)
 
-        clicks = [(c.detector, c.bin_index) for c in det_result.clicks]
+        clicks = [(c.detector, c.bin_index, bool(getattr(c, "is_dark", False))) for c in det_result.clicks]
         fidelity_shot_full = ""
         if det_result.success and det_result.bell_state:
             fidelity_full = compute_fidelity_with_bell(det_result.spin_state, det_result.bell_state)
@@ -309,11 +309,11 @@ def _run_single_simulation_core(
             _fmt("p_noise", ".8f"),
             _fmt("p_no_loss", ".8f"),
             _fmt("p_arrive", ".8f"),
-            _fmt("p_success_given_arrival", ".8f"),
-            _fmt("p_success_all", ".8f"),
-            _fmt("p_success_true", ".8f"),
-            _fmt("p_success_false", ".8f"),
-            _fmt("p_success_no_dark", ".8f"),
+            _fmt("p_success_true_given_arrival", ".8f"),
+            _fmt("p_success_abs", ".8f"),
+            _fmt("p_success_true_abs", ".8f"),
+            _fmt("p_success_false_abs", ".8f"),
+            _fmt("p_success_no_dark_abs", ".8f"),
             _fmt("p_false_approx", ".8f"),
             _fmt("false_fraction", ".6f"),
             _fmt("false_fraction_approx", ".6f"),
@@ -371,16 +371,16 @@ def _run_single_simulation_core(
                 file.write(f"p_arrive = {metrics['p_arrive']:.8f}\n")
             else:
                 file.write("p_arrive = N/A\n")
-            if metrics.get("p_success_no_dark") is not None:
-                file.write(f"p_success_no_dark = {metrics['p_success_no_dark']:.8f}\n")
+            if metrics.get("p_success_no_dark_abs") is not None:
+                file.write(f"p_success_no_dark_abs = {metrics['p_success_no_dark_abs']:.8f}\n")
                 file.write(f"fidelity_no_dark = {metrics['fidelity_no_dark']:.6f}\n")
             else:
-                file.write("p_success_no_dark = N/A\n")
+                file.write("p_success_no_dark_abs = N/A\n")
                 file.write("fidelity_no_dark = N/A\n")
-            if metrics.get("p_success_all") is not None:
-                file.write(f"p_success_all = {metrics['p_success_all']:.8f}\n")
+            if metrics.get("p_success_abs") is not None:
+                file.write(f"p_success_abs = {metrics['p_success_abs']:.8f}\n")
             else:
-                file.write("p_success_all = N/A\n")
+                file.write("p_success_abs = N/A\n")
             if metrics.get("fidelity_all") is not None:
                 file.write(f"fidelity_all = {metrics['fidelity_all']:.6f}\n")
             else:
@@ -392,18 +392,18 @@ def _run_single_simulation_core(
                 file.write("p_false_approx = N/A\n")
                 file.write("false_fraction_approx = N/A\n")
 
-            if metrics.get("p_success_true") is not None:
-                file.write(f"p_success_true = {metrics['p_success_true']:.8f}\n")
+            if metrics.get("p_success_true_abs") is not None:
+                file.write(f"p_success_true_abs = {metrics['p_success_true_abs']:.8f}\n")
             else:
-                file.write("p_success_true = N/A\n")
-            if metrics.get("p_success_false") is not None:
-                file.write(f"p_success_false = {metrics['p_success_false']:.8f}\n")
+                file.write("p_success_true_abs = N/A\n")
+            if metrics.get("p_success_false_abs") is not None:
+                file.write(f"p_success_false_abs = {metrics['p_success_false_abs']:.8f}\n")
             else:
-                file.write("p_success_false = N/A\n")
-            if metrics.get("p_success_given_arrival") is not None:
-                file.write(f"p_success_given_arrival = {metrics['p_success_given_arrival']:.8f}\n")
+                file.write("p_success_false_abs = N/A\n")
+            if metrics.get("p_success_true_given_arrival") is not None:
+                file.write(f"p_success_true_given_arrival = {metrics['p_success_true_given_arrival']:.8f}\n")
             else:
-                file.write("p_success_given_arrival = N/A\n")
+                file.write("p_success_true_given_arrival = N/A\n")
             if metrics.get("false_fraction") is not None:
                 file.write(f"false_fraction = {metrics['false_fraction']:.6f}\n")
             else:
@@ -606,14 +606,14 @@ def _run_single_simulation_core(
         metrics = {
             "p_no_loss": 0.0,
             "p_arrive": 0.0,
-            "p_success_all": 0.0,
-            "p_success_true": 0.0,
-            "p_success_false": 0.0,
-            "p_success_given_arrival": 0.0,
+            "p_success_abs": 0.0,
+            "p_success_true_abs": 0.0,
+            "p_success_false_abs": 0.0,
+            "p_success_true_given_arrival": 0.0,
             "fidelity_all": 0.0,
             "fidelity_true": 0.0,
             "fidelity_false": 0.0,
-            "p_success_no_dark": 0.0 if include_no_dark else None,
+            "p_success_no_dark_abs": 0.0 if include_no_dark else None,
             "fidelity_no_dark": 0.0 if include_no_dark else None,
             "p_qubit_emit": pipe.p_qubit_emit,
             "p_false_approx": 0.0 if include_no_dark else None,
@@ -801,30 +801,30 @@ def _run_single_simulation_core(
         "p_qubit_emit": p_qubit_emit,
         "p_no_loss": p_no_loss,
         "p_arrive": enum_main.p_arrive,
-        "p_success_all": enum_main.p_success,
-        "p_success_true": enum_main.p_success_true,
-        "p_success_false": enum_main.p_success_false,
-        "p_success_given_arrival": enum_main.p_success_given_arrival,
+        "p_success_abs": enum_main.p_success,
+        "p_success_true_abs": enum_main.p_success_true,
+        "p_success_false_abs": enum_main.p_success_false,
+        "p_success_true_given_arrival": enum_main.p_success_given_arrival,
         "fidelity_all": enum_main.fidelity_declared,
         "fidelity_true": enum_main.fidelity_true,
         "fidelity_false": enum_main.fidelity_false,
-        "p_success_no_dark": enum_no_dark.p_success if enum_no_dark is not None else None,
+        "p_success_no_dark_abs": enum_no_dark.p_success if enum_no_dark is not None else None,
         "fidelity_no_dark": enum_no_dark.fidelity_declared if enum_no_dark is not None else None,
     }
     # 误判占比：false / all
     success_metrics["false_fraction"] = (
-        success_metrics["p_success_false"] / success_metrics["p_success_all"]
-        if success_metrics["p_success_all"] > 0
+        success_metrics["p_success_false_abs"] / success_metrics["p_success_abs"]
+        if success_metrics["p_success_abs"] > 0
         else 0.0
     )
     if enum_no_dark is not None:
         # 粗略估计：将暗计数引入的“额外成功”视为 false
         success_metrics["p_false_approx"] = max(
-            0.0, success_metrics["p_success_all"] - success_metrics["p_success_no_dark"]
+            0.0, success_metrics["p_success_abs"] - success_metrics["p_success_no_dark_abs"]
         )
         success_metrics["false_fraction_approx"] = (
-            success_metrics["p_false_approx"] / success_metrics["p_success_all"]
-            if success_metrics["p_success_all"] > 0
+            success_metrics["p_false_approx"] / success_metrics["p_success_abs"]
+            if success_metrics["p_success_abs"] > 0
             else 0.0
         )
     else:
@@ -880,7 +880,7 @@ def _run_single_simulation_core(
                 file.write(f'Bell态: {det_result.bell_state}\n')
                 file.write(f'点击次数: {len(det_result.clicks)}\n')
                 if det_result.clicks:
-                    file.write(f'点击详情: {[(c.detector, c.bin_index) for c in det_result.clicks]}\n')
+                    file.write(f"点击详情: {[(c.detector, c.bin_index, bool(getattr(c, 'is_dark', False))) for c in det_result.clicks]}\n")
 
                     file.write('\n自旋密度矩阵:\n')
                     rho = det_result.spin_state
@@ -901,7 +901,7 @@ def _run_single_simulation_core(
 
             print(f"  调试信息已保存: {det_file.name}")
 
-        click_pairs = [(c.detector, c.bin_index) for c in det_result.clicks]
+        click_pairs = [(c.detector, c.bin_index, bool(getattr(c, "is_dark", False))) for c in det_result.clicks]
         declared = det_result.bell_state if det_result.success else "失败"
         if click_pairs:
             print(f"  宣告结果: {declared} | 点击记录: {click_pairs}")

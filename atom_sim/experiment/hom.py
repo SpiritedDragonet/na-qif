@@ -229,7 +229,9 @@ def _run_hom_run(
     p_arrive = pipeline.p_arrive
     # 逐 shot 统计符合与点击记录
     for det_result in pipeline.samples:
-        click_records.append([(c.detector, c.bin_index) for c in det_result.clicks])
+        click_records.append(
+            [(c.detector, c.bin_index, bool(getattr(c, "is_dark", False))) for c in det_result.clicks]
+        )
         if _is_port_samepol_coincidence(det_result.clicks, window_bins):
             coincidences += 1
 

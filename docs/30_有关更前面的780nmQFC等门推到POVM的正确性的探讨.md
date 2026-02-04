@@ -435,8 +435,8 @@ $$
 
 ### 4.2 但注意：方案 B 往往会“省掉”很多本来你要 apply 的 gate
 
-例如你现在是把 BS 作为每个 bin 的二体门直接 apply$`apply_bs()`/`apply_bs_gate_6d` 路线$，这会在整个链上做很多次两站 SVD 更新。
-如果 BS 被推到测量端，那这部分两站更新可以直接消失——这能抵消一部分 18D 带来的成本上升。
+旧路线是把 BS 作为每个 bin 的二体门直接 apply（`apply_bs()`/`apply_bs_gate_6d`），这会在整个链上做很多次两站 SVD 更新。
+当前方案已把 BS 推到测量端（Heisenberg 端口），态端不再 `apply_bs()`，这部分两站更新可以直接消失——能抵消一部分 18D 带来的成本上升。
 
 ------
 
@@ -465,7 +465,7 @@ $$
 实验上单次当然分不出；仿真里你可以分得很清楚，只要你愿意输出相应的“分解统计”。
 
 你现在的 `detection.py` 就已经在做这种分解：
-`build_detection_effects_6d` 同时构造了 `effects_all`（含暗计数）和 `effects_true`（不含暗计数），然后 `run_detection_pipeline` 里明确计算了 `p_success_true`, `p_success_false`, 以及对应的 fidelity。
+`build_detection_effects_6d` 同时构造了 `effects_all`（含暗计数）和 `effects_true`（不含暗计数），然后 `run_detection_pipeline` 里明确计算了 `p_success_true_abs`, `p_success_false_abs`, 以及对应的 fidelity。
 
 所以即使你把损耗/过滤推到 $E_{r,\mathrm{eff}}$ 里，你仍然可以保持同样的思想：
 
@@ -702,7 +702,7 @@ A:你这句“你怕不是忘了考虑后面的 BS 了哇”抓得非常准：**
   E_{\text{in}} = U_{\text{BS}}^\dagger,E_{\text{out}},U_{\text{BS}}
   $$
   这不是删器件，是把它从“作用在态上”变成“作用在测量算符上”。它对点击概率严格等价。([Preskill Lab](https://www.preskill.caltech.edu/ph219/chap3_15.pdf))
-- **5D 可达子空间只在“BS 之前”的输入模式成立**。如果你还打算像现在一样在态上逐 bin apply BS$trajectory.py 的 apply_bs$，那就必须保留能描述 **bunching 后单端口两光子**的基（你现在用的 6D 就是为这个准备的）。
+- **5D 可达子空间只在“BS 之前”的输入模式成立**。如果你还打算像旧方案一样在态上逐 bin apply BS（`trajectory.py` 的 `apply_bs`），那就必须保留能描述 **bunching 后单端口两光子**的基（你现在用的 6D 就是为这个准备的）。
   但如果你把 **BS 推到 POVM**，你就根本不需要在“态”里出 effect”里），于是 5D/3D 压维不会漏 HOM 物理。
 
 下面把这件事“理论上打通”，并且专门把 BS 和 5D/18D 的关系讲透。
@@ -807,7 +807,7 @@ $$
 
 分两种情况：
 
-### 情况 A：你继续像现在一样把 BS 作用到“态”上$trajectory.apply_bs$
+### 情况 A（旧方案）：你继续把 BS 作用到“态”上$trajectory.apply_bs$
 
 那你就必须允许：
 
@@ -849,7 +849,7 @@ $$
 你现在的 detection.py 其实已经在做第 2 点了：
 
 - build_detection_effects_6d 返回 effects_all（含暗计数）与 effects_true（不含暗计数）。
-- 后面在枚举成功事件时分别累加 p_success_all / p_success_true，并给出 p_success_false、fidelity_true、fidelity_false 等。
+- 后面在枚举成功事件时分别累加 p_success_abs / p_success_true_abs，并给出 p_success_false_abs、fidelity_true、fidelity_false 等。
 - single_run.py 还把 false_fraction 写进结果。耗都推到 POVM，**你仍然可以（而且更应该）报告：**
 - 宣告成功率 $p_\text{success}$
 - 真成功率 $p_\text{success,true}$
@@ -998,7 +998,7 @@ BS 的量子描述（对模式算符/creation operator 的线性变换、等价�
 
 因为 BS 是**每个 bin 内**把 $A_n, B_n$ 两个输入模式耦合：
 
-- 它不会把不同 bin 混起来$你代码里也是逐 bin apply_bs$
+- 它不会把不同 bin 混起来（旧代码里也是逐 bin apply_bs）
 - 所以要画 after_BS 的“按 bin 的热力图”，你只需要每个 bin 的**2-site 约化密度矩阵**。
 
 ### 3.2 具体算法$推荐的“局域重建 after_BS”的路线$

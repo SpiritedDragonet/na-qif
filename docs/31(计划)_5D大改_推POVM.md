@@ -66,11 +66,11 @@ atom_sim/
 ├── physics/                       # 物理过程层（门和通道）
 │   ├── __init__.py
 │   ├── gates.py                   # 所有酉门工厂
-│   │   ├── qfc_gate()             # U_qfc: 780→1517 频率转换 (18x18)
+│   │   ├── qfc_gate()             # U_qfc: 780→1517 频率转换 (5x5)
 │   │   ├── bs_gate_6d()           # U_BS: 50/50 分束器 (36x36, 仅1517nm)
 │   │   ├── _bs_gate_1517()
 │   │   ├── jones_gate()           # U_pol: 琼斯旋转 (6x6)
-│   │   └── emission_gate()        # U_emit: 原子-光子耦合 (54x54)
+│   │   └── emission_gate()        # U_emit: 原子-光子耦合 (20x20)
 │   │
 │   └── channels.py                # 所有 Kraus 通道
 │       ├── loss_channel_both_subspaces() # 780+1517 联合损耗
@@ -83,9 +83,8 @@ atom_sim/
 │   ├── trajectory.py              # 单轨迹执行
 │   │   ├── EmissionResult
 │   │   ├── run_dual_atom_emission()
-│   │   ├── apply_qfc()
-│   │   ├── apply_780_filter()
-│   │   ├── project_to_1517()
+│   │   ├── apply_qfc()            # Heisenberg 端口占位（不改态）
+│   │   ├── apply_bs()             # Heisenberg 端口占位（不改态）
 │   │   ├── _print_header()
 │   │   ├── _print_progress()
 │   │   ├── _print_footer()
@@ -107,10 +106,9 @@ atom_sim/
 │   └── wavepacket.py              # 波包可视化
 │       ├── _is_headless()
 │       ├── _maybe_show()
-│       ├── _telecom_ops_1517()
-│       ├── telecom_ops_bin18()
-│       ├── _get_bin18_state_labels()
 │       ├── _get_bin6_state_labels()
+│       ├── _get_bin5_state_labels()
+│       ├── _get_bin3_state_labels()
 │       ├── _infer_first_bin_site()
 │       ├── _validate_bin_rho_traces()
 │       ├── plot_dual_arm_heatmap()       # 绘制双臂热图
@@ -187,17 +185,19 @@ atom_sim/
 │       ├── DetectionEvent / TwoPhotonDetectionResult / SuccessEnumerationResult
 │       ├── build_detection_effects_6d()   # 现有保留
 │       ├── run_detection_pipeline()       # 输入 bin_dim=5
-│       ├── _build_effect_chain_5d()       # 推入 QFC/滤波/光纤/BS 的总管
 │       ├── _project_6d_to_3d()
 │       ├── _embed_3d_to_5d()
 │       └── compute_photon_statistics()    # 5D 版本
 │
 ├── visualization/
 │   └── wavepacket.py
-│       ├── plot_dual_arm_heatmap()        # 改为局域重建路径
-│       ├── plot_cross_bin_joint_heatmap()
-│       ├── _rebuild_after_fiber_bin()
-│       └── _rebuild_after_bs_bin()
+│       ├── _get_bin6_state_labels()
+│       ├── _get_bin5_state_labels()
+│       ├── _get_bin3_state_labels()
+│       ├── _infer_first_bin_site()
+│       ├── _validate_bin_rho_traces()
+│       ├── plot_dual_arm_heatmap()        # 局域重建热图
+│       └── plot_cross_bin_joint_heatmap()
 │
 ├── experiment/
 │   ├── single_run.py
