@@ -93,23 +93,26 @@ ATOM_B = SubSpace('atom_B', 4, ('|0>', '|1>', '|e>', '|u>'))
 SUBSPACE_780 = SubSpace('780', 3, ('vac', 'H', 'V'))
 SUBSPACE_1517 = SubSpace('1517', 6, ('vac', 'H', 'V', '2H', '2V', 'HV'))
 
+# 5D bin 基序：vac, H780, V780, H1517, V1517
+SUBSPACE_BIN5 = SubSpace('bin', 5, ('vac', 'H_780', 'V_780', 'H_1517', 'V_1517'))
+
 # 系统格点：两个原子
 SYSTEM_SPACE = ProductSpace((ATOM_A, ATOM_B))  # 16D
 
-# Bin格点：780 x 1517
-BIN_SPACE = ProductSpace((SUBSPACE_780, SUBSPACE_1517))  # 18D
+# Bin格点：5D（单光子截断的 780/1517 账本）
+BIN_SPACE = SUBSPACE_BIN5  # 5D
 
 # ----------------------------------------------------------------------
 # 约定：
 #   - 780 子空间基序：|vac>, |H>, |V>
 #   - 1517 子空间基序：|vac>, |H>, |V>, |2H>, |2V>, |HV>
-#   - Bin 空间基序为 780 ⊗ 1517（先 780 后 1517）
+#   - Bin 空间基序：|vac>, |H_780>, |V_780>, |H_1517>, |V_1517>
 # 该约定贯穿 gates / channels / detection / visualization。
 # ----------------------------------------------------------------------
 
 
-def get_bin_space() -> ProductSpace:
-    """获取标准的18D bin空间（780 x 1517）。"""
+def get_bin_space() -> SubSpace:
+    """获取标准的5D bin空间（单光子截断的 780/1517 账本）。"""
     return BIN_SPACE
 
 

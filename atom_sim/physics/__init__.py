@@ -12,6 +12,8 @@ from .gates import (
 )
 from .channels import (
     loss_channel_both_subspaces,
+    loss_channel_1517_raw,
+    loss_channel_1517_single_photon,
     FiberChannelParams,
 )
 
@@ -22,5 +24,7 @@ __all__ = [
     'jones_gate',
     # channels
     'loss_channel_both_subspaces',
+    'loss_channel_1517_raw',
+    'loss_channel_1517_single_photon',
     'FiberChannelParams',
 ]

@@ -3,51 +3,21 @@
 单轨迹执行模块
 
 本模块实现时间仓仿真的"传送带"主循环。
-每个时间仓按顺序处理：发射、QFC、损耗、琼斯旋转、探测（分束器并入测量端）。
+每个时间仓按顺序处理：发射（态端），其余光学链路参数采样后推入测量端。
 """
 
 from typing import Optional, Tuple
 from dataclasses import dataclass, field
-import math
 import numpy as np
 
 from ..core.mps import MPSState
-from ..hilbert.basis import BIN_SPACE, SUBSPACE_780, SUBSPACE_1517
-from ..physics.gates import (
-    emission_gate, jones_gate
-)
-from ..physics.channels import (
-    loss_channel_1517_raw,
-)
+from ..hilbert.basis import BIN_SPACE
+from ..physics.gates import emission_gate
 
 
 # 维度常量，便于代码阅读
 DIM_ATOM = 4
-DIM_BIN = BIN_SPACE.dim  # 18
-DIM_780 = SUBSPACE_780.dim  # 3
-DIM_1517 = SUBSPACE_1517.dim  # 6
-
-
-class LossBranchWeight:
-    """记录后选分支权重（用log概率避免下溢）。"""
-    def __init__(self) -> None:
-        self._log_p = 0.0
-        self._is_zero = False
-
-    def update(self, p_mu: float) -> None:
-        if p_mu <= 0.0:
-            self._is_zero = True
-            return
-        self._log_p += math.log(p_mu)
-
-    def mark_zero(self) -> None:
-        self._is_zero = True
-
-    @property
-    def value(self) -> float:
-        if self._is_zero:
-            return 0.0
-        return float(math.exp(self._log_p))
+DIM_BIN = BIN_SPACE.dim  # 5
 
 
 @dataclass
@@ -200,38 +170,34 @@ def apply_qfc(
         应用了QFC的MPS态（原地修改）
     """
     # ------------------------------------------------------------------
-    # QFC (Quantum Frequency Conversion) 视为“频域分束器”：
-    #   U_qfc = exp[ θ_H (b_H c_H^† - b_H^† c_H) + θ_V (b_V c_V^† - b_V^† c_V) ]
-    # 其中 b 对应 780nm，c 对应 1517nm。
-    # 在数值上，这是对 18D bin 的局域幺正门。
+    # 方案B：QFC 不再作用于态端（推入 POVM 对偶映射）。
+    # 这里保留接口与日志，仅记录参数。
     # ------------------------------------------------------------------
-    from ..physics.gates import qfc_gate
-
     _print_header("QFC", verbose)
     if verbose:
+        print("  [Heisenberg] QFC 推入测量端，不对 MPS 显式作用。")
         print(f"  theta_H = {theta_H:.4f} (sin² = {np.sin(theta_H)**2:.3f})")
         print(f"  theta_V = {theta_V:.4f} (sin² = {np.sin(theta_V)**2:.3f})")
-
-    # 获取QFC门（18x18，作用于单个仓）
-    U_qfc = qfc_gate(theta_H=theta_H, theta_V=theta_V)
-
-    if verbose:
-        print(f"  U_qfc shape: {U_qfc.shape}")
         print(f"  n_bins={n_bins}, MPS L={mps.L}")
         print(f"  MPS d[:5]={mps.d[:5]}, d[-5:]={mps.d[-5:]}")
 
-    # 对每个仓应用QFC
-    # 链布局：atomA(0), atomB(1), A1(2), B1(3), A2(4), B2(5), ...
-    for n in range(n_bins):
-        site_A = 2 + 2 * n
-        site_B = 2 + 2 * n + 1
-
-        mps.apply_one_site_gate(site_A, U_qfc)
-        mps.apply_one_site_gate(site_B, U_qfc)
-
-        _print_progress(n + 1, n_bins, verbose)
-
     _print_footer(mps, verbose, stage="QFC")
+    return mps
+
+
+def apply_bs(
+    mps: MPSState,
+    n_bins: int,
+    verbose: bool = True,
+) -> MPSState:
+    """
+    分束器阶段占位（Heisenberg端口）。不对态端显式作用。
+    """
+    _print_header("BS", verbose)
+    if verbose:
+        print("  [Heisenberg] BS 推入测量端，不对 MPS 显式作用。")
+        print(f"  n_bins={n_bins}, MPS L={mps.L}")
+    _print_footer(mps, verbose, stage="BS")
     return mps
 
 
@@ -261,15 +227,11 @@ def apply_fiber_channel(
     fiber_params,
     rng: np.random.Generator,
     verbose: bool = True,
-    bin_start: Optional[int] = None,
-    apply_loss: bool = True,
 ) -> tuple:
     """
-    应用光纤信道效应：琼斯旋转 + 损耗（含随机采样）。
+    采样光纤信道参数（琼斯旋转 + 损耗 + 相位漂移）。
 
-    这一步同时处理琼斯旋转与损耗，并从 FiberChannelParams
-    为每次轨迹采样参数（模拟光纤漂移）。
-    支持6D（1517-only）或18D（780×1517）bin空间。
+    方案B下光纤效应推入 POVM，对态端不显式作用。
 
     Parameters
     ----------
@@ -283,9 +245,6 @@ def apply_fiber_channel(
         随机数生成器
     verbose : bool
         是否打印进度
-    bin_start : Optional[int]
-        bin起始索引（默认自动推断：若前两个站点为原子则为2，否则为0）
-
     Returns
     -------
     tuple
@@ -293,13 +252,7 @@ def apply_fiber_channel(
         (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std)
     """
     # ------------------------------------------------------------------
-    # 光纤信道 = 偏振漂移 (Jones) + 损耗 (amplitude damping) + 相位漂移：
-    #   - Jones: unitary -> 直接作用于态
-    #   - 相位：仅对 B 臂加相对相位 (模拟路径失配)
-    #   - 损耗：默认仍走“固定 no-loss 分支”的轨迹近似
-    #
-    # 在 B 方案下，损耗应推到 POVM 的对偶映射上；
-    # 这里保留轨迹版用于对照/回退。
+    # 方案B：仅采样参数，不对态端施加任何门/损耗。
     # ------------------------------------------------------------------
     _print_header("Fiber Channel", verbose)
 
@@ -320,99 +273,9 @@ def apply_fiber_channel(
             print(f"  Phase slope: {phase_slope:+.4e} rad/bin")
             print(f"  Phase jitter std: {phase_jitter_std:.4e} rad")
 
-    if bin_start is None:
-        if len(mps.d) >= 2 and mps.d[0] == DIM_ATOM and mps.d[1] == DIM_ATOM:
-            bin_start = 2
-        else:
-            bin_start = 0
-
-    if bin_start >= mps.L:
-        raise ValueError(f"bin_start={bin_start} 超出MPS长度 {mps.L}")
-
-    bin_dim = mps.d[bin_start]
-    if bin_dim not in (DIM_1517, DIM_BIN):
-        raise ValueError(f"Unsupported bin dimension: {bin_dim}. Expected 6 or 18.")
-
-    def _to_tuple(U: np.ndarray) -> Tuple[Tuple[complex, complex], Tuple[complex, complex]]:
-        return (
-            (complex(U[0, 0]), complex(U[0, 1])),
-            (complex(U[1, 0]), complex(U[1, 1])),
-        )
-
-    # 应用琼斯旋转（1517 子空间；18D 时嵌入到 780×1517）
-    U_J_A_6 = jones_gate(_to_tuple(U_A))
-    U_J_B_6 = jones_gate(_to_tuple(U_B))
-    if bin_dim == DIM_BIN:
-        I_780 = np.eye(3, dtype=complex)
-        U_J_A = np.kron(I_780, U_J_A_6)
-        U_J_B = np.kron(I_780, U_J_B_6)
-    else:
-        U_J_A = U_J_A_6
-        U_J_B = U_J_B_6
-
-    phase_center = 0.5 * (n_bins - 1)
-    apply_phase_profile = abs(phase_slope) > 0.0 or phase_jitter_std > 0.0
-
-    # 应用损耗（只作用于1517）；方案B下可关闭 apply_loss
-    no_loss_weight = LossBranchWeight()
-    if apply_loss:
-        K_list_A = loss_channel_1517_raw(eta_H_A, eta_V_A)
-        K_list_B = loss_channel_1517_raw(eta_H_B, eta_V_B)
-        if bin_dim == DIM_BIN:
-            I_780 = np.eye(3, dtype=complex)
-            K_list_A = [np.kron(I_780, K) for K in K_list_A]
-            K_list_B = [np.kron(I_780, K) for K in K_list_B]
-        # 固定选择无损耗Kraus分支，记录后选概率 p_no_loss
-        K_noloss_A = K_list_A[0]
-        K_noloss_B = K_list_B[0]
-    else:
-        K_noloss_A = None
-        K_noloss_B = None
-
-    for n in range(n_bins):
-        site_A = bin_start + 2 * n
-        site_B = bin_start + 2 * n + 1
-
-        # 先应用琼斯旋转
-        mps.apply_one_site_gate(site_A, U_J_A)
-        mps.apply_one_site_gate(site_B, U_J_B)
-
-        if apply_phase_profile:
-            phase_n = phase_slope * (n - phase_center)
-            if phase_jitter_std > 0.0:
-                phase_n += rng.normal(0.0, phase_jitter_std)
-            if abs(phase_n) > 0.0:
-                phase_factor = np.exp(1j * phase_n)
-                U_phase_6 = jones_gate(((phase_factor, 0.0), (0.0, phase_factor)))
-                if bin_dim == DIM_BIN:
-                    I_780 = np.eye(3, dtype=complex)
-                    U_phase = np.kron(I_780, U_phase_6)
-                else:
-                    U_phase = U_phase_6
-                # 只对B臂施加时间相关相位，形成相对失配
-                mps.apply_one_site_gate(site_B, U_phase)
-
-        if apply_loss:
-            # 再应用无损耗Kraus分支
-            try:
-                pA = mps.apply_kraus_one_site_fixed(site_A, K_noloss_A, canonicalize=False)
-                pB = mps.apply_kraus_one_site_fixed(site_B, K_noloss_B, canonicalize=False)
-                no_loss_weight.update(pA)
-                no_loss_weight.update(pB)
-            except ValueError:
-                no_loss_weight.mark_zero()
-                break
-
-        _print_progress(n + 1, n_bins, verbose)
-
-    if no_loss_weight.value > 0.0:
-        # 只在完成后做一次规范化，避免每bin扫链
-        mps._mps.canonical_form_finite(renormalize=True)
-
     _print_footer(mps, verbose, stage="Fiber Channel")
 
-    p_no_loss = no_loss_weight.value if apply_loss else None
-    return mps, (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std), p_no_loss
+    return mps, (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std), None
 
 
 # ============================================================================

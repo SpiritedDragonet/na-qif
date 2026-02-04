@@ -204,6 +204,7 @@ def _queue_paths(queue_root: Path) -> dict:
         "pending": root / "tasks" / "pending",
         "inprogress": root / "tasks" / "inprogress",
         "done": root / "tasks" / "done",
+        "error": root / "tasks" / "error",
         "results": root / "results",
         "summary": root / "summary",
         "heartbeat": root / "heartbeat",
@@ -215,6 +216,7 @@ def _ensure_queue_dirs(paths: dict) -> None:
     paths["pending"].mkdir(parents=True, exist_ok=True)
     paths["inprogress"].mkdir(parents=True, exist_ok=True)
     paths["done"].mkdir(parents=True, exist_ok=True)
+    paths["error"].mkdir(parents=True, exist_ok=True)
     paths["results"].mkdir(parents=True, exist_ok=True)
     paths["summary"].mkdir(parents=True, exist_ok=True)
     paths["heartbeat"].mkdir(parents=True, exist_ok=True)
@@ -650,12 +652,17 @@ def _run_server_monitor(
         pending = list(paths["pending"].glob("task_*.json"))
         inprogress = list(paths["inprogress"].glob("task_*.json"))
         done_count = len(list(paths["done"].glob("task_*.json")))
+        error_count = len(list(paths["error"].glob("task_*.json")))
         if now - last_report >= 5:
             # total 以 expected_total 为优先（避免被回收/新增波动）
-            total = expected_total if expected_total > 0 else done_count + len(pending) + len(inprogress)
+            total = (
+                expected_total
+                if expected_total > 0
+                else done_count + len(pending) + len(inprogress) + error_count
+            )
             msg = (
                 f"[server] 进度: 已完成 {done_count}/{total} | "
-                f"进行中 {len(inprogress)} | 待完成 {len(pending)}"
+                f"进行中 {len(inprogress)} | 待完成 {len(pending)} | 失败 {error_count}"
             )
             print(f"\r{msg}", end="", flush=True)
             last_report = now
@@ -895,8 +902,12 @@ def _run_worker_loop(
         except Exception:
             pass
         try:
-            done_path = paths["done"] / task_path.name
-            task_path.replace(done_path)
+            if status == "error":
+                error_path = paths["error"] / task_path.name
+                task_path.replace(error_path)
+            else:
+                done_path = paths["done"] / task_path.name
+                task_path.replace(done_path)
         except Exception:
             pass
 

@@ -16,6 +16,9 @@ from ..physics import FiberChannelParams
 DEFAULT_DARK_RATE_INTRINSIC_HZ = 65.0
 DEFAULT_BG_RATE_MEAN_HZ = 165.0
 DEFAULT_BG_RATE_STD_HZ = float(np.sqrt(5.0))
+DEFAULT_QFC_THETA_H = np.pi / 4
+DEFAULT_QFC_THETA_V = np.pi / 4
+DEFAULT_APPLY_FILTER_780 = True
 
 
 @dataclass
@@ -226,9 +229,9 @@ def _apply_atomic_dephasing(
 class PipelineHooks:
     on_stage: Optional[Callable[[str], None]] = None
     after_emission: Optional[Callable[[Any], None]] = None
-    after_qfc_filter: Optional[Callable[[Any], None]] = None
-    after_fiber: Optional[Callable[[Any, tuple], None]] = None
-    after_bs: Optional[Callable[[Any], None]] = None
+    after_qfc_filter: Optional[Callable[[Any, Tuple[float, float], bool], None]] = None
+    after_fiber: Optional[Callable[[Any, tuple, Tuple[float, float], bool], None]] = None
+    after_bs: Optional[Callable[[Any, tuple, Tuple[float, float], bool], None]] = None
 
 
 @dataclass
@@ -240,6 +243,9 @@ class PipelineResult:
     p_no_loss_fiber: Optional[float]
     p_no_loss: Optional[float]
     fiber_sample: Optional[tuple]
+    qfc_theta_H: float
+    qfc_theta_V: float
+    apply_filter_780: bool
     t_wait_us: float
     t2_us: float
     p_dephase: float
@@ -327,11 +333,13 @@ def run_emission_to_bs(
 
     _call_stage("QFC")
     t0 = time.perf_counter() if timings is not None else None
+    qfc_theta_H = DEFAULT_QFC_THETA_H
+    qfc_theta_V = DEFAULT_QFC_THETA_V
     apply_qfc(
         mps=mps,
         n_bins=emission.get_n_bins(),
-        theta_H=np.pi / 4,
-        theta_V=np.pi / 4,
+        theta_H=qfc_theta_H,
+        theta_V=qfc_theta_V,
         verbose=verbose,
     )
     if timings is not None and t0 is not None:
@@ -339,7 +347,11 @@ def run_emission_to_bs(
     # 方案B：不再做 780 后选/1517 投影，损耗统一推到测量端 effect。
     p_no_loss_780 = None
     if hooks.after_qfc_filter is not None:
-        hooks.after_qfc_filter(emission)
+        hooks.after_qfc_filter(
+            emission,
+            qfc_params=(qfc_theta_H, qfc_theta_V),
+            apply_filter_780=DEFAULT_APPLY_FILTER_780,
+        )
 
     _call_stage("光纤信道")
     t0 = time.perf_counter() if timings is not None else None
@@ -349,13 +361,17 @@ def run_emission_to_bs(
         fiber_params=fiber_params,
         rng=rng,
         verbose=verbose,
-        apply_loss=False,
     )
     if timings is not None and t0 is not None:
         timings["fiber"] = time.perf_counter() - t0
     p_no_loss = None
     if hooks.after_fiber is not None:
-        hooks.after_fiber(emission, fiber_sample)
+        hooks.after_fiber(
+            emission,
+            fiber_sample=fiber_sample,
+            qfc_params=(qfc_theta_H, qfc_theta_V),
+            apply_filter_780=DEFAULT_APPLY_FILTER_780,
+        )
 
     if t2_us > 0.0:
         p_dephase = 0.5 * (1.0 - np.exp(-t_wait_us / t2_us))
@@ -374,7 +390,12 @@ def run_emission_to_bs(
     if verbose:
         print("\n分束器并入测量算符（Heisenberg 端口），不对态显式作用 BS。")
     if hooks.after_bs is not None:
-        hooks.after_bs(emission)
+        hooks.after_bs(
+            emission,
+            fiber_sample=fiber_sample,
+            qfc_params=(qfc_theta_H, qfc_theta_V),
+            apply_filter_780=DEFAULT_APPLY_FILTER_780,
+        )
 
     return PipelineResult(
         emission=emission,
@@ -384,6 +405,9 @@ def run_emission_to_bs(
         p_no_loss_fiber=p_no_loss_fiber,
         p_no_loss=p_no_loss,
         fiber_sample=fiber_sample,
+        qfc_theta_H=qfc_theta_H,
+        qfc_theta_V=qfc_theta_V,
+        apply_filter_780=DEFAULT_APPLY_FILTER_780,
         t_wait_us=t_wait_us,
         t2_us=t2_us,
         p_dephase=p_dephase,

@@ -17,12 +17,12 @@ def loss_channel_both_subspaces(
     eta_V_1517: float
 ) -> List[np.ndarray]:
     """
-    作用于780和1517两个子空间的组合损耗信道。
+    5D bin 上的组合损耗信道（单光子截断）。
 
-    用于QFC应用：780nm通道通常 eta_780=0（100%过滤），
-    而1517nm通道具有正常的传输损耗。
-
-    Kraus算符是张量积：K_780^(k) ⊗ K_1517^(j)
+    用于 QFC/过滤：780nm 通道通常 eta_780=0（100%过滤），
+    1517nm 通道具有正常损耗。由于每臂每个 bin 最多 1 光子，
+    Kraus 可以直接在 5D 基序上构造：
+        |vac>, |H_780>, |V_780>, |H_1517>, |V_1517>
 
     Parameters
     ----------
@@ -36,30 +36,47 @@ def loss_channel_both_subspaces(
     Returns
     -------
     List[np.ndarray]
-        作用于18D bin空间的Kraus算符列表
+        作用于5D bin空间的Kraus算符列表
     """
     # ------------------------------------------------------------------
-    # 该信道用于“780 × 1517”联合损耗：
-    #   K_total = K_780 ⊗ K_1517
-    # 其中 K_780 / K_1517 分别是各自子空间的损耗 Kraus。
+    # 5D 基序：vac, H_780, V_780, H_1517, V_1517
+    # 由于单光子截断，损耗仅把单光子态映射到真空。
     # ------------------------------------------------------------------
-    # 获取每个子空间的Kraus算符（未嵌入）
-    K_780_list = loss_channel_780_general(eta_780)  # 3x3 矩阵
-    K_1517_list = loss_channel_1517_raw(eta_H_1517, eta_V_1517)  # 6x6 矩阵
+    K_list = []
 
-    # 构成所有张量积组合
-    K_combined = []
-    for K_780 in K_780_list:
-        for K_1517 in K_1517_list:
-            # K_780 是 (3,3), K_1517 是 (6,6), 结果是 (18,18)
-            K_combined.append(np.kron(K_780, K_1517))
+    K0 = np.zeros((5, 5), dtype=complex)
+    K0[0, 0] = 1.0
+    K0[1, 1] = np.sqrt(eta_780)
+    K0[2, 2] = np.sqrt(eta_780)
+    K0[3, 3] = np.sqrt(eta_H_1517)
+    K0[4, 4] = np.sqrt(eta_V_1517)
+    K_list.append(K0)
 
-    return K_combined
+    # 780 损耗分支
+    K_h780 = np.zeros((5, 5), dtype=complex)
+    K_h780[0, 1] = np.sqrt(1.0 - eta_780)
+    K_list.append(K_h780)
+
+    K_v780 = np.zeros((5, 5), dtype=complex)
+    K_v780[0, 2] = np.sqrt(1.0 - eta_780)
+    K_list.append(K_v780)
+
+    # 1517 损耗分支
+    K_h1517 = np.zeros((5, 5), dtype=complex)
+    K_h1517[0, 3] = np.sqrt(1.0 - eta_H_1517)
+    K_list.append(K_h1517)
+
+    K_v1517 = np.zeros((5, 5), dtype=complex)
+    K_v1517[0, 4] = np.sqrt(1.0 - eta_V_1517)
+    K_list.append(K_v1517)
+
+    # 移除全零算符（例如 eta=1 时）
+    return [K for K in K_list if np.any(K != 0)]
 
 
 def loss_channel_1517_raw(eta_H: float, eta_V: float) -> List[np.ndarray]:
     """
-    原始1517nm损耗信道（6x6矩阵，未嵌入18D）。
+    原始1517nm损耗信道（6x6矩阵，未做 bin 嵌入）。
 
     Parameters
     ----------
@@ -117,6 +134,31 @@ def loss_channel_1517_raw(eta_H: float, eta_V: float) -> List[np.ndarray]:
     # 移除全零算符
     K_list_1517 = [K for K in K_list_1517 if np.any(K != 0)]
     return K_list_1517
+
+
+def loss_channel_1517_single_photon(eta_H: float, eta_V: float) -> List[np.ndarray]:
+    """
+    1517nm 单光子子空间的损耗信道（3x3）。
+
+    基序：|vac>, |H>, |V>
+    """
+    K_list = []
+
+    K0 = np.zeros((3, 3), dtype=complex)
+    K0[0, 0] = 1.0
+    K0[1, 1] = np.sqrt(eta_H)
+    K0[2, 2] = np.sqrt(eta_V)
+    K_list.append(K0)
+
+    K_H = np.zeros((3, 3), dtype=complex)
+    K_H[0, 1] = np.sqrt(1.0 - eta_H)
+    K_list.append(K_H)
+
+    K_V = np.zeros((3, 3), dtype=complex)
+    K_V[0, 2] = np.sqrt(1.0 - eta_V)
+    K_list.append(K_V)
+
+    return [K for K in K_list if np.any(K != 0)]
 
 
 def loss_channel_780_general(eta: float) -> List[np.ndarray]:

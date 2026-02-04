@@ -12,7 +12,6 @@ import numpy as np
 from scipy.linalg import expm
 
 from ..hilbert.basis import (
-    SUBSPACE_780,
     SUBSPACE_1517,
 )
 from ..hilbert.operators import (
@@ -27,12 +26,11 @@ from ..hilbert.operators import (
 @lru_cache(maxsize=8)
 def qfc_gate(theta_H: float = 0.0, theta_V: float = 0.0) -> np.ndarray:
     """
-    量子频率转换门 U_qfc。
+    量子频率转换门 U_qfc（5D bin）。
 
     通过类分束器耦合将780nm光子转换为1517nm：
-        U_qfc = exp(theta_H * (b_H c_H^† - b_H^† c_H) + theta_V * (b_V c_V^��� - b_V^† c_V))
-
-    这是作用于18D bin空间（780 x 1517）的单格点幺正。
+        对每个偏振在 (|H_780>, |H_1517>) 与 (|V_780>, |V_1517>) 上做二维旋转，
+        其中 sin^2(theta) = 转换概率。
 
     Parameters
     ----------
@@ -44,65 +42,40 @@ def qfc_gate(theta_H: float = 0.0, theta_V: float = 0.0) -> np.ndarray:
     Returns
     -------
     np.ndarray
-        作用于bin空间的18x18幺正矩阵
+        作用于bin空间的5x5幺正矩阵
 
     Examples
     --------
     >>> U = qfc_gate(theta_H=np.pi/4, theta_V=np.pi/4)  # 50%转换
     """
     # ------------------------------------------------------------------
-    # 物理模型（简化的“频域分束器”）：
-    #   在经典泵浦近似下，QFC 等效于两个模式间的 BS 交换：
-    #     b_H <-> c_H,  b_V <-> c_V
-    #   其中 sin^2(theta) = 转换概率。
+    # 5D bin 基序：
+    #   0: |vac>
+    #   1: |H_780>
+    #   2: |V_780>
+    #   3: |H_1517>
+    #   4: |V_1517>
     #
-    # 数值上：在 780⊗1517 的 18D 空间上构造生成元并指数化。
+    # 在 (1,3) 与 (2,4) 子空间做二维旋转。
     # ------------------------------------------------------------------
-    # 获取湮灭/产生算符
-    bH = annihilation_op(SUBSPACE_780, mode_id=0)
-    bH_dag = creation_op(SUBSPACE_780, mode_id=0)
-    bV = annihilation_op(SUBSPACE_780, mode_id=1)
-    bV_dag = creation_op(SUBSPACE_780, mode_id=1)
+    U = np.eye(5, dtype=complex)
 
-    cH = annihilation_op(SUBSPACE_1517, mode_id=0)
-    cH_dag = creation_op(SUBSPACE_1517, mode_id=0)
-    cV = annihilation_op(SUBSPACE_1517, mode_id=1)
-    cV_dag = creation_op(SUBSPACE_1517, mode_id=1)
+    cH = np.cos(theta_H)
+    sH = np.sin(theta_H)
+    cV = np.cos(theta_V)
+    sV = np.sin(theta_V)
 
-    # 在780子空间上构建生成元（通过张量积作用于1517中的c）
-    # G = -i * theta_H * (b_H c_H^† - b_H^† c_H) - i * theta_V * (b_V c_V^† - b_V^† c_V)
-    # 总生成元作用于780 x 1517积空间
+    # H 偏振：|H_780> <-> |H_1517>
+    U[1, 1] = cH
+    U[1, 3] = -sH
+    U[3, 1] = sH
+    U[3, 3] = cH
 
-    # 需要正确嵌入算符
-    # b作用于780，c作用于1517，所以b ⊗ c^†作用于积空间
-
-    I_780 = np.eye(3, dtype=complex)
-    I_1517 = np.eye(6, dtype=complex)
-
-    # b_H ⊗ I_1517
-    bH_full = np.kron(bH, I_1517)
-    # I_780 ⊗ c_H^†
-    cH_dag_full = np.kron(I_780, cH_dag)
-    # b_H^† ⊗ I_1517
-    bH_dag_full = np.kron(bH_dag, I_1517)
-    # I_780 ⊗ c_H
-    cH_full = np.kron(I_780, cH)
-
-    # V模式同理
-    bV_full = np.kron(bV, I_1517)
-    cV_dag_full = np.kron(I_780, cV_dag)
-    bV_dag_full = np.kron(bV_dag, I_1517)
-    cV_full = np.kron(I_780, cV)
-
-    # 生成元：theta * (b c^† - b^† c)
-    # 这是反厄米的，所以exp(G)是幺正的
-    G_H = theta_H * (bH_full @ cH_dag_full - bH_dag_full @ cH_full)
-    G_V = theta_V * (bV_full @ cV_dag_full - bV_dag_full @ cV_full)
-
-    G = G_H + G_V
-
-    # 指数化得到幺正
-    U = expm(G)
+    # V 偏振：|V_780> <-> |V_1517>
+    U[2, 2] = cV
+    U[2, 4] = -sV
+    U[4, 2] = sV
+    U[4, 4] = cV
 
     return U
 
@@ -111,10 +84,9 @@ def qfc_gate(theta_H: float = 0.0, theta_V: float = 0.0) -> np.ndarray:
 @lru_cache(maxsize=4)
 def bs_gate_6d() -> np.ndarray:
     """
-    6D bin空间（仅1517nm）的50/50分束器门（36x36）。
+    6D 输出端口（1517nm）的50/50分束器门（36x36）。
 
-    这是QFC+780滤波后使用的版本，每个bin只有6D（1517nm子空间）。
-    比324x324的18D版本快9倍。
+    该门用于测量端共轭：BS 后的端口需要容纳 2 光子态。
 
     Returns
     -------
@@ -257,15 +229,15 @@ def emission_gate(
     bin_first: bool = False
 ) -> np.ndarray:
     """
-    原子-光子纠缠的发射门 U_emit（嵌入bin空间）。
+    原子-光子纠缠的发射门 U_emit（嵌入5D bin空间）。
 
         U_emit = exp(√(dt) * (L ⊗ b^†_780 - L^† ⊗ b_780))
 
     其中 L = √gamma * (alpha_+ * S_+ + alpha_- * S_-)
     且 S_± 是原子跃迁算符。
 
-    门嵌入18D bin空间为U_12x12 ⊗ I_1517，
-    其中12×12门作用于原子(4D) × 780(3D)，I_1517是通信子空间上的单位。
+    门嵌入5D bin空间：仅作用于 (vac, H_780, V_780) 子块，
+    对 (H_1517, V_1517) 子块保持单位。
 
     这在原子态和发射光子偏振之间创建纠缠。
     发射的光子在780nm子空间中，稍后可通过QFC
@@ -291,9 +263,9 @@ def emission_gate(
     Returns
     -------
     np.ndarray
-        72x72 幺正矩阵
-        - bin_first=False: 作用在 原子(4D) × bin(18D=780×1517)
-        - bin_first=True: 作用在 bin(18D) × 原子(4D)
+        20x20 幺正矩阵
+        - bin_first=False: 作用在 原子(4D) × bin(5D)
+        - bin_first=True: 作用在 bin(5D) × 原子(4D)
 
     Examples
     --------
@@ -309,7 +281,7 @@ def emission_gate(
     #   L = sqrt(gamma) * (alpha_+ S_+ + alpha_- S_-)
     #   b^† 是 780nm 光子的产生算符（单光子截断）
     #
-    # 该门在“原子 × 780”上是 12x12，再扩展到 1517 维度为 72x72。
+    # 该门在“原子 × 780”上是 12x12，再嵌入到 5D bin 得到 20x20。
     # ------------------------------------------------------------------
     # 原子跃迁算符
     S_plus = atom_transition('+')  # |0><e|
@@ -362,37 +334,26 @@ def emission_gate(
     U_12x12_4d = U_12x12.reshape(d_atom, 3, d_atom, 3)
 
     if bin_first:
-        # bin × atom: (780 × 1517) × atom
-        # 需要把 U_12x12 (作用在 atom × 780) 转换为作用在 780 × atom
-        # 交换前两个索引: (atom, 780, atom, 780) -> (780, atom, 780, atom)
-        U_swapped = U_12x12_4d.transpose(1, 0, 3, 2)
-
-        # 扩展到包含 1517 子空间
-        # (780, atom, 780, atom) -> (780, 1517, atom, 780, 1517, atom)
-        # 通过在 780 和 atom 之间插入 I_1517
-        d_780, d_atom, _, _ = U_swapped.shape
-        d_1517 = 6
-
-        # 构造最终的 (72, 72) 矩阵
-        # 正确的维度：(d_780 * d_1517 * d_atom, d_780 * d_1517 * d_atom) = (72, 72)
-
-        # 使用循环构造更清晰
-        U_72 = np.zeros((d_780 * d_1517 * d_atom, d_780 * d_1517 * d_atom), dtype=complex)
-        for i780 in range(d_780):
-            for i1517 in range(d_1517):
-                for iatom in range(d_atom):
-                    row = (i780 * d_1517 + i1517) * d_atom + iatom
-                    for j780 in range(d_780):
-                        for j1517 in range(d_1517):
-                            for jatom in range(d_atom):
-                                col = (j780 * d_1517 + j1517) * d_atom + jatom
-                                # 只有当 i1517 == j1517 时才有非零元素（I_1517）
-                                if i1517 == j1517:
-                                    U_72[row, col] = U_swapped[i780, iatom, j780, jatom]
+        # bin × atom: (5D bin) × atom
+        # 在 bin-first 索引下嵌入 780 子块，其余 1517 分量保持单位
+        U_20 = np.eye(5 * d_atom, dtype=complex)
+        for iatom in range(d_atom):
+            for i780 in range(3):
+                row = i780 * d_atom + iatom
+                for jatom in range(d_atom):
+                    for j780 in range(3):
+                        col = j780 * d_atom + jatom
+                        U_20[row, col] = U_12x12_4d[iatom, i780, jatom, j780]
     else:
-        # atom × bin: atom × (780 × 1517)
-        # U_12x12 作用在 atom × 780 上，只需要张量积上 I_1517
-        I_1517 = np.eye(6, dtype=complex)
-        U_72 = np.kron(U_12x12, I_1517)
+        # atom × bin: atom × (5D bin)
+        # 在 bin-last 索引下嵌入 780 子块，其余 1517 分量保持单位
+        U_20 = np.eye(d_atom * 5, dtype=complex)
+        for iatom in range(d_atom):
+            for i780 in range(3):
+                row = iatom * 5 + i780
+                for jatom in range(d_atom):
+                    for j780 in range(3):
+                        col = jatom * 5 + j780
+                        U_20[row, col] = U_12x12_4d[iatom, i780, jatom, j780]
 
-    return U_72
+    return U_20

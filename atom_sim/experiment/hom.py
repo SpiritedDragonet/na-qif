@@ -221,6 +221,10 @@ def _run_hom_run(
         n_samples=shots_per_run,
         compute_metrics=False,
         bs_unitary=bs_unitary,
+        fiber_sample=pipe.fiber_sample,
+        apply_filter_780=pipe.apply_filter_780,
+        theta_H=pipe.qfc_theta_H,
+        theta_V=pipe.qfc_theta_V,
     )
     p_arrive = pipeline.p_arrive
     # 逐 shot 统计符合与点击记录

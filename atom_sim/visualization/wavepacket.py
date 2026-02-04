@@ -29,6 +29,8 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 from ..core.mps import MPSState  # noqa: E402
 from ..simulation.trajectory import EmissionResult  # noqa: E402
+from ..physics.gates import qfc_gate  # noqa: E402
+from ..physics.channels import loss_channel_both_subspaces, loss_channel_1517_single_photon  # noqa: E402
 
 
 # ============================================================================
@@ -43,110 +45,9 @@ def _maybe_show(wait_s: float = 5.0, show: bool = True) -> None:
     plt.show(block=False)
     plt.pause(wait_s)
 
-def _telecom_ops_1517():
-    """
-    构造1517nm子空间的投影和数算符。
-
-    1517基：[vac, 1H, 1V, 2H, 2V, HV]
-
-    Returns
-    -------
-    Tuple of np.ndarray
-        (P1_1517, N_1517, P1H_1517, P1V_1517, NH_1517, NV_1517)
-        - P1_1517: 单光子投影（所有偏振）
-        - N_1517: 总光子数算符
-        - P1H_1517: 单H光子投影
-        - P1V_1517: 单V光子投影
-        - NH_1517: H光子数算符
-        - NV_1517: V光子数算符
-    """
-    # 基：[vac, 1H, 1V, 2H, 2V, HV]
-    # 单光子投影（所有偏振）
-    P1_1517 = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)
-
-    # 总光子数
-    N_1517 = np.diag([0, 1, 1, 2, 2, 2]).astype(complex)
-
-    # H/V单光子投影
-    P1H_1517 = np.diag([0, 1, 0, 0, 0, 0]).astype(complex)
-    P1V_1517 = np.diag([0, 0, 1, 0, 0, 0]).astype(complex)
-
-    # H/V光子数
-    NH_1517 = np.diag([0, 1, 0, 2, 0, 1]).astype(complex)
-    NV_1517 = np.diag([0, 0, 1, 0, 2, 1]).astype(complex)
-
-    return P1_1517, N_1517, P1H_1517, P1V_1517, NH_1517, NV_1517
-
-
-def telecom_ops_bin18():
-    """
-    构造嵌入18维仓空间的通信算符。
-
-    仓空间 = 780(3D) x 1517(6D) = 18D
-    假设展平顺序：|i_780> ⊗ |j_1517>，索引 = i_780 * 6 + j_1517
-
-    Returns
-    -------
-    Tuple of np.ndarray
-        (P1_bin, N_bin, P1H_bin, P1V_bin, NH_bin, NV_bin)
-        每个都是18x18，作用于完整仓空间
-    """
-    I_780 = np.eye(3, dtype=complex)
-
-    P1_1517, N_1517, P1H_1517, P1V_1517, NH_1517, NV_1517 = _telecom_ops_1517()
-
-    # 嵌入：I_780 ⊗ Op_1517
-    P1_bin = np.kron(I_780, P1_1517)
-    N_bin = np.kron(I_780, N_1517)
-    P1H_bin = np.kron(I_780, P1H_1517)
-    P1V_bin = np.kron(I_780, P1V_1517)
-    NH_bin = np.kron(I_780, NH_1517)
-    NV_bin = np.kron(I_780, NV_1517)
-
-    return P1_bin, N_bin, P1H_bin, P1V_bin, NH_bin, NV_bin
-
-
 # ============================================================================
 # 仓状态热图可视化
 # ============================================================================
-
-def _get_bin18_state_labels() -> List[str]:
-    """
-    获取18个仓状态的标签。
-
-    仓空间 = 780(3D) x 1517(6D)，索引 = i_780 * 6 + i_1517
-
-    780子空间：仅支持0或1个光子（|vac>, |H>, |V>）
-    1517子空间：支持最多2个光子（|vac>, |H>, |V>, |2H>, |2V>, |HV>）
-
-    Returns
-    -------
-    List[str]
-        18个状态标签，格式为 |780,1517>
-    """
-    # 780基态（仅单光子）
-    bases_780 = ['|vac>', '|H>', '|V>']
-    # 1517基态（最多两个光子）
-    bases_1517 = ['|vac>', '|H>', '|V>', '|2H>', '|2V>', '|HV>']
-
-    labels = []
-    for i_780, b780 in enumerate(bases_780):
-        for i_1517, b1517 in enumerate(bases_1517):
-            # 格式：|780_state, 1517_state>
-            # 移除尖括号以更清晰地显示，保持结构清晰
-            if b780 == '|vac>' and b1517 == '|vac>':
-                label = '|vac,vac>'  # 两者都是真空
-            elif b780 == '|vac>':
-                label = f'|vac,{b1517[1:-1]}>'  # 仅1517态
-            elif b1517 == '|vac>':
-                label = f'|{b780[1:-1]},vac>'  # 仅780态
-            else:
-                # 两者都不是真空：显示两个态
-                label = f'|{b780[1:-1]},{b1517[1:-1]}>'
-            labels.append(label)
-
-    return labels
-
 
 def _get_bin6_state_labels() -> List[str]:
     """
@@ -166,6 +67,16 @@ def _get_bin6_state_labels() -> List[str]:
         6个状态标签
     """
     return ['|vac>', '|H>', '|V>', '|2H>', '|2V>', '|HV>']
+
+
+def _get_bin5_state_labels() -> List[str]:
+    """获取5D bin状态标签（vac, H780, V780, H1517, V1517）。"""
+    return ['|vac>', '|H_780>', '|V_780>', '|H_1517>', '|V_1517>']
+
+
+def _get_bin3_state_labels() -> List[str]:
+    """获取3D telecom状态标签（vac, H, V）。"""
+    return ['|vac>', '|H>', '|V>']
 
 
 def _build_port_effects(
@@ -213,20 +124,50 @@ def _build_port_effects(
     return effects_port1, effects_port2
 
 
-def _embed_two_port_1517_to_18(op_6d: np.ndarray) -> np.ndarray:
-    """
-    将 1517 双端口算符 (36x36) 嵌入到 18D 双端口空间 (324x324)。
+def _apply_kraus_state(rho: np.ndarray, K_list: List[np.ndarray]) -> np.ndarray:
+    """ρ -> Σ K ρ K^†（单端口）。"""
+    acc = np.zeros_like(rho)
+    for K in K_list:
+        acc += K @ rho @ K.conj().T
+    return acc
 
-    基序与仿真一致：单端口 = 780 ⊗ 1517，双端口 = (780A,1517A,780B,1517B)。
-    """
-    op_6d = np.asarray(op_6d, dtype=complex)
-    if op_6d.shape != (36, 36):
-        raise ValueError(f"op_6d shape {op_6d.shape} != (36,36)")
-    I_780 = np.eye(3, dtype=complex)
-    op_tmp = np.kron(I_780, np.kron(I_780, op_6d))
-    op_tmp = op_tmp.reshape(3, 3, 6, 6, 3, 3, 6, 6)
-    op_perm = op_tmp.transpose(0, 2, 1, 3, 4, 6, 5, 7)
-    return op_perm.reshape(18 * 18, 18 * 18)
+
+def _apply_kraus_state_pair(rho: np.ndarray, K_list_A: List[np.ndarray], K_list_B: List[np.ndarray]) -> np.ndarray:
+    """ρ -> Σ (K_A ⊗ K_B) ρ (K_A ⊗ K_B)^†（双端口）。"""
+    acc = np.zeros_like(rho)
+    for K_A in K_list_A:
+        for K_B in K_list_B:
+            K = np.kron(K_A, K_B)
+            acc += K @ rho @ K.conj().T
+    return acc
+
+
+def _proj_3_from_5() -> np.ndarray:
+    """5D -> 3D 投影：{vac,H_1517,V_1517}。"""
+    P = np.zeros((3, 5), dtype=complex)
+    P[0, 0] = 1.0
+    P[1, 3] = 1.0
+    P[2, 4] = 1.0
+    return P
+
+
+def _embed_6_from_3() -> np.ndarray:
+    """3D -> 6D 嵌入：{vac,H,V} -> 6D 前三项。"""
+    P = np.zeros((6, 3), dtype=complex)
+    P[0, 0] = 1.0
+    P[1, 1] = 1.0
+    P[2, 2] = 1.0
+    return P
+
+
+def _jones_3d(U_2x2: np.ndarray) -> np.ndarray:
+    """2x2 Jones -> 3D（diag(1,U)）。"""
+    U = np.asarray(U_2x2, dtype=complex)
+    if U.shape != (2, 2):
+        raise ValueError(f"Jones matrix shape {U.shape} != (2,2)")
+    U3 = np.eye(3, dtype=complex)
+    U3[1:, 1:] = U
+    return U3
 
 
 def _infer_first_bin_site(mps: MPSState) -> int:
@@ -276,6 +217,9 @@ def plot_dual_arm_heatmap(
     validate: bool = True,
     trace_tol: float = 1e-6,
     bs_unitary: Optional[np.ndarray] = None,
+    qfc_params: Optional[Tuple[float, float]] = None,
+    fiber_sample: Optional[tuple] = None,
+    apply_filter_780: bool = True,
     arm_labels: Optional[Tuple[str, str]] = None,
 ) -> None:
     """
@@ -286,8 +230,8 @@ def plot_dual_arm_heatmap(
     - QFC/Jones/Loss/BS：使用 show_atomic=False（原子不参与）
 
     每个臂显示：
-    - 若 show_atomic=True：顶部4行（原子）+ 底部18行（仓状态）
-    - 若 show_atomic=False：仅18行仓状态
+    - 若 show_atomic=True：顶部4行（原子）+ 底部 bin_dim 行（仓状态）
+    - 若 show_atomic=False：仅 bin_dim 行仓状态
 
     三种色图：
     - 原子态：YlOrRd（黄-橙-红）
@@ -320,6 +264,14 @@ def plot_dual_arm_heatmap(
         若提供，则在测量端使用 U^† (P ⊗ I) U / U^† (I ⊗ P) U 计算端口概率，
         可在不显式作用 BS 的情况下绘制 after-BS 热图。
         仅支持 6D bin（1517nm）。
+    qfc_params : Tuple[float, float], optional
+        QFC 的 (theta_H, theta_V)，用于可视化重建（默认 π/4, π/4）。
+    fiber_sample : tuple, optional
+        光纤采样参数：
+        (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std)。
+        用于 after_fiber / after_bs 的局域重建。
+    apply_filter_780 : bool
+        是否在可视化重建中应用 780 过滤（默认 True）。
     arm_labels : Tuple[str, str], optional
         自定义左右臂标题标签，默认使用 ("Arm A","Arm B")；
         若 bs_unitary 给出且未显式设置，则默认 ("Port 1","Port 2")。
@@ -424,44 +376,146 @@ def plot_dual_arm_heatmap(
         atom_A_for_bins = np.tile(atom_A_probs.reshape(4, 1), (1, n_bins))
         atom_B_for_bins = np.tile(atom_B_probs.reshape(4, 1), (1, n_bins))
 
-    # 获取第一个bin的维度
-    if first_bin_site < len(mps.d):
-        first_bin_dim = mps.d[first_bin_site]
+    # 选择可视化模式（默认按参数推断）
+    if stage_name:
+        stage_lower = stage_name.lower()
     else:
-        raise ValueError(f"Cannot find bin site: chain has only {len(mps.d)} sites")
+        stage_lower = ""
+    if stage_lower and "bs" in stage_lower:
+        stage_mode = "after_bs"
+    elif stage_lower and "fiber" in stage_lower:
+        stage_mode = "after_fiber"
+    elif stage_lower and "qfc" in stage_lower:
+        stage_mode = "after_qfc"
+    else:
+        stage_mode = "emission"
 
-    if first_bin_dim == 18:
-        bin_dim = 18
-        bin_state_labels = _get_bin18_state_labels()
-    elif first_bin_dim == 6:
+    if bs_unitary is not None:
+        stage_mode = "after_bs"
+
+    if qfc_params is None:
+        qfc_params = (np.pi / 4, np.pi / 4)
+    theta_H, theta_V = qfc_params
+
+    if fiber_sample is None:
+        U_A = np.eye(2, dtype=complex)
+        U_B = np.eye(2, dtype=complex)
+        eta_H_A = eta_V_A = eta_H_B = eta_V_B = 1.0
+        phase_slope = 0.0
+    else:
+        U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, _phase, phase_slope, _phase_jitter_std = fiber_sample
+
+    # 设置状态标签与显示维度
+    if stage_mode == "after_bs":
         bin_dim = 6
         bin_state_labels = _get_bin6_state_labels()
+        if bs_unitary is None:
+            raise ValueError("after_bs 模式需要 bs_unitary (36x36)")
+        if arm_labels is None:
+            arm_labels = ("Port 1", "Port 2")
+    elif stage_mode in ("after_qfc", "after_fiber"):
+        bin_dim = 3
+        bin_state_labels = _get_bin3_state_labels()
     else:
-        raise ValueError(f"Unsupported bin dimension: {first_bin_dim}. Expected 18 or 6.")
+        bin_dim = 5
+        bin_state_labels = _get_bin5_state_labels()
 
-    # 提取仓概率（统一使用端口 effect 计算）
+    # 提取仓概率
     probs_A = np.zeros((n_bins, bin_dim))
     probs_B = np.zeros((n_bins, bin_dim))
 
-    if bs_unitary is not None and bin_dim != 6:
-        raise ValueError("bs_unitary 模式仅支持 6D bin (1517nm)")
+    # 预计算通道算符
+    U_qfc = qfc_gate(theta_H=theta_H, theta_V=theta_V)
+    eta_780 = 0.0 if apply_filter_780 else 1.0
+    K_filter = loss_channel_both_subspaces(
+        eta_780=eta_780,
+        eta_H_1517=1.0,
+        eta_V_1517=1.0,
+    )
+    P_3_from_5 = _proj_3_from_5()
+    P_6_from_3 = _embed_6_from_3()
+    U_A_3 = _jones_3d(U_A)
 
-    effects_port1, effects_port2 = _build_port_effects(bin_dim, bs_unitary)
-    dim_pair = bin_dim * bin_dim
-    for n in range(n_bins):
-        # 链布局：[atomA, atomB, A1, B1, A2, B2, ..., AN, BN]
-        site_A = first_bin_site + 2 * n
-        site_B = first_bin_site + 2 * n + 1
-        if site_A >= len(mps.d) or site_B >= len(mps.d):
-            continue
-        rho_pair = mps.get_reduced_density([site_A, site_B])
-        if rho_pair.ndim == 4:
-            rho_pair = rho_pair.reshape(dim_pair, dim_pair)
-        for idx in range(bin_dim):
-            p1 = np.real(np.trace(effects_port1[idx] @ rho_pair))
-            p2 = np.real(np.trace(effects_port2[idx] @ rho_pair))
-            probs_A[n, idx] = max(0.0, float(p1))
-            probs_B[n, idx] = max(0.0, float(p2))
+    phase_center = 0.5 * (n_bins - 1)
+
+    if stage_mode == "after_bs":
+        # 先构造端口测量 effect
+        effects_port1, effects_port2 = _build_port_effects(6, bs_unitary)
+        dim_pair_5 = 25
+        for n in range(n_bins):
+            site_A = first_bin_site + 2 * n
+            site_B = first_bin_site + 2 * n + 1
+            if site_A >= len(mps.d) or site_B >= len(mps.d):
+                continue
+            rho_pair = mps.get_reduced_density([site_A, site_B])
+            if rho_pair.ndim == 4:
+                rho_pair = rho_pair.reshape(dim_pair_5, dim_pair_5)
+
+            # QFC + 过滤
+            U_qfc_pair = np.kron(U_qfc, U_qfc)
+            rho_pair = U_qfc_pair @ rho_pair @ U_qfc_pair.conj().T
+            rho_pair = _apply_kraus_state_pair(rho_pair, K_filter, K_filter)
+
+            # 投影到 3D×3D
+            P_pair_3 = np.kron(P_3_from_5, P_3_from_5)
+            rho_3 = P_pair_3 @ rho_pair @ P_pair_3.conj().T
+
+            # 光纤（Jones + 相位）+ 损耗
+            phase_n = phase_slope * (n - phase_center)
+            U_B_n = np.exp(1j * phase_n) * U_B
+            U_B_3 = _jones_3d(U_B_n)
+            U_pair_3 = np.kron(U_A_3, U_B_3)
+            rho_3 = U_pair_3 @ rho_3 @ U_pair_3.conj().T
+            K_A_3 = loss_channel_1517_single_photon(float(eta_H_A), float(eta_V_A))
+            K_B_3 = loss_channel_1517_single_photon(float(eta_H_B), float(eta_V_B))
+            rho_3 = _apply_kraus_state_pair(rho_3, K_A_3, K_B_3)
+
+            # 嵌入到 6D×6D，并用端口 effect 取概率
+            P_pair_6 = np.kron(P_6_from_3, P_6_from_3)
+            rho_6 = P_pair_6 @ rho_3 @ P_pair_6.conj().T
+            for idx in range(bin_dim):
+                p1 = np.real(np.trace(effects_port1[idx] @ rho_6))
+                p2 = np.real(np.trace(effects_port2[idx] @ rho_6))
+                probs_A[n, idx] = max(0.0, float(p1))
+                probs_B[n, idx] = max(0.0, float(p2))
+    else:
+        for n in range(n_bins):
+            site_A = first_bin_site + 2 * n
+            site_B = first_bin_site + 2 * n + 1
+            if site_A >= len(mps.d) or site_B >= len(mps.d):
+                continue
+            rho_A = mps.get_reduced_density([site_A])
+            rho_B = mps.get_reduced_density([site_B])
+            if rho_A.ndim == 4:
+                rho_A = rho_A.reshape(5, 5)
+            if rho_B.ndim == 4:
+                rho_B = rho_B.reshape(5, 5)
+
+            if stage_mode in ("after_qfc", "after_fiber"):
+                rho_A = U_qfc @ rho_A @ U_qfc.conj().T
+                rho_B = U_qfc @ rho_B @ U_qfc.conj().T
+                rho_A = _apply_kraus_state(rho_A, K_filter)
+                rho_B = _apply_kraus_state(rho_B, K_filter)
+
+                rho_A = P_3_from_5 @ rho_A @ P_3_from_5.conj().T
+                rho_B = P_3_from_5 @ rho_B @ P_3_from_5.conj().T
+
+                if stage_mode == "after_fiber":
+                    phase_n = phase_slope * (n - phase_center)
+                    U_B_n = np.exp(1j * phase_n) * U_B
+                    U_B_3 = _jones_3d(U_B_n)
+                    rho_A = U_A_3 @ rho_A @ U_A_3.conj().T
+                    rho_B = U_B_3 @ rho_B @ U_B_3.conj().T
+                    K_A_3 = loss_channel_1517_single_photon(float(eta_H_A), float(eta_V_A))
+                    K_B_3 = loss_channel_1517_single_photon(float(eta_H_B), float(eta_V_B))
+                    rho_A = _apply_kraus_state(rho_A, K_A_3)
+                    rho_B = _apply_kraus_state(rho_B, K_B_3)
+
+                probs_A[n, :] = np.maximum(0.0, np.real(np.diag(rho_A)))
+                probs_B[n, :] = np.maximum(0.0, np.real(np.diag(rho_B)))
+            else:
+                probs_A[n, :] = np.maximum(0.0, np.real(np.diag(rho_A)))
+                probs_B[n, :] = np.maximum(0.0, np.real(np.diag(rho_B)))
 
     # Calculate vmax EXCLUDING (vac,vac) row (index 0)
     vmax_A = max(0.01, probs_A[:, 1:].max() * vmax_scale_factor)
@@ -657,14 +711,14 @@ def plot_dual_arm_heatmap(
 
     # Add separator lines for bin states
     # 根据bin维度确定分界线位置
-    if bin_dim == 18:
-        # 18维：按780态分组 (vac/H/V)，每组6个1517态
-        # 行0-5：780=vac，行6-11：780=H，行12-17：780=V
-        boundaries = [6, 12]
-    elif bin_dim == 6:
+    if bin_dim == 6:
         # 6维：按1517光子数分组
         # 行0：0光子(vac)，行1-2：1光子(H/V)，行3-5：2光子(2H/2V/HV)
         boundaries = [1, 3]
+    elif bin_dim == 5:
+        # 5维：按 780 / 1517 子空间分组
+        # 行0：vac，行1-2：780，行3-4：1517
+        boundaries = [3]
     else:
         boundaries = []
 
@@ -749,7 +803,7 @@ def plot_dual_arm_heatmap(
         cbar_B.set_ticks(tick_vals)
         cbar_B.set_label(f'Bin (max={vmax:.3f})', fontsize=9)
     else:
-        # Two colorbars: Vac (1/18), Bin (17/18)
+        # Two colorbars: Vac (1/total_rows), Bin (rest)
         # (vac,vac) colorbar for arm A
         cax_A_vac = fig.add_axes([
             ax_pos_A.x1 + 0.01,
@@ -880,15 +934,14 @@ def plot_cross_bin_joint_heatmap(
     if first_bin_site >= len(mps.d):
         raise ValueError("Cannot find bin sites in MPS.")
     bin_dim = mps.d[first_bin_site]
-    if bin_dim == 6:
-        # 6D: [vac, H, V, 2H, 2V, HV]
-        n_diag = np.array([0, 1, 1, 2, 2, 2], dtype=float)
-    elif bin_dim == 18:
-        # 18D: 780(3D) ⊗ 1517(6D)，用 N_1517 嵌入后的对角元识别
-        _, n_bin, _, _, _, _ = telecom_ops_bin18()
-        n_diag = np.real(np.diag(n_bin))
+    if bin_dim == 5:
+        # 5D: [vac, H_780, V_780, H_1517, V_1517]
+        n_diag = np.array([0, 1, 1, 1, 1], dtype=float)
+    elif bin_dim == 3:
+        # 3D: [vac, H, V]
+        n_diag = np.array([0, 1, 1], dtype=float)
     else:
-        raise ValueError(f"Unsupported bin dimension: {bin_dim}. Expected 6 or 18.")
+        raise ValueError(f"Unsupported bin dimension: {bin_dim}. Expected 5 or 3.")
 
     # 单光子索引：n_diag == 1 的基态
     single_photon_idx = [i for i, n in enumerate(n_diag) if np.isclose(n, 1.0)]

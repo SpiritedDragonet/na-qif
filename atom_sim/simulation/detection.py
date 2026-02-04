@@ -16,8 +16,11 @@ from typing import Tuple, List, Optional
 from dataclasses import dataclass
 
 from ..core.mps import MPSState
-from ..hilbert.basis import SUBSPACE_780, SUBSPACE_1517
-from ..physics.channels import loss_channel_both_subspaces, loss_channel_1517_raw
+from ..physics.gates import qfc_gate
+from ..physics.channels import (
+    loss_channel_both_subspaces,
+    loss_channel_1517_single_photon,
+)
 
 
 @dataclass
@@ -247,30 +250,61 @@ def build_detection_effects_6d(
     return effects_all, effects_true
 
 
-def _embed_two_port_1517_to_18(op_6d: np.ndarray) -> np.ndarray:
-    """
-    将 1517 双端口算符 (36x36) 嵌入到 18D 双端口空间 (324x324)。
+def _proj_3_from_6() -> np.ndarray:
+    """6D -> 3D 投影：取 {vac,H,V}。"""
+    P = np.zeros((3, 6), dtype=complex)
+    P[0, 0] = 1.0
+    P[1, 1] = 1.0
+    P[2, 2] = 1.0
+    return P
 
-    目标空间的单端口基序：
-      |i_780> ⊗ |j_1517>，索引 = i_780 * 6 + j_1517
-    双端口基序：
-      (780A, 1517A, 780B, 1517B)
 
-    这里等价于：
-      E_18 = (I_780A ⊗ I_780B) ⊗ E_1517
-    但要做一次维度重排，使其与 (780A,1517A,780B,1517B) 的索引一致。
-    """
+def _embed_5_from_3() -> np.ndarray:
+    """3D -> 5D 嵌入：{vac,H,V} -> {vac,H_1517,V_1517}。"""
+    P = np.zeros((5, 3), dtype=complex)
+    P[0, 0] = 1.0
+    P[3, 1] = 1.0
+    P[4, 2] = 1.0
+    return P
+
+
+def _project_6d_to_3d(op_6d: np.ndarray) -> np.ndarray:
+    """将 36x36 双端口算符投影到 3D×3D (9x9)。"""
     op_6d = np.asarray(op_6d, dtype=complex)
     if op_6d.shape != (36, 36):
         raise ValueError(f"op_6d shape {op_6d.shape} != (36,36)")
+    P = _proj_3_from_6()
+    Pi = np.kron(P, P)
+    return Pi @ op_6d @ Pi.conj().T
 
-    I_780 = np.eye(3, dtype=complex)
-    # 先按 (780A,780B,1517A,1517B) 的顺序做张量积
-    op_tmp = np.kron(I_780, np.kron(I_780, op_6d))
-    # reshape 成 4+4 个指标，再交换 (780B,1517A) 以匹配实际基序
-    op_tmp = op_tmp.reshape(3, 3, 6, 6, 3, 3, 6, 6)
-    op_perm = op_tmp.transpose(0, 2, 1, 3, 4, 6, 5, 7)
-    return op_perm.reshape(18 * 18, 18 * 18)
+
+def _embed_3d_to_5d(op_3d: np.ndarray) -> np.ndarray:
+    """将 9x9 双端口算符嵌入到 5D×5D (25x25)。"""
+    op_3d = np.asarray(op_3d, dtype=complex)
+    if op_3d.shape != (9, 9):
+        raise ValueError(f"op_3d shape {op_3d.shape} != (9,9)")
+    P = _embed_5_from_3()
+    Pi = np.kron(P, P)
+    return Pi @ op_3d @ Pi.conj().T
+
+
+def _jones_3d(U_2x2: np.ndarray) -> np.ndarray:
+    """把 2x2 琼斯矩阵嵌入到 3D：diag(1, U_2x2)。"""
+    U = np.asarray(U_2x2, dtype=complex)
+    if U.shape != (2, 2):
+        raise ValueError(f"Jones matrix shape {U.shape} != (2,2)")
+    U3 = np.eye(3, dtype=complex)
+    U3[1:, 1:] = U
+    return U3
+
+
+def _apply_unitary_adjoint(effects: dict, U: np.ndarray) -> dict:
+    """对所有 effect 做 E <- U^† E U。"""
+    if not effects:
+        return {}
+    U = np.asarray(U, dtype=complex)
+    U_dag = U.conj().T
+    return {k: U_dag @ E @ U for k, E in effects.items()}
 
 
 def _apply_local_channel_adjoint(
@@ -297,30 +331,76 @@ def _apply_local_channel_adjoint(
     return new_effects
 
 
-def _build_arrival_projectors(bin_dim: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    构造用于 p_arrive 统计的 (pi0, pi1, pi2)。
+def _apply_channel_adjoint_single(op: np.ndarray, K_list: List[np.ndarray]) -> np.ndarray:
+    """单端口对偶映射：E <- sum K^† E K。"""
+    acc = np.zeros_like(op)
+    for K in K_list:
+        acc += K.conj().T @ op @ K
+    return acc
 
-    约定：
-      - 6D: 1517nm 子空间 (vac, H, V, 2H, 2V, HV)
-      - 18D: 780 × 1517；只统计 1517 光子数（780 视为“不可见”）
+
+def _build_arrival_projectors_5d(
+    theta_H: float,
+    theta_V: float,
+    eta_H_A: float,
+    eta_V_A: float,
+    eta_H_B: float,
+    eta_V_B: float,
+    apply_filter_780: bool = True,
+) -> Tuple[Tuple[np.ndarray, np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """
-    if bin_dim == 6:
-        pi0 = np.diag([1, 0, 0, 0, 0, 0]).astype(complex)
-        pi1 = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)
-        pi2 = np.diag([0, 0, 0, 1, 1, 1]).astype(complex)
-        return pi0, pi1, pi2
-    if bin_dim == 18:
-        pi0_6 = np.diag([1, 0, 0, 0, 0, 0]).astype(complex)
-        pi1_6 = np.diag([0, 1, 1, 0, 0, 0]).astype(complex)
-        pi2_6 = np.diag([0, 0, 0, 1, 1, 1]).astype(complex)
-        I_780 = np.eye(3, dtype=complex)
-        return (
-            np.kron(I_780, pi0_6),
-            np.kron(I_780, pi1_6),
-            np.kron(I_780, pi2_6),
+    构造用于 p_arrive 统计的 (pi0, pi1, pi2)（5D bin）。
+
+    逻辑：
+      - 在 3D telecom 空间上定义 {0/1/2} 光子投影
+      - 推入光纤损耗对偶（单端口）
+      - 嵌入到 5D 账本
+      - 推入 780 过滤与 QFC 对偶（单端口）
+    """
+    pi0_3 = np.diag([1, 0, 0]).astype(complex)
+    pi1_3 = np.diag([0, 1, 1]).astype(complex)
+    pi2_3 = np.zeros((3, 3), dtype=complex)
+
+    K_filter = None
+    if apply_filter_780:
+        K_filter = loss_channel_both_subspaces(
+            eta_780=0.0,
+            eta_H_1517=1.0,
+            eta_V_1517=1.0,
         )
-    raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6 or 18.")
+
+    U_qfc = qfc_gate(theta_H=theta_H, theta_V=theta_V)
+    U_qfc_dag = U_qfc.conj().T
+    P_5_from_3 = _embed_5_from_3()
+
+    def _build_one_arm(eta_H: float, eta_V: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        # 光纤损耗（单光子 3D）
+        K_loss = loss_channel_1517_single_photon(eta_H, eta_V)
+        p0 = _apply_channel_adjoint_single(pi0_3, K_loss)
+        p1 = _apply_channel_adjoint_single(pi1_3, K_loss)
+        p2 = _apply_channel_adjoint_single(pi2_3, K_loss)
+
+        # 嵌入到 5D 账本
+        p0 = P_5_from_3 @ p0 @ P_5_from_3.conj().T
+        p1 = P_5_from_3 @ p1 @ P_5_from_3.conj().T
+        p2 = P_5_from_3 @ p2 @ P_5_from_3.conj().T
+
+        # 780 过滤对偶
+        if K_filter is not None:
+            p0 = _apply_channel_adjoint_single(p0, K_filter)
+            p1 = _apply_channel_adjoint_single(p1, K_filter)
+            p2 = _apply_channel_adjoint_single(p2, K_filter)
+
+        # QFC 对偶
+        p0 = U_qfc_dag @ p0 @ U_qfc
+        p1 = U_qfc_dag @ p1 @ U_qfc
+        p2 = U_qfc_dag @ p2 @ U_qfc
+
+        return p0, p1, p2
+
+    proj_A = _build_one_arm(eta_H_A, eta_V_A)
+    proj_B = _build_one_arm(eta_H_B, eta_V_B)
+    return proj_A, proj_B
 
 
 def run_detection_pipeline(
@@ -336,14 +416,16 @@ def run_detection_pipeline(
     bs_unitary: Optional[np.ndarray] = None,
     fiber_sample: Optional[tuple] = None,
     apply_filter_780: bool = True,
+    theta_H: float = np.pi / 4,
+    theta_V: float = np.pi / 4,
 ) -> DetectionPipelineResult:
     """
     POVM探测流水线：单次准备即可同时枚举成功率与抽样双点击。
 
     若提供 bs_unitary，则在测量端使用 U^† E U 处理点击 POVM，
     等价于不对态显式作用 BS（Heisenberg 绘景）。
-    若 bin_dim=18 且提供 fiber_sample，则会把 780 过滤与光纤损耗
-    推到测量端的对偶映射上（方案B）。
+
+    5D 方案下，QFC/过滤/光纤/BS 全部推入 POVM 对偶映射。
     """
     if rng is None:
         rng = np.random.default_rng()
@@ -352,33 +434,20 @@ def run_detection_pipeline(
     # 否则认为整个链都是 bin。
     bin_start = 2 if (len(mps.d) >= 2 and mps.d[0] == 4 and mps.d[1] == 4) else 0
     bin_dim = mps.d[bin_start]
-    if bin_dim not in (6, 18):
-        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6 or 18.")
+    if bin_dim != 5:
+        raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 5.")
 
     # ------------------------------------------------------------------
-    # bs_unitary 支持两种输入：
-    #   - 6D 的 BS (36x36)：用于 1517 子空间，后续可嵌入 18D
-    #   - 18D 的 BS (324x324)：已嵌入到 780×1517 空间
+    # bs_unitary 必须是 6D 两端口 (36x36)，用于测量端共轭。
     # ------------------------------------------------------------------
     bs_unitary_6d = None
-    bs_unitary_18d = None
     if bs_unitary is not None:
         bs_unitary = np.asarray(bs_unitary, dtype=complex)
-        if bin_dim == 6:
-            if bs_unitary.shape != (36, 36):
-                raise ValueError(
-                    f"bs_unitary shape {bs_unitary.shape} != (36,36) for 6D bin"
-                )
-            bs_unitary_6d = bs_unitary
-        else:
-            if bs_unitary.shape == (36, 36):
-                bs_unitary_6d = bs_unitary
-            elif bs_unitary.shape == (18 * 18, 18 * 18):
-                bs_unitary_18d = bs_unitary
-            else:
-                raise ValueError(
-                    "bs_unitary 需为 36x36(6D) 或 324x324(18D)"
-                )
+        if bs_unitary.shape != (36, 36):
+            raise ValueError(
+                f"bs_unitary shape {bs_unitary.shape} != (36,36) for 6D output ports"
+            )
+        bs_unitary_6d = bs_unitary
 
     if verbose and n_samples > 0:
         print("\n" + "=" * 60)
@@ -404,15 +473,44 @@ def run_detection_pipeline(
         bin_sites.add(site_A)
         bin_sites.add(site_B)
 
-    # 按 bin_dim 构造“0/1/2 光子(1517子空间)”的投影
-    pi0, pi1, pi2 = _build_arrival_projectors(bin_dim)
-    w_bin = np.zeros((3, 3, bin_dim, bin_dim), dtype=complex)
-    w_bin[0, 0] = pi0
-    w_bin[0, 1] = pi1
-    w_bin[0, 2] = pi2
-    w_bin[1, 1] = pi0
-    w_bin[1, 2] = pi1
-    w_bin[2, 2] = pi0
+    # 构造 p_arrive 的 0/1/2 光子投影（已推入 QFC/过滤/损耗对偶）
+    if fiber_sample is None:
+        U_A = np.eye(2, dtype=complex)
+        U_B = np.eye(2, dtype=complex)
+        eta_H_A = eta_V_A = eta_H_B = eta_V_B = 1.0
+        phase_slope = 0.0
+        phase_jitter_std = 0.0
+    else:
+        try:
+            U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, _phase, phase_slope, phase_jitter_std = fiber_sample
+        except ValueError as exc:
+            raise ValueError("fiber_sample 格式不正确，无法解析光纤参数") from exc
+
+    (pi0_A, pi1_A, pi2_A), (pi0_B, pi1_B, pi2_B) = _build_arrival_projectors_5d(
+        theta_H=theta_H,
+        theta_V=theta_V,
+        eta_H_A=float(eta_H_A),
+        eta_V_A=float(eta_V_A),
+        eta_H_B=float(eta_H_B),
+        eta_V_B=float(eta_V_B),
+        apply_filter_780=apply_filter_780,
+    )
+
+    w_bin_A = np.zeros((3, 3, bin_dim, bin_dim), dtype=complex)
+    w_bin_A[0, 0] = pi0_A
+    w_bin_A[0, 1] = pi1_A
+    w_bin_A[0, 2] = pi2_A
+    w_bin_A[1, 1] = pi0_A
+    w_bin_A[1, 2] = pi1_A
+    w_bin_A[2, 2] = pi0_A
+
+    w_bin_B = np.zeros((3, 3, bin_dim, bin_dim), dtype=complex)
+    w_bin_B[0, 0] = pi0_B
+    w_bin_B[0, 1] = pi1_B
+    w_bin_B[0, 2] = pi2_B
+    w_bin_B[1, 1] = pi0_B
+    w_bin_B[1, 2] = pi1_B
+    w_bin_B[2, 2] = pi0_B
 
     w_identity_cache: dict[int, np.ndarray] = {}
     env = np.zeros((3, 1, 1), dtype=complex)
@@ -421,7 +519,8 @@ def run_detection_pipeline(
         B = mps._mps.get_B(site, form='B').to_ndarray()
         Bc = B.conj()
         if site in bin_sites:
-            w = w_bin
+            is_A = ((site - bin_start) % 2 == 0)
+            w = w_bin_A if is_A else w_bin_B
         else:
             dim = mps.d[site]
             if dim not in w_identity_cache:
@@ -479,66 +578,84 @@ def run_detection_pipeline(
         )
 
     # ------------------------------------------------------------------
-    # 构造“点击记录 → effect”的映射：
-    #   1) 先在 6D(1517) 子空间构造桶式探测 POVM
-    #   2) 若提供 BS(6D)，先做 U^† E U
-    #   3) 若 bin_dim=18，则嵌入到 780×1517 并合并损耗通道的对偶映射
+    # 构造“点击记录 → effect”的映射（5D）：
+    #   1) 6D 探测 POVM（输出端口）
+    #   2) 共轭并入 BS
+    #   3) 投影到 3D (BS 输入子空间)
+    #   4) 推入光纤（损耗 + Jones/相位）
+    #   5) 嵌入到 5D 账本
+    #   6) 推入 780 过滤 + QFC
     # ------------------------------------------------------------------
-    effects_all, effects_true = build_detection_effects_6d(eta_det, p_dark)
+    effects_all_6d, effects_true_6d = build_detection_effects_6d(eta_det, p_dark)
 
-    # BS 并入测量端：优先在 6D 子空间处理，便于嵌入
     if bs_unitary_6d is not None:
-        U_dag = bs_unitary_6d.conj().T
-        effects_all = {k: U_dag @ E @ bs_unitary_6d for k, E in effects_all.items()}
-        effects_true = {k: U_dag @ E @ bs_unitary_6d for k, E in effects_true.items()}
+        effects_all_6d = _apply_unitary_adjoint(effects_all_6d, bs_unitary_6d)
+        effects_true_6d = _apply_unitary_adjoint(effects_true_6d, bs_unitary_6d)
 
-    # 18D：嵌入到 780×1517，并把“损耗/过滤”推到 POVM 对偶映射上
-    if bin_dim == 18:
-        effects_all = {k: _embed_two_port_1517_to_18(E) for k, E in effects_all.items()}
-        effects_true = {k: _embed_two_port_1517_to_18(E) for k, E in effects_true.items()}
+    effects_all_3d = {k: _project_6d_to_3d(E) for k, E in effects_all_6d.items()}
+    effects_true_3d = {k: _project_6d_to_3d(E) for k, E in effects_true_6d.items()}
 
-        # 若传入 18D BS，则在嵌入后再共轭（等价于 U^† E U）
-        if bs_unitary_18d is not None:
-            U_dag_18 = bs_unitary_18d.conj().T
-            effects_all = {k: U_dag_18 @ E @ bs_unitary_18d for k, E in effects_all.items()}
-            effects_true = {k: U_dag_18 @ E @ bs_unitary_18d for k, E in effects_true.items()}
+    # 光纤损耗（单光子 3D）
+    K_A_3 = loss_channel_1517_single_photon(float(eta_H_A), float(eta_V_A))
+    K_B_3 = loss_channel_1517_single_photon(float(eta_H_B), float(eta_V_B))
+    effects_all_3d = _apply_local_channel_adjoint(effects_all_3d, K_A_3, K_B_3)
+    effects_true_3d = _apply_local_channel_adjoint(effects_true_3d, K_A_3, K_B_3)
 
-        # 1) QFC 后的 780 滤波：eta_780=0, 1517 透过率=1
-        if apply_filter_780:
-            K_filter = loss_channel_both_subspaces(
-                eta_780=0.0,
-                eta_H_1517=1.0,
-                eta_V_1517=1.0,
-            )
-            effects_all = _apply_local_channel_adjoint(effects_all, K_filter, K_filter)
-            effects_true = _apply_local_channel_adjoint(effects_true, K_filter, K_filter)
+    # 780 过滤（5D）与 QFC（5D）
+    K_filter = None
+    if apply_filter_780:
+        K_filter = loss_channel_both_subspaces(
+            eta_780=0.0,
+            eta_H_1517=1.0,
+            eta_V_1517=1.0,
+        )
+    U_qfc = qfc_gate(theta_H=theta_H, theta_V=theta_V)
+    U_qfc_pair = np.kron(U_qfc, U_qfc)
 
-        # 2) 光纤损耗（仅 1517 子空间）
-        if fiber_sample is None:
-            if verbose:
-                print("  [warn] bin_dim=18 但未提供 fiber_sample，忽略光纤损耗")
+    # 逐 bin 构造 effect（包含相位斜率/抖动）
+    effects_all_by_bin: List[dict] = []
+    effects_true_by_bin: List[dict] = []
+
+    phase_center = 0.5 * (n_bins - 1)
+    use_phase_profile = abs(phase_slope) > 0.0 or phase_jitter_std > 0.0
+
+    U_A_3 = _jones_3d(U_A)
+    for n in range(n_bins):
+        phase_n = phase_slope * (n - phase_center)
+        if phase_jitter_std > 0.0:
+            phase_n += rng.normal(0.0, phase_jitter_std)
+        if use_phase_profile or abs(phase_n) > 0.0:
+            U_B_n = np.exp(1j * phase_n) * U_B
         else:
-            try:
-                _, _, eta_H_A, eta_V_A, eta_H_B, eta_V_B, *_ = fiber_sample
-            except ValueError as exc:
-                raise ValueError("fiber_sample 格式不正确，无法解析 eta_H/V") from exc
+            U_B_n = U_B
 
-            K_A = loss_channel_1517_raw(float(eta_H_A), float(eta_V_A))
-            K_B = loss_channel_1517_raw(float(eta_H_B), float(eta_V_B))
-            I_780 = np.eye(3, dtype=complex)
-            K_A = [np.kron(I_780, K) for K in K_A]
-            K_B = [np.kron(I_780, K) for K in K_B]
-            effects_all = _apply_local_channel_adjoint(effects_all, K_A, K_B)
-            effects_true = _apply_local_channel_adjoint(effects_true, K_A, K_B)
+        U_B_3 = _jones_3d(U_B_n)
+        U_pair_3 = np.kron(U_A_3, U_B_3)
+
+        eff_all_3 = _apply_unitary_adjoint(effects_all_3d, U_pair_3)
+        eff_true_3 = _apply_unitary_adjoint(effects_true_3d, U_pair_3)
+
+        eff_all_5 = {k: _embed_3d_to_5d(E) for k, E in eff_all_3.items()}
+        eff_true_5 = {k: _embed_3d_to_5d(E) for k, E in eff_true_3.items()}
+
+        if K_filter is not None:
+            eff_all_5 = _apply_local_channel_adjoint(eff_all_5, K_filter, K_filter)
+            eff_true_5 = _apply_local_channel_adjoint(eff_true_5, K_filter, K_filter)
+
+        eff_all_5 = _apply_unitary_adjoint(eff_all_5, U_qfc_pair)
+        eff_true_5 = _apply_unitary_adjoint(eff_true_5, U_qfc_pair)
+
+        effects_all_by_bin.append(eff_all_5)
+        effects_true_by_bin.append(eff_true_5)
 
     if verbose and n_samples > 0:
         dim_pair = bin_dim * bin_dim
         print(f"  使用{bin_dim}D POVM effects ({dim_pair}x{dim_pair}) - 抽样双点击记录")
 
     empty_key = _order_two_port_detectors([])
-    if not effects_all:
+    if not effects_all_by_bin:
         raise ValueError("空的探测effect，无法进行POVM计算")
-    dim_pair = next(iter(effects_all.values())).shape[0]
+    dim_pair = next(iter(effects_all_by_bin[0].values())).shape[0]
     zero_effect = np.zeros((dim_pair, dim_pair), dtype=complex)
     required_keys = [
         empty_key,
@@ -552,8 +669,12 @@ def run_detection_pipeline(
         _order_two_port_detectors(["H2", "V2"]),
     ]
     for key in required_keys:
-        if key not in effects_all:
+        if key not in effects_all_by_bin[0]:
             raise ValueError(f"缺少探测结果: detectors={list(key)}")
+
+    E_no_list = [
+        effects_all_by_bin[idx].get(empty_key, zero_effect) for idx in range(n_bins)
+    ]
 
     def _prepare_grouped_pairs(state: MPSState) -> Tuple[List[np.ndarray], List[np.ndarray]]:
         # 把 (atomA,atomB),(A1,B1),... 两两成组：
@@ -582,7 +703,6 @@ def run_detection_pipeline(
     if dim_atom != 16:
         raise ValueError(f"Atom pair site dimension {dim_atom} != 16")
 
-    E_no = effects_all.get(empty_key, zero_effect)
     atom_I = np.eye(dim_atom, dtype=complex)
     L = len(B_list)
 
@@ -612,7 +732,13 @@ def run_detection_pipeline(
         left_envs_local[0] = np.array([[1.0 + 0.0j]])
         left_envs_local[1] = _apply_env_left(B_list[0], Bc_list[0], atom_op, left_envs_local[0])
         for s in range(1, L):
-            left_envs_local[s + 1] = _apply_env_left(B_list[s], Bc_list[s], E_no, left_envs_local[s])
+            bin_idx = s - 1
+            left_envs_local[s + 1] = _apply_env_left(
+                B_list[s],
+                Bc_list[s],
+                E_no_list[bin_idx],
+                left_envs_local[s],
+            )
         return left_envs_local
 
     def _build_right_envs() -> List[np.ndarray]:
@@ -620,7 +746,13 @@ def run_detection_pipeline(
         right_envs_local = [None] * (L + 1)
         right_envs_local[L] = np.array([[1.0 + 0.0j]])
         for s in range(L - 1, 0, -1):
-            right_envs_local[s] = _apply_env_right(B_list[s], Bc_list[s], E_no, right_envs_local[s + 1])
+            bin_idx = s - 1
+            right_envs_local[s] = _apply_env_right(
+                B_list[s],
+                Bc_list[s],
+                E_no_list[bin_idx],
+                right_envs_local[s + 1],
+            )
         return right_envs_local
 
     right_envs = _build_right_envs()
@@ -667,11 +799,13 @@ def run_detection_pipeline(
 
         def _sum_same_bin(
             left_envs: List[np.ndarray],
-            op_pair: np.ndarray,
+            effects_by_bin: List[dict],
+            key_pair: Tuple[str, ...],
         ) -> float:
-            # 同 bin 双击：对每个 bin 插入二端口 effect
+            # 同 bin 双击：对每个 bin 插入对应的二端口 effect
             total = 0.0
             for s in range(1, n_bins + 1):
+                op_pair = effects_by_bin[s - 1].get(key_pair, zero_effect)
                 env_mid = _apply_env_left(B_list[s], Bc_list[s], op_pair, left_envs[s])
                 weight = float(np.einsum('ij,ij->', env_mid, right_envs[s + 1]).real)
                 total += weight
@@ -679,22 +813,25 @@ def run_detection_pipeline(
 
         def _sum_diff_bins(
             left_envs: List[np.ndarray],
-            op_a: np.ndarray,
-            op_b: np.ndarray,
+            effects_by_bin: List[dict],
+            key_a: Tuple[str, ...],
+            key_b: Tuple[str, ...],
         ) -> float:
             # 不同 bin 双击：先插入 detector A，再在后续 bin 插入 detector B
             total = 0.0
             for i in range(1, n_bins):
+                op_a = effects_by_bin[i - 1].get(key_a, zero_effect)
                 env_mid = _apply_env_left(B_list[i], Bc_list[i], op_a, left_envs[i])
                 j_end = n_bins
                 if window_bins is not None:
                     j_end = min(n_bins, i + window_bins)
                 for j in range(i + 1, j_end + 1):
+                    op_b = effects_by_bin[j - 1].get(key_b, zero_effect)
                     env_j = _apply_env_left(B_list[j], Bc_list[j], op_b, env_mid)
                     weight = float(np.einsum('ij,ij->', env_j, right_envs[j + 1]).real)
                     total += weight
                     if j < j_end:
-                        env_mid = _apply_env_left(B_list[j], Bc_list[j], E_no, env_mid)
+                        env_mid = _apply_env_left(B_list[j], Bc_list[j], E_no_list[j - 1], env_mid)
             return total
 
         # BSM 成功模式（按你当前定义）：
@@ -719,30 +856,23 @@ def run_detection_pipeline(
             key_a = _order_two_port_detectors([det_a])
             key_b = _order_two_port_detectors([det_b])
 
-            E_pair_all = effects_all.get(key_pair, zero_effect)
-            E_pair_true = effects_true.get(key_pair, zero_effect)
-            E_a_all = effects_all.get(key_a, zero_effect)
-            E_b_all = effects_all.get(key_b, zero_effect)
-            E_a_true = effects_true.get(key_a, zero_effect)
-            E_b_true = effects_true.get(key_b, zero_effect)
+            weight_same_all = _sum_same_bin(left_envs_id, effects_all_by_bin, key_pair)
+            weight_same_true = _sum_same_bin(left_envs_id, effects_true_by_bin, key_pair)
 
-            weight_same_all = _sum_same_bin(left_envs_id, E_pair_all)
-            weight_same_true = _sum_same_bin(left_envs_id, E_pair_true)
-
-            weight_diff_all = _sum_diff_bins(left_envs_id, E_a_all, E_b_all)
-            weight_diff_all += _sum_diff_bins(left_envs_id, E_b_all, E_a_all)
-            weight_diff_true = _sum_diff_bins(left_envs_id, E_a_true, E_b_true)
-            weight_diff_true += _sum_diff_bins(left_envs_id, E_b_true, E_a_true)
+            weight_diff_all = _sum_diff_bins(left_envs_id, effects_all_by_bin, key_a, key_b)
+            weight_diff_all += _sum_diff_bins(left_envs_id, effects_all_by_bin, key_b, key_a)
+            weight_diff_true = _sum_diff_bins(left_envs_id, effects_true_by_bin, key_a, key_b)
+            weight_diff_true += _sum_diff_bins(left_envs_id, effects_true_by_bin, key_b, key_a)
 
             p_success_all += weight_same_all + weight_diff_all
             p_success_true += weight_same_true + weight_diff_true
-            fidelity_weighted_all += _sum_same_bin(left_envs_bell[bell_state], E_pair_all)
-            fidelity_weighted_all += _sum_diff_bins(left_envs_bell[bell_state], E_a_all, E_b_all)
-            fidelity_weighted_all += _sum_diff_bins(left_envs_bell[bell_state], E_b_all, E_a_all)
+            fidelity_weighted_all += _sum_same_bin(left_envs_bell[bell_state], effects_all_by_bin, key_pair)
+            fidelity_weighted_all += _sum_diff_bins(left_envs_bell[bell_state], effects_all_by_bin, key_a, key_b)
+            fidelity_weighted_all += _sum_diff_bins(left_envs_bell[bell_state], effects_all_by_bin, key_b, key_a)
 
-            fidelity_weighted_true += _sum_same_bin(left_envs_bell[bell_state], E_pair_true)
-            fidelity_weighted_true += _sum_diff_bins(left_envs_bell[bell_state], E_a_true, E_b_true)
-            fidelity_weighted_true += _sum_diff_bins(left_envs_bell[bell_state], E_b_true, E_a_true)
+            fidelity_weighted_true += _sum_same_bin(left_envs_bell[bell_state], effects_true_by_bin, key_pair)
+            fidelity_weighted_true += _sum_diff_bins(left_envs_bell[bell_state], effects_true_by_bin, key_a, key_b)
+            fidelity_weighted_true += _sum_diff_bins(left_envs_bell[bell_state], effects_true_by_bin, key_b, key_a)
 
         p_success_all = float(max(0.0, p_success_all))
         p_success_true = float(max(0.0, p_success_true))
@@ -788,13 +918,14 @@ def run_detection_pipeline(
     records: List[TwoClickRecord] = []
 
     def _collect_same_bin_records(
-        op_pair: np.ndarray,
         det_a: str,
         det_b: str,
     ) -> List[TwoClickRecord]:
         # 逐 bin 收集“同 bin 双击”的权重分布
+        key_pair = _order_two_port_detectors([det_a, det_b])
         records_local = []
         for s in range(1, n_bins + 1):
+            op_pair = effects_all_by_bin[s - 1].get(key_pair, zero_effect)
             env_mid = _apply_env_left(B_list[s], Bc_list[s], op_pair, left_envs_id[s])
             weight = float(np.einsum('ij,ij->', env_mid, right_envs[s + 1]).real)
             if weight > weight_eps:
@@ -802,37 +933,31 @@ def run_detection_pipeline(
         return records_local
 
     def _collect_diff_bin_records(
-        op_first: np.ndarray,
-        op_second: np.ndarray,
         det_first: str,
         det_second: str,
     ) -> List[TwoClickRecord]:
         # 逐 (i<j) 收集“跨 bin 双击”的权重分布
+        key_first = _order_two_port_detectors([det_first])
+        key_second = _order_two_port_detectors([det_second])
         records_local = []
         for i in range(1, n_bins):
+            op_first = effects_all_by_bin[i - 1].get(key_first, zero_effect)
             env_mid = _apply_env_left(B_list[i], Bc_list[i], op_first, left_envs_id[i])
             for j in range(i + 1, n_bins + 1):
+                op_second = effects_all_by_bin[j - 1].get(key_second, zero_effect)
                 env_j = _apply_env_left(B_list[j], Bc_list[j], op_second, env_mid)
                 weight = float(np.einsum('ij,ij->', env_j, right_envs[j + 1]).real)
                 if weight > weight_eps:
                     records_local.append(TwoClickRecord(det_first, det_second, i - 1, j - 1, weight))
                 if j < n_bins:
-                    env_mid = _apply_env_left(B_list[j], Bc_list[j], E_no, env_mid)
+                    env_mid = _apply_env_left(B_list[j], Bc_list[j], E_no_list[j - 1], env_mid)
         return records_local
 
     # 汇总所有可选双点击记录，组成离散分布供抽样
     for _, (det_a, det_b) in patterns_records:
-        key_pair = _order_two_port_detectors([det_a, det_b])
-        key_a = _order_two_port_detectors([det_a])
-        key_b = _order_two_port_detectors([det_b])
-
-        E_pair = effects_all.get(key_pair, zero_effect)
-        E_a = effects_all.get(key_a, zero_effect)
-        E_b = effects_all.get(key_b, zero_effect)
-
-        records.extend(_collect_same_bin_records(E_pair, det_a, det_b))
-        records.extend(_collect_diff_bin_records(E_a, E_b, det_a, det_b))
-        records.extend(_collect_diff_bin_records(E_b, E_a, det_b, det_a))
+        records.extend(_collect_same_bin_records(det_a, det_b))
+        records.extend(_collect_diff_bin_records(det_a, det_b))
+        records.extend(_collect_diff_bin_records(det_b, det_a))
 
     if not records:
         samples = []
@@ -880,31 +1005,34 @@ def run_detection_pipeline(
     def _contract_record(
         left_envs: List[np.ndarray],
         record_local: TwoClickRecord,
-        op_pair: np.ndarray,
-        op_a: np.ndarray,
-        op_b: np.ndarray,
     ) -> complex:
         # 计算某一条“点击记录 r”的未归一化原子态矩阵元：
         #   sigma_ij = Tr[ (|i><j| ⊗ E_r) ρ ]
         if record_local.bin_a == record_local.bin_b:
             s = record_local.bin_a + 1
+            key_pair = _order_two_port_detectors([record_local.detector_a, record_local.detector_b])
+            op_pair = effects_all_by_bin[record_local.bin_a].get(key_pair, zero_effect)
             env_mid = _apply_env_left(B_list[s], Bc_list[s], op_pair, left_envs[s])
             return np.einsum('ij,ij->', env_mid, right_envs[s + 1])
 
         if record_local.bin_a < record_local.bin_b:
             i = record_local.bin_a + 1
             j = record_local.bin_b + 1
-            op_first = op_a
-            op_second = op_b
+            key_first = _order_two_port_detectors([record_local.detector_a])
+            key_second = _order_two_port_detectors([record_local.detector_b])
+            op_first = effects_all_by_bin[record_local.bin_a].get(key_first, zero_effect)
+            op_second = effects_all_by_bin[record_local.bin_b].get(key_second, zero_effect)
         else:
             i = record_local.bin_b + 1
             j = record_local.bin_a + 1
-            op_first = op_b
-            op_second = op_a
+            key_first = _order_two_port_detectors([record_local.detector_b])
+            key_second = _order_two_port_detectors([record_local.detector_a])
+            op_first = effects_all_by_bin[record_local.bin_b].get(key_first, zero_effect)
+            op_second = effects_all_by_bin[record_local.bin_a].get(key_second, zero_effect)
 
         env_mid = _apply_env_left(B_list[i], Bc_list[i], op_first, left_envs[i])
         for s in range(i + 1, j):
-            env_mid = _apply_env_left(B_list[s], Bc_list[s], E_no, env_mid)
+            env_mid = _apply_env_left(B_list[s], Bc_list[s], E_no_list[s - 1], env_mid)
         env_mid = _apply_env_left(B_list[j], Bc_list[j], op_second, env_mid)
         return np.einsum('ij,ij->', env_mid, right_envs[j + 1])
 
@@ -936,19 +1064,6 @@ def run_detection_pipeline(
         # 返回该记录对应的原子 4x4 未归一化密度矩阵
         # 注意：这是 effect-only 的 Lüders 更新结果
         _ensure_left_envs_qubit()
-        op_pair = effects_all.get(
-            _order_two_port_detectors([record_local.detector_a, record_local.detector_b]),
-            zero_effect,
-        )
-        op_a = effects_all.get(
-            _order_two_port_detectors([record_local.detector_a]),
-            zero_effect,
-        )
-        op_b = effects_all.get(
-            _order_two_port_detectors([record_local.detector_b]),
-            zero_effect,
-        )
-
         sigma = np.zeros((4, 4), dtype=complex)
         for i in range(4):
             for j in range(4):
@@ -956,9 +1071,6 @@ def run_detection_pipeline(
                 sigma[i, j] = _contract_record(
                     left_envs,
                     record_local,
-                    op_pair,
-                    op_a,
-                    op_b,
                 )
         return sigma
 
@@ -1131,41 +1243,19 @@ def compute_photon_statistics(mps: MPSState, n_bins: int, verbose: bool = False)
         return total
 
     def _compute_photon_statistics_global(bin_dim: int) -> dict:
-        from ..hilbert.operators import annihilation_op
+        if bin_dim != 5:
+            raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 5.")
 
-        if bin_dim == 6:
-            J_H_1517 = annihilation_op(SUBSPACE_1517, mode_id=0)
-            J_V_1517 = annihilation_op(SUBSPACE_1517, mode_id=1)
-            n_H_op = J_H_1517.conj().T @ J_H_1517
-            n_V_op = J_V_1517.conj().T @ J_V_1517
+        # 5D 基序：vac, H_780, V_780, H_1517, V_1517
+        n_780_H_op = np.diag([0, 1, 0, 0, 0]).astype(complex)
+        n_780_V_op = np.diag([0, 0, 1, 0, 0]).astype(complex)
+        n_1517_H_op = np.diag([0, 0, 0, 1, 0]).astype(complex)
+        n_1517_V_op = np.diag([0, 0, 0, 0, 1]).astype(complex)
 
-            n_1517_H = _build_sum_mpo(n_H_op)
-            n_1517_V = _build_sum_mpo(n_V_op)
-
-            n_780_H = n_780_V = 0.0
-        elif bin_dim == 18:
-            J_H_1517 = annihilation_op(SUBSPACE_1517, mode_id=0)
-            J_V_1517 = annihilation_op(SUBSPACE_1517, mode_id=1)
-            I_780 = np.eye(3, dtype=complex)
-            J_H_1517_18 = np.kron(I_780, J_H_1517)
-            J_V_1517_18 = np.kron(I_780, J_V_1517)
-            n_1517_H_op = J_H_1517_18.conj().T @ J_H_1517_18
-            n_1517_V_op = J_V_1517_18.conj().T @ J_V_1517_18
-
-            J_H_780 = annihilation_op(SUBSPACE_780, mode_id=0)
-            J_V_780 = annihilation_op(SUBSPACE_780, mode_id=1)
-            I_1517 = np.eye(6, dtype=complex)
-            J_H_780_18 = np.kron(J_H_780, I_1517)
-            J_V_780_18 = np.kron(J_V_780, I_1517)
-            n_780_H_op = J_H_780_18.conj().T @ J_H_780_18
-            n_780_V_op = J_V_780_18.conj().T @ J_V_780_18
-
-            n_780_H = _build_sum_mpo(n_780_H_op)
-            n_780_V = _build_sum_mpo(n_780_V_op)
-            n_1517_H = _build_sum_mpo(n_1517_H_op)
-            n_1517_V = _build_sum_mpo(n_1517_V_op)
-        else:
-            raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 6 or 18.")
+        n_780_H = _build_sum_mpo(n_780_H_op)
+        n_780_V = _build_sum_mpo(n_780_V_op)
+        n_1517_H = _build_sum_mpo(n_1517_H_op)
+        n_1517_V = _build_sum_mpo(n_1517_V_op)
 
         n_total = n_780_H + n_780_V + n_1517_H + n_1517_V
 

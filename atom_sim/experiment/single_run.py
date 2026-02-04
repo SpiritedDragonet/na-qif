@@ -362,18 +362,29 @@ def _run_single_simulation_core(
                 file.write(f"p_dephase = {metrics['p_dephase']:.6f}\n")
             if "p_qubit_emit" in metrics:
                 file.write(f"p_qubit_emit = {metrics['p_qubit_emit']:.6f}\n")
-            if "p_no_loss" in metrics:
+            if metrics.get("p_no_loss") is not None:
                 file.write(f"p_no_loss = {metrics['p_no_loss']:.8f}\n")
+            else:
+                file.write("p_no_loss = N/A\n")
 
-            file.write(f"p_arrive = {metrics['p_arrive']:.8f}\n")
+            if metrics.get("p_arrive") is not None:
+                file.write(f"p_arrive = {metrics['p_arrive']:.8f}\n")
+            else:
+                file.write("p_arrive = N/A\n")
             if metrics.get("p_success_no_dark") is not None:
                 file.write(f"p_success_no_dark = {metrics['p_success_no_dark']:.8f}\n")
                 file.write(f"fidelity_no_dark = {metrics['fidelity_no_dark']:.6f}\n")
             else:
                 file.write("p_success_no_dark = N/A\n")
                 file.write("fidelity_no_dark = N/A\n")
-            file.write(f"p_success_all = {metrics['p_success_all']:.8f}\n")
-            file.write(f"fidelity_all = {metrics['fidelity_all']:.6f}\n")
+            if metrics.get("p_success_all") is not None:
+                file.write(f"p_success_all = {metrics['p_success_all']:.8f}\n")
+            else:
+                file.write("p_success_all = N/A\n")
+            if metrics.get("fidelity_all") is not None:
+                file.write(f"fidelity_all = {metrics['fidelity_all']:.6f}\n")
+            else:
+                file.write("fidelity_all = N/A\n")
             if metrics.get("p_false_approx") is not None:
                 file.write(f"p_false_approx = {metrics['p_false_approx']:.8f}\n")
                 file.write(f"false_fraction_approx = {metrics['false_fraction_approx']:.6f}\n")
@@ -381,12 +392,30 @@ def _run_single_simulation_core(
                 file.write("p_false_approx = N/A\n")
                 file.write("false_fraction_approx = N/A\n")
 
-            file.write(f"p_success_true = {metrics['p_success_true']:.8f}\n")
-            file.write(f"p_success_false = {metrics['p_success_false']:.8f}\n")
-            file.write(f"p_success_given_arrival = {metrics['p_success_given_arrival']:.8f}\n")
-            file.write(f"false_fraction = {metrics['false_fraction']:.6f}\n")
-            file.write(f"fidelity_true = {metrics['fidelity_true']:.6f}\n")
-            file.write(f"fidelity_false = {metrics['fidelity_false']:.6f}\n")
+            if metrics.get("p_success_true") is not None:
+                file.write(f"p_success_true = {metrics['p_success_true']:.8f}\n")
+            else:
+                file.write("p_success_true = N/A\n")
+            if metrics.get("p_success_false") is not None:
+                file.write(f"p_success_false = {metrics['p_success_false']:.8f}\n")
+            else:
+                file.write("p_success_false = N/A\n")
+            if metrics.get("p_success_given_arrival") is not None:
+                file.write(f"p_success_given_arrival = {metrics['p_success_given_arrival']:.8f}\n")
+            else:
+                file.write("p_success_given_arrival = N/A\n")
+            if metrics.get("false_fraction") is not None:
+                file.write(f"false_fraction = {metrics['false_fraction']:.6f}\n")
+            else:
+                file.write("false_fraction = N/A\n")
+            if metrics.get("fidelity_true") is not None:
+                file.write(f"fidelity_true = {metrics['fidelity_true']:.6f}\n")
+            else:
+                file.write("fidelity_true = N/A\n")
+            if metrics.get("fidelity_false") is not None:
+                file.write(f"fidelity_false = {metrics['fidelity_false']:.6f}\n")
+            else:
+                file.write("fidelity_false = N/A\n")
         return output_path
 
     # 目的：绘图占位与清理逻辑集中，避免散落多个函数。
@@ -479,7 +508,13 @@ def _run_single_simulation_core(
         #   - 输出命名规则统一，便于汇总
         #   - bs_unitary 用于 Heisenberg 端口“after BS”热图
         # --------------------------------------------------------------
-        def _hook(emission, *_args):
+        def _hook(
+            emission,
+            fiber_sample=None,
+            qfc_params=None,
+            apply_filter_780: bool = True,
+            *_args,
+        ):
             if _plot_gate_allow():
                 print(f"\n生成{stage_name}的可视化图...")
                 plot_path = plot_dir / f"{run_tag}_{file_suffix}.png"
@@ -494,6 +529,9 @@ def _run_single_simulation_core(
                     kwargs["time_grid"] = {"dt_s": emission.dt_s}
                 if bs_unitary is not None:
                     kwargs["bs_unitary"] = bs_unitary
+                kwargs["qfc_params"] = qfc_params
+                kwargs["fiber_sample"] = fiber_sample
+                kwargs["apply_filter_780"] = apply_filter_780
                 plot_dual_arm_heatmap(target, **kwargs)
                 _plot_gate_register(plot_path)
             if DEBUG_MODE:
@@ -688,6 +726,10 @@ def _run_single_simulation_core(
             n_samples=0,
             compute_metrics=True,
             bs_unitary=bs_unitary,
+            fiber_sample=pipe.fiber_sample,
+            apply_filter_780=pipe.apply_filter_780,
+            theta_H=pipe.qfc_theta_H,
+            theta_V=pipe.qfc_theta_V,
         )
         enum_no_dark = enum_pipeline.metrics
         if p_noise > 0.0:
@@ -712,6 +754,10 @@ def _run_single_simulation_core(
             n_samples=shots_per_run,
             compute_metrics=False,
             bs_unitary=bs_unitary,
+            fiber_sample=pipe.fiber_sample,
+            apply_filter_780=pipe.apply_filter_780,
+            theta_H=pipe.qfc_theta_H,
+            theta_V=pipe.qfc_theta_V,
         )
         samples = sample_pipeline.samples
     else:
@@ -732,6 +778,10 @@ def _run_single_simulation_core(
             n_samples=shots_per_run,
             compute_metrics=True,
             bs_unitary=bs_unitary,
+            fiber_sample=pipe.fiber_sample,
+            apply_filter_780=pipe.apply_filter_780,
+            theta_H=pipe.qfc_theta_H,
+            theta_V=pipe.qfc_theta_V,
         )
         enum_main = pipeline.metrics
         samples = pipeline.samples

@@ -47,14 +47,14 @@ atom_sim/
 ├── physics/                       # 物理过程层（门和通道）
 │   ├── __init__.py
 │   ├── gates.py                   # 所有酉门工厂
-│   │   ├── qfc_gate()             # U_qfc: 780→1517 频率转换 (18x18)
+│   │   ├── qfc_gate()             # U_qfc: 780↔1517 频率转换 (5x5)
 │   │   ├── bs_gate_6d()           # U_BS: 50/50 分束器 (36x36, 仅1517nm)
 │   │   ├── _bs_gate_1517()
 │   │   ├── jones_gate()           # U_pol: 琼斯旋转 (6x6)
-│   │   └── emission_gate()        # U_emit: 原子-光子耦合 (54x54)
+│   │   └── emission_gate()        # U_emit: 原子-光子耦合 (20x20)
 │   │
 │   └── channels.py                # 所有 Kraus 通道
-│       ├── loss_channel_both_subspaces() # 780+1517 联合损耗
+│       ├── loss_channel_both_subspaces() # 5D bin 联合损耗
 │       ├── loss_channel_780_general()    # 780nm 损耗
 │       ├── loss_channel_1517_raw()       # 1517nm 振幅阻尼（6D）
 │       └── FiberChannelParams            # 光纤漂移模型（琼斯+损耗）
@@ -65,8 +65,7 @@ atom_sim/
 │   │   ├── EmissionResult
 │   │   ├── run_dual_atom_emission()
 │   │   ├── apply_qfc()
-│   │   ├── apply_780_filter()
-│   │   ├── project_to_1517()
+│   │   ├── apply_bs()
 │   │   ├── _print_header()
 │   │   ├── _print_progress()
 │   │   ├── _print_footer()
@@ -88,10 +87,9 @@ atom_sim/
 │   └── wavepacket.py              # 波包可视化
 │       ├── _is_headless()
 │       ├── _maybe_show()
-│       ├── _telecom_ops_1517()
-│       ├── telecom_ops_bin18()
-│       ├── _get_bin18_state_labels()
 │       ├── _get_bin6_state_labels()
+│       ├── _get_bin5_state_labels()
+│       ├── _get_bin3_state_labels()
 │       ├── _infer_first_bin_site()
 │       ├── _validate_bin_rho_traces()
 │       ├── plot_dual_arm_heatmap()       # 绘制双臂热图
@@ -188,13 +186,14 @@ simulation/trajectory.py → core/mps.py → 张量网络更新（仅局域！�
 
 ### 光子子空间
 - **780nm**: 3D `{|vac>, |H>, |V>}` （单光子截断）
-- **1517nm**: 6D `{|vac>, |H>, |V>, |2H>, |2V>, |HV>}` （双光子截断）
+- **1517nm（测量端）**: 6D `{|vac>, |H>, |V>, |2H>, |2V>, |HV>}` （双光子截断）
+- **MPS bin 可达子空间**: 5D `{|vac>, |H_780>, |V_780>, |H_1517>, |V_1517>}`
 
 ### 希尔伯特空间分解
 
 ```
 系统格点: H_S = H_atom_A(4D) ⊗ H_atom_B(4D) = 16D
-Bin 格点: H_bin = H_780(3D) ⊗ H_1517(6D) = 18D
+Bin 格点: H_bin = span{|vac>, |H_780>, |V_780>, |H_1517>, |V_1517>} = 5D
 ```
 
 **重要**：原子仅在系统格点中，不在 bin 格点中。
@@ -203,7 +202,7 @@ Bin 格点: H_bin = H_780(3D) ⊗ H_1517(6D) = 18D
 
 **发射后（SWAP conveyor belt 完成）：**
 ```
-atomA(4D) - atomB(4D) - A1(18D) - B1(18D) - A2(18D) - B2(18D) - ... - AN(18D) - BN(18D)
+atomA(4D) - atomB(4D) - A1(5D) - B1(5D) - A2(5D) - B2(5D) - ... - AN(5D) - BN(5D)
 ```
 
 相邻的 (A_n, B_n) 对用于在测量端构造 BS+POVM 的联合效果。
@@ -215,17 +214,19 @@ atomA(4D) - atomB(4D) - A1(18D) - B1(18D) - A2(18D) - B2(18D) - ... - AN(18D) - 
 result = run_dual_atom_emission(n_bins=100, ...)
 # 结果：原子在末尾，bins 包含 780nm 光子
 
-# (2) QFC：780nm → 1517nm 频率转换
+# (2) QFC：780nm ↔ 1517nm 频率转换
 apply_qfc(mps, n_bins, theta_H=π/4, theta_V=π/4)
-# 结果：光子转换为通信波长
+# 注：QFC/过滤/光纤/BS 已整体推入 POVM（Heisenberg 端口），
+#     apply_qfc 仅记录参数并输出日志，不改动 MPS。
 
-# (3) 780nm 滤波：移除未转换的光子
-apply_780_filter(mps, n_bins)
+# (3) 光纤采样（不改态）
+mps, fiber_sample, p_no_loss_fiber = apply_fiber_channel(...)
+# 注：光纤的 Jones/损耗/相位漂移在 POVM 端使用 fiber_sample 重建。
 
 # (4) 分束器并入测量端：构造 U_BS^† E U_BS
 # 结果：在不显式作用 BS 的情况下获取端口点击分布
 
-# (5) 探测：POVM 枚举 + 抽样（BS 已并入测量端）
+# (5) 探测：POVM 枚举 + 抽样（QFC/过滤/光纤/BS 都已并入测量端）
 pipeline = run_detection_pipeline(
     mps, n_bins, eta_det=eta_det, p_dark=p_noise, bs_unitary=bs_gate_6d()
 )
