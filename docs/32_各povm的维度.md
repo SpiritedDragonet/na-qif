@@ -193,7 +193,7 @@ $我会用“每个时间 bin 的两臂 A_n、B_n 形成的一对模式”作为
 | 780 “滤除/损耗”                          | `loss_channel_both_subspaces()`（测量端对偶映射）            | 单个 bin(5D)                  | Kraus 信道                             | 每个 Kraus **5×5**        |
 | 6D→3D 投影（BS 输入子空间）              | `detection._project_6d_to_3d()`                              | 单臂单 bin（6D→3D）            | 线性投影                               | 投影矩阵 **P: 3×6**       |
 | 3D→5D 嵌入（账本回填）                   | `detection._embed_3d_to_5d()`                                | 单臂单 bin（3D→5D）            | 线性嵌入                               | 嵌入矩阵 **E: 5×3**       |
-| 光纤偏振旋转（Jones）                    | `detection._jones_3d()` + `U^†EU`（测量端）                  | 单臂单 bin（3D）               | 幺正门                                 | **3×3**                   |
+| 光纤偏振旋转（Jones）                    | `hilbert.basis.jones_3d()` + `U^†EU`（测量端）               | 单臂单 bin（3D）               | 幺正门                                 | **3×3**                   |
 | 光纤相位轮廓（phase drift/slope/jitter） | `detection` 内对 `U_B` 叠加相位后做 `U^†EU`                  | 单臂单 bin（3D）               | 幺正门                                 | **3×3**                   |
 | 光纤损耗（1517）                         | `loss_channel_1517_single_photon()`（测量端对偶映射）            | 单臂单 bin（3D）              | Kraus 信道                            | 每个 Kraus **3×3**        |
 | BS（两臂干涉）                           | `bs_gate_6d()`（测量端共轭）                                  | 同一 bin 的 $A_n 6D$⊗$B_n 6D$ | 两体幺正门                             | **36×36**                 |

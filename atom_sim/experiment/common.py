@@ -16,9 +16,6 @@ from ..physics import FiberChannelParams
 DEFAULT_DARK_RATE_INTRINSIC_HZ = 65.0
 DEFAULT_BG_RATE_MEAN_HZ = 165.0
 DEFAULT_BG_RATE_STD_HZ = float(np.sqrt(5.0))
-DEFAULT_QFC_THETA_H = np.pi / 4
-DEFAULT_QFC_THETA_V = np.pi / 4
-DEFAULT_APPLY_FILTER_780 = True
 
 
 @dataclass
@@ -27,8 +24,8 @@ class EmissionParams:
     n_bins: int = 100
     dt_ns: float = 0.5
     chi_max: int = 50
-    gamma_peak_A: float = 2 * np.pi * 20e6
-    gamma_peak_B: float = 2 * np.pi * 20e6
+    omega_peak_A: float = 2 * np.pi * 20e6
+    omega_peak_B: float = 2 * np.pi * 20e6
     sigma: float = 10.0
     g: float = 2 * np.pi * 20e6
     kappa_ex: float = 2 * np.pi * 20e6
@@ -53,6 +50,15 @@ class DetectorParams:
     """探测器参数。"""
     eta_det: float = 0.85
     ideal_det: bool = False
+    visibility: float = 1.0
+
+
+@dataclass
+class QfcParams:
+    """QFC 参数（可扫）。"""
+    theta_H: float = np.pi / 4
+    theta_V: float = np.pi / 4
+    apply_filter_780: bool = True
 
 
 @dataclass
@@ -79,6 +85,7 @@ class RunConfig:
     plot_all: bool = False
     plot_enabled: bool = True
     debug: bool = False
+    window_ns: float = 70.0
 
 
 @dataclass
@@ -102,6 +109,7 @@ class SimConfig:
     emission: EmissionParams = field(default_factory=EmissionParams)
     noise: NoiseParams = field(default_factory=NoiseParams)
     detector: DetectorParams = field(default_factory=DetectorParams)
+    qfc: QfcParams = field(default_factory=QfcParams)
     fiber: FiberParams = field(default_factory=FiberParams)
     hom: Optional[HomConfig] = None
 
@@ -130,7 +138,7 @@ def _build_fiber_params(cfg: FiberParams) -> FiberChannelParams:
     # 将实验配置转换成 FiberChannelParams（用于采样每次光纤漂移）
     if not cfg.noise_enabled:
         return FiberChannelParams(
-            polarization_model=cfg.polarization_model,
+            polarization_model="fixed",
             polarization_sigma=0.0,
             eta_mean=cfg.eta_mean,
             eta_std=0.0,
@@ -247,10 +255,42 @@ class PipelineResult:
     timings: Optional[dict] = None
 
 
+def _build_detection_kwargs(
+    pipe: PipelineResult,
+    *,
+    eta_det: float,
+    window_bins: int,
+    rng: np.random.Generator,
+    verbose: bool,
+    bs_unitary: np.ndarray,
+    visibility: float,
+) -> dict:
+    """
+    统一拼装 run_detection_pipeline 的公共参数，避免多处重复与分叉。
+    """
+    visibility = float(visibility)
+    visibility = min(max(visibility, 0.0), 1.0)
+    return {
+        "mps": pipe.mps,
+        "n_bins": pipe.emission.get_n_bins(),
+        "eta_det": float(eta_det),
+        "window_bins": int(window_bins),
+        "rng": rng,
+        "verbose": verbose,
+        "bs_unitary": bs_unitary,
+        "fiber_sample": pipe.fiber_sample,
+        "apply_filter_780": pipe.apply_filter_780,
+        "theta_H": pipe.qfc_theta_H,
+        "theta_V": pipe.qfc_theta_V,
+        "visibility": visibility,
+    }
+
+
 def run_emission_to_bs(
     emission: EmissionParams,
     rng: np.random.Generator,
     fiber: Optional[FiberParams] = None,
+    qfc: Optional[QfcParams] = None,
     delay_ns: Optional[float] = None,
     delay_jitter_ns: Optional[float] = None,
     verbose: bool = True,
@@ -284,6 +324,8 @@ def run_emission_to_bs(
         hooks = PipelineHooks()
     if fiber is None:
         fiber = FiberParams()
+    if qfc is None:
+        qfc = QfcParams()
     fiber_params = _build_fiber_params(fiber)
     delay_ns, delay_jitter_ns = _resolve_emission_delay(
         emission, rng, delay_ns, delay_jitter_ns
@@ -301,8 +343,8 @@ def run_emission_to_bs(
         n_bins=emission.n_bins,
         dt_ns=emission.dt_ns,
         chi_max=emission.chi_max,
-        gamma_peak_A=emission.gamma_peak_A,
-        gamma_peak_B=emission.gamma_peak_B,
+        omega_peak_A=emission.omega_peak_A,
+        omega_peak_B=emission.omega_peak_B,
         sigma=emission.sigma,
         delay_ns=delay_ns,
         delay_jitter_ns=delay_jitter_ns,
@@ -321,20 +363,23 @@ def run_emission_to_bs(
     if hooks.after_emission is not None:
         hooks.after_emission(emission)
 
-    _call_stage("QFC")
+    _call_stage("QFC (Heisenberg 参数)")
     t0 = time.perf_counter() if timings is not None else None
-    qfc_theta_H = DEFAULT_QFC_THETA_H
-    qfc_theta_V = DEFAULT_QFC_THETA_V
+    qfc_theta_H = float(qfc.theta_H)
+    qfc_theta_V = float(qfc.theta_V)
+    apply_filter_780 = bool(qfc.apply_filter_780)
     if timings is not None and t0 is not None:
         timings["qfc"] = time.perf_counter() - t0
     if hooks.after_qfc_filter is not None:
         hooks.after_qfc_filter(
             emission,
             qfc_params=(qfc_theta_H, qfc_theta_V),
-            apply_filter_780=DEFAULT_APPLY_FILTER_780,
+            apply_filter_780=apply_filter_780,
         )
+        if verbose:
+            print("QFC/滤波仅作为测量端参数写入（Heisenberg），未对态显式作用。")
 
-    _call_stage("光纤信道")
+    _call_stage("光纤信道 (Heisenberg 参数)")
     t0 = time.perf_counter() if timings is not None else None
     mps, fiber_sample = apply_fiber_channel(
         mps=mps,
@@ -350,8 +395,10 @@ def run_emission_to_bs(
             emission,
             fiber_sample=fiber_sample,
             qfc_params=(qfc_theta_H, qfc_theta_V),
-            apply_filter_780=DEFAULT_APPLY_FILTER_780,
+            apply_filter_780=apply_filter_780,
         )
+        if verbose:
+            print("光纤噪声仅作为测量端参数写入（Heisenberg），未对态显式作用。")
 
     if t2_us > 0.0:
         p_dephase = 0.5 * (1.0 - np.exp(-t_wait_us / t2_us))
@@ -374,7 +421,7 @@ def run_emission_to_bs(
             emission,
             fiber_sample=fiber_sample,
             qfc_params=(qfc_theta_H, qfc_theta_V),
-            apply_filter_780=DEFAULT_APPLY_FILTER_780,
+            apply_filter_780=apply_filter_780,
         )
 
     return PipelineResult(
@@ -384,7 +431,7 @@ def run_emission_to_bs(
         fiber_sample=fiber_sample,
         qfc_theta_H=qfc_theta_H,
         qfc_theta_V=qfc_theta_V,
-        apply_filter_780=DEFAULT_APPLY_FILTER_780,
+        apply_filter_780=apply_filter_780,
         t_wait_us=t_wait_us,
         t2_us=t2_us,
         p_dephase=p_dephase,

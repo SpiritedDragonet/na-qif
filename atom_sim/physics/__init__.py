@@ -8,7 +8,6 @@
 from .gates import (
     emission_gate,
     qfc_gate,
-    jones_gate,
 )
 from .channels import (
     loss_channel_both_subspaces,
@@ -20,7 +19,6 @@ __all__ = [
     # gates
     'emission_gate',
     'qfc_gate',
-    'jones_gate',
     # channels
     'loss_channel_both_subspaces',
     'loss_channel_1517_single_photon',

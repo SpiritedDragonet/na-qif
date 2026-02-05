@@ -15,6 +15,7 @@ from .common import (
     SimConfig,
     _compute_window_bins,
     _compute_noise_params,
+    _build_detection_kwargs,
 )
 from .single_run import _run_single_trial
 
@@ -144,7 +145,6 @@ def validate_no_hom_args(args, parser) -> None:
         or args.tau_end is not None
         or args.tau_step is not None
         or args.tau_points is not None
-        or args.window_ns is not None
     ):
         parser.error("非 HOM 模式不接受 HOM 参数")
 
@@ -199,25 +199,24 @@ def _run_hom_run(
 
     # BS 并入测量端 (U^† E U)
     bs_unitary = bs_gate_6d()
+    detect_common = _build_detection_kwargs(
+        pipe=pipe,
+        eta_det=eta_det,
+        window_bins=window_bins,
+        rng=run_rng,
+        verbose=verbose,
+        bs_unitary=bs_unitary,
+        visibility=config.detector.visibility,
+    )
     coincidences = 0
     click_records = []
     detect_start = time.perf_counter() if debug else None
     # 抽样双点击记录（POVM）；bs_unitary 将 BS 并入测量端
     pipeline = run_detection_pipeline(
-        mps=result.mps,
-        n_bins=result.get_n_bins(),
-        eta_det=eta_det,
+        **detect_common,
         p_dark=p_noise,
-        window_bins=window_bins,
-        rng=run_rng,
-        verbose=verbose,
         n_samples=shots_per_run,
         compute_metrics=False,
-        bs_unitary=bs_unitary,
-        fiber_sample=pipe.fiber_sample,
-        apply_filter_780=pipe.apply_filter_780,
-        theta_H=pipe.qfc_theta_H,
-        theta_V=pipe.qfc_theta_V,
     )
     p_arrive = pipeline.p_arrive
     # 逐 shot 统计符合与点击记录

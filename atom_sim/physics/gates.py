@@ -13,6 +13,7 @@ from scipy.linalg import expm
 
 from ..hilbert.basis import (
     SUBSPACE_1517,
+    project_6d_to_3d,
 )
 from ..hilbert.operators import (
     annihilation_op,
@@ -102,6 +103,57 @@ def bs_gate_6d() -> np.ndarray:
 
 
 @lru_cache(maxsize=4)
+def bs_gate_3d() -> np.ndarray:
+    """
+    3D 输出端口（vac/H/V）的 50/50 分束器门（9x9）。
+    """
+    return project_6d_to_3d(bs_gate_6d())
+
+
+def _permute_factors_matrix(dims: Tuple[int, ...], perm: Tuple[int, ...]) -> np.ndarray:
+    """构造张量因子重排的置换矩阵。"""
+    dim = int(np.prod(dims))
+    P = np.zeros((dim, dim), dtype=complex)
+    for idx in range(dim):
+        multi = np.unravel_index(idx, dims)
+        permuted = tuple(multi[p] for p in perm)
+        jdx = np.ravel_multi_index(permuted, dims)
+        P[jdx, idx] = 1.0
+    return P
+
+
+def _bs_gate_9d_dist_from_6d(U_6d: np.ndarray) -> np.ndarray:
+    """
+    从 6D BS 推导“可区分标签”的 9D × 9D 两端口 BS（81x81）。
+
+    逻辑：
+      - 先从 6D BS 提取 3D 单光子块（9x9）
+      - 对标签 a / b 分别作用：U_a ⊗ U_b
+      - 用置换矩阵从 (aA,aB,bA,bB) 重排回 (aA,bA,aB,bB)
+    """
+    U_3d = project_6d_to_3d(U_6d)
+    U_ab = np.kron(U_3d, U_3d)
+    # perm: (aA, aB, bA, bB) -> (aA, bA, aB, bB)
+    P_swap = _permute_factors_matrix((3, 3, 3, 3), (0, 2, 1, 3))
+    return P_swap @ U_ab @ P_swap.T
+
+
+@lru_cache(maxsize=4)
+def _bs_gate_9d_dist_cached() -> np.ndarray:
+    return _bs_gate_9d_dist_from_6d(bs_gate_6d())
+
+
+def bs_gate_9d_dist(bs_unitary_6d: Optional[np.ndarray] = None) -> np.ndarray:
+    """
+    9D 标签空间下的可区分 BS（81x81）。
+    若传入 6D BS，则使用该门推导；否则使用默认 6D BS。
+    """
+    if bs_unitary_6d is None:
+        return _bs_gate_9d_dist_cached()
+    return _bs_gate_9d_dist_from_6d(bs_unitary_6d)
+
+
+@lru_cache(maxsize=4)
 def _bs_gate_1517() -> np.ndarray:
     """
     内部函数：1517_A × 1517_B上的50/50分束器（36x36）。
@@ -141,83 +193,6 @@ def _bs_gate_1517() -> np.ndarray:
     U_bs = expm(G_total)
 
     return U_bs
-
-
-@lru_cache(maxsize=16)
-def jones_gate(U: Tuple[Tuple[complex, complex], Tuple[complex, complex]]) -> np.ndarray:
-    """
-    琼斯偏振旋转门 U_pol。
-
-    将2x2琼斯矩阵应用于通信（1517nm）H/V子空间：
-        (c_H', c_V')^T = U * (c_H, c_V)^T
-
-    Parameters
-    ----------
-    U : Tuple[Tuple[complex, complex], Tuple[complex, complex]]
-        2x2琼斯矩阵，以嵌套元组形式用于哈希（可缓存）
-        格式：((u00, u01), (u10, u11))
-
-    Returns
-    -------
-    np.ndarray
-        作用于1517子空间的6x6幺正矩阵（在真空和双光子态上为单位）
-
-    Examples
-    --------
-    >>> # 45度半波片
-    >>> import numpy as np
-    >>> U_hwp = ((1, 0), (0, -1))
-    >>> U = jones_gate(U_hwp)
-    """
-    # ------------------------------------------------------------------
-    # Jones 门是对 H/V 单光子子空间的 SU(2) 旋转：
-    #   |H>,|V> -> U · (|H>,|V>)
-    # 对多光子态，等效为 U⊗U（在对称子空间投影下）。
-    # ------------------------------------------------------------------
-    u00, u01 = U[0]
-    u10, u11 = U[1]
-
-    # 1517基：vac, H, V, 2H, 2V, HV
-    # 琼斯旋转作用于单光子H/V子空间
-    # 对于多光子态，它作用为U⊗U于适当的张量幂
-
-    # 构建6x6矩阵
-    op = np.zeros((6, 6), dtype=complex)
-
-    # 真空不变
-    op[0, 0] = 1.0
-
-    # 单光子子空间：(H, V) -> U @ (H, V)
-    op[1, 1] = u00  # H -> u00*H + u10*V
-    op[2, 1] = u10
-    op[1, 2] = u01  # V -> u01*H + u11*V
-    op[2, 2] = u11
-
-    # 双光子子空间：U作用为U ⊗ U
-    # |2H> = |HH> -> (u00*H + u10*V) ⊗ (u00*H + u10*V)
-    # = u00²|HH> + u00*u10|HV> + u10*u00|VH> + u10²|VV>
-    # 但由于我们有不可区分光子，|HV> = |VH>
-
-    # sqrt(2) factors are required for the normalized |HV> basis.
-    s = np.sqrt(2.0)
-
-    # |2H> -> u00^2|2H> + sqrt(2)*u00*u10|HV> + u10^2|2V>
-    op[3, 3] = u00 * u00  # |2H>
-    op[5, 3] = s * u00 * u10  # |HV>
-    op[4, 3] = u10 * u10  # |2V>
-
-    # |2V> -> u01^2|2H> + sqrt(2)*u01*u11|HV> + u11^2|2V>
-    op[3, 4] = u01 * u01
-    op[5, 4] = s * u01 * u11
-    op[4, 4] = u11 * u11
-
-    # |HV> -> (u00*H + u10*V) ⊗ (u01*H + u11*V)
-    # = sqrt(2) u00*u01|2H> + (u00*u11 + u10*u01)|HV> + sqrt(2) u10*u11|2V>
-    op[3, 5] = s * u00 * u01
-    op[5, 5] = u00 * u11 + u10 * u01
-    op[4, 5] = s * u10 * u11
-
-    return op
 
 
 def emission_gate(

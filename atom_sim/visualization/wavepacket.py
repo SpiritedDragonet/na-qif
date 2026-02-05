@@ -31,6 +31,7 @@ from ..core.mps import MPSState  # noqa: E402
 from ..simulation.trajectory import EmissionResult  # noqa: E402
 from ..physics.gates import qfc_gate  # noqa: E402
 from ..physics.channels import loss_channel_both_subspaces, loss_channel_1517_single_photon  # noqa: E402
+from ..hilbert.basis import proj_3_from_5, embed_6_from_3, jones_3d  # noqa: E402
 
 
 # ============================================================================
@@ -140,34 +141,6 @@ def _apply_kraus_state_pair(rho: np.ndarray, K_list_A: List[np.ndarray], K_list_
             K = np.kron(K_A, K_B)
             acc += K @ rho @ K.conj().T
     return acc
-
-
-def _proj_3_from_5() -> np.ndarray:
-    """5D -> 3D 投影：{vac,H_1517,V_1517}。"""
-    P = np.zeros((3, 5), dtype=complex)
-    P[0, 0] = 1.0
-    P[1, 3] = 1.0
-    P[2, 4] = 1.0
-    return P
-
-
-def _embed_6_from_3() -> np.ndarray:
-    """3D -> 6D 嵌入：{vac,H,V} -> 6D 前三项。"""
-    P = np.zeros((6, 3), dtype=complex)
-    P[0, 0] = 1.0
-    P[1, 1] = 1.0
-    P[2, 2] = 1.0
-    return P
-
-
-def _jones_3d(U_2x2: np.ndarray) -> np.ndarray:
-    """2x2 Jones -> 3D（diag(1,U)）。"""
-    U = np.asarray(U_2x2, dtype=complex)
-    if U.shape != (2, 2):
-        raise ValueError(f"Jones matrix shape {U.shape} != (2,2)")
-    U3 = np.eye(3, dtype=complex)
-    U3[1:, 1:] = U
-    return U3
 
 
 def _infer_first_bin_site(mps: MPSState) -> int:
@@ -432,9 +405,9 @@ def plot_dual_arm_heatmap(
         eta_H_1517=1.0,
         eta_V_1517=1.0,
     )
-    P_3_from_5 = _proj_3_from_5()
-    P_6_from_3 = _embed_6_from_3()
-    U_A_3 = _jones_3d(U_A)
+    P_3_from_5 = proj_3_from_5()
+    P_6_from_3 = embed_6_from_3()
+    U_A_3 = jones_3d(U_A)
 
     phase_center = 0.5 * (n_bins - 1)
 
@@ -463,7 +436,7 @@ def plot_dual_arm_heatmap(
             # 光纤（Jones + 相位）+ 损耗
             phase_n = phase_slope * (n - phase_center)
             U_B_n = np.exp(1j * phase_n) * U_B
-            U_B_3 = _jones_3d(U_B_n)
+            U_B_3 = jones_3d(U_B_n)
             U_pair_3 = np.kron(U_A_3, U_B_3)
             rho_3 = U_pair_3 @ rho_3 @ U_pair_3.conj().T
             K_A_3 = loss_channel_1517_single_photon(float(eta_H_A), float(eta_V_A))
@@ -503,7 +476,7 @@ def plot_dual_arm_heatmap(
                 if stage_mode == "after_fiber":
                     phase_n = phase_slope * (n - phase_center)
                     U_B_n = np.exp(1j * phase_n) * U_B
-                    U_B_3 = _jones_3d(U_B_n)
+                    U_B_3 = jones_3d(U_B_n)
                     rho_A = U_A_3 @ rho_A @ U_A_3.conj().T
                     rho_B = U_B_3 @ rho_B @ U_B_3.conj().T
                     K_A_3 = loss_channel_1517_single_photon(float(eta_H_A), float(eta_V_A))

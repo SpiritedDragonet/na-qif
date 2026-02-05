@@ -121,6 +121,7 @@ class FiberChannelParams:
     U_mean_B : np.ndarray
         B臂的平均琼斯矩阵（2x2幺正）
     polarization_model : str
+        "fixed" - 恒等/固定琼斯矩阵（无随机）
         "haar" - 完全随机SU(2)（未补偿光纤）
         "perturb" - 围绕平均值的小随机旋转（补偿光纤）
         "euler" - 随机欧拉角（中等）
@@ -189,7 +190,11 @@ class FiberChannelParams:
         """给定平均矩阵，采样琼斯矩阵。"""
         model = self.polarization_model
 
-        if model == "haar":
+        if model == "fixed":
+            # 关闭噪声时直接返回均值矩阵
+            U = np.array(U_mean, dtype=complex)
+
+        elif model == "haar":
             # 从Haar测度采样的完全随机SU(2)
             # 使用四元数参数化
             x = rng.standard_normal(4)

@@ -5,11 +5,7 @@ Single-run simulation workflow and summary helpers.
 
 from __future__ import annotations
 
-import sys
-import os
-import csv
 import time
-from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -29,39 +25,11 @@ from .common import (
     run_emission_to_bs,
     _compute_window_bins,
     _compute_noise_params,
+    _build_detection_kwargs,
 )
 
 # Debug toggle (default False)
 DEBUG_MODE = False
-
-SUMMARY_HEADER = [
-    "run",
-    "shot",
-    "success",
-    "bell",
-    "click_count",
-    "events",
-    "dark_rate_intrinsic_hz",
-    "dark_rate_bg_hz",
-    "p_dark_intrinsic",
-    "p_bg",
-    "p_noise",
-    "p_arrive",
-    "p_success_true_given_arrival",
-    "p_success_abs",
-    "p_success_true_abs",
-    "p_success_false_abs",
-    "p_success_no_dark_abs",
-    "p_false_approx",
-    "false_fraction",
-    "false_fraction_approx",
-    "fidelity_true",
-    "fidelity_false",
-    "fidelity_all",
-    "fidelity_no_dark",
-    "p_qubit_emit",
-    "fidelity_shot_full",
-]
 
 def save_debug_info(
     mps,
@@ -163,6 +131,7 @@ def _run_single_trial(
         emission=config.emission,
         rng=run_rng,
         fiber=config.fiber,
+        qfc=config.qfc,
         delay_ns=delay_ns,
         delay_jitter_ns=delay_jitter_ns,
         verbose=verbose,
@@ -175,8 +144,6 @@ def _run_single_simulation_core(
     output_dir: Path,
     run_index: int,
     config: SimConfig,
-    summary_path: Optional[Path],
-    summary_lock_path: Optional[Path],
     show_plots: bool,
     plot_dir: Optional[Path] = None,
     run_tag: Optional[str] = None,
@@ -194,102 +161,6 @@ def _run_single_simulation_core(
     run_tag = f"run{run_index:03d}"
     success_metrics = None
     stage_total = 6
-    plot_gate = {"claimed": False, "paths": []}
-
-    @contextmanager
-    # 目的：并发写 CSV/占位时的互斥锁；规则：锁文件超时 stale_s 视为僵死并回收。
-    def _file_lock(lock_path: Path, stale_s: float = 120.0) -> None:
-        # --------------------------------------------------------------
-        # 简易文件锁：
-        #   - 创建 lock 文件即视为占用
-        #   - 超过 stale_s 未更新视为僵死锁
-        # 目的是保证多进程写 CSV 时不互相覆盖。
-        # --------------------------------------------------------------
-        lock_fd = None
-        while True:
-            try:
-                lock_fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.write(lock_fd, f"{os.getpid()} {time.time()}".encode("utf-8"))
-                break
-            except FileExistsError:
-                try:
-                    age = time.time() - lock_path.stat().st_mtime
-                    if age > stale_s:
-                        lock_path.unlink()
-                        continue
-                except FileNotFoundError:
-                    continue
-                time.sleep(0.05)
-        try:
-            yield
-        finally:
-            if lock_fd is not None:
-                os.close(lock_fd)
-            try:
-                lock_path.unlink()
-            except FileNotFoundError:
-                pass
-
-    def _append_click_summary(
-        summary_path: Path,
-        lock_path: Path,
-        run_index: int,
-        shot_index: int,
-        det_result,
-        metrics: Optional[dict],
-    ) -> None:
-        if summary_path is None or lock_path is None:
-            return
-        # 目的：记录单次点击结果。
-        # 公式：F_full = <Bell|ρ|Bell>（未归一化保真度）
-        # 这里的 ρ 为“点击记录 r”条件化后的原子态（未归一化）。
-        def _fmt(key: str, fmt: str) -> str:
-            if not metrics or key not in metrics:
-                return ""
-            value = metrics.get(key)
-            if value is None:
-                return ""
-            return format(value, fmt)
-
-        clicks = [(c.detector, c.bin_index, bool(getattr(c, "is_dark", False))) for c in det_result.clicks]
-        fidelity_shot_full = ""
-        if det_result.success and det_result.bell_state:
-            fidelity_full = compute_fidelity_with_bell(det_result.spin_state, det_result.bell_state)
-            fidelity_shot_full = format(fidelity_full, ".6f")
-        row = [
-            run_index,
-            shot_index,
-            det_result.success,
-            det_result.bell_state,
-            len(clicks),
-            clicks,
-            _fmt("dark_rate_intrinsic_hz", ".3f"),
-            _fmt("dark_rate_bg_hz", ".3f"),
-            _fmt("p_dark_intrinsic", ".8f"),
-            _fmt("p_bg", ".8f"),
-            _fmt("p_noise", ".8f"),
-            _fmt("p_arrive", ".8f"),
-            _fmt("p_success_true_given_arrival", ".8f"),
-            _fmt("p_success_abs", ".8f"),
-            _fmt("p_success_true_abs", ".8f"),
-            _fmt("p_success_false_abs", ".8f"),
-            _fmt("p_success_no_dark_abs", ".8f"),
-            _fmt("p_false_approx", ".8f"),
-            _fmt("false_fraction", ".6f"),
-            _fmt("false_fraction_approx", ".6f"),
-            _fmt("fidelity_true", ".6f"),
-            _fmt("fidelity_false", ".6f"),
-            _fmt("fidelity_all", ".6f"),
-            _fmt("fidelity_no_dark", ".6f"),
-            _fmt("p_qubit_emit", ".6f"),
-            fidelity_shot_full,
-        ]
-        if len(row) < len(SUMMARY_HEADER):
-            row += [""] * (len(SUMMARY_HEADER) - len(row))
-        with _file_lock(lock_path):
-            with open(summary_path, 'a', encoding='utf-8', newline='') as file:
-                writer = csv.writer(file)
-                writer.writerow(row)
     # 目的：落盘保存成功率/保真度等关键指标，便于复现与后处理。
     def _write_success_metrics_detail(
         output_dir: Path,
@@ -304,6 +175,8 @@ def _run_single_simulation_core(
                 file.write(f"eta_det = {metrics['eta_det']:.6f}\n")
             if "window_bins" in metrics:
                 file.write(f"window_bins = {metrics['window_bins']}\n")
+            if "window_ns" in metrics:
+                file.write(f"window_ns = {metrics['window_ns']:.3f}\n")
             if "dark_rate_intrinsic_hz" in metrics:
                 file.write(f"dark_rate_intrinsic_hz = {metrics['dark_rate_intrinsic_hz']:.3f}\n")
             if "dark_rate_bg_hz" in metrics:
@@ -322,10 +195,34 @@ def _run_single_simulation_core(
                 file.write(f"p_dephase = {metrics['p_dephase']:.6f}\n")
             if "p_qubit_emit" in metrics:
                 file.write(f"p_qubit_emit = {metrics['p_qubit_emit']:.6f}\n")
+            if "visibility" in metrics:
+                file.write(f"visibility = {metrics['visibility']:.6f}\n")
+            if "qfc_theta_H" in metrics:
+                file.write(f"qfc_theta_H = {metrics['qfc_theta_H']:.6f}\n")
+            if "qfc_theta_V" in metrics:
+                file.write(f"qfc_theta_V = {metrics['qfc_theta_V']:.6f}\n")
+            if "apply_filter_780" in metrics:
+                file.write(f"apply_filter_780 = {int(bool(metrics['apply_filter_780']))}\n")
             if metrics.get("p_arrive") is not None:
                 file.write(f"p_arrive = {metrics['p_arrive']:.8f}\n")
             else:
                 file.write("p_arrive = N/A\n")
+            if metrics.get("p_arrive_11") is not None:
+                file.write(f"p_arrive_11 = {metrics['p_arrive_11']:.8f}\n")
+            else:
+                file.write("p_arrive_11 = N/A\n")
+            if metrics.get("p_arrive_same_arm") is not None:
+                file.write(f"p_arrive_same_arm = {metrics['p_arrive_same_arm']:.8f}\n")
+            else:
+                file.write("p_arrive_same_arm = N/A\n")
+            if metrics.get("p_arrive_20") is not None:
+                file.write(f"p_arrive_20 = {metrics['p_arrive_20']:.8f}\n")
+            else:
+                file.write("p_arrive_20 = N/A\n")
+            if metrics.get("p_arrive_02") is not None:
+                file.write(f"p_arrive_02 = {metrics['p_arrive_02']:.8f}\n")
+            else:
+                file.write("p_arrive_02 = N/A\n")
             if metrics.get("p_success_no_dark_abs") is not None:
                 file.write(f"p_success_no_dark_abs = {metrics['p_success_no_dark_abs']:.8f}\n")
                 file.write(f"fidelity_no_dark = {metrics['fidelity_no_dark']:.6f}\n")
@@ -355,6 +252,18 @@ def _run_single_simulation_core(
                 file.write(f"p_success_false_abs = {metrics['p_success_false_abs']:.8f}\n")
             else:
                 file.write("p_success_false_abs = N/A\n")
+            if metrics.get("p_success_signal_approx") is not None:
+                file.write(f"p_success_signal_approx = {metrics['p_success_signal_approx']:.8f}\n")
+            else:
+                file.write("p_success_signal_approx = N/A\n")
+            if metrics.get("p_success_same_arm_approx") is not None:
+                file.write(f"p_success_same_arm_approx = {metrics['p_success_same_arm_approx']:.8f}\n")
+            else:
+                file.write("p_success_same_arm_approx = N/A\n")
+            if metrics.get("p_success_dark_assisted") is not None:
+                file.write(f"p_success_dark_assisted = {metrics['p_success_dark_assisted']:.8f}\n")
+            else:
+                file.write("p_success_dark_assisted = N/A\n")
             if metrics.get("p_success_true_given_arrival") is not None:
                 file.write(f"p_success_true_given_arrival = {metrics['p_success_true_given_arrival']:.8f}\n")
             else:
@@ -377,50 +286,14 @@ def _run_single_simulation_core(
     # 目的：占用/判断是否允许绘图；规则：plot_all 或首次抢占成功。
     def _plot_gate_allow() -> bool:
         # --------------------------------------------------------------
-        # 逻辑：默认只保留一个 run 的图，避免多进程 I/O 爆炸。
-        # plot_all=True 时不做限制。
+        # 逻辑：默认只保留一个 run 的图，避免 I/O 爆炸。
+        # plot_all=True 时不做限制；否则仅 run_index==0 允许绘图。
         # --------------------------------------------------------------
         if not plot_enabled:
             return False
         if plot_all:
             return True
-        if plot_gate["claimed"]:
-            return True
-        marker_path = output_dir / ".plot_run_claimed"
-        lock_path = output_dir / ".plot_run_claimed.lock"
-        with _file_lock(lock_path):
-            if marker_path.exists():
-                return False
-            marker_path.write_text(run_tag, encoding="utf-8")
-        plot_gate["claimed"] = True
-        return True
-
-    # 目的：记录本 run 的图路径（仅占位 run 保留）。
-    def _plot_gate_register(path: Path) -> None:
-        # 记录当前 run 产出的图路径，便于后续清理。
-        if plot_all:
-            return
-        if plot_gate["claimed"]:
-            plot_gate["paths"].append(path)
-
-    # 目的：清理非占位 run 图 + 释放占位锁。
-    def _plot_gate_finalize() -> None:
-        # 清理非占位 run 产生的图，避免磁盘膨胀。
-        if plot_all or not plot_gate["claimed"]:
-            return
-        for path in plot_gate["paths"]:
-            try:
-                path.unlink()
-            except FileNotFoundError:
-                continue
-        marker_path = output_dir / ".plot_run_claimed"
-        lock_path = output_dir / ".plot_run_claimed.lock"
-        with _file_lock(lock_path):
-            if not marker_path.exists():
-                return
-            current = marker_path.read_text(encoding="utf-8").strip()
-        if current == run_tag:
-            marker_path.unlink()
+        return run_index == 0
 
     print("\n" + "=" * 80)
     print(f"Run {run_index}/{n_runs} ({run_tag})")
@@ -432,8 +305,8 @@ def _run_single_simulation_core(
 
     stage_map = {
         "发射": 1,
-        "QFC": 2,
-        "光纤信道": 3,
+        "QFC (Heisenberg 参数)": 2,
+        "光纤信道 (Heisenberg 参数)": 3,
         "分束器(测量端) + 诊断/可视化": 4,
         "成功事件统计 (POVM)": 5,
         "POVM抽样": 6,
@@ -487,7 +360,6 @@ def _run_single_simulation_core(
                 kwargs["fiber_sample"] = fiber_sample
                 kwargs["apply_filter_780"] = apply_filter_780
                 plot_dual_arm_heatmap(target, **kwargs)
-                _plot_gate_register(plot_path)
             if DEBUG_MODE:
                 save_debug_info(
                     mps=emission.mps,
@@ -509,30 +381,30 @@ def _run_single_simulation_core(
         step_index=1,
     )
     _after_qfc_filter = _make_plot_hook(
-        stage_name="After QFC",
+        stage_name="After QFC (Heisenberg)",
         file_suffix="2_after_qfc",
         show_atomic=False,
         use_emission_obj=False,
         use_time_grid=True,
-        debug_stage="After QFC",
+        debug_stage="After QFC (Heisenberg)",
         step_index=2,
     )
     _after_fiber = _make_plot_hook(
-        stage_name="After Fiber",
+        stage_name="After Fiber (Heisenberg)",
         file_suffix="3_after_fiber",
         show_atomic=False,
         use_emission_obj=False,
         use_time_grid=True,
-        debug_stage="After Fiber Channel",
+        debug_stage="After Fiber (Heisenberg)",
         step_index=3,
     )
     _after_bs = _make_plot_hook(
-        stage_name="After BS",
+        stage_name="After BS (Heisenberg)",
         file_suffix="4_after_bs",
         show_atomic=False,
         use_emission_obj=False,
         use_time_grid=True,
-        debug_stage="After BS (measurement pre-state)",
+        debug_stage="After BS (Heisenberg)",
         step_index=4,
         bs_unitary=bs_gate_6d(),
     )
@@ -569,7 +441,7 @@ def _run_single_simulation_core(
     if ideal_det:
         eta_det = 1.0
     # 符合窗口：默认采用论文中数据分析窗口 70 ns
-    coincidence_window_ns = 70.0
+    coincidence_window_ns = float(config.run.window_ns)
     bin_dt_s = result.dt_s
     bin_dt_ns = bin_dt_s * 1e9
     # 将时间窗映射到 bin 数，决定“符合”判定的最大 bin 差
@@ -604,6 +476,15 @@ def _run_single_simulation_core(
     print(f"点击时间窗 window_bins = {window_bins} (~{window_bins * bin_dt_ns:.1f} ns)")
     # 重要：BS 已并入测量端。这里传入 U_BS，用 U^† E U 计算点击分布。
     bs_unitary = bs_gate_6d()
+    detect_common = _build_detection_kwargs(
+        pipe=pipe,
+        eta_det=eta_det,
+        window_bins=window_bins,
+        rng=run_rng,
+        verbose=True,
+        bs_unitary=bs_unitary,
+        visibility=config.detector.visibility,
+    )
 
     _on_stage("成功事件统计 (POVM)")
     print(f"\n成功事件枚举模式: {enum_mode}")
@@ -616,78 +497,41 @@ def _run_single_simulation_core(
         "bell": Counter(),
         "clicks": Counter(),
     }
+    click_records = []
 
-    enum_start = time.perf_counter() if DEBUG_MODE else None
     if enum_mode == "no-dark":
         print("\n枚举成功事件（无暗计数）...")
-        # 枚举阶段：只计算统计量，不做抽样
-        enum_pipeline = run_detection_pipeline(
-            mps=result.mps,
-            n_bins=result.get_n_bins(),
-            eta_det=eta_det,
-            p_dark=0.0,
-            window_bins=window_bins,
-            rng=run_rng,
-            verbose=True,
-            n_samples=0,
-            compute_metrics=True,
-            bs_unitary=bs_unitary,
-            fiber_sample=pipe.fiber_sample,
-            apply_filter_780=pipe.apply_filter_780,
-            theta_H=pipe.qfc_theta_H,
-            theta_V=pipe.qfc_theta_V,
-        )
-        enum_no_dark = enum_pipeline.metrics
-        if p_noise > 0.0:
-            print("  注意：枚举模式为 no-dark，将忽略暗计数，仅用于基线对比。")
-        enum_main = enum_no_dark
-        if DEBUG_MODE and timings is not None and enum_start is not None:
-            timings["povm_enum"] = time.perf_counter() - enum_start
-
-        # 使用POVM抽样运行探测和BSM（可多次采样）
         _on_stage("POVM抽样")
         print("\n运行探测和BSM（POVM抽样）...")
         detect_start = time.perf_counter() if DEBUG_MODE else None
-        # 抽样阶段：按噪声概率 p_noise 生成点击记录
-        sample_pipeline = run_detection_pipeline(
-            mps=result.mps,
-            n_bins=result.get_n_bins(),
-            eta_det=eta_det,
-            p_dark=p_noise,
-            window_bins=window_bins,
-            rng=run_rng,
-            verbose=True,
-            n_samples=shots_per_run,
-            compute_metrics=False,
-            bs_unitary=bs_unitary,
-            fiber_sample=pipe.fiber_sample,
-            apply_filter_780=pipe.apply_filter_780,
-            theta_H=pipe.qfc_theta_H,
-            theta_V=pipe.qfc_theta_V,
-        )
-        samples = sample_pipeline.samples
-    else:
-        print("\n枚举成功事件（含暗计数）...")
-        # 使用POVM抽样运行探测和BSM（可多次采样）
-        _on_stage("POVM抽样")
-        print("\n运行探测和BSM（POVM抽样）...")
-        detect_start = time.perf_counter() if DEBUG_MODE else None
-        # 直接在“含暗计数”的统计上枚举并抽样
         pipeline = run_detection_pipeline(
-            mps=result.mps,
-            n_bins=result.get_n_bins(),
-            eta_det=eta_det,
-            p_dark=p_noise,
-            window_bins=window_bins,
-            rng=run_rng,
-            verbose=True,
+            **detect_common,
+            p_dark=0.0,
             n_samples=shots_per_run,
             compute_metrics=True,
-            bs_unitary=bs_unitary,
-            fiber_sample=pipe.fiber_sample,
-            apply_filter_780=pipe.apply_filter_780,
-            theta_H=pipe.qfc_theta_H,
-            theta_V=pipe.qfc_theta_V,
+        )
+        enum_no_dark = pipeline.metrics
+        enum_main = enum_no_dark
+        samples = pipeline.samples
+    else:
+        if enum_mode == "both":
+            print("\n枚举成功事件（无暗计数基线）...")
+            enum_pipeline = run_detection_pipeline(
+                **detect_common,
+                p_dark=0.0,
+                n_samples=0,
+                compute_metrics=True,
+            )
+            enum_no_dark = enum_pipeline.metrics
+        print("\n枚举成功事件（含暗计数）...")
+        _on_stage("POVM抽样")
+        print("\n运行探测和BSM（POVM抽样）...")
+        detect_start = time.perf_counter() if DEBUG_MODE else None
+        pipeline = run_detection_pipeline(
+            **detect_common,
+            p_dark=p_noise,
+            n_samples=shots_per_run,
+            compute_metrics=True,
         )
         enum_main = pipeline.metrics
         samples = pipeline.samples
@@ -696,6 +540,7 @@ def _run_single_simulation_core(
     success_metrics = {
         "eta_det": eta_det,
         "window_bins": window_bins,
+        "window_ns": coincidence_window_ns,
         "dark_rate_intrinsic_hz": dark_rate_intrinsic_hz,
         "dark_rate_bg_hz": dark_rate_bg_hz,
         "p_dark_intrinsic": p_dark_intrinsic,
@@ -705,10 +550,21 @@ def _run_single_simulation_core(
         "t2_us": t2_us,
         "p_dephase": p_dephase,
         "p_qubit_emit": p_qubit_emit,
+        "visibility": detect_common["visibility"],
+        "qfc_theta_H": pipe.qfc_theta_H,
+        "qfc_theta_V": pipe.qfc_theta_V,
+        "apply_filter_780": pipe.apply_filter_780,
         "p_arrive": enum_main.p_arrive,
+        "p_arrive_11": enum_main.p_arrive_11,
+        "p_arrive_20": enum_main.p_arrive_20,
+        "p_arrive_02": enum_main.p_arrive_02,
+        "p_arrive_same_arm": enum_main.p_arrive_same_arm,
         "p_success_abs": enum_main.p_success,
         "p_success_true_abs": enum_main.p_success_true,
         "p_success_false_abs": enum_main.p_success_false,
+        "p_success_signal_approx": enum_main.p_success_signal_approx,
+        "p_success_same_arm_approx": enum_main.p_success_same_arm_approx,
+        "p_success_dark_assisted": enum_main.p_success_dark_assisted,
         "p_success_true_given_arrival": enum_main.p_success_given_arrival,
         "fidelity_all": enum_main.fidelity_declared,
         "fidelity_true": enum_main.fidelity_true,
@@ -807,6 +663,14 @@ def _run_single_simulation_core(
             print(f"  调试信息已保存: {det_file.name}")
 
         click_pairs = [(c.detector, c.bin_index, bool(getattr(c, "is_dark", False))) for c in det_result.clicks]
+        click_records.append(
+            {
+                "shot_index": shot_index - 1,
+                "success": bool(det_result.success),
+                "bell": det_result.bell_state,
+                "clicks": click_pairs,
+            }
+        )
         declared = det_result.bell_state if det_result.success else "失败"
         if click_pairs:
             print(f"  宣告结果: {declared} | 点击记录: {click_pairs}")
@@ -819,15 +683,6 @@ def _run_single_simulation_core(
             run_stats["success"] += 1
             if det_result.bell_state:
                 run_stats["bell"][det_result.bell_state] += 1
-
-        _append_click_summary(
-            summary_path,
-            summary_lock_path,
-            run_index,
-            shot_index,
-            det_result,
-            success_metrics,
-        )
 
     if DEBUG_MODE and timings is not None and detect_start is not None:
         timings["detection_total"] = time.perf_counter() - detect_start
@@ -844,7 +699,6 @@ def _run_single_simulation_core(
             ("fiber", "光纤"),
             ("dephase", "退相干"),
             ("bs", "BS"),
-            ("povm_enum", "成功事件枚举"),
             ("povm_effects", "POVM构建"),
             ("detection_total", "探测抽样"),
         ]
@@ -854,62 +708,4 @@ def _run_single_simulation_core(
                 parts.append(f"{label}={timings[key]:.2f}s")
         if parts:
             print("\n[调试耗时] " + " | ".join(parts))
-    return run_stats, success_metrics
-
-
-def _run_single_simulation_task(
-    output_dir,
-    run_index,
-    config,
-    summary_path,
-    summary_lock_path,
-    mirror_console,
-    show_plots,
-):
-    # 外部调度器动态调用入口（ProcessPool 需要顶层函数以支持序列化）。
-    class Tee:
-        """同时输出到多个流（用于日志与控制台同步）。"""
-
-        def __init__(self, *streams):
-            self._streams = streams
-            self._tty_streams = [
-                s for s in streams if getattr(s, "isatty", lambda: False)()
-            ]
-
-        def write(self, data):
-            for stream in self._streams:
-                stream.write(data)
-            for stream in self._tty_streams:
-                stream.flush()
-
-        def flush(self):
-            for stream in self._streams:
-                stream.flush()
-
-        def isatty(self):
-            return bool(self._tty_streams)
-
-    run_tag = f"run{run_index:03d}"
-    log_path = output_dir / f"{run_tag}_console.log"
-    with open(log_path, 'w', encoding='utf-8') as log_file:
-        if mirror_console:
-            tee_out = Tee(sys.stdout, log_file)
-            tee_err = Tee(sys.stderr, log_file)
-        else:
-            tee_out = Tee(log_file)
-            tee_err = Tee(log_file)
-        old_out, old_err = sys.stdout, sys.stderr
-        sys.stdout, sys.stderr = tee_out, tee_err
-        try:
-            print(f"正在处理: {run_tag} | log: {log_path.name} | summary: {summary_path.name}")
-            run_stats, success_metrics = _run_single_simulation_core(
-                output_dir,
-                run_index,
-                config,
-                summary_path,
-                summary_lock_path,
-                show_plots,
-            )
-        finally:
-            sys.stdout, sys.stderr = old_out, old_err
-    return run_index, run_stats, success_metrics
+    return run_stats, success_metrics, click_records

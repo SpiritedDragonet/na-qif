@@ -6,6 +6,8 @@
 """
 
 from typing import Tuple, Optional
+from functools import lru_cache
+import numpy as np
 from dataclasses import dataclass
 
 
@@ -102,5 +104,75 @@ BIN_SPACE = SUBSPACE_BIN5  # 5D
 #   - Bin 空间基序：|vac>, |H_780>, |V_780>, |H_1517>, |V_1517>
 # 该约定贯穿 gates / channels / detection / visualization。
 # ----------------------------------------------------------------------
+
+
+@lru_cache(maxsize=4)
+def proj_3_from_6() -> np.ndarray:
+    """6D -> 3D 投影：取 {vac,H,V}。"""
+    P = np.zeros((3, 6), dtype=complex)
+    P[0, 0] = 1.0
+    P[1, 1] = 1.0
+    P[2, 2] = 1.0
+    return P
+
+
+@lru_cache(maxsize=4)
+def proj_3_from_5() -> np.ndarray:
+    """5D -> 3D 投影：取 telecom {vac,H_1517,V_1517}。"""
+    P = np.zeros((3, 5), dtype=complex)
+    P[0, 0] = 1.0
+    P[1, 3] = 1.0
+    P[2, 4] = 1.0
+    return P
+
+
+@lru_cache(maxsize=4)
+def embed_5_from_3() -> np.ndarray:
+    """3D -> 5D 嵌入：{vac,H,V} -> {vac,H_1517,V_1517}。"""
+    P = np.zeros((5, 3), dtype=complex)
+    P[0, 0] = 1.0
+    P[3, 1] = 1.0
+    P[4, 2] = 1.0
+    return P
+
+
+@lru_cache(maxsize=4)
+def embed_6_from_3() -> np.ndarray:
+    """3D -> 6D 嵌入：{vac,H,V} -> {vac,H,V,2H,2V,HV} 的单光子子块。"""
+    P = np.zeros((6, 3), dtype=complex)
+    P[0, 0] = 1.0
+    P[1, 1] = 1.0
+    P[2, 2] = 1.0
+    return P
+
+
+def project_6d_to_3d(op_6d: np.ndarray) -> np.ndarray:
+    """将 36x36 双端口算符投影到 3D×3D (9x9)。"""
+    op_6d = np.asarray(op_6d, dtype=complex)
+    if op_6d.shape != (36, 36):
+        raise ValueError(f"op_6d shape {op_6d.shape} != (36,36)")
+    P = proj_3_from_6()
+    Pi = np.kron(P, P)
+    return Pi @ op_6d @ Pi.conj().T
+
+
+def embed_3d_to_5d(op_3d: np.ndarray) -> np.ndarray:
+    """将 9x9 双端口算符嵌入到 5D×5D (25x25)。"""
+    op_3d = np.asarray(op_3d, dtype=complex)
+    if op_3d.shape != (9, 9):
+        raise ValueError(f"op_3d shape {op_3d.shape} != (9,9)")
+    P = embed_5_from_3()
+    Pi = np.kron(P, P)
+    return Pi @ op_3d @ Pi.conj().T
+
+
+def jones_3d(U_2x2: np.ndarray) -> np.ndarray:
+    """把 2x2 琼斯矩阵嵌入到 3D：diag(1, U_2x2)。"""
+    U = np.asarray(U_2x2, dtype=complex)
+    if U.shape != (2, 2):
+        raise ValueError(f"Jones matrix shape {U.shape} != (2,2)")
+    U3 = np.eye(3, dtype=complex)
+    U3[1:, 1:] = U
+    return U3
 
 

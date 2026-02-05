@@ -188,7 +188,6 @@ atom_sim/
 │   ├── single_run.py
 │   │   ├── _run_single_trial()
 │   │   ├── _run_single_simulation_core()  # 仅传 fiber_sample / bs_unitary
-│   │   └── _run_single_simulation_task()
 │   └── hom.py
 │       ├── _run_hom_run()                 # 仅传 fiber_sample / bs_unitary
 │       └── parse_hom_cli()

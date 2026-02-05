@@ -16,7 +16,13 @@ from typing import Tuple, List, Optional
 from dataclasses import dataclass, field
 
 from ..core.mps import MPSState
-from ..physics.gates import qfc_gate
+from ..physics.gates import qfc_gate, bs_gate_9d_dist
+from ..hilbert.basis import (
+    embed_5_from_3,
+    project_6d_to_3d,
+    embed_3d_to_5d,
+    jones_3d,
+)
 from ..physics.channels import (
     loss_channel_both_subspaces,
     loss_channel_1517_single_photon,
@@ -28,7 +34,6 @@ class DetectionEvent:
     """单次探测事件。"""
     detector: str  # "H1", "V1", "H2", "V2"
     bin_index: int
-    site: int
     is_dark: bool = False
 
 
@@ -58,6 +63,10 @@ class TwoClickRecord:
 class SuccessEnumerationResult:
     """枚举成功事件的统计结果。"""
     p_arrive: float
+    p_arrive_11: float
+    p_arrive_20: float
+    p_arrive_02: float
+    p_arrive_same_arm: float
     p_success: float
     p_success_true: float
     p_success_false: float
@@ -65,6 +74,9 @@ class SuccessEnumerationResult:
     fidelity_declared: float
     fidelity_true: float
     fidelity_false: float
+    p_success_signal_approx: float = 0.0
+    p_success_same_arm_approx: float = 0.0
+    p_success_dark_assisted: float = 0.0
 
 
 @dataclass
@@ -261,52 +273,189 @@ def build_detection_effects_6d(
     return effects_all, effects_true, effects_by_darkmask
 
 
-def _proj_3_from_6() -> np.ndarray:
-    """6D -> 3D 投影：取 {vac,H,V}。"""
-    P = np.zeros((3, 6), dtype=complex)
-    P[0, 0] = 1.0
-    P[1, 1] = 1.0
-    P[2, 2] = 1.0
-    return P
+def build_detection_effects_9d(
+    eta: float,
+    p_dark: float = 0.0,
+) -> Tuple[dict, dict, dict]:
+    """
+    构造9D探测 POVM effects（含暗计数拆分，含标签 a/b）。
+
+    9D 单端口基（a,b 标签）：
+      (a,b) in {vac,H,V} x {vac,H,V}  ->  3x3 = 9
+
+    输出与 6D 一致：
+      effects_all, effects_true, effects_by_darkmask
+    """
+    def _order_detectors(detectors: List[str]) -> List[str]:
+        order = {"H": 0, "V": 1}
+        return sorted(detectors, key=lambda d: order[d])
+
+    # label-basis index: idx = a*3 + b
+    # pol code: 0=vac, 1=H, 2=V
+    basis = [(a, b) for a in (0, 1, 2) for b in (0, 1, 2)]
+    dim = 9
+
+    # 单端口：先构造按 darkmask 细分的 effect
+    effects_by_mask_port = {}
+    for idx, (a_pol, b_pol) in enumerate(basis):
+        nH = int(a_pol == 1) + int(b_pol == 1)
+        nV = int(a_pol == 2) + int(b_pol == 2)
+        p_h_click = 1.0 - (1.0 - eta) ** nH
+        p_v_click = 1.0 - (1.0 - eta) ** nV
+
+        base_outcomes = [
+            ([], (1.0 - p_h_click) * (1.0 - p_v_click)),
+            (["H"], p_h_click * (1.0 - p_v_click)),
+            (["V"], (1.0 - p_h_click) * p_v_click),
+            (["H", "V"], p_h_click * p_v_click),
+        ]
+
+        for base_detectors, p_true in base_outcomes:
+            if p_true <= 0:
+                continue
+            base_detectors = _order_detectors(base_detectors)
+            off_detectors = [d for d in ("H", "V") if d not in base_detectors]
+            for mask in product([0, 1], repeat=len(off_detectors)):
+                prob = p_true
+                dark_detectors = []
+                for det, use_dark in zip(off_detectors, mask):
+                    if use_dark:
+                        prob *= p_dark
+                        dark_detectors.append(det)
+                    else:
+                        prob *= (1 - p_dark)
+                if prob <= 0:
+                    continue
+                dark_detectors = _order_detectors(dark_detectors)
+                final_detectors = _order_detectors(base_detectors + dark_detectors)
+                mask_map = effects_by_mask_port.setdefault(tuple(final_detectors), {})
+                E = mask_map.get(tuple(dark_detectors))
+                if E is None:
+                    E = np.zeros((dim, dim), dtype=complex)
+                    mask_map[tuple(dark_detectors)] = E
+                E[idx, idx] += prob
+
+    # 单端口 entries： (E, detectors, dark_detectors)
+    port_entries = []
+    for key, mask_map in effects_by_mask_port.items():
+        for mask, E in mask_map.items():
+            port_entries.append((E, list(key), list(mask)))
+
+    # 双端口组合：张量积得到 81x81 effect
+    effects_all = {}
+    effects_true = {}
+    effects_by_darkmask = {}
+    for E1, det1, dark1 in port_entries:
+        for E2, det2, dark2 in port_entries:
+            E_two = np.kron(E1, E2)
+            dets = []
+            dark_dets = []
+            for det in ("H", "V"):
+                if det in det1:
+                    dets.append(f"{det}1")
+                if det in dark1:
+                    dark_dets.append(f"{det}1")
+            for det in ("H", "V"):
+                if det in det2:
+                    dets.append(f"{det}2")
+                if det in dark2:
+                    dark_dets.append(f"{det}2")
+
+            key = _order_two_port_detectors(dets)
+            mask = _order_two_port_detectors(dark_dets)
+            effects_all[key] = effects_all.get(key, 0) + E_two
+            if not dark_dets:
+                effects_true[key] = effects_true.get(key, 0) + E_two
+            mask_map = effects_by_darkmask.setdefault(key, {})
+            mask_map[mask] = mask_map.get(mask, 0) + E_two
+
+    return effects_all, effects_true, effects_by_darkmask
 
 
-def _embed_5_from_3() -> np.ndarray:
-    """3D -> 5D 嵌入：{vac,H,V} -> {vac,H_1517,V_1517}。"""
-    P = np.zeros((5, 3), dtype=complex)
-    P[0, 0] = 1.0
-    P[3, 1] = 1.0
-    P[4, 2] = 1.0
-    return P
+def _embed_9_from_6() -> np.ndarray:
+    """
+    6D -> 9D 标签嵌入（单端口）：
+      |H> -> (|H_a>+|H_b>)/√2
+      |V> -> (|V_a>+|V_b>)/√2
+      |2H> -> |H_a H_b>
+      |2V> -> |V_a V_b>
+      |HV> -> (|H_a V_b>+|V_a H_b>)/√2
+    9D 基顺序采用 (a,b) 的 Kronecker 顺序。
+    """
+    W = np.zeros((9, 6), dtype=complex)
+    def idx(a: int, b: int) -> int:
+        return a * 3 + b
+    inv_sqrt2 = 1.0 / np.sqrt(2.0)
+
+    # |vac>
+    W[idx(0, 0), 0] = 1.0
+    # |H>
+    W[idx(1, 0), 1] = inv_sqrt2
+    W[idx(0, 1), 1] = inv_sqrt2
+    # |V>
+    W[idx(2, 0), 2] = inv_sqrt2
+    W[idx(0, 2), 2] = inv_sqrt2
+    # |2H>
+    W[idx(1, 1), 3] = 1.0
+    # |2V>
+    W[idx(2, 2), 4] = 1.0
+    # |HV>
+    W[idx(1, 2), 5] = inv_sqrt2
+    W[idx(2, 1), 5] = inv_sqrt2
+    return W
 
 
-def _project_6d_to_3d(op_6d: np.ndarray) -> np.ndarray:
-    """将 36x36 双端口算符投影到 3D×3D (9x9)。"""
-    op_6d = np.asarray(op_6d, dtype=complex)
-    if op_6d.shape != (36, 36):
-        raise ValueError(f"op_6d shape {op_6d.shape} != (36,36)")
-    P = _proj_3_from_6()
-    Pi = np.kron(P, P)
-    return Pi @ op_6d @ Pi.conj().T
+def _reduce_9d_to_6d(effects_9d: dict, W_pair: np.ndarray) -> dict:
+    if not effects_9d:
+        return {}
+    W_dag = W_pair.conj().T
+    return {k: W_dag @ E @ W_pair for k, E in effects_9d.items()}
 
 
-def _embed_3d_to_5d(op_3d: np.ndarray) -> np.ndarray:
-    """将 9x9 双端口算符嵌入到 5D×5D (25x25)。"""
-    op_3d = np.asarray(op_3d, dtype=complex)
-    if op_3d.shape != (9, 9):
-        raise ValueError(f"op_3d shape {op_3d.shape} != (9,9)")
-    P = _embed_5_from_3()
-    Pi = np.kron(P, P)
-    return Pi @ op_3d @ Pi.conj().T
 
 
-def _jones_3d(U_2x2: np.ndarray) -> np.ndarray:
-    """把 2x2 琼斯矩阵嵌入到 3D：diag(1, U_2x2)。"""
-    U = np.asarray(U_2x2, dtype=complex)
-    if U.shape != (2, 2):
-        raise ValueError(f"Jones matrix shape {U.shape} != (2,2)")
-    U3 = np.eye(3, dtype=complex)
-    U3[1:, 1:] = U
-    return U3
+def _mix_effects(effects_int: dict, effects_dist: dict, visibility: float) -> dict:
+    if visibility >= 1.0:
+        return effects_int
+    if visibility <= 0.0:
+        return effects_dist
+    keys = set(effects_int.keys()) | set(effects_dist.keys())
+    mixed = {}
+    for key in keys:
+        E_int = effects_int.get(key)
+        E_dist = effects_dist.get(key)
+        if E_int is None:
+            mixed[key] = (1.0 - visibility) * E_dist
+        elif E_dist is None:
+            mixed[key] = visibility * E_int
+        else:
+            mixed[key] = visibility * E_int + (1.0 - visibility) * E_dist
+    return mixed
+
+
+def _mix_effects_masked(effects_int: dict, effects_dist: dict, visibility: float) -> dict:
+    if visibility >= 1.0:
+        return effects_int
+    if visibility <= 0.0:
+        return effects_dist
+    keys = set(effects_int.keys()) | set(effects_dist.keys())
+    mixed = {}
+    for key in keys:
+        map_int = effects_int.get(key, {})
+        map_dist = effects_dist.get(key, {})
+        masks = set(map_int.keys()) | set(map_dist.keys())
+        mask_map = {}
+        for mask in masks:
+            E_int = map_int.get(mask)
+            E_dist = map_dist.get(mask)
+            if E_int is None:
+                mask_map[mask] = (1.0 - visibility) * E_dist
+            elif E_dist is None:
+                mask_map[mask] = visibility * E_int
+            else:
+                mask_map[mask] = visibility * E_int + (1.0 - visibility) * E_dist
+        mixed[key] = mask_map
+    return mixed
 
 
 def _apply_unitary_adjoint(effects: dict, U: np.ndarray) -> dict:
@@ -422,7 +571,7 @@ def _build_arrival_projectors_5d(
 
     U_qfc = qfc_gate(theta_H=theta_H, theta_V=theta_V)
     U_qfc_dag = U_qfc.conj().T
-    P_5_from_3 = _embed_5_from_3()
+    P_5_from_3 = embed_5_from_3()
 
     def _build_one_arm(eta_H: float, eta_V: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         # 光纤损耗（单光子 3D）
@@ -469,6 +618,7 @@ def run_detection_pipeline(
     apply_filter_780: bool = True,
     theta_H: float = np.pi / 4,
     theta_V: float = np.pi / 4,
+    visibility: float = 1.0,
 ) -> DetectionPipelineResult:
     """
     POVM探测流水线：单次准备即可同时枚举成功率与抽样双点击。
@@ -477,9 +627,14 @@ def run_detection_pipeline(
     等价于不对态显式作用 BS（Heisenberg 绘景）。
 
     5D 方案下，QFC/过滤/光纤/BS 全部推入 POVM 对偶映射。
+    visibility 用于描述两光子不可区分度（0~1），
+    实现为 9D 标签空间构造 E_dist，再与 6D 的 E_int 做混合。
     """
     if rng is None:
         rng = np.random.default_rng()
+    # 避免就地改写调用方的 MPS
+    mps = mps.copy()
+    visibility = min(max(float(visibility), 0.0), 1.0)
 
     # 约定：若链前两个站点为原子(4D)，bin 从 index=2 开始；
     # 否则认为整个链都是 bin。
@@ -507,11 +662,12 @@ def run_detection_pipeline(
 
     arrival_verbose = verbose and compute_metrics
     # ------------------------------------------------------------------
-    # 两光子到达概率 p_arrive：
-    # 用 MPO 收缩实现对“总光子数=2”的投影。
-    # 形式上相当于：
-    #   p_arrive = Tr[ Π_{n}(P0 + P1 + P2) ρ ] 中选出 2 光子总数项
-    # 这里用小维度的“计数器” MPO (3x3) 来追踪 0/1/2 光子数。
+    # 两光子到达概率：
+    # 用 MPO 收缩实现对 (nA,nB) 联合计数，得到：
+    #   - p_arrive_11：A臂=1 且 B臂=1
+    #   - p_arrive_same_arm：A=2,B=0 或 A=0,B=2
+    # 并据此给出 p_arrive_total = p_arrive_11 + p_arrive_same_arm
+    # 计数器 MPO 的局域维度为 3（0/1/2 光子），联合计数维度 3x3=9。
     # ------------------------------------------------------------------
     mps._mps.canonical_form_finite(renormalize=True)
     mps._mps.norm = 1.0
@@ -563,36 +719,62 @@ def run_detection_pipeline(
     w_bin_B[1, 2] = pi1_B
     w_bin_B[2, 2] = pi0_B
 
+    counter_dim = 9
+    w_bin_A_joint = np.zeros((counter_dim, counter_dim, bin_dim, bin_dim), dtype=complex)
+    w_bin_B_joint = np.zeros((counter_dim, counter_dim, bin_dim, bin_dim), dtype=complex)
+    for nA in range(3):
+        for nA_next in range(3):
+            op = w_bin_A[nA, nA_next]
+            for nB in range(3):
+                idx_from = nA * 3 + nB
+                idx_to = nA_next * 3 + nB
+                w_bin_A_joint[idx_from, idx_to] = op
+    for nB in range(3):
+        for nB_next in range(3):
+            op = w_bin_B[nB, nB_next]
+            for nA in range(3):
+                idx_from = nA * 3 + nB
+                idx_to = nA * 3 + nB_next
+                w_bin_B_joint[idx_from, idx_to] = op
+
     w_identity_cache: dict[int, np.ndarray] = {}
-    env = np.zeros((3, 1, 1), dtype=complex)
+    env = np.zeros((counter_dim, 1, 1), dtype=complex)
     env[0, 0, 0] = 1.0
     for site in range(mps.L):
         B = mps._mps.get_B(site, form='B').to_ndarray()
         Bc = B.conj()
         if site in bin_sites:
             is_A = ((site - bin_start) % 2 == 0)
-            w = w_bin_A if is_A else w_bin_B
+            w = w_bin_A_joint if is_A else w_bin_B_joint
         else:
             dim = mps.d[site]
             if dim not in w_identity_cache:
-                pi0_id = np.eye(dim, dtype=complex)
-                pi1_zero = np.zeros((dim, dim), dtype=complex)
-                pi2_zero = np.zeros((dim, dim), dtype=complex)
-                w_id = np.zeros((3, 3, dim, dim), dtype=complex)
-                w_id[0, 0] = pi0_id
-                w_id[0, 1] = pi1_zero
-                w_id[0, 2] = pi2_zero
-                w_id[1, 1] = pi0_id
-                w_id[1, 2] = pi1_zero
-                w_id[2, 2] = pi0_id
+                w_id = np.zeros((counter_dim, counter_dim, dim, dim), dtype=complex)
+                eye = np.eye(dim, dtype=complex)
+                for nA in range(3):
+                    for nB in range(3):
+                        idx = nA * 3 + nB
+                        w_id[idx, idx] = eye
                 w_identity_cache[dim] = w_id
             w = w_identity_cache[dim]
         env = np.einsum('aij,ipk,jql,abpq->bkl', env, B, Bc, w, optimize=True)
-    p_arrive = float(env[2, 0, 0].real)
+
+    p_arrive_11 = float(env[4, 0, 0].real)
+    p_arrive_20 = float(env[6, 0, 0].real)
+    p_arrive_02 = float(env[2, 0, 0].real)
+    p_arrive_same_arm = max(0.0, p_arrive_20 + p_arrive_02)
+    p_arrive = max(0.0, p_arrive_11 + p_arrive_20 + p_arrive_02)
     if arrival_verbose:
-        print(f"  两光子到达概率 p_arrive={p_arrive:.6f}")
+        print(
+            f"  两光子到达概率 p_arrive={p_arrive:.6f} "
+            f"(1&1={p_arrive_11:.6f}, same_arm={p_arrive_same_arm:.6f})"
+        )
     if p_arrive < P_ARRIVE_EPS:
         p_arrive = 0.0
+        p_arrive_11 = 0.0
+        p_arrive_20 = 0.0
+        p_arrive_02 = 0.0
+        p_arrive_same_arm = 0.0
 
     # 若几乎不可能到达且无暗计数，则可直接短路，避免数值噪声。
     if p_arrive <= P_ARRIVE_EPS and p_dark <= 0.0:
@@ -602,6 +784,10 @@ def run_detection_pipeline(
         if compute_metrics:
             metrics = SuccessEnumerationResult(
                 p_arrive=p_arrive,
+                p_arrive_11=p_arrive_11,
+                p_arrive_20=p_arrive_20,
+                p_arrive_02=p_arrive_02,
+                p_arrive_same_arm=p_arrive_same_arm,
                 p_success=0.0,
                 p_success_true=0.0,
                 p_success_false=0.0,
@@ -644,9 +830,39 @@ def run_detection_pipeline(
         effects_true_6d = _apply_unitary_adjoint(effects_true_6d, bs_unitary_6d)
         effects_mask_6d = _apply_unitary_adjoint_masked(effects_mask_6d, bs_unitary_6d)
 
-    effects_all_3d = {k: _project_6d_to_3d(E) for k, E in effects_all_6d.items()}
-    effects_true_3d = {k: _project_6d_to_3d(E) for k, E in effects_true_6d.items()}
-    effects_mask_3d = _map_effects_masked(effects_mask_6d, _project_6d_to_3d)
+    if visibility < 1.0:
+        # 9D 标签空间：构造可区分 E_dist，并投影回 6D 再与 E_int 混合
+        effects_all_6d_int = effects_all_6d
+        effects_true_6d_int = effects_true_6d
+        effects_mask_6d_int = effects_mask_6d
+
+        effects_all_9d, effects_true_9d, effects_mask_9d = build_detection_effects_9d(
+            eta_det, p_dark
+        )
+        if bs_unitary_6d is not None:
+            U_dist_9d = bs_gate_9d_dist(bs_unitary_6d)
+            effects_all_9d = _apply_unitary_adjoint(effects_all_9d, U_dist_9d)
+            effects_true_9d = _apply_unitary_adjoint(effects_true_9d, U_dist_9d)
+            effects_mask_9d = _apply_unitary_adjoint_masked(effects_mask_9d, U_dist_9d)
+
+        W = _embed_9_from_6()
+        W_pair = np.kron(W, W)
+        effects_all_6d_dist = _reduce_9d_to_6d(effects_all_9d, W_pair)
+        effects_true_6d_dist = _reduce_9d_to_6d(effects_true_9d, W_pair)
+        effects_mask_6d_dist = _map_effects_masked(
+            effects_mask_9d,
+            lambda E: W_pair.conj().T @ E @ W_pair,
+        )
+
+        effects_all_6d = _mix_effects(effects_all_6d_int, effects_all_6d_dist, visibility)
+        effects_true_6d = _mix_effects(effects_true_6d_int, effects_true_6d_dist, visibility)
+        effects_mask_6d = _mix_effects_masked(
+            effects_mask_6d_int, effects_mask_6d_dist, visibility
+        )
+
+    effects_all_3d = {k: project_6d_to_3d(E) for k, E in effects_all_6d.items()}
+    effects_true_3d = {k: project_6d_to_3d(E) for k, E in effects_true_6d.items()}
+    effects_mask_3d = _map_effects_masked(effects_mask_6d, project_6d_to_3d)
 
     # 光纤损耗（单光子 3D）
     K_A_3 = loss_channel_1517_single_photon(float(eta_H_A), float(eta_V_A))
@@ -674,7 +890,7 @@ def run_detection_pipeline(
     phase_center = 0.5 * (n_bins - 1)
     use_phase_profile = abs(phase_slope) > 0.0 or phase_jitter_std > 0.0
 
-    U_A_3 = _jones_3d(U_A)
+    U_A_3 = jones_3d(U_A)
     for n in range(n_bins):
         phase_n = phase_slope * (n - phase_center)
         if phase_jitter_std > 0.0:
@@ -684,16 +900,16 @@ def run_detection_pipeline(
         else:
             U_B_n = U_B
 
-        U_B_3 = _jones_3d(U_B_n)
+        U_B_3 = jones_3d(U_B_n)
         U_pair_3 = np.kron(U_A_3, U_B_3)
 
         eff_all_3 = _apply_unitary_adjoint(effects_all_3d, U_pair_3)
         eff_true_3 = _apply_unitary_adjoint(effects_true_3d, U_pair_3)
         eff_mask_3 = _apply_unitary_adjoint_masked(effects_mask_3d, U_pair_3)
 
-        eff_all_5 = {k: _embed_3d_to_5d(E) for k, E in eff_all_3.items()}
-        eff_true_5 = {k: _embed_3d_to_5d(E) for k, E in eff_true_3.items()}
-        eff_mask_5 = _map_effects_masked(eff_mask_3, _embed_3d_to_5d)
+        eff_all_5 = {k: embed_3d_to_5d(E) for k, E in eff_all_3.items()}
+        eff_true_5 = {k: embed_3d_to_5d(E) for k, E in eff_true_3.items()}
+        eff_mask_5 = _map_effects_masked(eff_mask_3, embed_3d_to_5d)
 
         if K_filter is not None:
             eff_all_5 = _apply_local_channel_adjoint(eff_all_5, K_filter, K_filter)
@@ -946,10 +1162,26 @@ def run_detection_pipeline(
             else 0.0
         )
 
-        p_success_given_arrival = (p_success_true / p_arrive) if p_arrive > P_ARRIVE_EPS else 0.0
+        p_success_given_arrival = (
+            (p_success_true / p_arrive_11) if p_arrive_11 > P_ARRIVE_EPS else 0.0
+        )
+        # 近似分解：按 p_arrive 的 1&1 / same-arm 比例拆分 true 成功率
+        if p_arrive > P_ARRIVE_EPS:
+            frac_11 = p_arrive_11 / p_arrive
+            frac_same = p_arrive_same_arm / p_arrive
+        else:
+            frac_11 = 0.0
+            frac_same = 0.0
+        p_success_signal_approx = p_success_true * frac_11
+        p_success_same_arm_approx = p_success_true * frac_same
+        p_success_dark_assisted = p_success_false
 
         metrics = SuccessEnumerationResult(
             p_arrive=p_arrive,
+            p_arrive_11=p_arrive_11,
+            p_arrive_20=p_arrive_20,
+            p_arrive_02=p_arrive_02,
+            p_arrive_same_arm=p_arrive_same_arm,
             p_success=p_success_all,
             p_success_true=p_success_true,
             p_success_false=p_success_false,
@@ -957,6 +1189,9 @@ def run_detection_pipeline(
             fidelity_declared=fidelity_declared,
             fidelity_true=fidelity_true,
             fidelity_false=fidelity_false,
+            p_success_signal_approx=p_success_signal_approx,
+            p_success_same_arm_approx=p_success_same_arm_approx,
+            p_success_dark_assisted=p_success_dark_assisted,
         )
 
     samples: List[TwoPhotonDetectionResult] = []
@@ -1210,22 +1445,16 @@ def run_detection_pipeline(
             mask_choice = mask_candidates[int(rng.choice(len(mask_candidates), p=mask_probs))]
             p_true_given_record = mask_weights[0] / total_mask_weight
 
-        base_a = bin_start + 2 * record.bin_a
-        base_b = bin_start + 2 * record.bin_b
-        site_a = base_a if record.detector_a in ("H1", "V1") else base_a + 1
-        site_b = base_b if record.detector_b in ("H1", "V1") else base_b + 1
         dark_detectors = list(mask_choice) if mask_choice else []
         clicks = [
             DetectionEvent(
                 detector=record.detector_a,
                 bin_index=record.bin_a,
-                site=site_a,
                 is_dark=record.detector_a in dark_detectors,
             ),
             DetectionEvent(
                 detector=record.detector_b,
                 bin_index=record.bin_b,
-                site=site_b,
                 is_dark=record.detector_b in dark_detectors,
             ),
         ]

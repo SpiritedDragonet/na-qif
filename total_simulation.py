@@ -127,11 +127,15 @@ def _parse_run_params(argv):
     parser.add_argument("--dark-hz", dest="dark_rate_intrinsic_hz", type=float, help="探测器本底暗计数率 (Hz)")
     parser.add_argument("--bg-mean-hz", dest="bg_rate_mean_hz", type=float, help="背景噪声均值 (Hz)")
     parser.add_argument("--bg-std-hz", dest="bg_rate_std_hz", type=float, help="背景噪声标准差 (Hz)")
-    parser.add_argument("--enum-mode", dest="enum_mode", type=str, help="成功事件枚举模式：dark/no-dark")
+    parser.add_argument("--qfc-theta-h", dest="qfc_theta_h", type=float, help="QFC H转换角 theta_H (rad)")
+    parser.add_argument("--qfc-theta-v", dest="qfc_theta_v", type=float, help="QFC V转换角 theta_V (rad)")
+    parser.add_argument("--no-filter-780", dest="no_filter_780", action="store_true", help="关闭 780 滤波（保留 780 分量）")
+    parser.add_argument("--enum-mode", dest="enum_mode", type=str, help="成功事件枚举模式：dark/no-dark/both")
     parser.add_argument("--plot-all", dest="plot_all", action="store_true", help="所有 run 都绘图（默认仅保留一个）")
     parser.add_argument("--no-plot", dest="no_plot", action="store_true", help="完全禁止绘图（覆盖 plot-all）")
     parser.add_argument("--eta-det", dest="eta_det", type=float, help="探测效率 η (0~1)")
     parser.add_argument("--ideal-det", dest="ideal_det", action="store_true", help="理想探测（eta_det=1, 无噪声）")
+    parser.add_argument("--visibility", dest="visibility", type=float, help="两光子不可区分度 V (0~1)")
     parser.add_argument("--debug", dest="debug", action="store_true", help="开启调试模式（输出耗时等）")
     args = parser.parse_args(argv[1:])
 
@@ -152,6 +156,12 @@ def _parse_run_params(argv):
         config.noise.bg_rate_mean_hz = args.bg_rate_mean_hz
     if args.bg_rate_std_hz is not None:
         config.noise.bg_rate_std_hz = args.bg_rate_std_hz
+    if args.qfc_theta_h is not None:
+        config.qfc.theta_H = float(args.qfc_theta_h)
+    if args.qfc_theta_v is not None:
+        config.qfc.theta_V = float(args.qfc_theta_v)
+    if args.no_filter_780:
+        config.qfc.apply_filter_780 = False
 
     # runs/shots/cores 是“任务粒度 + 并发预算”的核心参数
     config.run.runs = args.n_runs if args.n_runs is not None else config.run.runs
@@ -179,10 +189,11 @@ def _parse_run_params(argv):
 
     # 成功事件枚举模式：
     #   - dark: 含暗计数
-    #   - no-dark: 用于基线对比
+    #   - no-dark: 无暗计数
+    #   - both: 同时输出 dark/no-dark 基线
     config.run.enum_mode = (args.enum_mode or config.run.enum_mode).strip().lower()
-    if config.run.enum_mode not in ("dark", "no-dark"):
-        parser.error("enum-mode 仅支持 dark / no-dark")
+    if config.run.enum_mode not in ("dark", "no-dark", "both"):
+        parser.error("enum-mode 仅支持 dark / no-dark / both")
 
     # 探测效率与理想探测的互斥/覆盖逻辑
     if args.eta_det is not None:
@@ -190,14 +201,20 @@ def _parse_run_params(argv):
     config.detector.ideal_det = bool(args.ideal_det)
     if config.detector.ideal_det:
         config.detector.eta_det = 1.0
+    if args.visibility is not None:
+        config.detector.visibility = float(args.visibility)
     if not (0.0 < config.detector.eta_det <= 1.0):
         parser.error("eta_det 必须在 (0, 1] 内")
+    if not (0.0 <= config.detector.visibility <= 1.0):
+        parser.error("visibility 必须在 [0, 1] 内")
 
     if task_type == "HOM":
         config.hom = parse_hom_cli(args, parser)
     else:
         validate_no_hom_args(args, parser)
         config.hom = None
+        if args.window_ns is not None:
+            config.run.window_ns = float(args.window_ns)
 
     config.run.plot_all = bool(args.plot_all)
     config.run.plot_enabled = not bool(args.no_plot)
@@ -692,10 +709,125 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                     f"{dark_click_rate_per_det:.8f}",
                 ])
         return
+    if task_type == "SIM":
+        trials_path = summary_dir / "sim_trials.csv"
+        with open(trials_path, "w", encoding="utf-8", newline="") as trials_file:
+            trials_writer = csv.writer(trials_file)
+            trials_writer.writerow([
+                "run_index",
+                "shot_index",
+                "success",
+                "bell",
+                "p_arrive",
+                "p_arrive_11",
+                "p_arrive_same_arm",
+                "p_arrive_20",
+                "p_arrive_02",
+                "H1_bin",
+                "V1_bin",
+                "H2_bin",
+                "V2_bin",
+                "H1_dark",
+                "V1_dark",
+                "H2_dark",
+                "V2_dark",
+            ])
+            for meta_path in sorted(results_dir.glob("result_*/meta.json")):
+                try:
+                    data = json.loads(meta_path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                if data.get("mode") != "SIM":
+                    continue
+                tid = data.get("id", "")
+                m = re.match(r"sim_run_(\d+)", tid)
+                if not m:
+                    continue
+                run_index = int(m.group(1))
+                metrics = data.get("metrics", {})
+                p_arrive = metrics.get("p_arrive")
+                p_arrive_11 = metrics.get("p_arrive_11")
+                p_arrive_same_arm = metrics.get("p_arrive_same_arm")
+                p_arrive_20 = metrics.get("p_arrive_20")
+                p_arrive_02 = metrics.get("p_arrive_02")
+                clicks_path = meta_path.parent / "raw" / "clicks.json"
+                clicks = []
+                if clicks_path.exists():
+                    try:
+                        clicks = json.loads(clicks_path.read_text(encoding="utf-8")).get("clicks", [])
+                    except Exception:
+                        clicks = []
+                if not clicks:
+                    trials_writer.writerow([
+                        run_index,
+                        -1,
+                        "",
+                        "",
+                        p_arrive,
+                        p_arrive_11,
+                        p_arrive_same_arm,
+                        p_arrive_20,
+                        p_arrive_02,
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                    ])
+                    continue
+                for record in clicks:
+                    shot_idx = record.get("shot_index")
+                    success = record.get("success")
+                    bell = record.get("bell")
+                    shot_clicks = record.get("clicks", [])
+                    bins = {"H1": "", "V1": "", "H2": "", "V2": ""}
+                    darks = {"H1": "", "V1": "", "H2": "", "V2": ""}
+                    for click in shot_clicks:
+                        if len(click) < 3:
+                            raise ValueError("SIM clicks 必须包含 is_dark 字段 (det, bin, is_dark)")
+                        det = click[0]
+                        bin_idx = click[1]
+                        is_dark = bool(click[2])
+                        if det in bins:
+                            bins[det] = f"{bin_idx}" if bins[det] == "" else f"{bins[det]};{bin_idx}"
+                            flag = "1" if is_dark else "0"
+                            darks[det] = flag if darks[det] == "" else f"{darks[det]};{flag}"
+                    trials_writer.writerow([
+                        run_index,
+                        shot_idx,
+                        success,
+                        bell,
+                        p_arrive,
+                        p_arrive_11,
+                        p_arrive_same_arm,
+                        p_arrive_20,
+                        p_arrive_02,
+                        bins["H1"],
+                        bins["V1"],
+                        bins["H2"],
+                        bins["V2"],
+                        darks["H1"],
+                        darks["V1"],
+                        darks["H2"],
+                        darks["V2"],
+                    ])
     summary_path = summary_dir / f"{task_type.lower()}_summary.csv"
     with open(summary_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["id", "mode", "p_arrive", "coinc", "timestamp"])
+        writer.writerow([
+            "id",
+            "mode",
+            "p_arrive",
+            "p_arrive_11",
+            "p_arrive_same_arm",
+            "p_arrive_20",
+            "p_arrive_02",
+            "coinc",
+            "timestamp",
+        ])
         for meta_path in sorted(results_dir.glob("result_*/meta.json")):
             try:
                 data = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -709,6 +841,10 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 tid,
                 data.get("mode", task_type),
                 m.get("p_arrive"),
+                m.get("p_arrive_11"),
+                m.get("p_arrive_same_arm"),
+                m.get("p_arrive_20"),
+                m.get("p_arrive_02"),
                 m.get("coinc"),
                 data.get("timestamp"),
             ])
@@ -1001,12 +1137,10 @@ def _run_worker_loop(
                 seed = task.get("seed")
                 seed = int(seed) if seed is not None else None
                 run_index = int(task.get("run_index", 1))
-                run_stats, success_metrics = single_run._run_single_simulation_core(
+                run_stats, success_metrics, click_records = single_run._run_single_simulation_core(
                     output_dir=raw_dir,
                     run_index=run_index,
                     config=config,
-                    summary_path=None,
-                    summary_lock_path=None,
                     show_plots=config.run.plot_all,
                     plot_dir=plots_dir,
                     run_tag=task_id,
@@ -1021,6 +1155,11 @@ def _run_worker_loop(
                     metrics["p_success_abs"] = success_metrics.get("p_success_abs")
                     metrics["p_success_true_abs"] = success_metrics.get("p_success_true_abs")
                     metrics["p_success_false_abs"] = success_metrics.get("p_success_false_abs")
+                    metrics["p_success_signal_approx"] = success_metrics.get("p_success_signal_approx")
+                    metrics["p_success_same_arm_approx"] = success_metrics.get("p_success_same_arm_approx")
+                    metrics["p_success_dark_assisted"] = success_metrics.get("p_success_dark_assisted")
+                if click_records is not None:
+                    _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
         except Exception as exc:
             status = "error"
             err_msg = str(exc)

@@ -22,7 +22,6 @@ atom_sim/
 │       │   ├── _apply_two_site_op_local()
 │       │   ├── apply_bond_op()
 │       │   ├── apply_kraus_one_site()
-│       │   ├── apply_one_site_gate()
 │       │   ├── swap_sites()
 │       │   ├── get_reduced_density()
 │       │   ├── chi
@@ -48,7 +47,6 @@ atom_sim/
 │   │   ├── qfc_gate()             # U_qfc: 780↔1517 频率转换 (5x5)
 │   │   ├── bs_gate_6d()           # U_BS: 50/50 分束器 (36x36, 仅1517nm)
 │   │   ├── _bs_gate_1517()
-│   │   ├── jones_gate()           # U_pol: 琼斯旋转 (6x6)
 │   │   └── emission_gate()        # U_emit: 原子-光子耦合 (20x20)
 │   │
 │   └── channels.py                # 所有 Kraus 通道
@@ -100,6 +98,7 @@ outputs/                           # 仿真输出目录（已 gitignore）
     ├── summary/
     │   ├── hom_trials.csv
     │   ├── hom_summary.csv
+    │   ├── sim_trials.csv
     │   ├── sim_summary.csv
     │   └── server_done.flag
     ├── tasks/
@@ -138,9 +137,23 @@ outputs/                           # 仿真输出目录（已 gitignore）
 --run-id <id>                 # 不传则自动选择最小可用 id
 --queue-root <path>           # 默认 ./queue
 --runs N --shots M
+--window-ns <float>           # SIM/HOM 符合时间窗 (ns)
 --plot-all                    # 每个 run 都画图
 --no-plot                     # 禁止绘图（覆盖 plot-all）
+--enum-mode dark|no-dark|both # 成功事件枚举模式（both 同时输出基线）
+--qfc-theta-h <rad>           # QFC H 转换角
+--qfc-theta-v <rad>           # QFC V 转换角
+--no-filter-780               # 关闭 780 滤波
 ```
+
+## 输出字段速览（SIM）
+
+- `sim_summary.csv`：每个 run 的汇总
+  - `p_arrive`：总两光子到达概率（= p_arrive_11 + p_arrive_same_arm）
+  - `p_arrive_11`：A=1 且 B=1
+  - `p_arrive_same_arm`：A=2,B=0 或 A=0,B=2
+  - `p_arrive_20 / p_arrive_02`：同臂双光子拆分
+- `sim_trials.csv`：逐 shot 记录（含点击 bin 与暗计数标记），并带上述 `p_arrive_*` 列
 
 ## 数据流
 
@@ -156,7 +169,6 @@ simulation/trajectory.py → core/mps.py → 张量网络更新（仅局域！�
 所有 Kraus 和测量操作必须使用局域 theta + SVD 更新以避免 canonical sweep。使用：
 - `apply_bond_op(i, op)` 用于双格点酉门
 - `apply_kraus_one_site(i, {Kμ}, rng)` 用于单格点 Kraus 采样
-- `apply_kraus_one_site_fixed(i, Kμ)` 用于固定分支（如“无损耗”）
 
 ### 2. 格点类型：有限维格点，非 BosonSite
 使用自定义的 `FiniteDimSite(d)` 配合算符字典，而非 TeNPy 的 `BosonSite`（语义不兼容）。

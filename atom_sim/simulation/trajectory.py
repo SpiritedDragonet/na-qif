@@ -257,8 +257,8 @@ def run_dual_atom_emission(
     chi_max: int = 50,
     Alpha_A: Optional[np.ndarray] = None,
     Alpha_B: Optional[np.ndarray] = None,
-    gamma_peak_A: float = 2 * np.pi * 20e6,
-    gamma_peak_B: float = 2 * np.pi * 20e6,
+    omega_peak_A: float = 2 * np.pi * 20e6,
+    omega_peak_B: float = 2 * np.pi * 20e6,
     t0_A: Optional[float] = None,
     t0_B: Optional[float] = None,
     sigma: float = 12.0,
@@ -294,9 +294,9 @@ def run_dual_atom_emission(
         原子A的2x2偏振矩阵
     Alpha_B : np.ndarray, optional
         原子B的2x2偏振矩阵
-    gamma_peak_A : float
+    omega_peak_A : float
         原子A的驱动脉冲峰值幅度（Ω峰值，rad/s）
-    gamma_peak_B : float
+    omega_peak_B : float
         原子B的驱动脉冲峰值幅度（Ω峰值，rad/s）
     t0_A : float, optional
         原子A的峰值时间（纳秒）
@@ -372,8 +372,8 @@ def run_dual_atom_emission(
     # 应用时间延迟到B的峰值时间
     t0_B = t0_B + delay_ns_used
 
-    omega_A_values = _omega_gaussian(t_ns, t0_A, sigma, gamma_peak_A)
-    omega_B_values = _omega_gaussian(t_ns, t0_B, sigma, gamma_peak_B)
+    omega_A_values = _omega_gaussian(t_ns, t0_A, sigma, omega_peak_A)
+    omega_B_values = _omega_gaussian(t_ns, t0_B, sigma, omega_peak_B)
     # 有效耦合率：每个时间步共用（坏腔近似）
     gamma_per_channel = _effective_gamma_per_channel(g, kappa_ex, kappa_in)
     # 设置默认Alpha矩阵
@@ -389,8 +389,8 @@ def run_dual_atom_emission(
         print(f"  dt = {dt_ns} ns")
         print(f"  总时间 = {n_bins * dt_ns} ns")
         print("\n发射参数:")
-        print(f"  原子A: Omega_peak={gamma_peak_A:.3e} rad/s, t0={t0_A:.1f} ns, sigma={sigma:.1f} ns")
-        print(f"  原子B: Omega_peak={gamma_peak_B:.3e} rad/s, t0={t0_B:.1f} ns, sigma={sigma:.1f} ns")
+        print(f"  原子A: Omega_peak={omega_peak_A:.3e} rad/s, t0={t0_A:.1f} ns, sigma={sigma:.1f} ns")
+        print(f"  原子B: Omega_peak={omega_peak_B:.3e} rad/s, t0={t0_B:.1f} ns, sigma={sigma:.1f} ns")
         print(f"  g={g:.3e} rad/s, kappa_ex={kappa_ex:.3e} rad/s, kappa_in={kappa_in:.3e} rad/s")
         print(f"  delta_u={delta_u:.3e}, delta_e={delta_e:.3e}")
         print(f"  有效耦合速率: gamma_eff={gamma_per_channel:.3e} 1/s (单通道)")
