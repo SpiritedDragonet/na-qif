@@ -674,7 +674,7 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                         events = []
                         for click in shot_clicks:
                             if len(click) < 3:
-                                raise ValueError("HOM clicks 必须包含 is_dark 字段 (det, bin, is_dark)")
+                                raise ValueError("HOM clicks 至少包含 (det, bin, is_dark)")
                             det = click[0]
                             bin_idx = click[1]
                             is_dark = bool(click[2])
@@ -845,7 +845,7 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                     darks = {"H1": "", "V1": "", "H2": "", "V2": ""}
                     for click in shot_clicks:
                         if len(click) < 3:
-                            raise ValueError("SIM clicks 必须包含 is_dark 字段 (det, bin, is_dark)")
+                            raise ValueError("SIM clicks 至少包含 (det, bin, is_dark)")
                         det = click[0]
                         bin_idx = click[1]
                         is_dark = bool(click[2])
@@ -1216,7 +1216,10 @@ def _run_worker_loop(
                     metrics["p_success_false_abs"] = success_metrics.get("p_success_false_abs")
                     metrics["p_success_signal_approx"] = success_metrics.get("p_success_signal_approx")
                     metrics["p_success_same_arm_approx"] = success_metrics.get("p_success_same_arm_approx")
-                    metrics["p_success_dark_assisted"] = success_metrics.get("p_success_dark_assisted")
+                    metrics["p_success_intrinsic_dark_assisted"] = success_metrics.get(
+                        "p_success_intrinsic_dark_assisted"
+                    )
+                    metrics["p_success_bg_assisted"] = success_metrics.get("p_success_bg_assisted")
                 if click_records is not None:
                     _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
         except Exception as exc:

@@ -191,7 +191,8 @@ def _run_hom_run(
         rng=run_rng,
     )
     window_bins = param_store.window_bins
-    p_noise = param_store.noise_budget.p_noise_bin
+    p_dark_intrinsic = param_store.noise_budget.p_dark_intrinsic_bin
+    p_bg_qfc = param_store.noise_budget.p_bg_bin
 
     # BS 并入测量端 (U^† E U)
     bs_unitary = bs_gate_6d()
@@ -208,7 +209,8 @@ def _run_hom_run(
     # 抽样双点击记录（POVM）；bs_unitary 将 BS 并入测量端
     pipeline = run_detection_pipeline(
         **detect_common,
-        p_dark=p_noise,
+        p_dark_intrinsic=p_dark_intrinsic,
+        p_bg_qfc=p_bg_qfc,
         n_samples=shots_per_run,
         compute_metrics=False,
     )
@@ -216,7 +218,15 @@ def _run_hom_run(
     # 逐 shot 统计符合与点击记录
     for det_result in pipeline.samples:
         click_records.append(
-            [(c.detector, c.bin_index, bool(getattr(c, "is_dark", False))) for c in det_result.clicks]
+            [
+                (
+                    c.detector,
+                    c.bin_index,
+                    bool(getattr(c, "is_dark", False)),
+                    str(getattr(c, "source", "signal")),
+                )
+                for c in det_result.clicks
+            ]
         )
         if _is_port_samepol_coincidence(det_result.clicks, window_bins):
             coincidences += 1

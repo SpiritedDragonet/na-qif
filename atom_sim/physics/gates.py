@@ -161,6 +161,96 @@ def order_two_port_detectors(detectors: List[str]) -> Tuple[str, ...]:
     return tuple(sorted(detectors, key=lambda detector: order[detector]))
 
 
+_TWO_PORT_DETECTOR_ORDER = ("H1", "V1", "H2", "V2")
+
+
+def _enumerate_two_port_subsets() -> List[Tuple[str, ...]]:
+    """枚举双端口探测器全集的所有子集（含空集）。"""
+    subsets: List[Tuple[str, ...]] = []
+    n_det = len(_TWO_PORT_DETECTOR_ORDER)
+    for mask in range(1 << n_det):
+        subset = [
+            _TWO_PORT_DETECTOR_ORDER[idx]
+            for idx in range(n_det)
+            if (mask >> idx) & 1
+        ]
+        subsets.append(order_two_port_detectors(subset))
+    return subsets
+
+
+_TWO_PORT_SUBSETS = _enumerate_two_port_subsets()
+
+
+def apply_background_or_map(effects: dict, p_bg_click: float) -> dict:
+    """
+    对单 bin 的 effect 集合施加背景点击 OR 后处理。
+
+    记 A 为“信号+本征暗计数”点击集合，B 为独立背景点击集合，
+    观测集合 S = A OR B。则
+
+        E_obs[S] = Σ_A P(S | A) E_sig[A]
+
+    其中 P(S | A) 由每个探测器以概率 p_bg_click 独立触发给出。
+    """
+    if not effects:
+        return {}
+    p_bg = float(np.clip(p_bg_click, 0.0, 1.0))
+    if p_bg <= 0.0:
+        return effects
+
+    mapped: dict = {}
+    detector_set = set(_TWO_PORT_DETECTOR_ORDER)
+    for src_key, src_effect in effects.items():
+        src_set = set(src_key)
+        if not src_set.issubset(detector_set):
+            raise ValueError(f"未知探测器标签: {tuple(sorted(src_set - detector_set))}")
+        for dst_key in _TWO_PORT_SUBSETS:
+            dst_set = set(dst_key)
+            if not src_set.issubset(dst_set):
+                continue
+            n_added = len(dst_set) - len(src_set)
+            n_absent = len(_TWO_PORT_DETECTOR_ORDER) - len(dst_set)
+            prob = (p_bg ** n_added) * ((1.0 - p_bg) ** n_absent)
+            if prob <= 0.0:
+                continue
+            mapped[dst_key] = mapped.get(dst_key, 0) + prob * src_effect
+    return mapped
+
+
+def apply_background_or_map_masked(effects_by_mask: dict, p_bg_click: float) -> dict:
+    """
+    对按 intrinsic-dark mask 分组的 effect 施加背景 OR 后处理。
+
+    注意：该函数只做“观测点击集合”重映射，不引入新的背景来源标签；
+    mask 仍表示本征暗计数来源。
+    """
+    if not effects_by_mask:
+        return {}
+    p_bg = float(np.clip(p_bg_click, 0.0, 1.0))
+    if p_bg <= 0.0:
+        return effects_by_mask
+
+    mapped: dict = {}
+    detector_set = set(_TWO_PORT_DETECTOR_ORDER)
+    for src_key, src_mask_map in effects_by_mask.items():
+        src_set = set(src_key)
+        if not src_set.issubset(detector_set):
+            raise ValueError(f"未知探测器标签: {tuple(sorted(src_set - detector_set))}")
+        for dst_key in _TWO_PORT_SUBSETS:
+            dst_set = set(dst_key)
+            if not src_set.issubset(dst_set):
+                continue
+            n_added = len(dst_set) - len(src_set)
+            n_absent = len(_TWO_PORT_DETECTOR_ORDER) - len(dst_set)
+            prob = (p_bg ** n_added) * ((1.0 - p_bg) ** n_absent)
+            if prob <= 0.0:
+                continue
+            dst_mask_map = mapped.setdefault(dst_key, {})
+            for dark_mask, src_effect in src_mask_map.items():
+                dst_mask_map[dark_mask] = dst_mask_map.get(dark_mask, 0) + prob * src_effect
+    return mapped
+
+
 def build_detection_effects_6d(
     eta: float,
     p_dark: float = 0.0,

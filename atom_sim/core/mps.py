@@ -32,6 +32,17 @@ from tenpy.networks.site import BosonSite
 from tenpy.linalg.np_conserved import Array
 
 
+_TENPY_NOTICE_PRINTED = False
+
+
+def _emit_tenpy_notice_once() -> None:
+    global _TENPY_NOTICE_PRINTED
+    if _TENPY_NOTICE_PRINTED:
+        return
+    print("[tenpy] 已启用 TeNPy 张量网络后端，正在进行 MPS 运算")
+    _TENPY_NOTICE_PRINTED = True
+
+
 class MPSState:
     """
     使用TeNPy的矩阵积态。
@@ -60,21 +71,41 @@ class MPSState:
 
         # 创建TeNPy格点（玻色型，无电荷守恒）
         sites = [BosonSite(dim - 1, None) for dim in self.d]
+        unit_cell_width = len(sites)
+        _emit_tenpy_notice_once()
 
         # 根据init_state类型初始化MPS
         if init_state is None:
             # 真空态 |0>...|0>
             init_labels = ['0'] * self.L
-            self._mps = TeNPy_MPS.from_product_state(sites, init_labels, bc='finite', form='B')
+            self._mps = TeNPy_MPS.from_product_state(
+                sites,
+                init_labels,
+                bc='finite',
+                form='B',
+                unit_cell_width=unit_cell_width,
+            )
         elif isinstance(init_state, list):
             # 从基指标的直积态
             init_labels = [str(s) for s in init_state]
-            self._mps = TeNPy_MPS.from_product_state(sites, init_labels, bc='finite', form='B')
+            self._mps = TeNPy_MPS.from_product_state(
+                sites,
+                init_labels,
+                bc='finite',
+                form='B',
+                unit_cell_width=unit_cell_width,
+            )
         elif isinstance(init_state, np.ndarray):
             # 完整波函数 - 使用TeNPy的from_full
             psi_reshaped = init_state.reshape(self.d + [1] * (self.L - len(self.d)))
             psi_array = Array.from_ndarray_trivial(psi_reshaped, labels=[f'p{i}' for i in range(self.L)])
-            self._mps = TeNPy_MPS.from_full(psi_array, sites, bc='finite', form='B')
+            self._mps = TeNPy_MPS.from_full(
+                psi_array,
+                sites,
+                bc='finite',
+                form='B',
+                unit_cell_width=unit_cell_width,
+            )
         else:
             raise ValueError(f"Invalid init_state: {type(init_state)}")
 

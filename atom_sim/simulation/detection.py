@@ -26,6 +26,8 @@ from ..core.mps import (
 )
 from ..hilbert.basis import embed_9_from_6, reduce_9d_effects_to_6d
 from ..physics.gates import (
+    apply_background_or_map,
+    apply_background_or_map_masked,
     build_arrival_projectors_5d,
     build_detection_effects_5d_by_bin,
     build_detection_effects_6d,
@@ -79,6 +81,7 @@ class DetectionEvent:
     detector: str
     bin_index: int
     is_dark: bool = False
+    source: str = "signal"
 
 
 @dataclass
@@ -123,7 +126,8 @@ class SuccessEnumerationResult:
     fidelity_false: float
     p_success_signal_approx: float = 0.0
     p_success_same_arm_approx: float = 0.0
-    p_success_dark_assisted: float = 0.0
+    p_success_intrinsic_dark_assisted: float = 0.0
+    p_success_bg_assisted: float = 0.0
 
 
 @dataclass
@@ -215,11 +219,55 @@ def _build_empty_samples(n_samples: int) -> List[TwoPhotonDetectionResult]:
     ]
 
 
+def _accumulate_success_and_fidelity(
+    engine: DetectionContractionEngine,
+    left_envs_bell: dict,
+    effects_by_bin: List[dict],
+    patterns: List[Tuple[str, Tuple[str, str]]],
+    window_bins: Optional[int],
+) -> Tuple[float, float]:
+    """在给定 effect 集合上累计成功率与 Bell 保真度加权和。"""
+    p_success = 0.0
+    fidelity_weighted = 0.0
+    for bell_state, (det_a, det_b) in patterns:
+        key_pair = _order_two_port_detectors([det_a, det_b])
+        key_a = _order_two_port_detectors([det_a])
+        key_b = _order_two_port_detectors([det_b])
+
+        weight_same = engine.sum_same_bin(engine.left_envs_identity, effects_by_bin, key_pair)
+        weight_diff = engine.sum_diff_bins(engine.left_envs_identity, effects_by_bin, key_a, key_b, window_bins)
+        weight_diff += engine.sum_diff_bins(engine.left_envs_identity, effects_by_bin, key_b, key_a, window_bins)
+        p_success += weight_same + weight_diff
+
+        fidelity_weighted += engine.sum_same_bin(left_envs_bell[bell_state], effects_by_bin, key_pair)
+        fidelity_weighted += engine.sum_diff_bins(left_envs_bell[bell_state], effects_by_bin, key_a, key_b, window_bins)
+        fidelity_weighted += engine.sum_diff_bins(left_envs_bell[bell_state], effects_by_bin, key_b, key_a, window_bins)
+    return float(max(0.0, p_success)), float(max(0.0, fidelity_weighted))
+
+
+def _record_weight(
+    engine: DetectionContractionEngine,
+    effects_by_bin: List[dict],
+    record: TwoClickRecord,
+) -> float:
+    """计算指定双点击记录在给定 effect 集合下的权重。"""
+    value = engine.contract_record(
+        left_envs=engine.left_envs_identity,
+        effects_by_bin=effects_by_bin,
+        det_a=record.detector_a,
+        det_b=record.detector_b,
+        bin_a=record.bin_a,
+        bin_b=record.bin_b,
+    )
+    return float(max(0.0, value.real))
+
+
 def run_detection_pipeline(
     mps: MPSState,
     n_bins: int,
     eta_det: float = 0.85,
-    p_dark: float = 0.0,
+    p_dark_intrinsic: float = 0.0,
+    p_bg_qfc: float = 0.0,
     window_bins: Optional[int] = None,
     rng: Optional[np.random.Generator] = None,
     verbose: bool = True,
@@ -249,6 +297,8 @@ def run_detection_pipeline(
 
     mps = mps.copy()
     v_res = min(max(float(v_res), 0.0), 1.0)
+    p_dark_intrinsic = float(np.clip(p_dark_intrinsic, 0.0, 1.0))
+    p_bg_qfc = float(np.clip(p_bg_qfc, 0.0, 1.0))
 
     bin_start = 2 if (len(mps.d) >= 2 and mps.d[0] == 4 and mps.d[1] == 4) else 0
     bin_dim = mps.d[bin_start]
@@ -297,9 +347,9 @@ def run_detection_pipeline(
         p_arrive_02 = 0.0
         p_arrive_same_arm = 0.0
 
-    if p_arrive <= P_ARRIVE_EPS and p_dark <= 0.0:
+    if p_arrive <= P_ARRIVE_EPS and p_dark_intrinsic <= 0.0 and p_bg_qfc <= 0.0:
         if verbose:
-            print(f"  p_arrive<{P_ARRIVE_EPS:.1e} 且 p_dark=0，跳过POVM收缩")
+            print(f"  p_arrive<{P_ARRIVE_EPS:.1e} 且无暗计数/背景噪声，跳过POVM收缩")
         metrics = None
         if compute_metrics:
             metrics = SuccessEnumerationResult(
@@ -326,7 +376,7 @@ def run_detection_pipeline(
     effects_all_by_bin, effects_true_by_bin, effects_mask_by_bin = build_detection_effects_5d_by_bin(
         n_bins=n_bins,
         eta_det=eta_det,
-        p_dark=p_dark,
+        p_dark=p_dark_intrinsic,
         bs_unitary_6d=bs_unitary_6d,
         v_res=v_res,
         U_A=U_A,
@@ -342,6 +392,18 @@ def run_detection_pipeline(
         phase_jitter_std=phase_jitter_std,
         rng=rng,
     )
+
+    effects_all_sig_by_bin = [dict(effects) for effects in effects_all_by_bin]
+    effects_true_sig_by_bin = [dict(effects) for effects in effects_true_by_bin]
+
+    if p_bg_qfc > 0.0:
+        # B3: 背景点击不再并入探测器本征暗计数 POVM，而是做观测端 OR 卷积。
+        effects_all_by_bin = [apply_background_or_map(effects, p_bg_qfc) for effects in effects_all_by_bin]
+        effects_true_by_bin = [apply_background_or_map(effects, p_bg_qfc) for effects in effects_true_by_bin]
+        effects_mask_by_bin = [
+            apply_background_or_map_masked(effects_by_mask, p_bg_qfc)
+            for effects_by_mask in effects_mask_by_bin
+        ]
 
     if verbose and n_samples > 0:
         dim_pair = bin_dim * bin_dim
@@ -406,31 +468,41 @@ def run_detection_pipeline(
         for idx, (bell_state, (det_a, det_b)) in enumerate(patterns, start=1):
             if verbose:
                 print(f"  POVM累加: {bell_state} ({idx}/{len(patterns)})")
-            key_pair = _order_two_port_detectors([det_a, det_b])
-            key_a = _order_two_port_detectors([det_a])
-            key_b = _order_two_port_detectors([det_b])
 
-            weight_same_all = engine.sum_same_bin(engine.left_envs_identity, effects_all_by_bin, key_pair)
-            weight_same_true = engine.sum_same_bin(engine.left_envs_identity, effects_true_by_bin, key_pair)
-            weight_diff_all = engine.sum_diff_bins(engine.left_envs_identity, effects_all_by_bin, key_a, key_b, window_bins)
-            weight_diff_all += engine.sum_diff_bins(engine.left_envs_identity, effects_all_by_bin, key_b, key_a, window_bins)
-            weight_diff_true = engine.sum_diff_bins(engine.left_envs_identity, effects_true_by_bin, key_a, key_b, window_bins)
-            weight_diff_true += engine.sum_diff_bins(engine.left_envs_identity, effects_true_by_bin, key_b, key_a, window_bins)
-
-            p_success_all += weight_same_all + weight_diff_all
-            p_success_true += weight_same_true + weight_diff_true
-
-            fidelity_weighted_all += engine.sum_same_bin(left_envs_bell[bell_state], effects_all_by_bin, key_pair)
-            fidelity_weighted_all += engine.sum_diff_bins(left_envs_bell[bell_state], effects_all_by_bin, key_a, key_b, window_bins)
-            fidelity_weighted_all += engine.sum_diff_bins(left_envs_bell[bell_state], effects_all_by_bin, key_b, key_a, window_bins)
-
-            fidelity_weighted_true += engine.sum_same_bin(left_envs_bell[bell_state], effects_true_by_bin, key_pair)
-            fidelity_weighted_true += engine.sum_diff_bins(left_envs_bell[bell_state], effects_true_by_bin, key_a, key_b, window_bins)
-            fidelity_weighted_true += engine.sum_diff_bins(left_envs_bell[bell_state], effects_true_by_bin, key_b, key_a, window_bins)
-
-        p_success_all = float(max(0.0, p_success_all))
-        p_success_true = float(max(0.0, p_success_true))
+        p_success_all, fidelity_weighted_all = _accumulate_success_and_fidelity(
+            engine,
+            left_envs_bell,
+            effects_all_by_bin,
+            patterns,
+            window_bins,
+        )
+        p_success_true, fidelity_weighted_true = _accumulate_success_and_fidelity(
+            engine,
+            left_envs_bell,
+            effects_true_sig_by_bin,
+            patterns,
+            window_bins,
+        )
+        # false 定义：相对“纯真实点击(true)”的差额，包含本征暗计数与背景辅助两部分。
         p_success_false = float(max(0.0, p_success_all - p_success_true))
+
+        p_success_sig_total, _ = _accumulate_success_and_fidelity(
+            engine,
+            left_envs_bell,
+            effects_all_sig_by_bin,
+            patterns,
+            window_bins,
+        )
+        p_success_sig_true, _ = _accumulate_success_and_fidelity(
+            engine,
+            left_envs_bell,
+            effects_true_sig_by_bin,
+            patterns,
+            window_bins,
+        )
+        p_success_bg_assisted = float(max(0.0, p_success_all - p_success_sig_total))
+        p_success_intrinsic_dark_assisted = float(max(0.0, p_success_sig_total - p_success_sig_true))
+
         fidelity_declared = (fidelity_weighted_all / p_success_all) if p_success_all > 0 else 0.0
         fidelity_true = (fidelity_weighted_true / p_success_true) if p_success_true > 0 else 0.0
         fidelity_false = (
@@ -446,6 +518,7 @@ def run_detection_pipeline(
             frac_11 = 0.0
             frac_same = 0.0
 
+        p_success_false = float(max(0.0, p_success_all - p_success_true))
         metrics = SuccessEnumerationResult(
             p_arrive=p_arrive,
             p_arrive_11=p_arrive_11,
@@ -461,7 +534,8 @@ def run_detection_pipeline(
             fidelity_false=fidelity_false,
             p_success_signal_approx=p_success_true * frac_11,
             p_success_same_arm_approx=p_success_true * frac_same,
-            p_success_dark_assisted=p_success_false,
+            p_success_intrinsic_dark_assisted=p_success_intrinsic_dark_assisted,
+            p_success_bg_assisted=p_success_bg_assisted,
         )
 
     if n_samples <= 0:
@@ -522,23 +596,39 @@ def run_detection_pipeline(
         total_mask_weight = float(sum(mask_weights))
         if total_mask_weight <= weight_eps:
             mask_choice = empty_key
-            p_true_given_record = 1.0 if record.weight > 0 else 0.0
         else:
             mask_probs = np.array(mask_weights, dtype=float) / total_mask_weight
             mask_choice = mask_candidates[int(rng.choice(len(mask_candidates), p=mask_probs))]
-            p_true_given_record = mask_weights[0] / total_mask_weight
 
         dark_detectors = list(mask_choice) if mask_choice else []
+        weight_obs_record = max(weight_eps, record.weight)
+        weight_true_record = _record_weight(engine, effects_true_sig_by_bin, record)
+        weight_sig_total_record = _record_weight(engine, effects_all_sig_by_bin, record)
+        p_true_given_record = float(min(max(weight_true_record / weight_obs_record, 0.0), 1.0))
+        p_bg_assist_record = float(
+            min(max((weight_obs_record - weight_sig_total_record) / weight_obs_record, 0.0), 1.0)
+        )
+        bg_happened = bool(rng.random() < p_bg_assist_record)
         clicks = [
             DetectionEvent(
                 detector=record.detector_a,
                 bin_index=record.bin_a,
                 is_dark=record.detector_a in dark_detectors,
+                source=(
+                    "dark_intrinsic"
+                    if record.detector_a in dark_detectors
+                    else ("bg_qfc" if bg_happened else "signal")
+                ),
             ),
             DetectionEvent(
                 detector=record.detector_b,
                 bin_index=record.bin_b,
                 is_dark=record.detector_b in dark_detectors,
+                source=(
+                    "dark_intrinsic"
+                    if record.detector_b in dark_detectors
+                    else ("bg_qfc" if bg_happened else "signal")
+                ),
             ),
         ]
 
@@ -566,7 +656,10 @@ def run_detection_pipeline(
                 print(f"\n  [POVM抽样 {sample_index}/{n_samples}]")
             print("\n  结果：")
             print("    抽样自双点击分布（条件在两次点击）")
-            print(f"    点击：{[(c.detector, c.bin_index, 'dark' if c.is_dark else 'true') for c in clicks]}")
+            print(
+                "    点击："
+                f"{[(c.detector, c.bin_index, 'dark' if c.is_dark else 'true', c.source) for c in clicks]}"
+            )
             if dark_detectors:
                 print(f"    暗计数点击：{dark_detectors}")
             print(f"    BSM成功：{success}")
@@ -697,14 +790,15 @@ def run_detection_self_checks(verbose: bool = True) -> None:
         for mask, effect in map_dist.items():
             _assert_close(f"v_res=0(mask) key={key} mask={mask}", map_v0[mask], effect)
 
-    # E2: 极限 sanity（eta=1, p_dark=0, 理想链路）
+    # E2: 极限 sanity（eta=1, p_dark_intrinsic=0, p_bg_qfc=0, 理想链路）
     local_dims = [4, 4] + [5, 5]
     state_ideal = MPSState(local_dims=local_dims, init_state=[1, 1, 0, 0], max_bond=8)
     run_ideal = run_detection_pipeline(
         mps=state_ideal,
         n_bins=1,
         eta_det=1.0,
-        p_dark=0.0,
+        p_dark_intrinsic=0.0,
+        p_bg_qfc=0.0,
         window_bins=0,
         rng=np.random.default_rng(42),
         verbose=False,
@@ -734,7 +828,8 @@ def run_detection_self_checks(verbose: bool = True) -> None:
         mps=state_ideal,
         n_bins=1,
         eta_det=0.85,
-        p_dark=2.3e-6,
+        p_dark_intrinsic=2.3e-6,
+        p_bg_qfc=0.0,
         window_bins=0,
         rng=np.random.default_rng(123),
         verbose=False,
@@ -799,7 +894,8 @@ def run_detection_self_checks(verbose: bool = True) -> None:
             mps=emission.mps,
             n_bins=emission.get_n_bins(),
             eta_det=1.0,
-            p_dark=0.0,
+            p_dark_intrinsic=0.0,
+            p_bg_qfc=0.0,
             window_bins=0,
             rng=rng,
             verbose=False,

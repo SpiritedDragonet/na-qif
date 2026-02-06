@@ -233,7 +233,12 @@ mps, fiber_sample = sample_fiber_realization(...)
 
 # (4) 探测：POVM 枚举 + 抽样（QFC/过滤/光纤/BS 都已并入测量端）
 pipeline = run_detection_pipeline(
-    mps, n_bins, eta_det=eta_det, p_dark=p_noise, bs_unitary=bs_gate_6d()
+    mps,
+    n_bins,
+    eta_det=eta_det,
+    p_dark_intrinsic=p_dark_intrinsic,
+    p_bg_qfc=p_bg_qfc,
+    bs_unitary=bs_gate_6d(),
 )
 # 结果：点击事件列表 / 成功率 / 保真度
 
@@ -247,18 +252,21 @@ pipeline = run_detection_pipeline(
 SIM/HOM 产生的点击记录（`raw/clicks.json` 与 `sim_summary.csv`）格式为：
 
 ```
-[(detector, bin_index, is_dark), ...]
+[(detector, bin_index, is_dark, source), ...]
 ```
 
 - `detector`: `H1` / `V1` / `H2` / `V2`
 - `bin_index`: 点击发生的时间仓索引
 - `is_dark`: 是否为暗记数触发的点击（True/False）
+- `source`: 点击来源标签（`signal` / `dark_intrinsic` / `bg_qfc`）
 
 ### 成功率字段（SIM / sim_summary.csv）
 
 - `p_success_abs`：每次尝试的**总成功率**（含暗计数）
 - `p_success_true_abs`：成功中“纯真实点击”的部分
 - `p_success_false_abs`：成功中“含暗计数”的部分（=`p_success_abs - p_success_true_abs`）
+- `p_success_intrinsic_dark_assisted`：由探测器本征暗计数辅助导致的成功率分量
+- `p_success_bg_assisted`：由QFC/链路背景点击辅助导致的成功率分量
 - `p_success_true_given_arrival`：在“两光子到达”条件下的真实成功率（`p_success_true_abs / p_arrive`）
 - `p_success_no_dark_abs`：暗计数关掉时的成功率基线（若枚举 no-dark）
 

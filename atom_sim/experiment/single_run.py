@@ -270,10 +270,16 @@ def _run_single_simulation_core(
                 file.write(f"p_success_same_arm_approx = {metrics['p_success_same_arm_approx']:.8f}\n")
             else:
                 file.write("p_success_same_arm_approx = N/A\n")
-            if metrics.get("p_success_dark_assisted") is not None:
-                file.write(f"p_success_dark_assisted = {metrics['p_success_dark_assisted']:.8f}\n")
+            if metrics.get("p_success_intrinsic_dark_assisted") is not None:
+                file.write(
+                    f"p_success_intrinsic_dark_assisted = {metrics['p_success_intrinsic_dark_assisted']:.8f}\n"
+                )
             else:
-                file.write("p_success_dark_assisted = N/A\n")
+                file.write("p_success_intrinsic_dark_assisted = N/A\n")
+            if metrics.get("p_success_bg_assisted") is not None:
+                file.write(f"p_success_bg_assisted = {metrics['p_success_bg_assisted']:.8f}\n")
+            else:
+                file.write("p_success_bg_assisted = N/A\n")
             if metrics.get("p_success_true_given_arrival") is not None:
                 file.write(f"p_success_true_given_arrival = {metrics['p_success_true_given_arrival']:.8f}\n")
             else:
@@ -460,7 +466,8 @@ def _run_single_simulation_core(
     )
     budget = param_store.noise_budget
     eta_det = param_store.eta_det
-    p_noise = budget.p_noise_bin
+    p_dark_intrinsic = budget.p_dark_intrinsic_bin
+    p_bg_qfc = budget.p_bg_bin
     print(
         f"\n探测器本底暗计数率: {budget.dark_rate_intrinsic_hz:.3f} Hz -> "
         f"p_dark_gate={budget.p_dark_intrinsic_gate:.3e}, p_dark_bin={budget.p_dark_intrinsic_bin:.3e}"
@@ -473,7 +480,7 @@ def _run_single_simulation_core(
         f"QFC/背景噪声概率: p_bg_gate={budget.p_bg_gate:.3e}, p_bg_bin={budget.p_bg_bin:.3e}"
     )
     print(
-        f"合并噪声概率: p_noise_gate={budget.p_noise_gate:.3e}, p_noise_bin={budget.p_noise_bin:.3e}"
+        f"合并噪声概率(仅预算展示): p_noise_gate={budget.p_noise_gate:.3e}, p_noise_bin={budget.p_noise_bin:.3e}"
     )
     print(
         f"点击时间窗 window_bins = {param_store.window_bins} "
@@ -511,7 +518,8 @@ def _run_single_simulation_core(
         detect_start = time.perf_counter() if DEBUG_MODE else None
         pipeline = run_detection_pipeline(
             **detect_common,
-            p_dark=0.0,
+            p_dark_intrinsic=0.0,
+            p_bg_qfc=0.0,
             n_samples=shots_per_run,
             compute_metrics=True,
         )
@@ -523,7 +531,8 @@ def _run_single_simulation_core(
             print("\n枚举成功事件（无暗计数基线）...")
             enum_pipeline = run_detection_pipeline(
                 **detect_common,
-                p_dark=0.0,
+                p_dark_intrinsic=0.0,
+                p_bg_qfc=0.0,
                 n_samples=0,
                 compute_metrics=True,
             )
@@ -534,7 +543,8 @@ def _run_single_simulation_core(
         detect_start = time.perf_counter() if DEBUG_MODE else None
         pipeline = run_detection_pipeline(
             **detect_common,
-            p_dark=p_noise,
+            p_dark_intrinsic=p_dark_intrinsic,
+            p_bg_qfc=p_bg_qfc,
             n_samples=shots_per_run,
             compute_metrics=True,
         )
@@ -574,7 +584,8 @@ def _run_single_simulation_core(
         "p_success_false_abs": enum_main.p_success_false,
         "p_success_signal_approx": enum_main.p_success_signal_approx,
         "p_success_same_arm_approx": enum_main.p_success_same_arm_approx,
-        "p_success_dark_assisted": enum_main.p_success_dark_assisted,
+        "p_success_intrinsic_dark_assisted": enum_main.p_success_intrinsic_dark_assisted,
+        "p_success_bg_assisted": enum_main.p_success_bg_assisted,
         "p_success_true_given_arrival": enum_main.p_success_given_arrival,
         "fidelity_all": enum_main.fidelity_declared,
         "fidelity_true": enum_main.fidelity_true,
@@ -652,7 +663,11 @@ def _run_single_simulation_core(
                 file.write(f'Bell态: {det_result.bell_state}\n')
                 file.write(f'点击次数: {len(det_result.clicks)}\n')
                 if det_result.clicks:
-                    file.write(f"点击详情: {[(c.detector, c.bin_index, bool(getattr(c, 'is_dark', False))) for c in det_result.clicks]}\n")
+                    file.write(
+                        "点击详情: "
+                        f"{[(c.detector, c.bin_index, bool(getattr(c, 'is_dark', False)), getattr(c, 'source', 'signal')) for c in det_result.clicks]}"
+                        "\n"
+                    )
 
                     file.write('\n量子比特密度矩阵:\n')
                     rho = det_result.qubit_state
@@ -673,7 +688,15 @@ def _run_single_simulation_core(
 
             print(f"  调试信息已保存: {det_file.name}")
 
-        click_pairs = [(c.detector, c.bin_index, bool(getattr(c, "is_dark", False))) for c in det_result.clicks]
+        click_pairs = [
+            (
+                c.detector,
+                c.bin_index,
+                bool(getattr(c, "is_dark", False)),
+                str(getattr(c, "source", "signal")),
+            )
+            for c in det_result.clicks
+        ]
         click_records.append(
             {
                 "shot_index": shot_index - 1,
