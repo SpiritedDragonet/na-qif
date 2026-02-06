@@ -13,8 +13,7 @@ from ..physics.gates import bs_gate_6d
 from .common import (
     HomConfig,
     SimConfig,
-    _compute_window_bins,
-    _compute_noise_params,
+    _build_run_parameter_store,
     _build_detection_kwargs,
 )
 from .single_run import _run_single_trial
@@ -166,6 +165,7 @@ def _run_hom_run(
     #   - 只统计“同偏振跨端口符合”(H1-H2 或 V1-V2)
     # ------------------------------------------------------------------
     # 固定随机种子：保证同一 τ 的重复性（便于比较）
+    run_wall_start = time.perf_counter()
     run_rng = np.random.default_rng(rng_seed)
     timings = {} if debug else None
     pipe = _run_single_trial(
@@ -175,6 +175,7 @@ def _run_hom_run(
         delay_jitter_ns=delay_jitter_ns,
         verbose=verbose,
         debug=debug,
+        emission_diagnostics=False,
         hooks=None,
     )
     if debug and pipe.timings:
@@ -183,30 +184,23 @@ def _run_hom_run(
     result = pipe.emission
 
     bin_dt_s = result.dt_s
-    bin_dt_ns = bin_dt_s * 1e9
-    # 将时间窗映射到 bin 数（用于符合判定）
-    window_bins = _compute_window_bins(window_ns, bin_dt_ns)
-
-    if config.detector.ideal_det:
-        # 理想探测：无暗计数、探测效率=1
-        p_noise = 0.0
-        eta_det = 1.0
-    else:
-        # 现实探测：每个 run 采样一次噪声率（背景 + 本底暗计数）
-        noise = _compute_noise_params(config.noise, bin_dt_s, run_rng)
-        p_noise = noise["p_noise"]
-        eta_det = config.detector.eta_det
+    param_store = _build_run_parameter_store(
+        config=config,
+        emission_bin_dt_s=bin_dt_s,
+        coincidence_window_ns=window_ns,
+        rng=run_rng,
+    )
+    window_bins = param_store.window_bins
+    p_noise = param_store.noise_budget.p_noise_bin
 
     # BS 并入测量端 (U^† E U)
     bs_unitary = bs_gate_6d()
     detect_common = _build_detection_kwargs(
         pipe=pipe,
-        eta_det=eta_det,
-        window_bins=window_bins,
+        param_store=param_store,
         rng=run_rng,
         verbose=verbose,
         bs_unitary=bs_unitary,
-        visibility=config.detector.visibility,
     )
     coincidences = 0
     click_records = []
@@ -231,6 +225,7 @@ def _run_hom_run(
         timings["detection_total"] = time.perf_counter() - detect_start
         if shots_per_run > 0:
             timings["detection_per_shot"] = timings["detection_total"] / shots_per_run
+        timings["run_wall_total"] = time.perf_counter() - run_wall_start
         timing_order = [
             ("emission", "发射"),
             ("qfc", "QFC"),
@@ -242,10 +237,19 @@ def _run_hom_run(
             ("detection_total", "探测抽样"),
         ]
         parts = []
+        core_sum = 0.0
         for key, label in timing_order:
             if key in timings:
-                parts.append(f"{label}={timings[key]:.2f}s")
+                value = float(timings[key])
+                core_sum += value
+                parts.append(f"{label}={value:.2f}s")
         if parts:
             print(f"[HOM][调试耗时] tau={tau_ns:.3f} ns | " + " | ".join(parts))
+        wall = float(timings.get("run_wall_total", 0.0))
+        overhead = max(0.0, wall - core_sum)
+        print(
+            f"[HOM][调试总览] tau={tau_ns:.3f} ns | "
+            f"核心阶段={core_sum:.2f}s | run墙钟={wall:.2f}s | 额外开销={overhead:.2f}s"
+        )
 
     return coincidences, p_arrive, click_records

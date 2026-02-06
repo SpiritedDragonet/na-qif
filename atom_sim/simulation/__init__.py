@@ -8,30 +8,32 @@
 from .trajectory import (
     EmissionResult,
     run_dual_atom_emission,
-    apply_fiber_channel,
+    sample_fiber_realization,
 )
 from .detection import (
     DetectionEvent,
     TwoPhotonDetectionResult,
     SuccessEnumerationResult,
     run_detection_pipeline,
-    build_detection_effects_6d,
-    extract_spin_state,
+    run_detection_self_checks,
+    extract_qubit_state,
     compute_fidelity_with_bell,
 )
+from ..physics.gates import build_detection_effects_6d
 
 __all__ = [
     # trajectory
     'EmissionResult',
     'run_dual_atom_emission',
     # apply_* functions
-    'apply_fiber_channel',
+    'sample_fiber_realization',
     # detection (POVM sampling)
     'DetectionEvent',
     'TwoPhotonDetectionResult',
     'SuccessEnumerationResult',
     'run_detection_pipeline',
+    'run_detection_self_checks',
     'build_detection_effects_6d',
-    'extract_spin_state',
+    'extract_qubit_state',
     'compute_fidelity_with_bell',
 ]

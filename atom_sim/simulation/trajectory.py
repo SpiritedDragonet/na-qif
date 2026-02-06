@@ -52,6 +52,10 @@ class EmissionResult:
         原子B的状态演化（形状：4 x 2*n_bins）
         行：P(|0>), P(|1>), P(|e>), P(|u>)
         列：每次SWAP后的记录
+    diagnostics_enabled : bool
+        是否启用发射诊断提取（逐步原子态+逐bin发射概率）。
+        关闭时，per_bin_prob_* 仅保留占位数组（NaN），
+        atom_*_state_evolution 为空矩阵 (4x0)。
     """
     mps: MPSState
     dt_s: float
@@ -60,6 +64,7 @@ class EmissionResult:
     atom_states: dict
     atom_A_state_evolution: np.ndarray = field(default_factory=lambda: np.zeros((4, 1)))
     atom_B_state_evolution: np.ndarray = field(default_factory=lambda: np.zeros((4, 1)))
+    diagnostics_enabled: bool = False
 
     def get_bin_indices(self, n: int) -> Tuple[int, int]:
         """
@@ -138,7 +143,7 @@ def _print_footer(mps: MPSState, verbose: bool, stage: str = ""):
         print(f"{stage} complete.")
 
 
-def apply_fiber_channel(
+def sample_fiber_realization(
     mps: MPSState,
     n_bins: int,
     fiber_params,
@@ -217,15 +222,17 @@ def _effective_gamma_per_channel(
 ) -> float:
     """
     在坏腔近似下估计原子到外耦合通道的有效耦合率（单通道）。
-    L_eff ≈ sqrt(2*kappa_ex) * g / kappa，因此 gamma ≈ |L_eff|^2。
+
+    采用输入输出常用约定（腔场幅衰减率 κ/2）：
+      gamma_eff ≈ (kappa_ex / kappa) * (4 g^2 / kappa)
+                = 4 * kappa_ex * (g / kappa)^2
     """
     # κ = κ_ex + κ_in：总腔衰减率（外耦合 + 内损耗）
     kappa = kappa_ex + kappa_in
     # 若耦合或外耦合为零，等价于没有可用的外输出通道
     if kappa <= eps or kappa_ex <= 0.0:
         return 0.0
-    # |L_eff|^2 = 2 κ_ex (g/κ)^2
-    return 2.0 * kappa_ex * (g / kappa) ** 2
+    return 4.0 * kappa_ex * (g / kappa) ** 2
 
 
 def _build_h_sys(omega: complex, delta_u: float, delta_e: float) -> np.ndarray:
@@ -264,13 +271,21 @@ def run_dual_atom_emission(
     sigma: float = 12.0,
     delay_ns: float = 0.0,
     delay_jitter_ns: float = 0.0,
-    g: float = 2 * np.pi * 20e6,
-    kappa_ex: float = 2 * np.pi * 20e6,
-    kappa_in: float = 2 * np.pi * 1e6,
-    delta_u: float = 0.0,
-    delta_e: float = 0.0,
+    g_A: float = 2 * np.pi * 20e6,
+    g_B: float = 2 * np.pi * 20e6,
+    kappa_ex_A: float = 2 * np.pi * 20e6,
+    kappa_ex_B: float = 2 * np.pi * 20e6,
+    kappa_in_A: float = 2 * np.pi * 1e6,
+    kappa_in_B: float = 2 * np.pi * 1e6,
+    delta_u_A: float = 0.0,
+    delta_u_B: float = 0.0,
+    delta_e_A: float = 0.0,
+    delta_e_B: float = 0.0,
+    gamma_loss_A: float = 0.0,
+    gamma_loss_B: float = 0.0,
     rng: Optional[np.random.Generator] = None,
     verbose: bool = True,
+    diagnostics: bool = False,
 ) -> EmissionResult:
     """
     运行双原子发射仿真（原子向左移动方案）。
@@ -310,20 +325,25 @@ def run_dual_atom_emission(
         注意：这是时间延迟，不改变bin索引
     delay_jitter_ns : float
         延迟随机抖动范围（纳秒，均匀分布的半宽）
-    g : float
-        原子-腔耦合强度（rad/s）
-    kappa_ex : float
-        腔外耦合衰减率（rad/s）
-    kappa_in : float
-        腔内损耗衰减率（rad/s）
-    delta_u : float
-        |u> 态失谐（rad/s）
-    delta_e : float
-        |e> 态失谐（rad/s）
+    g_A, g_B : float
+        A/B 臂原子-腔耦合强度（rad/s）
+    kappa_ex_A, kappa_ex_B : float
+        A/B 臂腔外耦合衰减率（rad/s）
+    kappa_in_A, kappa_in_B : float
+        A/B 臂腔内损耗衰减率（rad/s）
+    delta_u_A, delta_u_B : float
+        A/B 臂 |u> 态失谐（rad/s）
+    delta_e_A, delta_e_B : float
+        A/B 臂 |e> 态失谐（rad/s）
+    gamma_loss_A, gamma_loss_B : float
+        A/B 臂不可收集通道的等效损耗率（1/s）
     rng : np.random.Generator, optional
         随机数生成器（用于延迟抖动）
     verbose : bool
         是否打印进度信息
+    diagnostics : bool
+        是否提取发射诊断信息（逐步原子态演化、逐bin发射概率）。
+        关闭可显著减少大规模扫描时的收缩开销。
 
     Returns
     -------
@@ -375,7 +395,29 @@ def run_dual_atom_emission(
     omega_A_values = _omega_gaussian(t_ns, t0_A, sigma, omega_peak_A)
     omega_B_values = _omega_gaussian(t_ns, t0_B, sigma, omega_peak_B)
     # 有效耦合率：每个时间步共用（坏腔近似）
-    gamma_per_channel = _effective_gamma_per_channel(g, kappa_ex, kappa_in)
+    gamma_A = _effective_gamma_per_channel(g_A, kappa_ex_A, kappa_in_A)
+    gamma_B = _effective_gamma_per_channel(g_B, kappa_ex_B, kappa_in_B)
+
+    p_loss_A = 1.0 - np.exp(-max(0.0, float(gamma_loss_A)) * dt_s)
+    p_loss_B = 1.0 - np.exp(-max(0.0, float(gamma_loss_B)) * dt_s)
+
+    def _build_loss_kraus(p_loss: float) -> list:
+        # 等效不可收集辐射：|e> 以概率 p_loss 跃迁到 {|0>,|1>} 并被环境带走。
+        # 这里采用 50/50 分支，保持 CPTP：K0 + K1 + K2。
+        p = min(max(float(p_loss), 0.0), 1.0)
+        if p <= 0.0:
+            return []
+        k0 = np.eye(4, dtype=complex)
+        k0[2, 2] = np.sqrt(1.0 - p)
+        k1 = np.zeros((4, 4), dtype=complex)
+        k2 = np.zeros((4, 4), dtype=complex)
+        amp = np.sqrt(0.5 * p)
+        k1[0, 2] = amp
+        k2[1, 2] = amp
+        return [k0, k1, k2]
+
+    loss_kraus_A = _build_loss_kraus(p_loss_A)
+    loss_kraus_B = _build_loss_kraus(p_loss_B)
     # 设置默认Alpha矩阵
     if Alpha_A is None:
         # Alpha 是 2×2 偏振耦合矩阵（默认单位阵）
@@ -391,9 +433,21 @@ def run_dual_atom_emission(
         print("\n发射参数:")
         print(f"  原子A: Omega_peak={omega_peak_A:.3e} rad/s, t0={t0_A:.1f} ns, sigma={sigma:.1f} ns")
         print(f"  原子B: Omega_peak={omega_peak_B:.3e} rad/s, t0={t0_B:.1f} ns, sigma={sigma:.1f} ns")
-        print(f"  g={g:.3e} rad/s, kappa_ex={kappa_ex:.3e} rad/s, kappa_in={kappa_in:.3e} rad/s")
-        print(f"  delta_u={delta_u:.3e}, delta_e={delta_e:.3e}")
-        print(f"  有效耦合速率: gamma_eff={gamma_per_channel:.3e} 1/s (单通道)")
+        print(
+            f"  A臂: g={g_A:.3e}, kappa_ex={kappa_ex_A:.3e}, kappa_in={kappa_in_A:.3e}, "
+            f"delta_u={delta_u_A:.3e}, delta_e={delta_e_A:.3e}"
+        )
+        print(
+            f"  B臂: g={g_B:.3e}, kappa_ex={kappa_ex_B:.3e}, kappa_in={kappa_in_B:.3e}, "
+            f"delta_u={delta_u_B:.3e}, delta_e={delta_e_B:.3e}"
+        )
+        print(
+            f"  有效耦合速率: gamma_A={gamma_A:.3e} 1/s, gamma_B={gamma_B:.3e} 1/s"
+        )
+        print(
+            f"  不可收集通道: gamma_loss_A={gamma_loss_A:.3e} 1/s (p_step={p_loss_A:.3e}), "
+            f"gamma_loss_B={gamma_loss_B:.3e} 1/s (p_step={p_loss_B:.3e})"
+        )
         if delay_jitter_ns > 0.0:
             print(
                 f"  时间延迟: base={delay_ns:.1f} ns, "
@@ -463,8 +517,8 @@ def run_dual_atom_emission(
         print("\n开始发射循环（原子向左移动方案）...")
 
     # 用于记录每个仓的发射概率
-    per_bin_prob_A = np.zeros(n_bins)
-    per_bin_prob_B = np.zeros(n_bins)
+    per_bin_prob_A = np.full(n_bins, np.nan, dtype=float)
+    per_bin_prob_B = np.full(n_bins, np.nan, dtype=float)
 
     # 用于记录原子状态演化
     atom_A_evolution = []
@@ -490,27 +544,26 @@ def run_dual_atom_emission(
         omega_A_n = omega_A_values[time_idx]
         omega_B_n = omega_B_values[time_idx]
         # 构造当前时刻的单原子哈密顿量（含失谐与驱动）
-        h_sys_A = _build_h_sys(omega_A_n, delta_u, delta_e)
-        h_sys_B = _build_h_sys(omega_B_n, delta_u, delta_e)
-        # 发射率：坏腔近似下视作常数
-        gamma_A_n = gamma_per_channel
-        gamma_B_n = gamma_per_channel
+        h_sys_A = _build_h_sys(omega_A_n, delta_u_A, delta_e_A)
+        h_sys_B = _build_h_sys(omega_B_n, delta_u_B, delta_e_B)
+        gamma_A_n = gamma_A
+        gamma_B_n = gamma_B
 
         # 当前目标仓的位置
         site_A_n = 2 * n      # A_n 在位置 2n
         site_B_n = 2 * n + 1  # B_n 在位置 2n+1
 
-        # 记录发射前的原子状态
-        rho_A = mps.get_reduced_density([site_atomA])
-        rho_B = mps.get_reduced_density([site_atomB])
-        # 仅记录对角（占据概率）用于演化可视化
-        atom_A_evolution.append(np.diag(rho_A).real)
-        atom_B_evolution.append(np.diag(rho_B).real)
+        if diagnostics:
+            # 记录发射前原子状态（用于演化可视化）
+            rho_A = mps.get_reduced_density([site_atomA])
+            rho_B = mps.get_reduced_density([site_atomB])
+            atom_A_evolution.append(np.diag(rho_A).real)
+            atom_B_evolution.append(np.diag(rho_B).real)
 
         # ====================================================================
         # 步骤1：原子A与左边的A仓发射
         # ====================================================================
-        if gamma_A_n > 1e-12 or abs(omega_A_n) > 1e-12 or delta_u != 0.0 or delta_e != 0.0:
+        if gamma_A_n > 1e-12 or abs(omega_A_n) > 1e-12 or delta_u_A != 0.0 or delta_e_A != 0.0:
             # atomA 应该在 site_A_n 的右边（site_A_n + 1）
             # 但实际位置是 site_atomA，所以发射门作用在 bond(site_atomA-1, site_atomA)
             # 其中 site_atomA-1 应该是 A_n 仓
@@ -528,7 +581,7 @@ def run_dual_atom_emission(
         # ====================================================================
         # 步骤2：原子B与左边的B仓发射
         # ====================================================================
-        if gamma_B_n > 1e-12 or abs(omega_B_n) > 1e-12 or delta_u != 0.0 or delta_e != 0.0:
+        if gamma_B_n > 1e-12 or abs(omega_B_n) > 1e-12 or delta_u_B != 0.0 or delta_e_B != 0.0:
             # atomB 应该在 site_B_n 的右边
             # 但实际位置是 site_atomB，所以发射门作用在 bond(site_atomB-1, site_atomB)
             U_emit_B = emission_gate(
@@ -541,6 +594,11 @@ def run_dual_atom_emission(
             )
             # B 臂：作用在 (B_n, atomB) 的相邻键上
             mps.apply_bond_op(site_atomB - 1, U_emit_B)
+
+        if loss_kraus_A:
+            mps.apply_kraus_one_site(site_atomA, loss_kraus_A, rng=rng)
+        if loss_kraus_B:
+            mps.apply_kraus_one_site(site_atomB, loss_kraus_B, rng=rng)
 
         # ====================================================================
         # 步骤3：移动原子（使用 swap_sites 方法）
@@ -569,11 +627,12 @@ def run_dual_atom_emission(
             mps.swap_sites(site_atomB - 1)
             site_atomB -= 1
 
-        # 记录原子状态（每个仓都记录）
-        rho_A = mps.get_reduced_density([site_atomA])
-        rho_B = mps.get_reduced_density([site_atomB])
-        atom_A_evolution.append(np.diag(rho_A).real)
-        atom_B_evolution.append(np.diag(rho_B).real)
+        if diagnostics:
+            # 记录发射后原子状态（每个仓都记录）
+            rho_A = mps.get_reduced_density([site_atomA])
+            rho_B = mps.get_reduced_density([site_atomB])
+            atom_A_evolution.append(np.diag(rho_A).real)
+            atom_B_evolution.append(np.diag(rho_B).real)
 
         # 打印进度
         if verbose and (n % 10 == 0 or n == 0):
@@ -582,7 +641,7 @@ def run_dual_atom_emission(
                 f"  仓 {n+1:3d}/{n_bins}: "
                 f"|Omega_A|={abs(omega_A_n) * 1e-9:.4f}/ns, "
                 f"|Omega_B|={abs(omega_B_n) * 1e-9:.4f}/ns, "
-                f"gamma_eff={gamma_per_channel * 1e-9:.4f}/ns, "
+                f"gamma_A={gamma_A * 1e-9:.4f}/ns, gamma_B={gamma_B * 1e-9:.4f}/ns, "
                 f"atomA@{site_atomA}, atomB@{site_atomB}, chi_max={max(chi)}"
             )
 
@@ -595,21 +654,23 @@ def run_dual_atom_emission(
     # ========================================================================
     # 计算每个仓的发射概率
     # ========================================================================
-    if verbose:
-        print("\n计算每个仓的发射概率...")
+    if diagnostics:
+        if verbose:
+            print("\n计算每个仓的发射概率...")
 
-    # 最终布局：atomA(0) - atomB(1) - A1(2) - B1(3) - A2(4) - B2(5) - ... - AN(2n) - BN(2n+1)
-    for n in range(n_bins):
-        site_A_n = 2 + 2 * n      # A_n 在位置 2 + 2n
-        site_B_n = 2 + 2 * n + 1  # B_n 在位置 2 + 2n + 1
+        # 最终布局：atomA(0) - atomB(1) - A1(2) - B1(3) - A2(4) - B2(5) - ... - AN(2n) - BN(2n+1)
+        for n in range(n_bins):
+            site_A_n = 2 + 2 * n      # A_n 在位置 2 + 2n
+            site_B_n = 2 + 2 * n + 1  # B_n 在位置 2 + 2n + 1
 
-        # 计算非真空概率
-        # 约化密度矩阵的 vacuum 元素 = P(vac)，非真空概率 = 1 - P(vac)
-        rho_A_n = mps.get_reduced_density([site_A_n])
-        per_bin_prob_A[n] = 1.0 - rho_A_n[0, 0].real
+            # 约化密度矩阵的 vacuum 元素 = P(vac)，非真空概率 = 1 - P(vac)
+            rho_A_n = mps.get_reduced_density([site_A_n])
+            per_bin_prob_A[n] = 1.0 - rho_A_n[0, 0].real
 
-        rho_B_n = mps.get_reduced_density([site_B_n])
-        per_bin_prob_B[n] = 1.0 - rho_B_n[0, 0].real
+            rho_B_n = mps.get_reduced_density([site_B_n])
+            per_bin_prob_B[n] = 1.0 - rho_B_n[0, 0].real
+    elif verbose:
+        print("\n发射诊断关闭：跳过逐bin发射概率提取。")
 
     # ========================================================================
     # 获取最终原子状态
@@ -641,8 +702,8 @@ def run_dual_atom_emission(
     # ========================================================================
     # 构造返回结果
     # ========================================================================
-    atom_A_evolution_array = np.array(atom_A_evolution).T if atom_A_evolution else np.zeros((4, 1))
-    atom_B_evolution_array = np.array(atom_B_evolution).T if atom_B_evolution else np.zeros((4, 1))
+    atom_A_evolution_array = np.array(atom_A_evolution).T if atom_A_evolution else np.zeros((4, 0))
+    atom_B_evolution_array = np.array(atom_B_evolution).T if atom_B_evolution else np.zeros((4, 0))
 
     result = EmissionResult(
         mps=mps,
@@ -652,6 +713,7 @@ def run_dual_atom_emission(
         atom_states=atom_states,
         atom_A_state_evolution=atom_A_evolution_array,
         atom_B_state_evolution=atom_B_evolution_array,
+        diagnostics_enabled=bool(diagnostics),
     )
 
     if verbose:

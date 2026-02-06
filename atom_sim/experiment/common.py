@@ -19,19 +19,26 @@ DEFAULT_BG_RATE_STD_HZ = float(np.sqrt(5.0))
 
 
 @dataclass
-class EmissionParams:
-    """发射阶段参数（可复用的最小物理输入）。"""
-    n_bins: int = 100
-    dt_ns: float = 0.5
-    chi_max: int = 50
-    omega_peak_A: float = 2 * np.pi * 20e6
-    omega_peak_B: float = 2 * np.pi * 20e6
-    sigma: float = 10.0
+class AtomArmParams:
+    """单臂发射参数（A/B 可独立设置）。"""
+    omega_peak: float = 2 * np.pi * 20e6
     g: float = 2 * np.pi * 20e6
     kappa_ex: float = 2 * np.pi * 20e6
     kappa_in: float = 2 * np.pi * 1e6
     delta_u: float = 0.0
     delta_e: float = 0.0
+    gamma_loss: float = 0.0
+
+
+@dataclass
+class EmissionParams:
+    """发射阶段参数（可复用的最小物理输入）。"""
+    n_bins: int = 100
+    dt_ns: float = 0.5
+    chi_max: int = 50
+    sigma: float = 10.0
+    arm_A: AtomArmParams = field(default_factory=AtomArmParams)
+    arm_B: AtomArmParams = field(default_factory=AtomArmParams)
     delay_ns: Optional[float] = None
     delay_jitter_ns: float = 0.5
     delay_random_range: Tuple[float, float] = (-10.0, 10.0)
@@ -43,6 +50,7 @@ class NoiseParams:
     dark_rate_intrinsic_hz: float = DEFAULT_DARK_RATE_INTRINSIC_HZ
     bg_rate_mean_hz: float = DEFAULT_BG_RATE_MEAN_HZ
     bg_rate_std_hz: float = DEFAULT_BG_RATE_STD_HZ
+    detector_gate_ns: float = 1.0
 
 
 @dataclass
@@ -50,7 +58,41 @@ class DetectorParams:
     """探测器参数。"""
     eta_det: float = 0.85
     ideal_det: bool = False
-    visibility: float = 1.0
+    # 残差可区分度：仅用于承载“当前模型未显式建模”的剩余退相干。
+    # TODO(model-first-principles): 当以下因素全部显式建模后，删除该旋钮：
+    #   1) QFC 场端噪声注入（替代探测端等效暗计数吸收）
+    #   2) PMD/色散导致的跨bin时间模式混合
+    #   3) 频域/时域模式重叠的显式建模（替代残差旋钮）
+    v_res: float = 1.0
+
+
+@dataclass
+class NoiseBudget:
+    """一次 run 采样得到的噪声预算（与参数表字段一一对应）。"""
+    emission_bin_dt_s: float
+    detection_gate_ns: float
+    detection_gate_dt_s: float
+    bins_per_gate: int
+    dark_rate_intrinsic_hz: float
+    bg_rate_mean_hz: float
+    bg_rate_std_hz: float
+    dark_rate_bg_hz: float
+    p_dark_intrinsic_gate: float
+    p_bg_gate: float
+    p_noise_gate: float
+    p_dark_intrinsic_bin: float
+    p_bg_bin: float
+    p_noise_bin: float
+
+
+@dataclass
+class RunParameterStore:
+    """单次 run 的全局参数快照（用于统一调用与预算输出）。"""
+    eta_det: float
+    v_res: float
+    window_ns: float
+    window_bins: int
+    noise_budget: NoiseBudget
 
 
 @dataclass
@@ -159,18 +201,27 @@ def _build_fiber_params(cfg: FiberParams) -> FiberChannelParams:
     )
 
 
-def _compute_window_bins(window_ns: float, bin_dt_ns: float) -> int:
-    # 将物理时间窗口映射为 bin 数
+def _compute_window_bins(
+    window_ns: float,
+    bin_dt_ns: float,
+    detection_gate_ns: Optional[float] = None,
+) -> int:
+    # 将物理时间窗口映射为“仿真细 bin 数”，
+    # 并显式支持“探测门宽 != 数值 dt”的情形。
     if bin_dt_ns <= 0:
         return 0
-    return int(round(window_ns / bin_dt_ns))
+    gate_ns = bin_dt_ns if detection_gate_ns is None else max(float(detection_gate_ns), bin_dt_ns)
+    bins_per_gate = max(1, int(round(gate_ns / bin_dt_ns)))
+    coarse_window_bins = int(round(window_ns / gate_ns))
+    return max(0, coarse_window_bins * bins_per_gate)
 
 
-def _compute_noise_params(
+def _sample_noise_budget(
     noise_cfg: Optional[NoiseParams],
-    bin_dt_s: float,
+    emission_bin_dt_s: float,
     rng: np.random.Generator,
-) -> dict:
+    ideal_det: bool = False,
+) -> NoiseBudget:
     # ------------------------------------------------------------------
     # 暗计数与背景噪声的合成：
     #   - 本底暗计数：dark_rate_intrinsic_hz
@@ -179,22 +230,119 @@ def _compute_noise_params(
     # ------------------------------------------------------------------
     if noise_cfg is None:
         noise_cfg = NoiseParams()
-    dark_rate_intrinsic_hz = max(0.0, float(noise_cfg.dark_rate_intrinsic_hz))
-    bg_rate_mean_hz = max(0.0, float(noise_cfg.bg_rate_mean_hz))
-    bg_rate_std_hz = max(0.0, float(noise_cfg.bg_rate_std_hz))
-    dark_rate_bg_hz = max(0.0, rng.normal(bg_rate_mean_hz, bg_rate_std_hz))
-    p_dark_intrinsic = 1.0 - np.exp(-dark_rate_intrinsic_hz * bin_dt_s)
-    p_bg = 1.0 - np.exp(-dark_rate_bg_hz * bin_dt_s)
-    p_noise = 1.0 - (1.0 - p_dark_intrinsic) * (1.0 - p_bg)
-    p_noise = min(max(p_noise, 0.0), 1.0)
+
+    emission_bin_dt_s = float(emission_bin_dt_s)
+    if emission_bin_dt_s <= 0.0:
+        raise ValueError("emission_bin_dt_s 必须 > 0")
+
+    gate_ns = max(float(noise_cfg.detector_gate_ns), emission_bin_dt_s * 1e9)
+    gate_dt_s = gate_ns * 1e-9
+    bins_per_gate = max(1, int(round(gate_dt_s / emission_bin_dt_s)))
+
+    if ideal_det:
+        dark_rate_intrinsic_hz = 0.0
+        bg_rate_mean_hz = 0.0
+        bg_rate_std_hz = 0.0
+        dark_rate_bg_hz = 0.0
+    else:
+        dark_rate_intrinsic_hz = max(0.0, float(noise_cfg.dark_rate_intrinsic_hz))
+        bg_rate_mean_hz = max(0.0, float(noise_cfg.bg_rate_mean_hz))
+        bg_rate_std_hz = max(0.0, float(noise_cfg.bg_rate_std_hz))
+        dark_rate_bg_hz = max(0.0, rng.normal(bg_rate_mean_hz, bg_rate_std_hz))
+
+    p_dark_intrinsic_gate = 1.0 - np.exp(-dark_rate_intrinsic_hz * gate_dt_s)
+    p_bg_gate = 1.0 - np.exp(-dark_rate_bg_hz * gate_dt_s)
+    p_noise_gate = 1.0 - (1.0 - p_dark_intrinsic_gate) * (1.0 - p_bg_gate)
+
+    ratio = emission_bin_dt_s / gate_dt_s
+    p_dark_intrinsic_bin = 1.0 - (1.0 - p_dark_intrinsic_gate) ** ratio
+    p_bg_bin = 1.0 - (1.0 - p_bg_gate) ** ratio
+    p_noise_bin = 1.0 - (1.0 - p_dark_intrinsic_bin) * (1.0 - p_bg_bin)
+
+    return NoiseBudget(
+        emission_bin_dt_s=emission_bin_dt_s,
+        detection_gate_ns=gate_ns,
+        detection_gate_dt_s=gate_dt_s,
+        bins_per_gate=bins_per_gate,
+        dark_rate_intrinsic_hz=dark_rate_intrinsic_hz,
+        bg_rate_mean_hz=bg_rate_mean_hz,
+        bg_rate_std_hz=bg_rate_std_hz,
+        dark_rate_bg_hz=dark_rate_bg_hz,
+        p_dark_intrinsic_gate=min(max(p_dark_intrinsic_gate, 0.0), 1.0),
+        p_bg_gate=min(max(p_bg_gate, 0.0), 1.0),
+        p_noise_gate=min(max(p_noise_gate, 0.0), 1.0),
+        p_dark_intrinsic_bin=min(max(p_dark_intrinsic_bin, 0.0), 1.0),
+        p_bg_bin=min(max(p_bg_bin, 0.0), 1.0),
+        p_noise_bin=min(max(p_noise_bin, 0.0), 1.0),
+    )
+
+
+def _build_run_parameter_store(
+    config: SimConfig,
+    emission_bin_dt_s: float,
+    coincidence_window_ns: float,
+    rng: np.random.Generator,
+) -> RunParameterStore:
+    noise_budget = _sample_noise_budget(
+        noise_cfg=config.noise,
+        emission_bin_dt_s=emission_bin_dt_s,
+        rng=rng,
+        ideal_det=config.detector.ideal_det,
+    )
+    eta_det = 1.0 if config.detector.ideal_det else float(config.detector.eta_det)
+    window_bins = _compute_window_bins(
+        coincidence_window_ns,
+        emission_bin_dt_s * 1e9,
+        detection_gate_ns=noise_budget.detection_gate_ns,
+    )
+    return RunParameterStore(
+        eta_det=eta_det,
+        v_res=float(config.detector.v_res),
+        window_ns=float(coincidence_window_ns),
+        window_bins=window_bins,
+        noise_budget=noise_budget,
+    )
+
+
+def _build_parameter_snapshot(config: SimConfig, store: RunParameterStore) -> dict:
+    emission = config.emission
+    arm_a = emission.arm_A
+    arm_b = emission.arm_B
+    budget = store.noise_budget
     return {
-        "dark_rate_intrinsic_hz": dark_rate_intrinsic_hz,
-        "bg_rate_mean_hz": bg_rate_mean_hz,
-        "bg_rate_std_hz": bg_rate_std_hz,
-        "dark_rate_bg_hz": dark_rate_bg_hz,
-        "p_dark_intrinsic": p_dark_intrinsic,
-        "p_bg": p_bg,
-        "p_noise": p_noise,
+        "n_bins": emission.n_bins,
+        "dt_ns": emission.dt_ns,
+        "sigma_ns": emission.sigma,
+        "omega_peak_A": arm_a.omega_peak,
+        "omega_peak_B": arm_b.omega_peak,
+        "g_A": arm_a.g,
+        "g_B": arm_b.g,
+        "kappa_ex_A": arm_a.kappa_ex,
+        "kappa_ex_B": arm_b.kappa_ex,
+        "kappa_in_A": arm_a.kappa_in,
+        "kappa_in_B": arm_b.kappa_in,
+        "delta_u_A": arm_a.delta_u,
+        "delta_u_B": arm_b.delta_u,
+        "delta_e_A": arm_a.delta_e,
+        "delta_e_B": arm_b.delta_e,
+        "gamma_loss_A": arm_a.gamma_loss,
+        "gamma_loss_B": arm_b.gamma_loss,
+        "eta_det": store.eta_det,
+        "v_res": store.v_res,
+        "window_ns": store.window_ns,
+        "window_bins": store.window_bins,
+        "detector_gate_ns": budget.detection_gate_ns,
+        "bins_per_gate": budget.bins_per_gate,
+        "dark_rate_intrinsic_hz": budget.dark_rate_intrinsic_hz,
+        "bg_rate_mean_hz": budget.bg_rate_mean_hz,
+        "bg_rate_std_hz": budget.bg_rate_std_hz,
+        "dark_rate_bg_hz": budget.dark_rate_bg_hz,
+        "p_dark_intrinsic_gate": budget.p_dark_intrinsic_gate,
+        "p_bg_gate": budget.p_bg_gate,
+        "p_noise_gate": budget.p_noise_gate,
+        "p_dark_intrinsic_bin": budget.p_dark_intrinsic_bin,
+        "p_bg_bin": budget.p_bg_bin,
+        "p_noise_bin": budget.p_noise_bin,
     }
 
 
@@ -258,23 +406,19 @@ class PipelineResult:
 def _build_detection_kwargs(
     pipe: PipelineResult,
     *,
-    eta_det: float,
-    window_bins: int,
+    param_store: RunParameterStore,
     rng: np.random.Generator,
     verbose: bool,
     bs_unitary: np.ndarray,
-    visibility: float,
 ) -> dict:
     """
     统一拼装 run_detection_pipeline 的公共参数，避免多处重复与分叉。
     """
-    visibility = float(visibility)
-    visibility = min(max(visibility, 0.0), 1.0)
     return {
         "mps": pipe.mps,
         "n_bins": pipe.emission.get_n_bins(),
-        "eta_det": float(eta_det),
-        "window_bins": int(window_bins),
+        "eta_det": float(param_store.eta_det),
+        "window_bins": int(param_store.window_bins),
         "rng": rng,
         "verbose": verbose,
         "bs_unitary": bs_unitary,
@@ -282,7 +426,7 @@ def _build_detection_kwargs(
         "apply_filter_780": pipe.apply_filter_780,
         "theta_H": pipe.qfc_theta_H,
         "theta_V": pipe.qfc_theta_V,
-        "visibility": visibility,
+        "v_res": float(param_store.v_res),
     }
 
 
@@ -298,6 +442,7 @@ def run_emission_to_bs(
     t_wait_us: float = 80.0,
     t2_us: float = 1000.0,
     record_timings: bool = False,
+    emission_diagnostics: bool = False,
 ) -> PipelineResult:
     """
     统一的发射->QFC->滤波->投影->光纤->退相干->(BS并入测量) 流水线。
@@ -316,8 +461,8 @@ def run_emission_to_bs(
     # ------------------------------------------------------------------
     from ..simulation import (
         run_dual_atom_emission,
-        apply_fiber_channel,
-        extract_spin_state,
+        sample_fiber_realization,
+        extract_qubit_state,
     )
 
     if hooks is None:
@@ -343,23 +488,31 @@ def run_emission_to_bs(
         n_bins=emission.n_bins,
         dt_ns=emission.dt_ns,
         chi_max=emission.chi_max,
-        omega_peak_A=emission.omega_peak_A,
-        omega_peak_B=emission.omega_peak_B,
+        omega_peak_A=emission.arm_A.omega_peak,
+        omega_peak_B=emission.arm_B.omega_peak,
         sigma=emission.sigma,
         delay_ns=delay_ns,
         delay_jitter_ns=delay_jitter_ns,
-        g=emission.g,
-        kappa_ex=emission.kappa_ex,
-        kappa_in=emission.kappa_in,
-        delta_u=emission.delta_u,
-        delta_e=emission.delta_e,
+        g_A=emission.arm_A.g,
+        g_B=emission.arm_B.g,
+        kappa_ex_A=emission.arm_A.kappa_ex,
+        kappa_ex_B=emission.arm_B.kappa_ex,
+        kappa_in_A=emission.arm_A.kappa_in,
+        kappa_in_B=emission.arm_B.kappa_in,
+        delta_u_A=emission.arm_A.delta_u,
+        delta_u_B=emission.arm_B.delta_u,
+        delta_e_A=emission.arm_A.delta_e,
+        delta_e_B=emission.arm_B.delta_e,
+        gamma_loss_A=emission.arm_A.gamma_loss,
+        gamma_loss_B=emission.arm_B.gamma_loss,
         rng=rng,
         verbose=verbose,
+        diagnostics=emission_diagnostics,
     )
     if timings is not None and t0 is not None:
         timings["emission"] = time.perf_counter() - t0
     mps = emission.mps
-    _, p_qubit_emit = extract_spin_state(mps, emission.get_n_bins())
+    _, p_qubit_emit = extract_qubit_state(mps)
     if hooks.after_emission is not None:
         hooks.after_emission(emission)
 
@@ -381,7 +534,7 @@ def run_emission_to_bs(
 
     _call_stage("光纤信道 (Heisenberg 参数)")
     t0 = time.perf_counter() if timings is not None else None
-    mps, fiber_sample = apply_fiber_channel(
+    mps, fiber_sample = sample_fiber_realization(
         mps=mps,
         n_bins=emission.get_n_bins(),
         fiber_params=fiber_params,

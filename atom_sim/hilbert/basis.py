@@ -37,54 +37,6 @@ class SubSpace:
             )
 
 
-@dataclass(frozen=True)
-class ProductSpace:
-    """
-    子空间的张量积。
-
-    表示 H = H_1 ⊗ H_2 ⊗ ... ⊗ H_n
-
-    Attributes
-    ----------
-    subspaces : Tuple[SubSpace, ...]
-        张量积中的子空间
-    """
-    subspaces: Tuple[SubSpace, ...]
-
-    def __post_init__(self):
-        if not self.subspaces:
-            raise ValueError("ProductSpace必须至少有一个子空间")
-
-    @property
-    def dim(self) -> int:
-        """积空间的总维度。"""
-        # 维度按张量积相乘：dim(H1⊗H2⊗...)=∏ dim(Hi)
-        result = 1
-        for s in self.subspaces:
-            result *= s.dim
-        return result
-
-    @property
-    def num_factors(self) -> int:
-        """积空间中的子空间数量。"""
-        return len(self.subspaces)
-
-    def subspace_index(self, name: str) -> int:
-        """通过名称获取子空间的索引。"""
-        for i, s in enumerate(self.subspaces):
-            if s.name == name:
-                return i
-        raise ValueError(f"未找到子空间 '{name}'")
-
-    def subspace_dims(self) -> Tuple[int, ...]:
-        """每个子空间的维度元组。"""
-        return tuple(s.dim for s in self.subspaces)
-
-    def subspace_dim(self, name: str) -> int:
-        """通过名称获取特定子空间的维度。"""
-        return self.subspaces[self.subspace_index(name)].dim
-
-
 # 本项目的预定义子空间
 # 这些与 README 中的物理模型对应
 
@@ -164,6 +116,48 @@ def embed_3d_to_5d(op_3d: np.ndarray) -> np.ndarray:
     P = embed_5_from_3()
     Pi = np.kron(P, P)
     return Pi @ op_3d @ Pi.conj().T
+
+
+@lru_cache(maxsize=4)
+def embed_9_from_6() -> np.ndarray:
+    """
+    6D -> 9D 标签嵌入（单端口）。
+
+    6D 基：|vac>, |H>, |V>, |2H>, |2V>, |HV>
+    9D 基：(|a>,|b>) 的 Kronecker 顺序，其中每个标签子空间是 {vac,H,V}。
+
+    映射规则：
+      |H>  -> (|H_a>+|H_b>)/sqrt(2)
+      |V>  -> (|V_a>+|V_b>)/sqrt(2)
+      |2H> -> |H_a H_b>
+      |2V> -> |V_a V_b>
+      |HV> -> (|H_a V_b>+|V_a H_b>)/sqrt(2)
+    """
+    W = np.zeros((9, 6), dtype=complex)
+
+    def idx(a: int, b: int) -> int:
+        return a * 3 + b
+
+    inv_sqrt2 = 1.0 / np.sqrt(2.0)
+
+    W[idx(0, 0), 0] = 1.0
+    W[idx(1, 0), 1] = inv_sqrt2
+    W[idx(0, 1), 1] = inv_sqrt2
+    W[idx(2, 0), 2] = inv_sqrt2
+    W[idx(0, 2), 2] = inv_sqrt2
+    W[idx(1, 1), 3] = 1.0
+    W[idx(2, 2), 4] = 1.0
+    W[idx(1, 2), 5] = inv_sqrt2
+    W[idx(2, 1), 5] = inv_sqrt2
+    return W
+
+
+def reduce_9d_effects_to_6d(effects_9d: dict, W_pair: np.ndarray) -> dict:
+    """将 9D×9D 双端口 effect 回投影到 6D×6D。"""
+    if not effects_9d:
+        return {}
+    W_dag = W_pair.conj().T
+    return {key: W_dag @ effect @ W_pair for key, effect in effects_9d.items()}
 
 
 def jones_3d(U_2x2: np.ndarray) -> np.ndarray:

@@ -16,7 +16,7 @@ atom_sim/
 │
 ├── core/                          # 数值核心层
 │   ├── __init__.py
-│   └── mps.py                     # MPSState 容器（TeNPy 后端）
+│   └── mps.py                     # MPSState + 探测收缩引擎（TeNPy 后端）
 │       ├── class MPSState
 │       │   ├── __init__()
 │       │   ├── _apply_two_site_op_local()
@@ -29,12 +29,15 @@ atom_sim/
 │       │   ├── get_bond_dimensions()
 │       │   ├── copy()
 │       │   └── __repr__()
+│       ├── compute_joint_arrival_probabilities()
+│       └── class DetectionContractionEngine
 │
 ├── hilbert/                       # 希尔伯特空间层（物理抽象）
 │   ├── __init__.py
 │   ├── basis.py                   # 空间定义和张量积
 │   │   ├── class SubSpace          # 单子空间（780, 1517, atom）
-│   │   ├── class ProductSpace      # 张量积空间 [s1, s2, ...]
+│   │   ├── embed_9_from_6()        # 6D->9D 标签嵌入
+│   │   └── reduce_9d_effects_to_6d() # 9D effect 回投影到 6D
 │   │
 │   └── operators.py               # 基本算符工厂
 │       ├── annihilation_op()      # 湮灭算符 a[i]（复用实现）
@@ -43,11 +46,13 @@ atom_sim/
 │
 ├── physics/                       # 物理过程层（门和通道）
 │   ├── __init__.py
-│   ├── gates.py                   # 所有酉门工厂
+│   ├── gates.py                   # 酉门 + 探测 effect 构造（底层）
 │   │   ├── qfc_gate()             # U_qfc: 780↔1517 频率转换 (5x5)
 │   │   ├── bs_gate_6d()           # U_BS: 50/50 分束器 (36x36, 仅1517nm)
-│   │   ├── _bs_gate_1517()
-│   │   └── emission_gate()        # U_emit: 原子-光子耦合 (20x20)
+│   │   ├── emission_gate()        # U_emit: 原子-光子耦合 (20x20)
+│   │   ├── build_detection_effects_6d()/9d()
+│   │   ├── build_arrival_projectors_5d()
+│   │   └── build_detection_effects_5d_by_bin()
 │   │
 │   └── channels.py                # 所有 Kraus 通道
 │       ├── loss_channel_both_subspaces() # 5D bin 联合损耗
@@ -61,16 +66,16 @@ atom_sim/
 │   │   ├── run_dual_atom_emission()
 │   │   ├── _print_header()
 │   │   ├── _print_footer()
-│   │   └── apply_fiber_channel()
+│   │   └── sample_fiber_realization()
 │   │
 │   └── detection.py               # 探测和分析
 │       ├── DetectionEvent
 │       ├── TwoPhotonDetectionResult
 │       ├── SuccessEnumerationResult
-│       ├── _order_two_port_detectors()
-│       ├── build_detection_effects_6d()
-│       ├── run_detection_pipeline()     # POVM 枚举 + 抽样
-│       ├── extract_spin_state()
+│       ├── _order_two_port_detectors()  # 适配层
+│       ├── run_detection_pipeline()     # 编排：到达统计 + 枚举 + 抽样
+│       ├── run_detection_self_checks()  # POVM 完备性/一致性自检
+│       ├── extract_qubit_state()
 │       └── compute_fidelity_with_bell()
 │
 ├── visualization/                 # 可视化层
@@ -112,10 +117,10 @@ outputs/                           # 仿真输出目录（已 gitignore）
 
 | 层 | 职责 | 不关心 |
 |-----|------|--------|
-| `core/mps.py` | 张量网络存储、局域 TEBD 更新、SVD | 物理意义 |
-| `hilbert/` | 线性代数：空间、基、算符 | 门做什么 |
-| `physics/` | 物理：门矩阵、Kraus 通道 | MPS 更新 |
-| `simulation/` | 编排：调用顺序、条件 | 矩阵如何计算 |
+| `core/mps.py` | 张量网络存储、局域更新、到达/点击收缩引擎 | 物理参数语义 |
+| `hilbert/` | 线性代数：空间、基变换、嵌入/投影 | 调度逻辑 |
+| `physics/` | 物理：门矩阵、Kraus、POVM/effect 构造 | MPS 收缩细节 |
+| `simulation/` | 编排：调用顺序、条件分支、结果组装 | 底层矩阵与收缩实现 |
 | `visualization/` | 结果可视化、数据提取 | - |
 
 ## 运行模式与任务队列
@@ -141,6 +146,7 @@ outputs/                           # 仿真输出目录（已 gitignore）
 --plot-all                    # 每个 run 都画图
 --no-plot                     # 禁止绘图（覆盖 plot-all）
 --enum-mode dark|no-dark|both # 成功事件枚举模式（both 同时输出基线）
+--v-res <0~1>                 # 残差可区分度（仅承载未显式建模因素）
 --qfc-theta-h <rad>           # QFC H 转换角
 --qfc-theta-v <rad>           # QFC V 转换角
 --no-filter-780               # 关闭 780 滤波
@@ -170,8 +176,8 @@ simulation/trajectory.py → core/mps.py → 张量网络更新（仅局域！�
 - `apply_bond_op(i, op)` 用于双格点酉门
 - `apply_kraus_one_site(i, {Kμ}, rng)` 用于单格点 Kraus 采样
 
-### 2. 格点类型：有限维格点，非 BosonSite
-使用自定义的 `FiniteDimSite(d)` 配合算符字典，而非 TeNPy 的 `BosonSite`（语义不兼容）。
+### 2. 格点类型：使用 TeNPy `BosonSite` 并固定维度截断
+当前实现使用 `BosonSite(dim-1)` 表示有限维本征基，并通过本项目定义的 4D/5D/6D 基序来约束物理语义。
 
 ### 3. 密度矩阵提取
 始终使用 `get_reduced_density([i])`，绝不直接收缩 `_B[i]`。
@@ -218,8 +224,8 @@ atomA(4D) - atomB(4D) - A1(5D) - B1(5D) - A2(5D) - B2(5D) - ... - AN(5D) - BN(5D
 result = run_dual_atom_emission(n_bins=100, ...)
 # 结果：原子在末尾，bins 包含 780nm 光子
 
-# (2) 光纤采样（不改态）
-mps, fiber_sample = apply_fiber_channel(...)
+# (2) 光纤采样（Heisenberg 参数，不改态）
+mps, fiber_sample = sample_fiber_realization(...)
 # 注：光纤的 Jones/损耗/相位漂移在 POVM 端使用 fiber_sample 重建。
 
 # (3) 分束器并入测量端：构造 U_BS^† E U_BS

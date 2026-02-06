@@ -23,8 +23,8 @@ from .common import (
     SimConfig,
     PipelineHooks,
     run_emission_to_bs,
-    _compute_window_bins,
-    _compute_noise_params,
+    _build_parameter_snapshot,
+    _build_run_parameter_store,
     _build_detection_kwargs,
 )
 
@@ -56,7 +56,7 @@ def save_debug_info(
         步骤索引
     """
     from atom_sim.simulation.detection import (
-        extract_spin_state, compute_fidelity_with_bell
+        extract_qubit_state, compute_fidelity_with_bell
     )
 
     info = {}
@@ -72,18 +72,18 @@ def save_debug_info(
     info['local_dimensions'] = f'first_5={d_list[:5]}, last_5={d_list[-5:]}'
 
     # 原子态信息
-    spin_state, p_qubit = extract_spin_state(mps, n_bins)
-    info['spin_state_diag'] = np.diag(spin_state).real.tolist()
+    qubit_state, p_qubit = extract_qubit_state(mps)
+    info['qubit_state_diag'] = np.diag(qubit_state).real.tolist()
     info['p_qubit'] = p_qubit
     if p_qubit > 0:
-        spin_state_cond = spin_state / p_qubit
-        info['spin_purity'] = float(np.real(np.trace(spin_state_cond @ spin_state_cond)))
+        qubit_state_cond = qubit_state / p_qubit
+        info['qubit_purity'] = float(np.real(np.trace(qubit_state_cond @ qubit_state_cond)))
     else:
-        info['spin_purity'] = 0.0
+        info['qubit_purity'] = 0.0
 
     # Bell态保真度
     for bell in ['Psi+', 'Psi-', 'Phi+', 'Phi-']:
-        f_full = compute_fidelity_with_bell(spin_state, bell)
+        f_full = compute_fidelity_with_bell(qubit_state, bell)
         f_cond = f_full / p_qubit if p_qubit > 0 else 0.0
         info[f'fidelity_{bell.replace("+", "p").replace("-", "m")}_full'] = f_full
         info[f'fidelity_{bell.replace("+", "p").replace("-", "m")}_cond'] = f_cond
@@ -100,9 +100,9 @@ def save_debug_info(
         f.write(f'  {info["bond_dimensions"]}\n')
         f.write(f'  {info["local_dimensions"]}\n\n')
         f.write('原子态信息:\n')
-        f.write(f'  对角元: {info["spin_state_diag"]}\n')
+        f.write(f'  对角元: {info["qubit_state_diag"]}\n')
         f.write(f'  p_qubit: {info["p_qubit"]:.4f}\n')
-        f.write(f'  纯度(条件化): {info["spin_purity"]:.4f}\n\n')
+        f.write(f'  纯度(条件化): {info["qubit_purity"]:.4f}\n\n')
         f.write('Bell态保真度:\n')
         f.write(f'  Psi+ (full/cond) = {info["fidelity_Psip_full"]:.4f} / {info["fidelity_Psip_cond"]:.4f}\n')
         f.write(f'  Psi- (full/cond) = {info["fidelity_Psim_full"]:.4f} / {info["fidelity_Psim_cond"]:.4f}\n')
@@ -119,6 +119,7 @@ def _run_single_trial(
     verbose: bool,
     debug: bool,
     hooks: Optional[PipelineHooks],
+    emission_diagnostics: bool,
 ):
     """
     目的：抽出最小可复用的物理流程（发射->QFC->滤波->光纤->退相干->BS并入测量）。
@@ -137,6 +138,7 @@ def _run_single_trial(
         verbose=verbose,
         hooks=hooks,
         record_timings=debug,
+        emission_diagnostics=emission_diagnostics,
     )
     return pipe
 
@@ -149,15 +151,13 @@ def _run_single_simulation_core(
     run_tag: Optional[str] = None,
     seed: Optional[int] = None,
 ):
+    run_wall_start = time.perf_counter()
     run_cfg = config.run
     n_runs = run_cfg.runs
     shots_per_run = run_cfg.shots_per_run
     plot_all = run_cfg.plot_all
     plot_enabled = run_cfg.plot_enabled
     enum_mode = run_cfg.enum_mode
-    noise_cfg = config.noise
-    eta_det = config.detector.eta_det
-    ideal_det = config.detector.ideal_det
     run_tag = f"run{run_index:03d}"
     success_metrics = None
     stage_total = 6
@@ -181,6 +181,16 @@ def _run_single_simulation_core(
                 file.write(f"dark_rate_intrinsic_hz = {metrics['dark_rate_intrinsic_hz']:.3f}\n")
             if "dark_rate_bg_hz" in metrics:
                 file.write(f"dark_rate_bg_hz = {metrics['dark_rate_bg_hz']:.3f}\n")
+            if "detector_gate_ns" in metrics:
+                file.write(f"detector_gate_ns = {metrics['detector_gate_ns']:.6f}\n")
+            if "bins_per_gate" in metrics:
+                file.write(f"bins_per_gate = {metrics['bins_per_gate']}\n")
+            if "p_dark_intrinsic_gate" in metrics:
+                file.write(f"p_dark_intrinsic_gate = {metrics['p_dark_intrinsic_gate']:.8f}\n")
+            if "p_bg_gate" in metrics:
+                file.write(f"p_bg_gate = {metrics['p_bg_gate']:.8f}\n")
+            if "p_noise_gate" in metrics:
+                file.write(f"p_noise_gate = {metrics['p_noise_gate']:.8f}\n")
             if "p_dark_intrinsic" in metrics:
                 file.write(f"p_dark_intrinsic = {metrics['p_dark_intrinsic']:.8f}\n")
             if "p_bg" in metrics:
@@ -195,8 +205,8 @@ def _run_single_simulation_core(
                 file.write(f"p_dephase = {metrics['p_dephase']:.6f}\n")
             if "p_qubit_emit" in metrics:
                 file.write(f"p_qubit_emit = {metrics['p_qubit_emit']:.6f}\n")
-            if "visibility" in metrics:
-                file.write(f"visibility = {metrics['visibility']:.6f}\n")
+            if "v_res" in metrics:
+                file.write(f"v_res = {metrics['v_res']:.6f}\n")
             if "qfc_theta_H" in metrics:
                 file.write(f"qfc_theta_H = {metrics['qfc_theta_H']:.6f}\n")
             if "qfc_theta_V" in metrics:
@@ -417,6 +427,7 @@ def _run_single_simulation_core(
         delay_jitter_ns=None,
         verbose=True,
         debug=DEBUG_MODE,
+        emission_diagnostics=(plot_enabled or DEBUG_MODE),
         hooks=PipelineHooks(
             on_stage=_on_stage,
             after_emission=_after_emission,
@@ -438,52 +449,46 @@ def _run_single_simulation_core(
     # 探测
     # =========================================================================
     # 探测参数（基于 Nature 2022 实验设置）
-    if ideal_det:
-        eta_det = 1.0
     # 符合窗口：默认采用论文中数据分析窗口 70 ns
     coincidence_window_ns = float(config.run.window_ns)
     bin_dt_s = result.dt_s
-    bin_dt_ns = bin_dt_s * 1e9
-    # 将时间窗映射到 bin 数，决定“符合”判定的最大 bin 差
-    window_bins = _compute_window_bins(coincidence_window_ns, bin_dt_ns)
+    param_store = _build_run_parameter_store(
+        config=config,
+        emission_bin_dt_s=bin_dt_s,
+        coincidence_window_ns=coincidence_window_ns,
+        rng=run_rng,
+    )
+    budget = param_store.noise_budget
+    eta_det = param_store.eta_det
+    p_noise = budget.p_noise_bin
+    print(
+        f"\n探测器本底暗计数率: {budget.dark_rate_intrinsic_hz:.3f} Hz -> "
+        f"p_dark_gate={budget.p_dark_intrinsic_gate:.3e}, p_dark_bin={budget.p_dark_intrinsic_bin:.3e}"
+    )
+    print(
+        f"背景噪声参数: mean={budget.bg_rate_mean_hz:.3f} Hz, std={budget.bg_rate_std_hz:.3f} Hz, "
+        f"sampled={budget.dark_rate_bg_hz:.3f} Hz"
+    )
+    print(
+        f"QFC/背景噪声概率: p_bg_gate={budget.p_bg_gate:.3e}, p_bg_bin={budget.p_bg_bin:.3e}"
+    )
+    print(
+        f"合并噪声概率: p_noise_gate={budget.p_noise_gate:.3e}, p_noise_bin={budget.p_noise_bin:.3e}"
+    )
+    print(
+        f"点击时间窗 window_bins = {param_store.window_bins} "
+        f"(~{param_store.window_bins * result.dt_s * 1e9:.1f} ns), gate={budget.detection_gate_ns:.3f} ns"
+    )
 
-    # QFC 背景噪声 + 探测器本底暗计数（两者独立）
-    if ideal_det:
-        # 理想探测：噪声全关
-        noise = {
-            "dark_rate_intrinsic_hz": 0.0,
-            "bg_rate_mean_hz": 0.0,
-            "bg_rate_std_hz": 0.0,
-            "dark_rate_bg_hz": 0.0,
-            "p_dark_intrinsic": 0.0,
-            "p_bg": 0.0,
-            "p_noise": 0.0,
-        }
-    else:
-        # 现实探测：每次 run 采样背景噪声率（正态扰动）
-        noise = _compute_noise_params(noise_cfg, bin_dt_s, run_rng)
-    dark_rate_intrinsic_hz = noise["dark_rate_intrinsic_hz"]
-    bg_rate_mean_hz = noise["bg_rate_mean_hz"]
-    bg_rate_std_hz = noise["bg_rate_std_hz"]
-    dark_rate_bg_hz = noise["dark_rate_bg_hz"]
-    p_dark_intrinsic = noise["p_dark_intrinsic"]
-    p_bg = noise["p_bg"]
-    p_noise = noise["p_noise"]
-    print(f"\n探测器本底暗计数率: {dark_rate_intrinsic_hz:.3f} Hz -> p_dark={p_dark_intrinsic:.3e}")
-    print(f"背景噪声参数: mean={bg_rate_mean_hz:.3f} Hz, std={bg_rate_std_hz:.3f} Hz")
-    print(f"QFC 背景噪声率: {dark_rate_bg_hz:.3f} Hz -> p_bg={p_bg:.3e}")
-    print(f"合并噪声概率 p_noise={p_noise:.3e}")
-    print(f"点击时间窗 window_bins = {window_bins} (~{window_bins * bin_dt_ns:.1f} ns)")
+    parameter_snapshot = _build_parameter_snapshot(config, param_store)
     # 重要：BS 已并入测量端。这里传入 U_BS，用 U^† E U 计算点击分布。
     bs_unitary = bs_gate_6d()
     detect_common = _build_detection_kwargs(
         pipe=pipe,
-        eta_det=eta_det,
-        window_bins=window_bins,
+        param_store=param_store,
         rng=run_rng,
         verbose=True,
         bs_unitary=bs_unitary,
-        visibility=config.detector.visibility,
     )
 
     _on_stage("成功事件统计 (POVM)")
@@ -539,18 +544,23 @@ def _run_single_simulation_core(
     # 汇总统计量（跨 shots）
     success_metrics = {
         "eta_det": eta_det,
-        "window_bins": window_bins,
+        "window_bins": param_store.window_bins,
         "window_ns": coincidence_window_ns,
-        "dark_rate_intrinsic_hz": dark_rate_intrinsic_hz,
-        "dark_rate_bg_hz": dark_rate_bg_hz,
-        "p_dark_intrinsic": p_dark_intrinsic,
-        "p_bg": p_bg,
-        "p_noise": p_noise,
+        "detector_gate_ns": budget.detection_gate_ns,
+        "bins_per_gate": budget.bins_per_gate,
+        "dark_rate_intrinsic_hz": budget.dark_rate_intrinsic_hz,
+        "dark_rate_bg_hz": budget.dark_rate_bg_hz,
+        "p_dark_intrinsic_gate": budget.p_dark_intrinsic_gate,
+        "p_bg_gate": budget.p_bg_gate,
+        "p_noise_gate": budget.p_noise_gate,
+        "p_dark_intrinsic": budget.p_dark_intrinsic_bin,
+        "p_bg": budget.p_bg_bin,
+        "p_noise": budget.p_noise_bin,
         "t_wait_us": t_wait_us,
         "t2_us": t2_us,
         "p_dephase": p_dephase,
         "p_qubit_emit": p_qubit_emit,
-        "visibility": detect_common["visibility"],
+        "v_res": detect_common["v_res"],
         "qfc_theta_H": pipe.qfc_theta_H,
         "qfc_theta_V": pipe.qfc_theta_V,
         "apply_filter_780": pipe.apply_filter_780,
@@ -571,6 +581,7 @@ def _run_single_simulation_core(
         "fidelity_false": enum_main.fidelity_false,
         "p_success_no_dark_abs": enum_no_dark.p_success if enum_no_dark is not None else None,
         "fidelity_no_dark": enum_no_dark.fidelity_declared if enum_no_dark is not None else None,
+        "parameter_snapshot": parameter_snapshot,
     }
     # 误判占比：false / all
     success_metrics["false_fraction"] = (
@@ -604,8 +615,8 @@ def _run_single_simulation_core(
             print(f"  宣告的Bell态: {det_result.bell_state}")
 
             # 计算与期望Bell态的保真度（未归一化）
-            fidelity_full = compute_fidelity_with_bell(det_result.spin_state, det_result.bell_state)
-            rho = det_result.spin_state
+            fidelity_full = compute_fidelity_with_bell(det_result.qubit_state, det_result.bell_state)
+            rho = det_result.qubit_state
             trace_rho = float(np.trace(rho).real)
             fidelity_cond = (fidelity_full / trace_rho) if trace_rho > 0 else 0.0
             print(f"  F_full(|{det_result.bell_state}>): {fidelity_full:.4e}")
@@ -614,13 +625,13 @@ def _run_single_simulation_core(
             # 计算与所有Bell态的保真度以供参考
             print("\n  与所有Bell态的保真度:")
             for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
-                f_full = compute_fidelity_with_bell(det_result.spin_state, bell)
+                f_full = compute_fidelity_with_bell(det_result.qubit_state, bell)
                 f_cond = (f_full / trace_rho) if trace_rho > 0 else 0.0
                 marker = " <-- 宣告的" if bell == det_result.bell_state else ""
                 print(f"    F_full(|{bell}>): {f_full:.4e}, F_cond: {f_cond:.4f}{marker}")
 
-            # 打印自旋态
-            print("\n  自旋密度矩阵（量子比特子空间）:")
+            # 打印量子比特态
+            print("\n  量子比特密度矩阵（量子比特子空间）:")
             print(f"    Tr(rho) = {trace_rho:.4e}")
             print(f"    纯度(未归一化) = {np.trace(rho @ rho).real:.4f}")
         else:
@@ -643,8 +654,8 @@ def _run_single_simulation_core(
                 if det_result.clicks:
                     file.write(f"点击详情: {[(c.detector, c.bin_index, bool(getattr(c, 'is_dark', False))) for c in det_result.clicks]}\n")
 
-                    file.write('\n自旋密度矩阵:\n')
-                    rho = det_result.spin_state
+                    file.write('\n量子比特密度矩阵:\n')
+                    rho = det_result.qubit_state
                     file.write('  基: |00>, |01>, |10>, |11>\n')
                     for i in range(4):
                         for j in range(4):
@@ -689,6 +700,9 @@ def _run_single_simulation_core(
         if shots_per_run > 0:
             timings["detection_per_shot"] = timings["detection_total"] / shots_per_run
 
+    if DEBUG_MODE and timings is not None:
+        timings["run_wall_total"] = time.perf_counter() - run_wall_start
+
     print(f"\n完成! 文件已保存至: {output_dir}/")
     if DEBUG_MODE and timings:
         timing_order = [
@@ -703,9 +717,19 @@ def _run_single_simulation_core(
             ("detection_total", "探测抽样"),
         ]
         parts = []
+        core_sum = 0.0
         for key, label in timing_order:
             if key in timings:
-                parts.append(f"{label}={timings[key]:.2f}s")
+                value = float(timings[key])
+                core_sum += value
+                parts.append(f"{label}={value:.2f}s")
         if parts:
             print("\n[调试耗时] " + " | ".join(parts))
+        if "run_wall_total" in timings:
+            wall = float(timings["run_wall_total"])
+            overhead = max(0.0, wall - core_sum)
+            print(
+                f"[调试总览] 核心阶段={core_sum:.2f}s | "
+                f"run墙钟={wall:.2f}s | 额外开销={overhead:.2f}s"
+            )
     return run_stats, success_metrics, click_records

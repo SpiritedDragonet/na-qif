@@ -22,7 +22,8 @@ pip install physics-tenpy
 ================================================================================
 """
 
-from typing import List, Optional, Union
+from dataclasses import dataclass
+from typing import Callable, List, Optional, Tuple, Union
 import numpy as np
 
 # TeNPy imports
@@ -340,3 +341,504 @@ class MPSState:
         return f"MPSState(L={self.L}, d={self.d}, chi={chi_str})"
 
 
+def compute_joint_arrival_probabilities(
+    state: MPSState,
+    n_bins: int,
+    bin_start: int,
+    proj_A: Tuple[np.ndarray, np.ndarray, np.ndarray],
+    proj_B: Tuple[np.ndarray, np.ndarray, np.ndarray],
+) -> Tuple[float, float, float, float, float]:
+    """
+    计算两臂联合到达统计：p(1,1), p(2,0), p(0,2)。
+
+    返回顺序：
+      p_arrive, p_arrive_11, p_arrive_20, p_arrive_02, p_arrive_same_arm
+    """
+    pi0_a, pi1_a, pi2_a = proj_A
+    pi0_b, pi1_b, pi2_b = proj_B
+    bin_dim = state.d[bin_start]
+
+    w_bin_a = np.zeros((3, 3, bin_dim, bin_dim), dtype=complex)
+    w_bin_a[0, 0] = pi0_a
+    w_bin_a[0, 1] = pi1_a
+    w_bin_a[0, 2] = pi2_a
+    w_bin_a[1, 1] = pi0_a
+    w_bin_a[1, 2] = pi1_a
+    w_bin_a[2, 2] = pi0_a
+
+    w_bin_b = np.zeros((3, 3, bin_dim, bin_dim), dtype=complex)
+    w_bin_b[0, 0] = pi0_b
+    w_bin_b[0, 1] = pi1_b
+    w_bin_b[0, 2] = pi2_b
+    w_bin_b[1, 1] = pi0_b
+    w_bin_b[1, 2] = pi1_b
+    w_bin_b[2, 2] = pi0_b
+
+    counter_dim = 9
+    w_bin_a_joint = np.zeros((counter_dim, counter_dim, bin_dim, bin_dim), dtype=complex)
+    w_bin_b_joint = np.zeros((counter_dim, counter_dim, bin_dim, bin_dim), dtype=complex)
+    for n_a in range(3):
+        for n_a_next in range(n_a, 3):
+            for n_b in range(3):
+                idx = n_a * 3 + n_b
+                idx_next = n_a_next * 3 + n_b
+                w_bin_a_joint[idx, idx_next] = w_bin_a[n_a, n_a_next]
+        for n_b in range(3):
+            for n_b_next in range(n_b, 3):
+                idx = n_a * 3 + n_b
+                idx_next = n_a * 3 + n_b_next
+                w_bin_b_joint[idx, idx_next] = w_bin_b[n_b, n_b_next]
+
+    bin_sites = set()
+    for n in range(n_bins):
+        site_a = bin_start + 2 * n
+        site_b = bin_start + 2 * n + 1
+        if site_b >= state.L:
+            raise ValueError(f"n_bins={n_bins} 超出MPS长度 {state.L}")
+        bin_sites.add(site_a)
+        bin_sites.add(site_b)
+
+    env = np.zeros((counter_dim, 1, 1), dtype=complex)
+    env[0, 0, 0] = 1.0
+    w_identity_cache = {}
+    for site in range(state.L):
+        b_tensor = state._mps.get_B(site, form='B').to_ndarray()
+        bc_tensor = b_tensor.conj()
+
+        if site in bin_sites:
+            offset = site - bin_start
+            if offset < 0:
+                raise ValueError(f"Unexpected bin-site index mapping for site={site}")
+            pair_idx = offset // 2
+            if pair_idx >= n_bins:
+                raise ValueError(f"Unexpected bin-site index mapping for site={site}")
+            weight = w_bin_a_joint if (offset % 2) == 0 else w_bin_b_joint
+        else:
+            dim = b_tensor.shape[1]
+            if dim not in w_identity_cache:
+                w_id = np.zeros((counter_dim, counter_dim, dim, dim), dtype=complex)
+                eye = np.eye(dim, dtype=complex)
+                for n_a in range(3):
+                    for n_b in range(3):
+                        idx = n_a * 3 + n_b
+                        w_id[idx, idx] = eye
+                w_identity_cache[dim] = w_id
+            weight = w_identity_cache[dim]
+        env = np.einsum('aij,ipk,jql,abpq->bkl', env, b_tensor, bc_tensor, weight, optimize=True)
+
+    p_arrive_11 = float(env[4, 0, 0].real)
+    p_arrive_20 = float(env[6, 0, 0].real)
+    p_arrive_02 = float(env[2, 0, 0].real)
+    p_arrive_same_arm = max(0.0, p_arrive_20 + p_arrive_02)
+    p_arrive = max(0.0, p_arrive_11 + p_arrive_20 + p_arrive_02)
+    return p_arrive, p_arrive_11, p_arrive_20, p_arrive_02, p_arrive_same_arm
+
+
+@dataclass
+class DetectionContractionEngine:
+    """
+    双点击 POVM 收缩引擎。
+
+    将按 (atomA,atomB),(A1,B1),... 分组后的 MPS 收缩逻辑集中到核心层，
+    避免在中层 `detection.py` 中堆叠大量张量收缩细节。
+    """
+
+    b_list: List[np.ndarray]
+    bc_list: List[np.ndarray]
+    e_no_list: List[np.ndarray]
+    zero_effect: np.ndarray
+    detector_order_fn: Callable[[List[str]], Tuple[str, ...]]
+    n_bins: int
+    dim_atom: int
+    right_envs: List[np.ndarray]
+    left_envs_identity: List[np.ndarray]
+    qubit_indices: List[int]
+    _left_envs_qubit: Optional[List[List[List[np.ndarray]]]] = None
+
+    @staticmethod
+    def _prepare_grouped_pairs(state: MPSState) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+        psi = state._mps.copy()
+        if psi.L % 2 != 0:
+            raise ValueError("MPS sites 数量必须为偶数，才能按 (atomA,atomB),(A1,B1),... 分组")
+        psi.group_sites(n=2)
+        psi.canonical_form_finite(renormalize=True)
+        psi.norm = 1.0
+        b_list_local = []
+        bc_list_local = []
+        for idx in range(psi.L):
+            b_tensor = psi.get_B(idx, form='B').to_ndarray()
+            b_list_local.append(b_tensor)
+            bc_list_local.append(b_tensor.conj())
+        return b_list_local, bc_list_local
+
+    @staticmethod
+    def _apply_env_left(
+        b_tensor: np.ndarray,
+        bc_tensor: np.ndarray,
+        op: np.ndarray,
+        env_left: np.ndarray,
+    ) -> np.ndarray:
+        return np.einsum('ij,ipk,jql,pq->kl', env_left, b_tensor, bc_tensor, op, optimize=True)
+
+    @staticmethod
+    def _apply_env_right(
+        b_tensor: np.ndarray,
+        bc_tensor: np.ndarray,
+        op: np.ndarray,
+        env_right: np.ndarray,
+    ) -> np.ndarray:
+        return np.einsum('ipk,jql,pq,kl->ij', b_tensor, bc_tensor, op, env_right, optimize=True)
+
+    @classmethod
+    def from_mps(
+        cls,
+        state: MPSState,
+        n_bins: int,
+        e_no_list: List[np.ndarray],
+        zero_effect: np.ndarray,
+        detector_order_fn: Callable[[List[str]], Tuple[str, ...]],
+    ) -> 'DetectionContractionEngine':
+        b_list, bc_list = cls._prepare_grouped_pairs(state)
+        grouped_bins = len(b_list) - 1
+        if grouped_bins != n_bins:
+            raise ValueError(f"n_bins={n_bins} 与分组后bin数量 {grouped_bins} 不一致")
+
+        dim_atom = b_list[0].shape[1]
+        if dim_atom != 16:
+            raise ValueError(f"Atom pair site dimension {dim_atom} != 16")
+
+        single_dim = int(round(np.sqrt(dim_atom)))
+        if single_dim * single_dim != dim_atom:
+            raise ValueError(f"Unexpected atom-pair dimension: {dim_atom}")
+        qubit_indices = [
+            0 * single_dim + 0,
+            0 * single_dim + 1,
+            1 * single_dim + 0,
+            1 * single_dim + 1,
+        ]
+
+        dummy = cls(
+            b_list=b_list,
+            bc_list=bc_list,
+            e_no_list=e_no_list,
+            zero_effect=zero_effect,
+            detector_order_fn=detector_order_fn,
+            n_bins=n_bins,
+            dim_atom=dim_atom,
+            right_envs=[],
+            left_envs_identity=[],
+            qubit_indices=qubit_indices,
+        )
+        dummy.right_envs = dummy.build_right_envs()
+        atom_identity = np.eye(dim_atom, dtype=complex)
+        dummy.left_envs_identity = dummy.build_left_envs(atom_identity)
+        return dummy
+
+    def order_detectors(self, detectors: List[str]) -> Tuple[str, ...]:
+        return self.detector_order_fn(detectors)
+
+    def build_left_envs(self, atom_op: np.ndarray) -> List[np.ndarray]:
+        length = len(self.b_list)
+        left_envs = [None] * (length + 1)
+        left_envs[0] = np.array([[1.0 + 0.0j]])
+        left_envs[1] = self._apply_env_left(
+            self.b_list[0],
+            self.bc_list[0],
+            atom_op,
+            left_envs[0],
+        )
+        for site in range(1, length):
+            bin_idx = site - 1
+            left_envs[site + 1] = self._apply_env_left(
+                self.b_list[site],
+                self.bc_list[site],
+                self.e_no_list[bin_idx],
+                left_envs[site],
+            )
+        return left_envs
+
+    def build_right_envs(self) -> List[np.ndarray]:
+        length = len(self.b_list)
+        right_envs = [None] * (length + 1)
+        right_envs[length] = np.array([[1.0 + 0.0j]])
+        for site in range(length - 1, 0, -1):
+            bin_idx = site - 1
+            right_envs[site] = self._apply_env_right(
+                self.b_list[site],
+                self.bc_list[site],
+                self.e_no_list[bin_idx],
+                right_envs[site + 1],
+            )
+        return right_envs
+
+    def sum_same_bin(
+        self,
+        left_envs: List[np.ndarray],
+        effects_by_bin: List[dict],
+        key_pair: Tuple[str, ...],
+    ) -> float:
+        total = 0.0
+        for site in range(1, self.n_bins + 1):
+            op_pair = effects_by_bin[site - 1].get(key_pair, self.zero_effect)
+            env_mid = self._apply_env_left(
+                self.b_list[site],
+                self.bc_list[site],
+                op_pair,
+                left_envs[site],
+            )
+            total += float(np.einsum('ij,ij->', env_mid, self.right_envs[site + 1]).real)
+        return total
+
+    def sum_diff_bins(
+        self,
+        left_envs: List[np.ndarray],
+        effects_by_bin: List[dict],
+        key_first: Tuple[str, ...],
+        key_second: Tuple[str, ...],
+        window_bins: Optional[int],
+    ) -> float:
+        total = 0.0
+        for first_site in range(1, self.n_bins):
+            op_first = effects_by_bin[first_site - 1].get(key_first, self.zero_effect)
+            env_mid = self._apply_env_left(
+                self.b_list[first_site],
+                self.bc_list[first_site],
+                op_first,
+                left_envs[first_site],
+            )
+            j_end = self.n_bins
+            if window_bins is not None:
+                j_end = min(self.n_bins, first_site + window_bins)
+            for second_site in range(first_site + 1, j_end + 1):
+                op_second = effects_by_bin[second_site - 1].get(key_second, self.zero_effect)
+                env_j = self._apply_env_left(
+                    self.b_list[second_site],
+                    self.bc_list[second_site],
+                    op_second,
+                    env_mid,
+                )
+                total += float(np.einsum('ij,ij->', env_j, self.right_envs[second_site + 1]).real)
+                if second_site < j_end:
+                    env_mid = self._apply_env_left(
+                        self.b_list[second_site],
+                        self.bc_list[second_site],
+                        self.e_no_list[second_site - 1],
+                        env_mid,
+                    )
+        return total
+
+    def collect_same_bin_records(
+        self,
+        effects_by_bin: List[dict],
+        det_a: str,
+        det_b: str,
+        weight_eps: float,
+    ) -> List[Tuple[str, str, int, int, float]]:
+        key_pair = self.order_detectors([det_a, det_b])
+        records = []
+        for site in range(1, self.n_bins + 1):
+            op_pair = effects_by_bin[site - 1].get(key_pair, self.zero_effect)
+            env_mid = self._apply_env_left(
+                self.b_list[site],
+                self.bc_list[site],
+                op_pair,
+                self.left_envs_identity[site],
+            )
+            weight = float(np.einsum('ij,ij->', env_mid, self.right_envs[site + 1]).real)
+            if weight > weight_eps:
+                records.append((det_a, det_b, site - 1, site - 1, weight))
+        return records
+
+    def collect_diff_bin_records(
+        self,
+        effects_by_bin: List[dict],
+        det_first: str,
+        det_second: str,
+        weight_eps: float,
+    ) -> List[Tuple[str, str, int, int, float]]:
+        key_first = self.order_detectors([det_first])
+        key_second = self.order_detectors([det_second])
+        records = []
+        for first_site in range(1, self.n_bins):
+            op_first = effects_by_bin[first_site - 1].get(key_first, self.zero_effect)
+            env_mid = self._apply_env_left(
+                self.b_list[first_site],
+                self.bc_list[first_site],
+                op_first,
+                self.left_envs_identity[first_site],
+            )
+            for second_site in range(first_site + 1, self.n_bins + 1):
+                op_second = effects_by_bin[second_site - 1].get(key_second, self.zero_effect)
+                env_j = self._apply_env_left(
+                    self.b_list[second_site],
+                    self.bc_list[second_site],
+                    op_second,
+                    env_mid,
+                )
+                weight = float(np.einsum('ij,ij->', env_j, self.right_envs[second_site + 1]).real)
+                if weight > weight_eps:
+                    records.append((det_first, det_second, first_site - 1, second_site - 1, weight))
+                if second_site < self.n_bins:
+                    env_mid = self._apply_env_left(
+                        self.b_list[second_site],
+                        self.bc_list[second_site],
+                        self.e_no_list[second_site - 1],
+                        env_mid,
+                    )
+        return records
+
+    def contract_record(
+        self,
+        left_envs: List[np.ndarray],
+        effects_by_bin: List[dict],
+        det_a: str,
+        det_b: str,
+        bin_a: int,
+        bin_b: int,
+    ) -> complex:
+        if bin_a == bin_b:
+            site = bin_a + 1
+            key_pair = self.order_detectors([det_a, det_b])
+            op_pair = effects_by_bin[bin_a].get(key_pair, self.zero_effect)
+            env_mid = self._apply_env_left(
+                self.b_list[site],
+                self.bc_list[site],
+                op_pair,
+                left_envs[site],
+            )
+            return np.einsum('ij,ij->', env_mid, self.right_envs[site + 1])
+
+        if bin_a < bin_b:
+            first_site = bin_a + 1
+            second_site = bin_b + 1
+            key_first = self.order_detectors([det_a])
+            key_second = self.order_detectors([det_b])
+            op_first = effects_by_bin[bin_a].get(key_first, self.zero_effect)
+            op_second = effects_by_bin[bin_b].get(key_second, self.zero_effect)
+        else:
+            first_site = bin_b + 1
+            second_site = bin_a + 1
+            key_first = self.order_detectors([det_b])
+            key_second = self.order_detectors([det_a])
+            op_first = effects_by_bin[bin_b].get(key_first, self.zero_effect)
+            op_second = effects_by_bin[bin_a].get(key_second, self.zero_effect)
+
+        env_mid = self._apply_env_left(
+            self.b_list[first_site],
+            self.bc_list[first_site],
+            op_first,
+            left_envs[first_site],
+        )
+        for site in range(first_site + 1, second_site):
+            env_mid = self._apply_env_left(
+                self.b_list[site],
+                self.bc_list[site],
+                self.e_no_list[site - 1],
+                env_mid,
+            )
+        env_mid = self._apply_env_left(
+            self.b_list[second_site],
+            self.bc_list[second_site],
+            op_second,
+            env_mid,
+        )
+        return np.einsum('ij,ij->', env_mid, self.right_envs[second_site + 1])
+
+    def _ensure_left_envs_qubit(self) -> None:
+        if self._left_envs_qubit is not None:
+            return
+        self._left_envs_qubit = [[None for _ in range(4)] for _ in range(4)]
+        for i, qi in enumerate(self.qubit_indices):
+            for j, qj in enumerate(self.qubit_indices):
+                atom_op = np.zeros((self.dim_atom, self.dim_atom), dtype=complex)
+                atom_op[qi, qj] = 1.0
+                self._left_envs_qubit[i][j] = self.build_left_envs(atom_op)
+
+    def compute_record_qubit_state(
+        self,
+        effects_by_bin: List[dict],
+        det_a: str,
+        det_b: str,
+        bin_a: int,
+        bin_b: int,
+    ) -> np.ndarray:
+        self._ensure_left_envs_qubit()
+        sigma = np.zeros((4, 4), dtype=complex)
+        for i in range(4):
+            for j in range(4):
+                left_envs = self._left_envs_qubit[i][j]
+                sigma[i, j] = self.contract_record(
+                    left_envs=left_envs,
+                    effects_by_bin=effects_by_bin,
+                    det_a=det_a,
+                    det_b=det_b,
+                    bin_a=bin_a,
+                    bin_b=bin_b,
+                )
+        return sigma
+
+    def weight_record_masked(
+        self,
+        effects_mask_by_bin: List[dict],
+        det_a: str,
+        det_b: str,
+        bin_a: int,
+        bin_b: int,
+        dark_mask: Tuple[str, ...],
+        empty_key: Tuple[str, ...],
+    ) -> float:
+        mask_set = set(dark_mask)
+        if bin_a == bin_b:
+            site = bin_a + 1
+            key_pair = self.order_detectors([det_a, det_b])
+            op_pair = effects_mask_by_bin[bin_a].get(key_pair, {}).get(dark_mask, self.zero_effect)
+            env_mid = self._apply_env_left(
+                self.b_list[site],
+                self.bc_list[site],
+                op_pair,
+                self.left_envs_identity[site],
+            )
+            return float(np.einsum('ij,ij->', env_mid, self.right_envs[site + 1]).real)
+
+        if bin_a < bin_b:
+            first_site = bin_a + 1
+            second_site = bin_b + 1
+            det_first = det_a
+            det_second = det_b
+            first_bin = bin_a
+            second_bin = bin_b
+        else:
+            first_site = bin_b + 1
+            second_site = bin_a + 1
+            det_first = det_b
+            det_second = det_a
+            first_bin = bin_b
+            second_bin = bin_a
+
+        key_first = self.order_detectors([det_first])
+        key_second = self.order_detectors([det_second])
+        mask_first = self.order_detectors([det_first]) if det_first in mask_set else empty_key
+        mask_second = self.order_detectors([det_second]) if det_second in mask_set else empty_key
+        op_first = effects_mask_by_bin[first_bin].get(key_first, {}).get(mask_first, self.zero_effect)
+        op_second = effects_mask_by_bin[second_bin].get(key_second, {}).get(mask_second, self.zero_effect)
+
+        env_mid = self._apply_env_left(
+            self.b_list[first_site],
+            self.bc_list[first_site],
+            op_first,
+            self.left_envs_identity[first_site],
+        )
+        for site in range(first_site + 1, second_site):
+            env_mid = self._apply_env_left(
+                self.b_list[site],
+                self.bc_list[site],
+                self.e_no_list[site - 1],
+                env_mid,
+            )
+        env_mid = self._apply_env_left(
+            self.b_list[second_site],
+            self.bc_list[second_site],
+            op_second,
+            env_mid,
+        )
+        return float(np.einsum('ij,ij->', env_mid, self.right_envs[second_site + 1]).real)

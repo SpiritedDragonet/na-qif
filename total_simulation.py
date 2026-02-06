@@ -34,6 +34,7 @@ from atom_sim.experiment.hom import (  # noqa: E402
     _is_port_samepol_coincidence,
 )
 from atom_sim.experiment import single_run  # noqa: E402
+from atom_sim.simulation import run_detection_self_checks  # noqa: E402
 
 
 def _install_output_tracker(marker_path: Optional[Path]) -> None:
@@ -48,8 +49,10 @@ def _install_output_tracker(marker_path: Optional[Path]) -> None:
 
     def _tracked_print(*args, **kwargs):
         try:
-            marker_path.parent.mkdir(parents=True, exist_ok=True)
-            marker_path.touch()
+            # 只在 marker 目录已存在时更新心跳，
+            # 避免 run 已归档后再次 print 把旧 queue/<run>/heartbeat 重建出来。
+            if marker_path.parent.exists():
+                marker_path.touch()
         except Exception:
             pass
         return original_print(*args, **kwargs)
@@ -127,6 +130,21 @@ def _parse_run_params(argv):
     parser.add_argument("--dark-hz", dest="dark_rate_intrinsic_hz", type=float, help="探测器本底暗计数率 (Hz)")
     parser.add_argument("--bg-mean-hz", dest="bg_rate_mean_hz", type=float, help="背景噪声均值 (Hz)")
     parser.add_argument("--bg-std-hz", dest="bg_rate_std_hz", type=float, help="背景噪声标准差 (Hz)")
+    parser.add_argument("--detector-gate-ns", dest="detector_gate_ns", type=float, help="探测门宽 (ns)，用于将噪声概率从门宽映射到仿真 bin")
+    parser.add_argument("--omega-peak-a", dest="omega_peak_a", type=float, help="A 臂驱动脉冲峰值 Ω_peak_A (rad/s)")
+    parser.add_argument("--omega-peak-b", dest="omega_peak_b", type=float, help="B 臂驱动脉冲峰值 Ω_peak_B (rad/s)")
+    parser.add_argument("--g-a", dest="g_a", type=float, help="A 臂原子-腔耦合强度 g_A (rad/s)")
+    parser.add_argument("--g-b", dest="g_b", type=float, help="B 臂原子-腔耦合强度 g_B (rad/s)")
+    parser.add_argument("--kappa-ex-a", dest="kappa_ex_a", type=float, help="A 臂腔外耦合衰减率 kappa_ex_A (rad/s)")
+    parser.add_argument("--kappa-ex-b", dest="kappa_ex_b", type=float, help="B 臂腔外耦合衰减率 kappa_ex_B (rad/s)")
+    parser.add_argument("--kappa-in-a", dest="kappa_in_a", type=float, help="A 臂腔内损耗衰减率 kappa_in_A (rad/s)")
+    parser.add_argument("--kappa-in-b", dest="kappa_in_b", type=float, help="B 臂腔内损耗衰减率 kappa_in_B (rad/s)")
+    parser.add_argument("--delta-u-a", dest="delta_u_a", type=float, help="A 臂 |u> 态失谐 delta_u_A (rad/s)")
+    parser.add_argument("--delta-u-b", dest="delta_u_b", type=float, help="B 臂 |u> 态失谐 delta_u_B (rad/s)")
+    parser.add_argument("--delta-e-a", dest="delta_e_a", type=float, help="A 臂 |e> 态失谐 delta_e_A (rad/s)")
+    parser.add_argument("--delta-e-b", dest="delta_e_b", type=float, help="B 臂 |e> 态失谐 delta_e_B (rad/s)")
+    parser.add_argument("--gamma-loss-a", dest="gamma_loss_a", type=float, help="A 臂不可收集通道等效损耗率 gamma_loss_A (1/s)")
+    parser.add_argument("--gamma-loss-b", dest="gamma_loss_b", type=float, help="B 臂不可收集通道等效损耗率 gamma_loss_B (1/s)")
     parser.add_argument("--qfc-theta-h", dest="qfc_theta_h", type=float, help="QFC H转换角 theta_H (rad)")
     parser.add_argument("--qfc-theta-v", dest="qfc_theta_v", type=float, help="QFC V转换角 theta_V (rad)")
     parser.add_argument("--no-filter-780", dest="no_filter_780", action="store_true", help="关闭 780 滤波（保留 780 分量）")
@@ -135,8 +153,9 @@ def _parse_run_params(argv):
     parser.add_argument("--no-plot", dest="no_plot", action="store_true", help="完全禁止绘图（覆盖 plot-all）")
     parser.add_argument("--eta-det", dest="eta_det", type=float, help="探测效率 η (0~1)")
     parser.add_argument("--ideal-det", dest="ideal_det", action="store_true", help="理想探测（eta_det=1, 无噪声）")
-    parser.add_argument("--visibility", dest="visibility", type=float, help="两光子不可区分度 V (0~1)")
+    parser.add_argument("--v-res", dest="v_res", type=float, help="残差可区分度 V_res (0~1)")
     parser.add_argument("--debug", dest="debug", action="store_true", help="开启调试模式（输出耗时等）")
+    parser.add_argument("--self-check", dest="self_check", action="store_true", help="仅运行探测端自检并退出")
     args = parser.parse_args(argv[1:])
 
     # run-id 仅用于目录命名，因此要严格限制为“非路径字符串”
@@ -156,6 +175,36 @@ def _parse_run_params(argv):
         config.noise.bg_rate_mean_hz = args.bg_rate_mean_hz
     if args.bg_rate_std_hz is not None:
         config.noise.bg_rate_std_hz = args.bg_rate_std_hz
+    if args.detector_gate_ns is not None:
+        config.noise.detector_gate_ns = float(args.detector_gate_ns)
+    if args.omega_peak_a is not None:
+        config.emission.arm_A.omega_peak = float(args.omega_peak_a)
+    if args.omega_peak_b is not None:
+        config.emission.arm_B.omega_peak = float(args.omega_peak_b)
+    if args.g_a is not None:
+        config.emission.arm_A.g = float(args.g_a)
+    if args.g_b is not None:
+        config.emission.arm_B.g = float(args.g_b)
+    if args.kappa_ex_a is not None:
+        config.emission.arm_A.kappa_ex = float(args.kappa_ex_a)
+    if args.kappa_ex_b is not None:
+        config.emission.arm_B.kappa_ex = float(args.kappa_ex_b)
+    if args.kappa_in_a is not None:
+        config.emission.arm_A.kappa_in = float(args.kappa_in_a)
+    if args.kappa_in_b is not None:
+        config.emission.arm_B.kappa_in = float(args.kappa_in_b)
+    if args.delta_u_a is not None:
+        config.emission.arm_A.delta_u = float(args.delta_u_a)
+    if args.delta_u_b is not None:
+        config.emission.arm_B.delta_u = float(args.delta_u_b)
+    if args.delta_e_a is not None:
+        config.emission.arm_A.delta_e = float(args.delta_e_a)
+    if args.delta_e_b is not None:
+        config.emission.arm_B.delta_e = float(args.delta_e_b)
+    if args.gamma_loss_a is not None:
+        config.emission.arm_A.gamma_loss = float(args.gamma_loss_a)
+    if args.gamma_loss_b is not None:
+        config.emission.arm_B.gamma_loss = float(args.gamma_loss_b)
     if args.qfc_theta_h is not None:
         config.qfc.theta_H = float(args.qfc_theta_h)
     if args.qfc_theta_v is not None:
@@ -186,6 +235,10 @@ def _parse_run_params(argv):
         parser.error("shots_per_run 必须 >= 1")
     if config.run.cores < 1:
         parser.error("cores 必须 >= 1")
+    if config.noise.detector_gate_ns <= 0.0:
+        parser.error("detector_gate_ns 必须 > 0")
+    if config.emission.arm_A.gamma_loss < 0.0 or config.emission.arm_B.gamma_loss < 0.0:
+        parser.error("gamma_loss_a / gamma_loss_b 必须 >= 0")
 
     # 成功事件枚举模式：
     #   - dark: 含暗计数
@@ -201,12 +254,12 @@ def _parse_run_params(argv):
     config.detector.ideal_det = bool(args.ideal_det)
     if config.detector.ideal_det:
         config.detector.eta_det = 1.0
-    if args.visibility is not None:
-        config.detector.visibility = float(args.visibility)
+    if args.v_res is not None:
+        config.detector.v_res = float(args.v_res)
     if not (0.0 < config.detector.eta_det <= 1.0):
         parser.error("eta_det 必须在 (0, 1] 内")
-    if not (0.0 <= config.detector.visibility <= 1.0):
-        parser.error("visibility 必须在 [0, 1] 内")
+    if not (0.0 <= config.detector.v_res <= 1.0):
+        parser.error("v_res 必须在 [0, 1] 内")
 
     if task_type == "HOM":
         config.hom = parse_hom_cli(args, parser)
@@ -238,6 +291,7 @@ def _parse_run_params(argv):
         server_progress,
         progress_quiet_secs,
         progress_inline,
+        bool(args.self_check),
     )
 
 
@@ -520,7 +574,11 @@ def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
     if task_type == "HOM":
         window_bins = None
         if config.hom is not None:
-            window_bins = _compute_window_bins(config.hom.window_ns, config.emission.dt_ns)
+            window_bins = _compute_window_bins(
+                config.hom.window_ns,
+                config.emission.dt_ns,
+                detection_gate_ns=config.noise.detector_gate_ns,
+            )
         trials_path = summary_dir / "hom_trials.csv"
         tau_path = summary_dir / "hom_summary.csv"
         # hom_trials：逐 run × shot 的明细（含点击 bin）
@@ -1152,6 +1210,7 @@ def _run_worker_loop(
                 }
                 if success_metrics:
                     metrics["p_arrive"] = success_metrics.get("p_arrive")
+                    metrics["parameter_snapshot"] = success_metrics.get("parameter_snapshot")
                     metrics["p_success_abs"] = success_metrics.get("p_success_abs")
                     metrics["p_success_true_abs"] = success_metrics.get("p_success_true_abs")
                     metrics["p_success_false_abs"] = success_metrics.get("p_success_false_abs")
@@ -1214,7 +1273,13 @@ def main():
         server_progress,
         progress_quiet_secs,
         progress_inline,
+        self_check,
     ) = _parse_run_params(sys.argv)
+    if self_check:
+        print("[self-check] 运行探测端一致性检查...")
+        run_detection_self_checks(verbose=False)
+        print("[self-check] 完成")
+        return
     config_hash = _resolve_config_hash(config_hash)
     task_type = task_type.upper()
     # queue_root 支持相对路径（相对项目根目录）

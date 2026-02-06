@@ -8,11 +8,12 @@
 
 from .basis import (
     SubSpace,
-    ProductSpace,
     SUBSPACE_780,
     SUBSPACE_1517,
     SUBSPACE_BIN5,
     BIN_SPACE,
+    embed_9_from_6,
+    reduce_9d_effects_to_6d,
 )
 from .operators import (
     annihilation_op,
@@ -23,11 +24,12 @@ from .operators import (
 __all__ = [
     # basis
     'SubSpace',
-    'ProductSpace',
     'SUBSPACE_780',
     'SUBSPACE_1517',
     'SUBSPACE_BIN5',
     'BIN_SPACE',
+    'embed_9_from_6',
+    'reduce_9d_effects_to_6d',
     # operators
     'annihilation_op',
     'creation_op',
