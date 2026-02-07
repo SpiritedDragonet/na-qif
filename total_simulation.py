@@ -29,7 +29,7 @@ from atom_sim.experiment.hom import (  # noqa: E402
     _build_hom_tau_values,
     _run_hom_run,
 )
-from atom_sim.experiment import single_run, window_scan, summary  # noqa: E402
+from atom_sim.experiment import single_run, window_scan, length_scan, summary  # noqa: E402
 from atom_sim.simulation import run_detection_self_checks  # noqa: E402
 
 
@@ -61,7 +61,7 @@ def _parse_run_params(argv):
     # 目的：解析 CLI 参数并构造统一的 SimConfig。
     # 复杂点：mode/task_type/role 三套概念并存——
     #   - role: server/worker/both（调度角色）
-    #   - mode/task_type: SIM/HOM/WINDOW_SCAN（物理任务类型）
+    #   - mode/task_type: SIM/HOM/WINDOW_SCAN/LENGTH_SCAN（物理任务类型）
     #   - queue_root/run_id: 决定任务目录隔离与任务回收策略
     parser = argparse.ArgumentParser(
         prog="python total_simulation.py",
@@ -81,6 +81,9 @@ def _parse_run_params(argv):
             "  # 窗口扫描任务（WINDOW_SCAN）\n"
             "  python total_simulation.py --role both --queue-root /mnt/quantum_sim/queue --run-id simwA --task-type WINDOW_SCAN --runs 5 "
             "--window-sweep-start-ns 40 --window-sweep-end-ns 120 --window-sweep-step-ns 10 --shots 1\n"
+            "  # 光纤长度扫描任务（LENGTH_SCAN）\n"
+            "  python total_simulation.py --role both --queue-root /mnt/quantum_sim/queue --run-id simlA --task-type LENGTH_SCAN --runs 5 "
+            "--length-sweep-start-km 10 --length-sweep-end-km 50 --length-sweep-step-km 10 --shots 1\n"
         ),
     )
     parser.add_argument("--role", dest="role", choices=["server", "worker", "both"], default="both", help="运行角色：server/worker/both（默认 both）")
@@ -106,7 +109,7 @@ def _parse_run_params(argv):
     )
     parser.add_argument("--queue-root", dest="queue_root", type=str, default="queue", help="任务队列根目录（默认项目根目录下的 queue）")
     parser.add_argument("--run-id", dest="run_id", type=str, help="运行ID（用于隔离多次任务；未提供则自动选择最小可用ID）")
-    parser.add_argument("--task-type", dest="task_type", type=str, choices=["SIM", "HOM", "WINDOW_SCAN"], help="任务类型：SIM / HOM / WINDOW_SCAN（默认随 --mode）")
+    parser.add_argument("--task-type", dest="task_type", type=str, choices=["SIM", "HOM", "WINDOW_SCAN", "LENGTH_SCAN"], help="任务类型：SIM / HOM / WINDOW_SCAN / LENGTH_SCAN（默认随 --mode）")
     parser.add_argument("--config-hash", dest="config_hash", type=str, help="任务配置版本标识（默认自动读取 git）")
     parser.add_argument("--runs", "--n-runs", dest="n_runs", type=int, help="仿真 run 次数（默认 1）")
     parser.add_argument("--shots", "--shots-per-run", dest="shots_per_run", type=int, help="每个 run 的探测采样次数（默认 1）")
@@ -137,6 +140,11 @@ def _parse_run_params(argv):
     parser.add_argument("--window-sweep-start-ns", dest="window_sweep_start_ns", type=float, help="(WINDOW_SCAN) 扫描起点窗口 (ns)")
     parser.add_argument("--window-sweep-end-ns", dest="window_sweep_end_ns", type=float, help="(WINDOW_SCAN) 扫描终点窗口 (ns)")
     parser.add_argument("--window-sweep-step-ns", dest="window_sweep_step_ns", type=float, help="(WINDOW_SCAN) 扫描步长窗口 (ns)")
+    parser.add_argument("--length-sweep-start-km", dest="length_sweep_start_km", type=float, help="(LENGTH_SCAN) 扫描起点长度 (km)")
+    parser.add_argument("--length-sweep-end-km", dest="length_sweep_end_km", type=float, help="(LENGTH_SCAN) 扫描终点长度 (km)")
+    parser.add_argument("--length-sweep-step-km", dest="length_sweep_step_km", type=float, help="(LENGTH_SCAN) 扫描步长长度 (km)")
+    parser.add_argument("--attempt-rate-hz", dest="attempt_rate_hz", type=float, help="(LENGTH_SCAN) 基础尝试率 (Hz)")
+    parser.add_argument("--attempt-overhead-us", dest="attempt_overhead_us", type=float, help="(LENGTH_SCAN) 单次额外时延 (us)")
 
     parser.add_argument("--dark-hz", dest="dark_rate_intrinsic_hz", type=float, help="探测器本底暗计数率 (Hz)")
     parser.add_argument("--dark-hz-h1", dest="dark_hz_h1", type=float, help="H1 通道本底暗计数率 (Hz)；未指定则用 --dark-hz")
@@ -267,6 +275,14 @@ def _parse_run_params(argv):
         config.run.window_sweep_start_ns = args.window_sweep_start_ns
         config.run.window_sweep_end_ns = args.window_sweep_end_ns
         config.run.window_sweep_step_ns = args.window_sweep_step_ns
+    if task_type == "LENGTH_SCAN":
+        config.run.length_sweep_start_km = args.length_sweep_start_km
+        config.run.length_sweep_end_km = args.length_sweep_end_km
+        config.run.length_sweep_step_km = args.length_sweep_step_km
+        if args.attempt_rate_hz is not None:
+            config.run.attempt_rate_hz = float(args.attempt_rate_hz)
+        if args.attempt_overhead_us is not None:
+            config.run.attempt_overhead_us = float(args.attempt_overhead_us)
     # 光纤噪声开关（注意：这会影响到统计与物理可解释性）
     config.fiber.noise_enabled = not args.no_fiber_noise
     if args.fiber_length_km is not None:
@@ -349,6 +365,11 @@ def _parse_run_params(argv):
     if task_type == "WINDOW_SCAN":
         try:
             window_scan.validate_window_scan_config(config)
+        except ValueError as exc:
+            parser.error(str(exc))
+    if task_type == "LENGTH_SCAN":
+        try:
+            length_scan.validate_length_scan_config(config)
         except ValueError as exc:
             parser.error(str(exc))
 
@@ -583,7 +604,8 @@ def _build_task_list(
     # 任务生成规则：
     #   - SIM：每个 run 一个 task
     #   - HOM：每个 τ × run 一个 task
-    #   - WINDOW_SCAN：每个 window × run 一个 task
+    #   - WINDOW_SCAN：每个 run 一个 task（task 内循环 windows）
+    #   - LENGTH_SCAN：每个 run 一个 task（task 内循环 lengths）
     #   - SUMMARY：最后追加一个汇总任务（由 worker 执行）
     #
     # 所有任务只写入 pending/task_*.json，执行由 worker 完成。
@@ -617,22 +639,38 @@ def _build_task_list(
                 task_count += 1
     elif task_type == "WINDOW_SCAN":
         window_values = window_scan.build_window_scan_values(config)
-        for window_ns in window_values:
-            for run_index in range(n_runs):
-                tid = f"wscan_w_{window_ns:.3f}_run_{run_index:06d}"
-                task = {
-                    "id": tid,
-                    "mode": "WINDOW_SCAN",
-                    "run_index": run_index,
-                    "shots": shots_per_run,
-                    "seed": 100000 + task_count + 1,
-                    "config_hash": config_hash,
-                    "window_ns": float(window_ns),
-                }
-                path = pending_dir / f"task_{tid}.json"
-                if not path.exists():
-                    _write_json_atomic(path, task)
-                task_count += 1
+        for run_index in range(n_runs):
+            tid = f"wscan_run_{run_index:06d}"
+            task = {
+                "id": tid,
+                "mode": "WINDOW_SCAN",
+                "run_index": run_index,
+                "shots": shots_per_run,
+                "seed": 100000 + task_count + 1,
+                "config_hash": config_hash,
+                "windows_ns": [float(value) for value in window_values],
+            }
+            path = pending_dir / f"task_{tid}.json"
+            if not path.exists():
+                _write_json_atomic(path, task)
+            task_count += 1
+    elif task_type == "LENGTH_SCAN":
+        length_values = length_scan.build_length_scan_values(config)
+        for run_index in range(n_runs):
+            tid = f"lscan_run_{run_index:06d}"
+            task = {
+                "id": tid,
+                "mode": "LENGTH_SCAN",
+                "run_index": run_index,
+                "shots": shots_per_run,
+                "seed": 100000 + task_count + 1,
+                "config_hash": config_hash,
+                "lengths_km": [float(value) for value in length_values],
+            }
+            path = pending_dir / f"task_{tid}.json"
+            if not path.exists():
+                _write_json_atomic(path, task)
+            task_count += 1
     else:
         for run_index in range(n_runs):
             # SIM：仅按 run_index 划分
@@ -951,6 +989,16 @@ def _run_worker_loop(
                     _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
             elif task.get("mode") == "WINDOW_SCAN":
                 metrics, click_records = window_scan.run_window_scan_task(
+                    task=task,
+                    config=config,
+                    raw_dir=raw_dir,
+                    plots_dir=plots_dir,
+                    task_id=task_id,
+                )
+                if click_records is not None:
+                    _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
+            elif task.get("mode") == "LENGTH_SCAN":
+                metrics, click_records = length_scan.run_length_scan_task(
                     task=task,
                     config=config,
                     raw_dir=raw_dir,

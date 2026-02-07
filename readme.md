@@ -82,7 +82,8 @@ atom_sim/
 │   ├── common.py                  # 跨任务共享配置/参数构造
 │   ├── single_run.py              # SIM 任务核心（单 run 执行）
 │   ├── hom.py                     # HOM 任务（tau 扫描）
-│   └── window_scan.py             # WINDOW_SCAN 任务（window 扫描）
+│   ├── window_scan.py             # WINDOW_SCAN 任务（window 扫描）
+│   └── length_scan.py             # LENGTH_SCAN 任务（length 扫描）
 │
 ├── visualization/                 # 可视化层
 │   ├── __init__.py
@@ -135,17 +136,18 @@ outputs/                           # 仿真输出目录（已 gitignore）
 - **SIM**：单次/多次仿真（输出点击记录、成功率、保真度等）
 - **HOM**：HOM 扫描（输出 `hom_trials.csv` / `hom_summary.csv`）
 - **WINDOW_SCAN**：窗口扫描任务（输出 `window_scan_summary.csv`）
+- **LENGTH_SCAN**：光纤长度扫描任务（输出 `length_scan_summary.csv`）
 - **SUMMARY**：内部汇总任务（不是 CLI 模式，由 worker 执行）
 
 ### 运行角色（role）
 - **server**：生成任务、监控进度、归档输出
-- **worker**：抢任务执行（SIM/HOM/WINDOW_SCAN/SUMMARY）
+- **worker**：抢任务执行（SIM/HOM/WINDOW_SCAN/LENGTH_SCAN/SUMMARY）
 - **both**：本机同时承担 server + worker
 
 ### 常用 CLI 选项（片段）
 ```
 --role server|worker|both
---task-type SIM|HOM|WINDOW_SCAN
+--task-type SIM|HOM|WINDOW_SCAN|LENGTH_SCAN
 --run-id <id>                 # 不传则自动选择最小可用 id
 --queue-root <path>           # 默认 ./queue
 --runs N --shots M
@@ -153,6 +155,11 @@ outputs/                           # 仿真输出目录（已 gitignore）
 --window-sweep-start-ns <f>   # WINDOW_SCAN 起点
 --window-sweep-end-ns <f>     # WINDOW_SCAN 终点
 --window-sweep-step-ns <f>    # WINDOW_SCAN 步长
+--length-sweep-start-km <f>   # LENGTH_SCAN 起点
+--length-sweep-end-km <f>     # LENGTH_SCAN 终点
+--length-sweep-step-km <f>    # LENGTH_SCAN 步长
+--attempt-rate-hz <f>         # LENGTH_SCAN 尝试率 (Hz)
+--attempt-overhead-us <f>     # LENGTH_SCAN 单次额外开销 (us)
 --plot-all                    # 每个 run 都画图
 --no-plot                     # 禁止绘图（覆盖 plot-all）
 --enum-mode dark|no-dark|both # 成功事件枚举模式（both 同时输出基线）
@@ -175,8 +182,11 @@ outputs/                           # 仿真输出目录（已 gitignore）
   - `corr_exx / corr_eyy / corr_ezz / chsh_s_max`
 - `sim_trials.csv`：逐 shot 记录（含点击 bin 与暗计数标记），并带上述 `p_arrive_*` 列
 - `window_scan_trials.csv`：WINDOW_SCAN 逐 shot 明细
-- `window_scan_runs.csv`：WINDOW_SCAN 逐 (window_ns, run_index) 指标
-- `window_scan_summary.csv`：WINDOW_SCAN 按 window 聚合统计（扫描主结果）
+- `window_scan_runs.csv`：WINDOW_SCAN 逐 (window_ns, run_index) 指标（同一 run 复用同一次发射态）
+- `window_scan_summary.csv`：WINDOW_SCAN 按 window 聚合统计（扫描主结果，含 `herald_rate_abs` / `sbr_true_false` / `acceptance_fraction_vs_max_window`）
+- `length_scan_trials.csv`：LENGTH_SCAN 逐 shot 明细
+- `length_scan_runs.csv`：LENGTH_SCAN 逐 (length_km, run_index) 指标
+- `length_scan_summary.csv`：LENGTH_SCAN 按 length 聚合统计（含 `event_rate_hz_avg`）
 
 ## 数据流
 

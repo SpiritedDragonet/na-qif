@@ -243,7 +243,6 @@ def _run_hom_run(
         timings["run_wall_total"] = time.perf_counter() - run_wall_start
         timing_order = [
             ("emission", "发射"),
-            ("qfc", "QFC"),
             ("filter_780", "780滤波"),
             ("project_1517", "1517投影"),
             ("fiber", "光纤"),

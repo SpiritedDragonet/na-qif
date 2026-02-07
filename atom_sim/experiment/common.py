@@ -140,6 +140,11 @@ class RunConfig:
     window_sweep_start_ns: Optional[float] = None
     window_sweep_end_ns: Optional[float] = None
     window_sweep_step_ns: Optional[float] = None
+    length_sweep_start_km: Optional[float] = None
+    length_sweep_end_km: Optional[float] = None
+    length_sweep_step_km: Optional[float] = None
+    attempt_rate_hz: float = 1.0
+    attempt_overhead_us: float = 0.0
 
 
 @dataclass
@@ -443,6 +448,23 @@ def _build_parameter_snapshot(config: SimConfig, store: RunParameterStore) -> di
     }
 
 
+def _compute_effective_attempt_rate_hz(attempt_rate_hz: float, attempt_overhead_us: float = 0.0) -> float:
+    """
+    由“裸尝试率 + 单次额外开销”得到有效尝试率。
+
+    设裸周期为 T0=1/attempt_rate_hz，附加开销为 Toverhead，
+    则有效尝试率为 1/(T0+Toverhead)。
+    """
+    base_rate = max(0.0, float(attempt_rate_hz))
+    if base_rate <= 0.0:
+        return 0.0
+    overhead_s = max(0.0, float(attempt_overhead_us)) * 1e-6
+    cycle_s = (1.0 / base_rate) + overhead_s
+    if cycle_s <= 0.0:
+        return 0.0
+    return 1.0 / cycle_s
+
+
 def _apply_atomic_dephasing(
     mps,
     p_dephase: float,
@@ -620,7 +642,7 @@ def run_emission_to_bs(
     qfc_theta_V = float(qfc.theta_V)
     apply_filter_780 = bool(qfc.apply_filter_780)
     if timings is not None and t0 is not None:
-        timings["qfc"] = time.perf_counter() - t0
+        _ = time.perf_counter() - t0
     if hooks.after_qfc_filter is not None:
         hooks.after_qfc_filter(
             emission,

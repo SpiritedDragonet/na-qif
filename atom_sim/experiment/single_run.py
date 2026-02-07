@@ -799,7 +799,6 @@ def _run_single_simulation_core(
     if DEBUG_MODE and timings:
         timing_order = [
             ("emission", "发射"),
-            ("qfc", "QFC"),
             ("filter_780", "780滤波"),
             ("project_1517", "1517投影"),
             ("fiber", "光纤"),
