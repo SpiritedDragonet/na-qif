@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 from .common import SimConfig, _compute_window_bins, _compute_effective_attempt_rate_hz
 from .hom import _is_port_samepol_coincidence
+from .bsm_scan import BSM_PATTERN_KEYS
 
 
 def _safe_num(value):
@@ -822,6 +823,463 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
             ])
 
 
+def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
+    results_dir = paths["results"]
+    summary_dir = paths["summary"]
+    summary_dir.mkdir(parents=True, exist_ok=True)
+
+    trials_path = summary_dir / "bsm_scan_trials.csv"
+    runs_path = summary_dir / "bsm_scan_runs.csv"
+    summary_path = summary_dir / "bsm_scan_summary.csv"
+
+    groups = {}
+
+    with open(trials_path, "w", encoding="utf-8", newline="") as trials_file, open(
+        runs_path, "w", encoding="utf-8", newline=""
+    ) as runs_file:
+        trials_writer = csv.writer(trials_file)
+        runs_writer = csv.writer(runs_file)
+
+        trial_header = [
+            "bs_theta",
+            "bs_split_ratio",
+            "run_index",
+            "shot_index",
+            "success",
+            "bell",
+            "pattern",
+            "p_arrive",
+            "p_arrive_11",
+            "p_arrive_same_arm",
+            "p_arrive_20",
+            "p_arrive_02",
+            "p_success_abs",
+            "p_success_true_abs",
+            "p_success_false_abs",
+            "p_success_true_given_arrival",
+            "fidelity_all",
+            "fidelity_true",
+            "fidelity_false",
+            "false_fraction",
+            "corr_exx",
+            "corr_eyy",
+            "corr_ezz",
+            "chsh_s_max",
+            "H1_bin",
+            "V1_bin",
+            "H2_bin",
+            "V2_bin",
+            "H1_dark",
+            "V1_dark",
+            "H2_dark",
+            "V2_dark",
+            "H1_src",
+            "V1_src",
+            "H2_src",
+            "V2_src",
+        ]
+        for pattern_key in BSM_PATTERN_KEYS:
+            trial_header.append(pattern_key)
+            trial_header.append(f"{pattern_key}_rate")
+        trials_writer.writerow(trial_header)
+
+        run_header = [
+            "id",
+            "bs_theta",
+            "bs_split_ratio",
+            "run_index",
+            "shots",
+            "success",
+            "p_arrive",
+            "p_arrive_11",
+            "p_arrive_same_arm",
+            "p_arrive_20",
+            "p_arrive_02",
+            "p_success_abs",
+            "p_success_true_abs",
+            "p_success_false_abs",
+            "p_success_true_given_arrival",
+            "fidelity_all",
+            "fidelity_true",
+            "fidelity_false",
+            "false_fraction",
+            "corr_exx",
+            "corr_eyy",
+            "corr_ezz",
+            "chsh_s_max",
+        ]
+        for pattern_key in BSM_PATTERN_KEYS:
+            run_header.append(pattern_key)
+            run_header.append(f"{pattern_key}_rate")
+        run_header.append("timestamp")
+        runs_writer.writerow(run_header)
+
+        for meta_path in sorted(results_dir.glob("result_*/meta.json")):
+            try:
+                data = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if data.get("mode") != "BSM_SCAN":
+                continue
+
+            tid = str(data.get("id", ""))
+            metrics = data.get("metrics", {})
+            run_index = int(metrics.get("run_index", 0) or 0)
+            run_match = re.match(r"bscan_run_(\d+)", tid)
+            if run_match:
+                run_index = int(run_match.group(1))
+
+            entries = metrics.get("bs_thetas", [])
+            if not isinstance(entries, list):
+                entries = []
+
+            clicks_path = meta_path.parent / "raw" / "clicks.json"
+            clicks_by_theta = {}
+            if clicks_path.exists():
+                try:
+                    raw_clicks = json.loads(clicks_path.read_text(encoding="utf-8")).get("clicks", {})
+                    if isinstance(raw_clicks, dict):
+                        clicks_by_theta = raw_clicks
+                except Exception:
+                    clicks_by_theta = {}
+
+            for entry in entries:
+                bs_theta = float(entry.get("bs_theta", 0.0) or 0.0)
+                bs_key = f"{bs_theta:.9f}"
+                bs_split_ratio = _safe_num(entry.get("bs_split_ratio"))
+
+                p_arrive = _safe_num(entry.get("p_arrive"))
+                p_arrive_11 = _safe_num(entry.get("p_arrive_11"))
+                p_arrive_same_arm = _safe_num(entry.get("p_arrive_same_arm"))
+                p_arrive_20 = _safe_num(entry.get("p_arrive_20"))
+                p_arrive_02 = _safe_num(entry.get("p_arrive_02"))
+                p_success_abs = _safe_num(entry.get("p_success_abs"))
+                p_success_true_abs = _safe_num(entry.get("p_success_true_abs"))
+                p_success_false_abs = _safe_num(entry.get("p_success_false_abs"))
+                p_success_true_given_arrival = _safe_num(entry.get("p_success_true_given_arrival"))
+                fidelity_all = _safe_num(entry.get("fidelity_all"))
+                fidelity_true = _safe_num(entry.get("fidelity_true"))
+                fidelity_false = _safe_num(entry.get("fidelity_false"))
+                false_fraction = _safe_num(entry.get("false_fraction"))
+                corr_exx = _safe_num(entry.get("corr_exx"))
+                corr_eyy = _safe_num(entry.get("corr_eyy"))
+                corr_ezz = _safe_num(entry.get("corr_ezz"))
+                chsh_s_max = _safe_num(entry.get("chsh_s_max"))
+                shots = int(entry.get("shots", 0) or 0)
+                success = int(entry.get("success", 0) or 0)
+
+                run_row = [
+                    tid,
+                    bs_theta,
+                    bs_split_ratio,
+                    run_index,
+                    shots,
+                    success,
+                    p_arrive,
+                    p_arrive_11,
+                    p_arrive_same_arm,
+                    p_arrive_20,
+                    p_arrive_02,
+                    p_success_abs,
+                    p_success_true_abs,
+                    p_success_false_abs,
+                    p_success_true_given_arrival,
+                    fidelity_all,
+                    fidelity_true,
+                    fidelity_false,
+                    false_fraction,
+                    corr_exx,
+                    corr_eyy,
+                    corr_ezz,
+                    chsh_s_max,
+                ]
+                for pattern_key in BSM_PATTERN_KEYS:
+                    run_row.append(int(entry.get(pattern_key, 0) or 0))
+                    run_row.append(_safe_num(entry.get(f"{pattern_key}_rate")) or 0.0)
+                run_row.append(data.get("timestamp"))
+                runs_writer.writerow(run_row)
+
+                group = groups.setdefault(
+                    bs_key,
+                    {
+                        "bs_theta": bs_theta,
+                        "bs_split_ratio": float(bs_split_ratio or 0.0),
+                        "runs_target": config.run.runs,
+                        "runs_total": 0,
+                        "shots_total": 0,
+                        "success_total": 0,
+                        "p_arrive_sum": 0.0,
+                        "p_success_abs_sum": 0.0,
+                        "p_success_true_abs_sum": 0.0,
+                        "p_success_false_abs_sum": 0.0,
+                        "fidelity_all_sum": 0.0,
+                        "fidelity_true_sum": 0.0,
+                        "fidelity_false_sum": 0.0,
+                        "corr_exx_sum": 0.0,
+                        "corr_eyy_sum": 0.0,
+                        "corr_ezz_sum": 0.0,
+                        "chsh_s_max_sum": 0.0,
+                        "pattern_sums": {pattern_key: 0 for pattern_key in BSM_PATTERN_KEYS},
+                    },
+                )
+
+                group["runs_total"] += 1
+                group["shots_total"] += shots
+                group["success_total"] += success
+                group["p_arrive_sum"] += p_arrive or 0.0
+                group["p_success_abs_sum"] += p_success_abs or 0.0
+                group["p_success_true_abs_sum"] += p_success_true_abs or 0.0
+                group["p_success_false_abs_sum"] += p_success_false_abs or 0.0
+                group["fidelity_all_sum"] += fidelity_all or 0.0
+                group["fidelity_true_sum"] += fidelity_true or 0.0
+                group["fidelity_false_sum"] += fidelity_false or 0.0
+                group["corr_exx_sum"] += corr_exx or 0.0
+                group["corr_eyy_sum"] += corr_eyy or 0.0
+                group["corr_ezz_sum"] += corr_ezz or 0.0
+                group["chsh_s_max_sum"] += chsh_s_max or 0.0
+                for pattern_key in BSM_PATTERN_KEYS:
+                    group["pattern_sums"][pattern_key] += int(entry.get(pattern_key, 0) or 0)
+
+                records = clicks_by_theta.get(bs_key, [])
+                if not isinstance(records, list) or not records:
+                    row = [
+                        bs_theta,
+                        bs_split_ratio,
+                        run_index,
+                        -1,
+                        "",
+                        "",
+                        "",
+                        p_arrive,
+                        p_arrive_11,
+                        p_arrive_same_arm,
+                        p_arrive_20,
+                        p_arrive_02,
+                        p_success_abs,
+                        p_success_true_abs,
+                        p_success_false_abs,
+                        p_success_true_given_arrival,
+                        fidelity_all,
+                        fidelity_true,
+                        fidelity_false,
+                        false_fraction,
+                        corr_exx,
+                        corr_eyy,
+                        corr_ezz,
+                        chsh_s_max,
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                    ]
+                    for pattern_key in BSM_PATTERN_KEYS:
+                        row.append(int(entry.get(pattern_key, 0) or 0))
+                        row.append(_safe_num(entry.get(f"{pattern_key}_rate")) or 0.0)
+                    trials_writer.writerow(row)
+                    continue
+
+                for record in records:
+                    shot_idx = record.get("shot_index")
+                    shot_success = record.get("success")
+                    bell = record.get("bell")
+                    pattern = record.get("pattern")
+                    shot_clicks = record.get("clicks", [])
+                    bins = {"H1": "", "V1": "", "H2": "", "V2": ""}
+                    darks = {"H1": "", "V1": "", "H2": "", "V2": ""}
+                    sources = {"H1": "", "V1": "", "H2": "", "V2": ""}
+                    for click in shot_clicks:
+                        if len(click) < 3:
+                            raise ValueError("BSM_SCAN clicks 至少包含 (det, bin, is_dark)")
+                        det = click[0]
+                        bin_idx = click[1]
+                        is_dark = bool(click[2])
+                        source = str(click[3]) if len(click) >= 4 else "signal"
+                        if det in bins:
+                            bins[det] = f"{bin_idx}" if bins[det] == "" else f"{bins[det]};{bin_idx}"
+                            flag = "1" if is_dark else "0"
+                            darks[det] = flag if darks[det] == "" else f"{darks[det]};{flag}"
+                            sources[det] = source if sources[det] == "" else f"{sources[det]};{source}"
+
+                    row = [
+                        bs_theta,
+                        bs_split_ratio,
+                        run_index,
+                        shot_idx,
+                        shot_success,
+                        bell,
+                        pattern,
+                        p_arrive,
+                        p_arrive_11,
+                        p_arrive_same_arm,
+                        p_arrive_20,
+                        p_arrive_02,
+                        p_success_abs,
+                        p_success_true_abs,
+                        p_success_false_abs,
+                        p_success_true_given_arrival,
+                        fidelity_all,
+                        fidelity_true,
+                        fidelity_false,
+                        false_fraction,
+                        corr_exx,
+                        corr_eyy,
+                        corr_ezz,
+                        chsh_s_max,
+                        bins["H1"],
+                        bins["V1"],
+                        bins["H2"],
+                        bins["V2"],
+                        darks["H1"],
+                        darks["V1"],
+                        darks["H2"],
+                        darks["V2"],
+                        sources["H1"],
+                        sources["V1"],
+                        sources["H2"],
+                        sources["V2"],
+                    ]
+                    for pattern_key in BSM_PATTERN_KEYS:
+                        row.append(int(entry.get(pattern_key, 0) or 0))
+                        row.append(_safe_num(entry.get(f"{pattern_key}_rate")) or 0.0)
+                    trials_writer.writerow(row)
+
+    rows = []
+    for key in sorted(groups.keys(), key=lambda value: float(value)):
+        group = groups[key]
+        runs_total = int(group["runs_total"])
+        shots_total = int(group["shots_total"])
+
+        p_arrive_avg = (group["p_arrive_sum"] / runs_total) if runs_total > 0 else 0.0
+        p_success_abs_avg = (group["p_success_abs_sum"] / runs_total) if runs_total > 0 else 0.0
+        p_success_true_abs_avg = (
+            (group["p_success_true_abs_sum"] / runs_total) if runs_total > 0 else 0.0
+        )
+        p_success_false_abs_avg = (
+            (group["p_success_false_abs_sum"] / runs_total) if runs_total > 0 else 0.0
+        )
+        p_success_true_given_arrival_global = (
+            group["p_success_true_abs_sum"] / group["p_arrive_sum"]
+            if group["p_arrive_sum"] > 0
+            else 0.0
+        )
+        false_fraction_global = (
+            group["p_success_false_abs_sum"] / group["p_success_abs_sum"]
+            if group["p_success_abs_sum"] > 0
+            else 0.0
+        )
+
+        fidelity_all_avg = (group["fidelity_all_sum"] / runs_total) if runs_total > 0 else 0.0
+        fidelity_true_avg = (group["fidelity_true_sum"] / runs_total) if runs_total > 0 else 0.0
+        fidelity_false_avg = (group["fidelity_false_sum"] / runs_total) if runs_total > 0 else 0.0
+        corr_exx_avg = (group["corr_exx_sum"] / runs_total) if runs_total > 0 else 0.0
+        corr_eyy_avg = (group["corr_eyy_sum"] / runs_total) if runs_total > 0 else 0.0
+        corr_ezz_avg = (group["corr_ezz_sum"] / runs_total) if runs_total > 0 else 0.0
+        chsh_s_max_avg = (group["chsh_s_max_sum"] / runs_total) if runs_total > 0 else 0.0
+
+        herald_rate_abs = p_success_abs_avg
+        sbr_true_false = (
+            (p_success_true_abs_avg / p_success_false_abs_avg)
+            if p_success_false_abs_avg > 0
+            else None
+        )
+
+        row = {
+            "bs_theta": group["bs_theta"],
+            "bs_split_ratio": group["bs_split_ratio"],
+            "runs_target": group["runs_target"],
+            "runs_total": runs_total,
+            "shots_total": shots_total,
+            "success_total": int(group["success_total"]),
+            "p_arrive_avg": p_arrive_avg,
+            "p_success_abs_avg": p_success_abs_avg,
+            "p_success_true_abs_avg": p_success_true_abs_avg,
+            "p_success_false_abs_avg": p_success_false_abs_avg,
+            "p_success_true_given_arrival_global": p_success_true_given_arrival_global,
+            "false_fraction_global": false_fraction_global,
+            "fidelity_all_avg": fidelity_all_avg,
+            "fidelity_true_avg": fidelity_true_avg,
+            "fidelity_false_avg": fidelity_false_avg,
+            "corr_exx_avg": corr_exx_avg,
+            "corr_eyy_avg": corr_eyy_avg,
+            "corr_ezz_avg": corr_ezz_avg,
+            "chsh_s_max_avg": chsh_s_max_avg,
+            "herald_rate_abs": herald_rate_abs,
+            "sbr_true_false": sbr_true_false,
+        }
+        for pattern_key in BSM_PATTERN_KEYS:
+            count = int(group["pattern_sums"][pattern_key])
+            row[pattern_key] = count
+            row[f"{pattern_key}_rate"] = (float(count) / float(shots_total)) if shots_total > 0 else 0.0
+        rows.append(row)
+
+    with open(summary_path, "w", encoding="utf-8", newline="") as summary_file:
+        summary_writer = csv.writer(summary_file)
+        summary_header = [
+            "bs_theta",
+            "bs_split_ratio",
+            "runs_target",
+            "runs_total",
+            "shots_total",
+            "success_total",
+            "p_arrive_avg",
+            "p_success_abs_avg",
+            "p_success_true_abs_avg",
+            "p_success_false_abs_avg",
+            "p_success_true_given_arrival_global",
+            "false_fraction_global",
+            "fidelity_all_avg",
+            "fidelity_true_avg",
+            "fidelity_false_avg",
+            "corr_exx_avg",
+            "corr_eyy_avg",
+            "corr_ezz_avg",
+            "chsh_s_max_avg",
+            "herald_rate_abs",
+            "sbr_true_false",
+        ]
+        for pattern_key in BSM_PATTERN_KEYS:
+            summary_header.append(pattern_key)
+            summary_header.append(f"{pattern_key}_rate")
+        summary_writer.writerow(summary_header)
+
+        for row in rows:
+            output_row = [
+                row["bs_theta"],
+                row["bs_split_ratio"],
+                row["runs_target"],
+                row["runs_total"],
+                row["shots_total"],
+                row["success_total"],
+                row["p_arrive_avg"],
+                row["p_success_abs_avg"],
+                row["p_success_true_abs_avg"],
+                row["p_success_false_abs_avg"],
+                row["p_success_true_given_arrival_global"],
+                row["false_fraction_global"],
+                row["fidelity_all_avg"],
+                row["fidelity_true_avg"],
+                row["fidelity_false_avg"],
+                row["corr_exx_avg"],
+                row["corr_eyy_avg"],
+                row["corr_ezz_avg"],
+                row["chsh_s_max_avg"],
+                row["herald_rate_abs"],
+                row["sbr_true_false"],
+            ]
+            for pattern_key in BSM_PATTERN_KEYS:
+                output_row.append(row[pattern_key])
+                output_row.append(row[f"{pattern_key}_rate"])
+            summary_writer.writerow(output_row)
+
+
 def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
     # ------------------------------------------------------------------
     # 汇总任务（SUMMARY）：
@@ -1030,6 +1488,9 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
         return
     if task_type == "WINDOW_SCAN":
         _write_window_scan_summary(paths=paths, config=config)
+        return
+    if task_type == "BSM_SCAN":
+        _write_bsm_scan_summary(paths=paths, config=config)
         return
     if task_type == "LENGTH_SCAN":
         _write_length_scan_summary(paths=paths, config=config)

@@ -92,10 +92,10 @@ def qfc_gate(theta_H: float = 0.0, theta_V: float = 0.0) -> np.ndarray:
 
 
 
-@lru_cache(maxsize=4)
-def bs_gate_6d() -> np.ndarray:
+@lru_cache(maxsize=32)
+def bs_gate_6d(theta: float = np.pi / 4) -> np.ndarray:
     """
-    6D 输出端口（1517nm）的50/50分束器门（36x36）。
+    6D 输出端口（1517nm）的分束器门（36x36）。
 
     该门用于测量端共轭：BS 后的端口需要容纳 2 光子态。
 
@@ -106,10 +106,10 @@ def bs_gate_6d() -> np.ndarray:
     """
     # ------------------------------------------------------------------
     # 该 BS 只作用在 1517nm 子空间 (6D)：
-    #   - H/V 各自做 50/50 beamsplitter
+    #   - H/V 各自按同一 theta 做 beamsplitter
     #   - 多光子态 (|2H>, |HV>, |2V>) 通过算符指数自然包含
     # ------------------------------------------------------------------
-    return _bs_gate_1517()
+    return _bs_gate_1517(float(theta))
 
 
 def _permute_factors_matrix(dims: Tuple[int, ...], perm: Tuple[int, ...]) -> np.ndarray:
@@ -141,8 +141,8 @@ def _bs_gate_9d_dist_from_6d(U_6d: np.ndarray) -> np.ndarray:
 
 
 @lru_cache(maxsize=4)
-def _bs_gate_9d_dist_cached() -> np.ndarray:
-    return _bs_gate_9d_dist_from_6d(bs_gate_6d())
+def _bs_gate_9d_dist_cached(theta: float = np.pi / 4) -> np.ndarray:
+    return _bs_gate_9d_dist_from_6d(bs_gate_6d(theta))
 
 
 def bs_gate_9d_dist(bs_unitary_6d: Optional[np.ndarray] = None) -> np.ndarray:
@@ -837,10 +837,10 @@ def build_detection_effects_5d_by_bin(
     return effects_all_by_bin, effects_true_by_bin, effects_mask_by_bin
 
 
-@lru_cache(maxsize=4)
-def _bs_gate_1517() -> np.ndarray:
+@lru_cache(maxsize=32)
+def _bs_gate_1517(theta: float = np.pi / 4) -> np.ndarray:
     """
-    内部函数：1517_A × 1517_B上的50/50分束器（36x36）。
+    内部函数：1517_A × 1517_B上的可调分束器（36x36）。
 
     这是仅作用于通信子空间的核心BS门。
 
@@ -861,9 +861,8 @@ def _bs_gate_1517() -> np.ndarray:
         c_dag_B = np.kron(np.eye(6, dtype=complex), c_dag)
 
         # BS生成元：G = θ * (c_A^† c_B - c_A c_B^†)
-        # For a 50:50 beam splitter, sin^2(theta) = 0.5 -> theta = pi/4
-        theta = np.pi / 4
-        G = theta * (c_dag_A @ c_B - c_A @ c_dag_B)
+        # 其中 sin^2(theta) 是跨端口透射概率。
+        G = float(theta) * (c_dag_A @ c_B - c_A @ c_dag_B)
         return G
 
     # 为H和V偏振生成生成元

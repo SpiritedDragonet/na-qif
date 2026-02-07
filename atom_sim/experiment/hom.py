@@ -195,7 +195,7 @@ def _run_hom_run(
     p_bg_qfc_map = param_store.p_bg_bin_map
 
     # BS 并入测量端 (U^† E U)
-    bs_unitary = bs_gate_6d()
+    bs_unitary = bs_gate_6d(config.detector.bs_theta)
     detect_common = _build_detection_kwargs(
         pipe=pipe,
         param_store=param_store,

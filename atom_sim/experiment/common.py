@@ -69,6 +69,9 @@ class DetectorParams:
     #   2) PMD/色散导致的跨bin时间模式混合
     #   3) 频域/时域模式重叠的显式建模（替代残差旋钮）
     v_res: float = 1.0
+    # 中心站 BS 混合角：sin^2(theta)=跨端口透射概率。
+    # theta=pi/4 对应理想 50/50。
+    bs_theta: float = np.pi / 4
 
 
 @dataclass
@@ -140,11 +143,17 @@ class RunConfig:
     window_sweep_start_ns: Optional[float] = None
     window_sweep_end_ns: Optional[float] = None
     window_sweep_step_ns: Optional[float] = None
+    bs_sweep_start_theta: Optional[float] = None
+    bs_sweep_end_theta: Optional[float] = None
+    bs_sweep_step_theta: Optional[float] = None
     length_sweep_start_km: Optional[float] = None
     length_sweep_end_km: Optional[float] = None
     length_sweep_step_km: Optional[float] = None
     attempt_rate_hz: float = 1.0
     attempt_overhead_us: float = 0.0
+    # 原子等待时间模型：按单程光纤飞行时间自动绑定。
+    fiber_group_velocity_mps: float = 2.0e8
+    t_wait_overhead_us: float = 0.0
 
 
 @dataclass
@@ -463,6 +472,24 @@ def _compute_effective_attempt_rate_hz(attempt_rate_hz: float, attempt_overhead_
     if cycle_s <= 0.0:
         return 0.0
     return 1.0 / cycle_s
+
+
+def _compute_t_wait_us_from_length(
+    length_km: float,
+    fiber_group_velocity_mps: float = 2.0e8,
+    t_wait_overhead_us: float = 0.0,
+) -> float:
+    """
+    由链路长度计算原子等待时间（单程飞行时间 + 固定开销）。
+
+    约定：
+      T_wait = L / v_g + T_overhead
+    其中 L 为单臂长度（m），v_g 为光纤群速度（m/s）。
+    """
+    length_m = max(0.0, float(length_km)) * 1e3
+    vg = max(1.0, float(fiber_group_velocity_mps))
+    flight_us = (length_m / vg) * 1e6
+    return float(max(0.0, flight_us + max(0.0, float(t_wait_overhead_us))))
 
 
 def _apply_atomic_dephasing(

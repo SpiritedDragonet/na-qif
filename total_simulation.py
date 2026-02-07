@@ -11,6 +11,7 @@ import threading
 import time
 import re
 import shutil
+import numpy as np
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -29,7 +30,7 @@ from atom_sim.experiment.hom import (  # noqa: E402
     _build_hom_tau_values,
     _run_hom_run,
 )
-from atom_sim.experiment import single_run, window_scan, length_scan, summary  # noqa: E402
+from atom_sim.experiment import single_run, window_scan, length_scan, bsm_scan, summary  # noqa: E402
 from atom_sim.simulation import run_detection_self_checks  # noqa: E402
 
 
@@ -61,7 +62,7 @@ def _parse_run_params(argv):
     # 目的：解析 CLI 参数并构造统一的 SimConfig。
     # 复杂点：mode/task_type/role 三套概念并存——
     #   - role: server/worker/both（调度角色）
-    #   - mode/task_type: SIM/HOM/WINDOW_SCAN/LENGTH_SCAN（物理任务类型）
+    #   - mode/task_type: SIM/HOM/WINDOW_SCAN/LENGTH_SCAN/BSM_SCAN（物理任务类型）
     #   - queue_root/run_id: 决定任务目录隔离与任务回收策略
     parser = argparse.ArgumentParser(
         prog="python total_simulation.py",
@@ -84,6 +85,9 @@ def _parse_run_params(argv):
             "  # 光纤长度扫描任务（LENGTH_SCAN）\n"
             "  python total_simulation.py --role both --queue-root /mnt/quantum_sim/queue --run-id simlA --task-type LENGTH_SCAN --runs 5 "
             "--length-sweep-start-km 10 --length-sweep-end-km 50 --length-sweep-step-km 10 --shots 1\n"
+            "  # BSM误差扫描任务（BSM_SCAN）\n"
+            "  python total_simulation.py --role both --queue-root /mnt/quantum_sim/queue --run-id simbsA --task-type BSM_SCAN --runs 5 "
+            "--bs-sweep-start-theta 0.55 --bs-sweep-end-theta 1.02 --bs-sweep-step-theta 0.05 --shots 1\n"
         ),
     )
     parser.add_argument("--role", dest="role", choices=["server", "worker", "both"], default="both", help="运行角色：server/worker/both（默认 both）")
@@ -109,7 +113,7 @@ def _parse_run_params(argv):
     )
     parser.add_argument("--queue-root", dest="queue_root", type=str, default="queue", help="任务队列根目录（默认项目根目录下的 queue）")
     parser.add_argument("--run-id", dest="run_id", type=str, help="运行ID（用于隔离多次任务；未提供则自动选择最小可用ID）")
-    parser.add_argument("--task-type", dest="task_type", type=str, choices=["SIM", "HOM", "WINDOW_SCAN", "LENGTH_SCAN"], help="任务类型：SIM / HOM / WINDOW_SCAN / LENGTH_SCAN（默认随 --mode）")
+    parser.add_argument("--task-type", dest="task_type", type=str, choices=["SIM", "HOM", "WINDOW_SCAN", "LENGTH_SCAN", "BSM_SCAN"], help="任务类型：SIM / HOM / WINDOW_SCAN / LENGTH_SCAN / BSM_SCAN（默认随 --mode）")
     parser.add_argument("--config-hash", dest="config_hash", type=str, help="任务配置版本标识（默认自动读取 git）")
     parser.add_argument("--runs", "--n-runs", dest="n_runs", type=int, help="仿真 run 次数（默认 1）")
     parser.add_argument("--shots", "--shots-per-run", dest="shots_per_run", type=int, help="每个 run 的探测采样次数（默认 1）")
@@ -130,6 +134,8 @@ def _parse_run_params(argv):
     parser.add_argument("--fiber-phase-jitter-std", dest="fiber_phase_jitter_std", type=float, help="单bin相位抖动标准差 (rad)")
     parser.add_argument("--fiber-polarization-model", dest="fiber_polarization_model", choices=["fixed", "haar", "perturb", "euler"], help="光纤偏振模型")
     parser.add_argument("--fiber-polarization-sigma", dest="fiber_polarization_sigma", type=float, help="偏振小扰动模型标准差 (rad)")
+    parser.add_argument("--fiber-group-velocity-mps", dest="fiber_group_velocity_mps", type=float, help="光纤群速度 (m/s)，用于自动计算 t_wait_us")
+    parser.add_argument("--t-wait-overhead-us", dest="t_wait_overhead_us", type=float, help="等待时间固定开销 (us)，会加到 L/v_g 上")
 
     parser.add_argument("--tau", dest="tau", type=float, help="(HOM) 单一延迟 τ (ns)")
     parser.add_argument("--tau-start", dest="tau_start", type=float, help="(HOM) τ 起点 (ns)")
@@ -140,6 +146,9 @@ def _parse_run_params(argv):
     parser.add_argument("--window-sweep-start-ns", dest="window_sweep_start_ns", type=float, help="(WINDOW_SCAN) 扫描起点窗口 (ns)")
     parser.add_argument("--window-sweep-end-ns", dest="window_sweep_end_ns", type=float, help="(WINDOW_SCAN) 扫描终点窗口 (ns)")
     parser.add_argument("--window-sweep-step-ns", dest="window_sweep_step_ns", type=float, help="(WINDOW_SCAN) 扫描步长窗口 (ns)")
+    parser.add_argument("--bs-sweep-start-theta", dest="bs_sweep_start_theta", type=float, help="(BSM_SCAN) 扫描起点 BS theta (rad)")
+    parser.add_argument("--bs-sweep-end-theta", dest="bs_sweep_end_theta", type=float, help="(BSM_SCAN) 扫描终点 BS theta (rad)")
+    parser.add_argument("--bs-sweep-step-theta", dest="bs_sweep_step_theta", type=float, help="(BSM_SCAN) 扫描步长 BS theta (rad)")
     parser.add_argument("--length-sweep-start-km", dest="length_sweep_start_km", type=float, help="(LENGTH_SCAN) 扫描起点长度 (km)")
     parser.add_argument("--length-sweep-end-km", dest="length_sweep_end_km", type=float, help="(LENGTH_SCAN) 扫描终点长度 (km)")
     parser.add_argument("--length-sweep-step-km", dest="length_sweep_step_km", type=float, help="(LENGTH_SCAN) 扫描步长长度 (km)")
@@ -188,6 +197,7 @@ def _parse_run_params(argv):
     parser.add_argument("--eta-det-h2", dest="eta_det_h2", type=float, help="H2 通道探测效率 η (0~1)；未指定则用 --eta-det")
     parser.add_argument("--eta-det-v2", dest="eta_det_v2", type=float, help="V2 通道探测效率 η (0~1)；未指定则用 --eta-det")
     parser.add_argument("--ideal-det", dest="ideal_det", action="store_true", help="理想探测（eta_det=1, 无噪声）")
+    parser.add_argument("--bs-theta", dest="bs_theta", type=float, help="中心站 BS 混合角 theta (rad)，sin^2(theta) 为跨端口透射概率")
     parser.add_argument("--v-res", dest="v_res", type=float, help="残差可区分度 V_res (0~1)")
     parser.add_argument("--debug", dest="debug", action="store_true", help="开启调试模式（输出耗时等）")
     parser.add_argument("--self-check", dest="self_check", action="store_true", help="仅运行探测端自检并退出")
@@ -275,6 +285,10 @@ def _parse_run_params(argv):
         config.run.window_sweep_start_ns = args.window_sweep_start_ns
         config.run.window_sweep_end_ns = args.window_sweep_end_ns
         config.run.window_sweep_step_ns = args.window_sweep_step_ns
+    if task_type == "BSM_SCAN":
+        config.run.bs_sweep_start_theta = args.bs_sweep_start_theta
+        config.run.bs_sweep_end_theta = args.bs_sweep_end_theta
+        config.run.bs_sweep_step_theta = args.bs_sweep_step_theta
     if task_type == "LENGTH_SCAN":
         config.run.length_sweep_start_km = args.length_sweep_start_km
         config.run.length_sweep_end_km = args.length_sweep_end_km
@@ -303,6 +317,10 @@ def _parse_run_params(argv):
         config.fiber.polarization_model = str(args.fiber_polarization_model)
     if args.fiber_polarization_sigma is not None:
         config.fiber.polarization_sigma = float(args.fiber_polarization_sigma)
+    if args.fiber_group_velocity_mps is not None:
+        config.run.fiber_group_velocity_mps = float(args.fiber_group_velocity_mps)
+    if args.t_wait_overhead_us is not None:
+        config.run.t_wait_overhead_us = float(args.t_wait_overhead_us)
 
     if config.run.runs < 1:
         parser.error("N_runs 必须 >= 1")
@@ -326,6 +344,10 @@ def _parse_run_params(argv):
         parser.error("fiber_phase_slope_std 必须 >= 0")
     if config.fiber.phase_jitter_std < 0.0:
         parser.error("fiber_phase_jitter_std 必须 >= 0")
+    if config.run.fiber_group_velocity_mps <= 0.0:
+        parser.error("fiber_group_velocity_mps 必须 > 0")
+    if config.run.t_wait_overhead_us < 0.0:
+        parser.error("t_wait_overhead_us 必须 >= 0")
     if config.emission.arm_A.gamma_loss < 0.0 or config.emission.arm_B.gamma_loss < 0.0:
         parser.error("gamma_loss_a / gamma_loss_b 必须 >= 0")
 
@@ -347,12 +369,16 @@ def _parse_run_params(argv):
     config.detector.ideal_det = bool(args.ideal_det)
     if config.detector.ideal_det:
         config.detector.eta_det = 1.0
+    if args.bs_theta is not None:
+        config.detector.bs_theta = float(args.bs_theta)
     if args.v_res is not None:
         config.detector.v_res = float(args.v_res)
     if not (0.0 < config.detector.eta_det <= 1.0):
         parser.error("eta_det 必须在 (0, 1] 内")
     if not (0.0 <= config.detector.v_res <= 1.0):
         parser.error("v_res 必须在 [0, 1] 内")
+    if not (0.0 <= config.detector.bs_theta <= float(np.pi / 2.0)):
+        parser.error("bs_theta 必须在 [0, pi/2] 内")
 
     if task_type == "HOM":
         config.hom = parse_hom_cli(args, parser)
@@ -365,6 +391,11 @@ def _parse_run_params(argv):
     if task_type == "WINDOW_SCAN":
         try:
             window_scan.validate_window_scan_config(config)
+        except ValueError as exc:
+            parser.error(str(exc))
+    if task_type == "BSM_SCAN":
+        try:
+            bsm_scan.validate_bsm_scan_config(config)
         except ValueError as exc:
             parser.error(str(exc))
     if task_type == "LENGTH_SCAN":
@@ -605,6 +636,7 @@ def _build_task_list(
     #   - SIM：每个 run 一个 task
     #   - HOM：每个 τ × run 一个 task
     #   - WINDOW_SCAN：每个 run 一个 task（task 内循环 windows）
+    #   - BSM_SCAN：每个 run 一个 task（task 内循环 bs_thetas）
     #   - LENGTH_SCAN：每个 run 一个 task（task 内循环 lengths）
     #   - SUMMARY：最后追加一个汇总任务（由 worker 执行）
     #
@@ -649,6 +681,23 @@ def _build_task_list(
                 "seed": 100000 + task_count + 1,
                 "config_hash": config_hash,
                 "windows_ns": [float(value) for value in window_values],
+            }
+            path = pending_dir / f"task_{tid}.json"
+            if not path.exists():
+                _write_json_atomic(path, task)
+            task_count += 1
+    elif task_type == "BSM_SCAN":
+        bs_values = bsm_scan.build_bsm_scan_values(config)
+        for run_index in range(n_runs):
+            tid = f"bscan_run_{run_index:06d}"
+            task = {
+                "id": tid,
+                "mode": "BSM_SCAN",
+                "run_index": run_index,
+                "shots": shots_per_run,
+                "seed": 100000 + task_count + 1,
+                "config_hash": config_hash,
+                "bs_thetas": [float(value) for value in bs_values],
             }
             path = pending_dir / f"task_{tid}.json"
             if not path.exists():
@@ -989,6 +1038,16 @@ def _run_worker_loop(
                     _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
             elif task.get("mode") == "WINDOW_SCAN":
                 metrics, click_records = window_scan.run_window_scan_task(
+                    task=task,
+                    config=config,
+                    raw_dir=raw_dir,
+                    plots_dir=plots_dir,
+                    task_id=task_id,
+                )
+                if click_records is not None:
+                    _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
+            elif task.get("mode") == "BSM_SCAN":
+                metrics, click_records = bsm_scan.run_bsm_scan_task(
                     task=task,
                     config=config,
                     raw_dir=raw_dir,

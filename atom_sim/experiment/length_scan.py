@@ -70,7 +70,7 @@ def run_length_scan_task(
         lengths_km = [float(config.fiber.length_km)]
 
     run_rng = np.random.default_rng(seed)
-    bs_unitary = bs_gate_6d()
+    bs_unitary = bs_gate_6d(config.detector.bs_theta)
     attempt_rate_hz_eff = _compute_effective_attempt_rate_hz(
         config.run.attempt_rate_hz,
         config.run.attempt_overhead_us,
@@ -192,4 +192,3 @@ def run_length_scan_task(
         "run_index": run_index,
         "lengths": lengths_metrics,
     }, clicks_by_length
-

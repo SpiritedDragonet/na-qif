@@ -93,7 +93,7 @@ def run_window_scan_task(
         emission_diagnostics=False,
     )
     emission = pipe.emission
-    bs_unitary = bs_gate_6d()
+    bs_unitary = bs_gate_6d(config.detector.bs_theta)
 
     windows_metrics = []
     clicks_by_window = {}

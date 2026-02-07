@@ -27,6 +27,7 @@ from .common import (
     _build_parameter_snapshot,
     _build_run_parameter_store,
     _build_detection_kwargs,
+    _compute_t_wait_us_from_length,
 )
 
 # Debug toggle (default False)
@@ -129,6 +130,11 @@ def _run_single_trial(
     # 该函数只负责“物理链路”部分，不包含探测统计；
     # 便于 SIM/HOM 复用并减少重复代码。
     run_rng = rng or np.random.default_rng()
+    t_wait_us = _compute_t_wait_us_from_length(
+        length_km=config.fiber.length_km,
+        fiber_group_velocity_mps=config.run.fiber_group_velocity_mps,
+        t_wait_overhead_us=config.run.t_wait_overhead_us,
+    )
     pipe = run_emission_to_bs(
         emission=config.emission,
         rng=run_rng,
@@ -138,6 +144,7 @@ def _run_single_trial(
         delay_jitter_ns=delay_jitter_ns,
         verbose=verbose,
         hooks=hooks,
+        t_wait_us=t_wait_us,
         record_timings=debug,
         emission_diagnostics=emission_diagnostics,
     )
@@ -445,7 +452,7 @@ def _run_single_simulation_core(
         use_time_grid=True,
         debug_stage="After BS (Heisenberg)",
         step_index=4,
-        bs_unitary=bs_gate_6d(),
+        bs_unitary=bs_gate_6d(config.detector.bs_theta),
     )
 
     timings = {} if DEBUG_MODE else None
@@ -516,7 +523,7 @@ def _run_single_simulation_core(
 
     parameter_snapshot = _build_parameter_snapshot(config, param_store)
     # 重要：BS 已并入测量端。这里传入 U_BS，用 U^† E U 计算点击分布。
-    bs_unitary = bs_gate_6d()
+    bs_unitary = bs_gate_6d(config.detector.bs_theta)
     detect_common = _build_detection_kwargs(
         pipe=pipe,
         param_store=param_store,
@@ -627,6 +634,8 @@ def _run_single_simulation_core(
         "p_dephase": p_dephase,
         "p_qubit_emit": p_qubit_emit,
         "v_res": detect_common["v_res"],
+        "bs_theta": float(config.detector.bs_theta),
+        "bs_split_ratio": float(np.sin(config.detector.bs_theta) ** 2),
         "qfc_theta_H": pipe.qfc_theta_H,
         "qfc_theta_V": pipe.qfc_theta_V,
         "apply_filter_780": pipe.apply_filter_780,
