@@ -549,10 +549,6 @@ def run_dual_atom_emission(
         gamma_A_n = gamma_A
         gamma_B_n = gamma_B
 
-        # 当前目标仓的位置
-        site_A_n = 2 * n      # A_n 在位置 2n
-        site_B_n = 2 * n + 1  # B_n 在位置 2n+1
-
         if diagnostics:
             # 记录发射前原子状态（用于演化可视化）
             rho_A = mps.get_reduced_density([site_atomA])
@@ -599,6 +595,8 @@ def run_dual_atom_emission(
             mps.apply_kraus_one_site(site_atomA, loss_kraus_A, rng=rng)
         if loss_kraus_B:
             mps.apply_kraus_one_site(site_atomB, loss_kraus_B, rng=rng)
+        if loss_kraus_A or loss_kraus_B:
+            mps.canonicalize(renormalize=True)
 
         # ====================================================================
         # 步骤3：移动原子（使用 swap_sites 方法）

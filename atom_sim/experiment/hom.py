@@ -191,8 +191,8 @@ def _run_hom_run(
         rng=run_rng,
     )
     window_bins = param_store.window_bins
-    p_dark_intrinsic = param_store.noise_budget.p_dark_intrinsic_bin
-    p_bg_qfc = param_store.noise_budget.p_bg_bin
+    p_dark_intrinsic_map = param_store.p_dark_intrinsic_bin_map
+    p_bg_qfc_map = param_store.p_bg_bin_map
 
     # BS 并入测量端 (U^† E U)
     bs_unitary = bs_gate_6d()
@@ -209,11 +209,15 @@ def _run_hom_run(
     # 抽样双点击记录（POVM）；bs_unitary 将 BS 并入测量端
     pipeline = run_detection_pipeline(
         **detect_common,
-        p_dark_intrinsic=p_dark_intrinsic,
-        p_bg_qfc=p_bg_qfc,
+        p_dark_intrinsic=p_dark_intrinsic_map,
+        p_bg_qfc=p_bg_qfc_map,
         n_samples=shots_per_run,
         compute_metrics=False,
     )
+    if debug and timings is not None and pipeline.timings:
+        timings["povm_effects"] = pipeline.timings.get("povm_effects", 0.0)
+        timings["povm_sampling"] = pipeline.timings.get("povm_sampling", 0.0)
+        timings["detection_total"] = pipeline.timings.get("detection_total", 0.0)
     p_arrive = pipeline.p_arrive
     # 逐 shot 统计符合与点击记录
     for det_result in pipeline.samples:
@@ -232,7 +236,8 @@ def _run_hom_run(
             coincidences += 1
 
     if debug and timings is not None and detect_start is not None:
-        timings["detection_total"] = time.perf_counter() - detect_start
+        if "detection_total" not in timings:
+            timings["detection_total"] = time.perf_counter() - detect_start
         if shots_per_run > 0:
             timings["detection_per_shot"] = timings["detection_total"] / shots_per_run
         timings["run_wall_total"] = time.perf_counter() - run_wall_start
@@ -243,8 +248,9 @@ def _run_hom_run(
             ("project_1517", "1517投影"),
             ("fiber", "光纤"),
             ("dephase", "退相干"),
-            ("bs", "BS"),
-            ("detection_total", "探测抽样"),
+            ("povm_effects", "POVM构建"),
+            ("povm_sampling", "POVM抽样"),
+            ("detection_total", "探测总计"),
         ]
         parts = []
         core_sum = 0.0

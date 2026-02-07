@@ -16,6 +16,7 @@ from ..physics import FiberChannelParams
 DEFAULT_DARK_RATE_INTRINSIC_HZ = 65.0
 DEFAULT_BG_RATE_MEAN_HZ = 165.0
 DEFAULT_BG_RATE_STD_HZ = float(np.sqrt(5.0))
+DETECTOR_CHANNELS = ("H1", "V1", "H2", "V2")
 
 
 @dataclass
@@ -51,6 +52,9 @@ class NoiseParams:
     bg_rate_mean_hz: float = DEFAULT_BG_RATE_MEAN_HZ
     bg_rate_std_hz: float = DEFAULT_BG_RATE_STD_HZ
     detector_gate_ns: float = 1.0
+    dark_rate_intrinsic_hz_map: dict = field(default_factory=dict)
+    bg_rate_mean_hz_map: dict = field(default_factory=dict)
+    bg_rate_std_hz_map: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -58,6 +62,7 @@ class DetectorParams:
     """探测器参数。"""
     eta_det: float = 0.85
     ideal_det: bool = False
+    eta_det_map: dict = field(default_factory=dict)
     # 残差可区分度：仅用于承载“当前模型未显式建模”的剩余退相干。
     # TODO(model-first-principles): 当以下因素全部显式建模后，删除该旋钮：
     #   1) QFC 场端噪声注入（替代探测端等效暗计数吸收）
@@ -89,6 +94,9 @@ class NoiseBudget:
 class RunParameterStore:
     """单次 run 的全局参数快照（用于统一调用与预算输出）。"""
     eta_det: float
+    eta_det_map: dict
+    p_dark_intrinsic_bin_map: dict
+    p_bg_bin_map: dict
     v_res: float
     window_ns: float
     window_bins: int
@@ -109,7 +117,8 @@ class FiberParams:
     noise_enabled: bool = True
     polarization_model: str = "perturb"
     polarization_sigma: float = 0.1
-    eta_mean: float = 0.6
+    length_km: float = 33.0
+    attenuation_db_per_km: float = 0.2
     eta_std: float = 0.02
     pdl_sigma: float = 0.02
     phase_drift_std: float = 0.2
@@ -128,6 +137,9 @@ class RunConfig:
     plot_enabled: bool = True
     debug: bool = False
     window_ns: float = 70.0
+    window_sweep_start_ns: Optional[float] = None
+    window_sweep_end_ns: Optional[float] = None
+    window_sweep_step_ns: Optional[float] = None
 
 
 @dataclass
@@ -178,11 +190,12 @@ def _resolve_emission_delay(
 
 def _build_fiber_params(cfg: FiberParams) -> FiberChannelParams:
     # 将实验配置转换成 FiberChannelParams（用于采样每次光纤漂移）
+    eta_mean = 10.0 ** (-float(cfg.attenuation_db_per_km) * float(cfg.length_km) / 10.0)
     if not cfg.noise_enabled:
         return FiberChannelParams(
             polarization_model="fixed",
             polarization_sigma=0.0,
-            eta_mean=cfg.eta_mean,
+            eta_mean=eta_mean,
             eta_std=0.0,
             pdl_sigma=0.0,
             phase_drift_std=0.0,
@@ -192,7 +205,7 @@ def _build_fiber_params(cfg: FiberParams) -> FiberChannelParams:
     return FiberChannelParams(
         polarization_model=cfg.polarization_model,
         polarization_sigma=cfg.polarization_sigma,
-        eta_mean=cfg.eta_mean,
+        eta_mean=eta_mean,
         eta_std=cfg.eta_std,
         pdl_sigma=cfg.pdl_sigma,
         phase_drift_std=cfg.phase_drift_std,
@@ -283,6 +296,37 @@ def _build_run_parameter_store(
     coincidence_window_ns: float,
     rng: np.random.Generator,
 ) -> RunParameterStore:
+    def _clip_value(value: float, min_value: float = 0.0, max_value: Optional[float] = None) -> float:
+        clipped = max(min_value, float(value))
+        if max_value is not None:
+            clipped = min(clipped, max_value)
+        return clipped
+
+    def _build_detector_value_map(
+        default_value: float,
+        overrides: Optional[dict],
+        field_name: str,
+        min_value: float = 0.0,
+        max_value: Optional[float] = None,
+    ) -> dict:
+        resolved = {
+            detector: _clip_value(default_value, min_value=min_value, max_value=max_value)
+            for detector in DETECTOR_CHANNELS
+        }
+        if not overrides:
+            return resolved
+        for raw_key, raw_value in overrides.items():
+            detector = str(raw_key).strip().upper()
+            if detector not in DETECTOR_CHANNELS:
+                raise ValueError(f"{field_name} 包含未知探测器: {raw_key}")
+            resolved[detector] = _clip_value(raw_value, min_value=min_value, max_value=max_value)
+        return resolved
+
+    def _rate_to_bin_probability(rate_hz: float, gate_dt_s: float, ratio: float) -> float:
+        p_gate = 1.0 - np.exp(-max(0.0, float(rate_hz)) * gate_dt_s)
+        p_bin = 1.0 - (1.0 - p_gate) ** ratio
+        return float(np.clip(p_bin, 0.0, 1.0))
+
     noise_budget = _sample_noise_budget(
         noise_cfg=config.noise,
         emission_bin_dt_s=emission_bin_dt_s,
@@ -295,8 +339,58 @@ def _build_run_parameter_store(
         emission_bin_dt_s * 1e9,
         detection_gate_ns=noise_budget.detection_gate_ns,
     )
+    ratio = emission_bin_dt_s / noise_budget.detection_gate_dt_s
+    if config.detector.ideal_det:
+        eta_det_map = {detector: 1.0 for detector in DETECTOR_CHANNELS}
+        p_dark_intrinsic_bin_map = {detector: 0.0 for detector in DETECTOR_CHANNELS}
+        p_bg_bin_map = {detector: 0.0 for detector in DETECTOR_CHANNELS}
+    else:
+        eta_det_map = _build_detector_value_map(
+            default_value=eta_det,
+            overrides=config.detector.eta_det_map,
+            field_name="eta_det_map",
+            min_value=0.0,
+            max_value=1.0,
+        )
+        dark_rate_map = _build_detector_value_map(
+            default_value=noise_budget.dark_rate_intrinsic_hz,
+            overrides=config.noise.dark_rate_intrinsic_hz_map,
+            field_name="dark_rate_intrinsic_hz_map",
+            min_value=0.0,
+        )
+        bg_mean_map = _build_detector_value_map(
+            default_value=noise_budget.bg_rate_mean_hz,
+            overrides=config.noise.bg_rate_mean_hz_map,
+            field_name="bg_rate_mean_hz_map",
+            min_value=0.0,
+        )
+        bg_std_map = _build_detector_value_map(
+            default_value=noise_budget.bg_rate_std_hz,
+            overrides=config.noise.bg_rate_std_hz_map,
+            field_name="bg_rate_std_hz_map",
+            min_value=0.0,
+        )
+
+        p_dark_intrinsic_bin_map = {}
+        p_bg_bin_map = {}
+        for detector in DETECTOR_CHANNELS:
+            p_dark_intrinsic_bin_map[detector] = _rate_to_bin_probability(
+                dark_rate_map[detector],
+                gate_dt_s=noise_budget.detection_gate_dt_s,
+                ratio=ratio,
+            )
+            dark_rate_bg_local = max(0.0, rng.normal(bg_mean_map[detector], bg_std_map[detector]))
+            p_bg_bin_map[detector] = _rate_to_bin_probability(
+                dark_rate_bg_local,
+                gate_dt_s=noise_budget.detection_gate_dt_s,
+                ratio=ratio,
+            )
+
     return RunParameterStore(
         eta_det=eta_det,
+        eta_det_map=eta_det_map,
+        p_dark_intrinsic_bin_map=p_dark_intrinsic_bin_map,
+        p_bg_bin_map=p_bg_bin_map,
         v_res=float(config.detector.v_res),
         window_ns=float(coincidence_window_ns),
         window_bins=window_bins,
@@ -328,6 +422,7 @@ def _build_parameter_snapshot(config: SimConfig, store: RunParameterStore) -> di
         "gamma_loss_A": arm_a.gamma_loss,
         "gamma_loss_B": arm_b.gamma_loss,
         "eta_det": store.eta_det,
+        "eta_det_map": dict(store.eta_det_map),
         "v_res": store.v_res,
         "window_ns": store.window_ns,
         "window_bins": store.window_bins,
@@ -343,6 +438,8 @@ def _build_parameter_snapshot(config: SimConfig, store: RunParameterStore) -> di
         "p_dark_intrinsic_bin": budget.p_dark_intrinsic_bin,
         "p_bg_bin": budget.p_bg_bin,
         "p_noise_bin": budget.p_noise_bin,
+        "p_dark_intrinsic_bin_map": dict(store.p_dark_intrinsic_bin_map),
+        "p_bg_bin_map": dict(store.p_bg_bin_map),
     }
 
 
@@ -374,6 +471,7 @@ def _apply_atomic_dephasing(
     # 原子位于链最左端：atomA(0), atomB(1)
     for site in (0, 1):
         mps.apply_kraus_one_site(site, kraus_list, rng=rng)
+    mps.canonicalize(renormalize=True)
 
     if verbose:
         print(f"原子退相干：已应用 p_dephase={p_dephase:.4e}")
@@ -417,7 +515,7 @@ def _build_detection_kwargs(
     return {
         "mps": pipe.mps,
         "n_bins": pipe.emission.get_n_bins(),
-        "eta_det": float(param_store.eta_det),
+        "eta_det": dict(param_store.eta_det_map),
         "window_bins": int(param_store.window_bins),
         "rng": rng,
         "verbose": verbose,

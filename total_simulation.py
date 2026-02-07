@@ -5,7 +5,6 @@ CLI 入口与任务调度（单次实验逻辑见 atom_sim.experiment.single_run
 
 import sys
 import os
-import csv
 import json
 import argparse
 import threading
@@ -15,7 +14,6 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
-from types import SimpleNamespace
 from concurrent.futures import ProcessPoolExecutor
 
 # Add project root to path (for running as standalone script)
@@ -24,16 +22,14 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from atom_sim.experiment.common import (  # noqa: E402
     SimConfig,
-    _compute_window_bins,
 )
 from atom_sim.experiment.hom import (  # noqa: E402
     parse_hom_cli,
     validate_no_hom_args,
     _build_hom_tau_values,
     _run_hom_run,
-    _is_port_samepol_coincidence,
 )
-from atom_sim.experiment import single_run  # noqa: E402
+from atom_sim.experiment import single_run, window_scan, summary  # noqa: E402
 from atom_sim.simulation import run_detection_self_checks  # noqa: E402
 
 
@@ -65,7 +61,7 @@ def _parse_run_params(argv):
     # 目的：解析 CLI 参数并构造统一的 SimConfig。
     # 复杂点：mode/task_type/role 三套概念并存——
     #   - role: server/worker/both（调度角色）
-    #   - mode/task_type: SIM/HOM（物理任务类型）
+    #   - mode/task_type: SIM/HOM/WINDOW_SCAN（物理任务类型）
     #   - queue_root/run_id: 决定任务目录隔离与任务回收策略
     parser = argparse.ArgumentParser(
         prog="python total_simulation.py",
@@ -82,6 +78,9 @@ def _parse_run_params(argv):
             "  python total_simulation.py --role worker --queue-root /mnt/quantum_sim/queue --run-id homA --cores 64\n"
             "  # 本地运行（server + worker）\n"
             "  python total_simulation.py --role both --queue-root /mnt/quantum_sim/queue --run-id simA --task-type SIM --runs 10\n"
+            "  # 窗口扫描任务（WINDOW_SCAN）\n"
+            "  python total_simulation.py --role both --queue-root /mnt/quantum_sim/queue --run-id simwA --task-type WINDOW_SCAN --runs 5 "
+            "--window-sweep-start-ns 40 --window-sweep-end-ns 120 --window-sweep-step-ns 10 --shots 1\n"
         ),
     )
     parser.add_argument("--role", dest="role", choices=["server", "worker", "both"], default="both", help="运行角色：server/worker/both（默认 both）")
@@ -107,7 +106,7 @@ def _parse_run_params(argv):
     )
     parser.add_argument("--queue-root", dest="queue_root", type=str, default="queue", help="任务队列根目录（默认项目根目录下的 queue）")
     parser.add_argument("--run-id", dest="run_id", type=str, help="运行ID（用于隔离多次任务；未提供则自动选择最小可用ID）")
-    parser.add_argument("--task-type", dest="task_type", type=str, choices=["SIM", "HOM"], help="任务类型：SIM 或 HOM（默认随 --mode）")
+    parser.add_argument("--task-type", dest="task_type", type=str, choices=["SIM", "HOM", "WINDOW_SCAN"], help="任务类型：SIM / HOM / WINDOW_SCAN（默认随 --mode）")
     parser.add_argument("--config-hash", dest="config_hash", type=str, help="任务配置版本标识（默认自动读取 git）")
     parser.add_argument("--runs", "--n-runs", dest="n_runs", type=int, help="仿真 run 次数（默认 1）")
     parser.add_argument("--shots", "--shots-per-run", dest="shots_per_run", type=int, help="每个 run 的探测采样次数（默认 1）")
@@ -119,6 +118,15 @@ def _parse_run_params(argv):
     )
     parser.add_argument("--mode", "--trial-type", dest="mode", help="运行模式：SIM 或 HOM（默认 SIM）")
     parser.add_argument("--no-fiber-noise", dest="no_fiber_noise", action="store_true", help="关闭光纤噪声")
+    parser.add_argument("--fiber-length-km", dest="fiber_length_km", type=float, help="光纤长度 (km)，用于计算平均透过率")
+    parser.add_argument("--fiber-atten-db-per-km", dest="fiber_atten_db_per_km", type=float, help="光纤衰减 (dB/km)")
+    parser.add_argument("--fiber-eta-std", dest="fiber_eta_std", type=float, help="透过率随机波动标准差")
+    parser.add_argument("--fiber-pdl-sigma", dest="fiber_pdl_sigma", type=float, help="PDL 相对差异标准差")
+    parser.add_argument("--fiber-phase-drift-std", dest="fiber_phase_drift_std", type=float, help="两臂相位漂移标准差 (rad)")
+    parser.add_argument("--fiber-phase-slope-std", dest="fiber_phase_slope_std", type=float, help="相位斜率标准差 (rad/bin)")
+    parser.add_argument("--fiber-phase-jitter-std", dest="fiber_phase_jitter_std", type=float, help="单bin相位抖动标准差 (rad)")
+    parser.add_argument("--fiber-polarization-model", dest="fiber_polarization_model", choices=["fixed", "haar", "perturb", "euler"], help="光纤偏振模型")
+    parser.add_argument("--fiber-polarization-sigma", dest="fiber_polarization_sigma", type=float, help="偏振小扰动模型标准差 (rad)")
 
     parser.add_argument("--tau", dest="tau", type=float, help="(HOM) 单一延迟 τ (ns)")
     parser.add_argument("--tau-start", dest="tau_start", type=float, help="(HOM) τ 起点 (ns)")
@@ -126,10 +134,25 @@ def _parse_run_params(argv):
     parser.add_argument("--tau-step", dest="tau_step", type=float, help="(HOM) τ 步长 (ns)")
     parser.add_argument("--tau-points", dest="tau_points", type=int, help="(HOM) τ 采样点数")
     parser.add_argument("--window-ns", dest="window_ns", type=float, help="(HOM) 符合窗口 (ns)")
+    parser.add_argument("--window-sweep-start-ns", dest="window_sweep_start_ns", type=float, help="(WINDOW_SCAN) 扫描起点窗口 (ns)")
+    parser.add_argument("--window-sweep-end-ns", dest="window_sweep_end_ns", type=float, help="(WINDOW_SCAN) 扫描终点窗口 (ns)")
+    parser.add_argument("--window-sweep-step-ns", dest="window_sweep_step_ns", type=float, help="(WINDOW_SCAN) 扫描步长窗口 (ns)")
 
     parser.add_argument("--dark-hz", dest="dark_rate_intrinsic_hz", type=float, help="探测器本底暗计数率 (Hz)")
+    parser.add_argument("--dark-hz-h1", dest="dark_hz_h1", type=float, help="H1 通道本底暗计数率 (Hz)；未指定则用 --dark-hz")
+    parser.add_argument("--dark-hz-v1", dest="dark_hz_v1", type=float, help="V1 通道本底暗计数率 (Hz)；未指定则用 --dark-hz")
+    parser.add_argument("--dark-hz-h2", dest="dark_hz_h2", type=float, help="H2 通道本底暗计数率 (Hz)；未指定则用 --dark-hz")
+    parser.add_argument("--dark-hz-v2", dest="dark_hz_v2", type=float, help="V2 通道本底暗计数率 (Hz)；未指定则用 --dark-hz")
     parser.add_argument("--bg-mean-hz", dest="bg_rate_mean_hz", type=float, help="背景噪声均值 (Hz)")
+    parser.add_argument("--bg-mean-hz-h1", dest="bg_mean_hz_h1", type=float, help="H1 通道背景噪声均值 (Hz)；未指定则用 --bg-mean-hz")
+    parser.add_argument("--bg-mean-hz-v1", dest="bg_mean_hz_v1", type=float, help="V1 通道背景噪声均值 (Hz)；未指定则用 --bg-mean-hz")
+    parser.add_argument("--bg-mean-hz-h2", dest="bg_mean_hz_h2", type=float, help="H2 通道背景噪声均值 (Hz)；未指定则用 --bg-mean-hz")
+    parser.add_argument("--bg-mean-hz-v2", dest="bg_mean_hz_v2", type=float, help="V2 通道背景噪声均值 (Hz)；未指定则用 --bg-mean-hz")
     parser.add_argument("--bg-std-hz", dest="bg_rate_std_hz", type=float, help="背景噪声标准差 (Hz)")
+    parser.add_argument("--bg-std-hz-h1", dest="bg_std_hz_h1", type=float, help="H1 通道背景噪声标准差 (Hz)；未指定则用 --bg-std-hz")
+    parser.add_argument("--bg-std-hz-v1", dest="bg_std_hz_v1", type=float, help="V1 通道背景噪声标准差 (Hz)；未指定则用 --bg-std-hz")
+    parser.add_argument("--bg-std-hz-h2", dest="bg_std_hz_h2", type=float, help="H2 通道背景噪声标准差 (Hz)；未指定则用 --bg-std-hz")
+    parser.add_argument("--bg-std-hz-v2", dest="bg_std_hz_v2", type=float, help="V2 通道背景噪声标准差 (Hz)；未指定则用 --bg-std-hz")
     parser.add_argument("--detector-gate-ns", dest="detector_gate_ns", type=float, help="探测门宽 (ns)，用于将噪声概率从门宽映射到仿真 bin")
     parser.add_argument("--omega-peak-a", dest="omega_peak_a", type=float, help="A 臂驱动脉冲峰值 Ω_peak_A (rad/s)")
     parser.add_argument("--omega-peak-b", dest="omega_peak_b", type=float, help="B 臂驱动脉冲峰值 Ω_peak_B (rad/s)")
@@ -152,6 +175,10 @@ def _parse_run_params(argv):
     parser.add_argument("--plot-all", dest="plot_all", action="store_true", help="所有 run 都绘图（默认仅保留一个）")
     parser.add_argument("--no-plot", dest="no_plot", action="store_true", help="完全禁止绘图（覆盖 plot-all）")
     parser.add_argument("--eta-det", dest="eta_det", type=float, help="探测效率 η (0~1)")
+    parser.add_argument("--eta-det-h1", dest="eta_det_h1", type=float, help="H1 通道探测效率 η (0~1)；未指定则用 --eta-det")
+    parser.add_argument("--eta-det-v1", dest="eta_det_v1", type=float, help="V1 通道探测效率 η (0~1)；未指定则用 --eta-det")
+    parser.add_argument("--eta-det-h2", dest="eta_det_h2", type=float, help="H2 通道探测效率 η (0~1)；未指定则用 --eta-det")
+    parser.add_argument("--eta-det-v2", dest="eta_det_v2", type=float, help="V2 通道探测效率 η (0~1)；未指定则用 --eta-det")
     parser.add_argument("--ideal-det", dest="ideal_det", action="store_true", help="理想探测（eta_det=1, 无噪声）")
     parser.add_argument("--v-res", dest="v_res", type=float, help="残差可区分度 V_res (0~1)")
     parser.add_argument("--debug", dest="debug", action="store_true", help="开启调试模式（输出耗时等）")
@@ -175,6 +202,16 @@ def _parse_run_params(argv):
         config.noise.bg_rate_mean_hz = args.bg_rate_mean_hz
     if args.bg_rate_std_hz is not None:
         config.noise.bg_rate_std_hz = args.bg_rate_std_hz
+    for detector in ("h1", "v1", "h2", "v2"):
+        dark_value = getattr(args, f"dark_hz_{detector}", None)
+        if dark_value is not None:
+            config.noise.dark_rate_intrinsic_hz_map[detector.upper()] = float(dark_value)
+        bg_mean_value = getattr(args, f"bg_mean_hz_{detector}", None)
+        if bg_mean_value is not None:
+            config.noise.bg_rate_mean_hz_map[detector.upper()] = float(bg_mean_value)
+        bg_std_value = getattr(args, f"bg_std_hz_{detector}", None)
+        if bg_std_value is not None:
+            config.noise.bg_rate_std_hz_map[detector.upper()] = float(bg_std_value)
     if args.detector_gate_ns is not None:
         config.noise.detector_gate_ns = float(args.detector_gate_ns)
     if args.omega_peak_a is not None:
@@ -226,8 +263,30 @@ def _parse_run_params(argv):
     if args.task_type is not None and args.mode is not None and task_type != mode:
         parser.error("task-type 与 mode 冲突，请保持一致")
     config.mode = task_type
+    if task_type == "WINDOW_SCAN":
+        config.run.window_sweep_start_ns = args.window_sweep_start_ns
+        config.run.window_sweep_end_ns = args.window_sweep_end_ns
+        config.run.window_sweep_step_ns = args.window_sweep_step_ns
     # 光纤噪声开关（注意：这会影响到统计与物理可解释性）
     config.fiber.noise_enabled = not args.no_fiber_noise
+    if args.fiber_length_km is not None:
+        config.fiber.length_km = float(args.fiber_length_km)
+    if args.fiber_atten_db_per_km is not None:
+        config.fiber.attenuation_db_per_km = float(args.fiber_atten_db_per_km)
+    if args.fiber_eta_std is not None:
+        config.fiber.eta_std = float(args.fiber_eta_std)
+    if args.fiber_pdl_sigma is not None:
+        config.fiber.pdl_sigma = float(args.fiber_pdl_sigma)
+    if args.fiber_phase_drift_std is not None:
+        config.fiber.phase_drift_std = float(args.fiber_phase_drift_std)
+    if args.fiber_phase_slope_std is not None:
+        config.fiber.phase_slope_std = float(args.fiber_phase_slope_std)
+    if args.fiber_phase_jitter_std is not None:
+        config.fiber.phase_jitter_std = float(args.fiber_phase_jitter_std)
+    if args.fiber_polarization_model is not None:
+        config.fiber.polarization_model = str(args.fiber_polarization_model)
+    if args.fiber_polarization_sigma is not None:
+        config.fiber.polarization_sigma = float(args.fiber_polarization_sigma)
 
     if config.run.runs < 1:
         parser.error("N_runs 必须 >= 1")
@@ -237,6 +296,20 @@ def _parse_run_params(argv):
         parser.error("cores 必须 >= 1")
     if config.noise.detector_gate_ns <= 0.0:
         parser.error("detector_gate_ns 必须 > 0")
+    if config.fiber.length_km < 0.0:
+        parser.error("fiber_length_km 必须 >= 0")
+    if config.fiber.attenuation_db_per_km < 0.0:
+        parser.error("fiber_atten_db_per_km 必须 >= 0")
+    if config.fiber.eta_std < 0.0:
+        parser.error("fiber_eta_std 必须 >= 0")
+    if config.fiber.pdl_sigma < 0.0:
+        parser.error("fiber_pdl_sigma 必须 >= 0")
+    if config.fiber.phase_drift_std < 0.0:
+        parser.error("fiber_phase_drift_std 必须 >= 0")
+    if config.fiber.phase_slope_std < 0.0:
+        parser.error("fiber_phase_slope_std 必须 >= 0")
+    if config.fiber.phase_jitter_std < 0.0:
+        parser.error("fiber_phase_jitter_std 必须 >= 0")
     if config.emission.arm_A.gamma_loss < 0.0 or config.emission.arm_B.gamma_loss < 0.0:
         parser.error("gamma_loss_a / gamma_loss_b 必须 >= 0")
 
@@ -251,6 +324,10 @@ def _parse_run_params(argv):
     # 探测效率与理想探测的互斥/覆盖逻辑
     if args.eta_det is not None:
         config.detector.eta_det = float(args.eta_det)
+    for detector in ("h1", "v1", "h2", "v2"):
+        eta_value = getattr(args, f"eta_det_{detector}", None)
+        if eta_value is not None:
+            config.detector.eta_det_map[detector.upper()] = float(eta_value)
     config.detector.ideal_det = bool(args.ideal_det)
     if config.detector.ideal_det:
         config.detector.eta_det = 1.0
@@ -268,6 +345,12 @@ def _parse_run_params(argv):
         config.hom = None
         if args.window_ns is not None:
             config.run.window_ns = float(args.window_ns)
+
+    if task_type == "WINDOW_SCAN":
+        try:
+            window_scan.validate_window_scan_config(config)
+        except ValueError as exc:
+            parser.error(str(exc))
 
     config.run.plot_all = bool(args.plot_all)
     config.run.plot_enabled = not bool(args.no_plot)
@@ -500,6 +583,7 @@ def _build_task_list(
     # 任务生成规则：
     #   - SIM：每个 run 一个 task
     #   - HOM：每个 τ × run 一个 task
+    #   - WINDOW_SCAN：每个 window × run 一个 task
     #   - SUMMARY：最后追加一个汇总任务（由 worker 执行）
     #
     # 所有任务只写入 pending/task_*.json，执行由 worker 完成。
@@ -529,6 +613,24 @@ def _build_task_list(
                 path = pending_dir / f"task_{tid}.json"
                 if not path.exists():
                     # 不覆盖已有任务，便于断点续算
+                    _write_json_atomic(path, task)
+                task_count += 1
+    elif task_type == "WINDOW_SCAN":
+        window_values = window_scan.build_window_scan_values(config)
+        for window_ns in window_values:
+            for run_index in range(n_runs):
+                tid = f"wscan_w_{window_ns:.3f}_run_{run_index:06d}"
+                task = {
+                    "id": tid,
+                    "mode": "WINDOW_SCAN",
+                    "run_index": run_index,
+                    "shots": shots_per_run,
+                    "seed": 100000 + task_count + 1,
+                    "config_hash": config_hash,
+                    "window_ns": float(window_ns),
+                }
+                path = pending_dir / f"task_{tid}.json"
+                if not path.exists():
                     _write_json_atomic(path, task)
                 task_count += 1
     else:
@@ -562,350 +664,7 @@ def _build_task_list(
 
 
 def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
-    # ------------------------------------------------------------------
-    # 汇总任务（SUMMARY）：
-    #   - 遍历 results/result_*/meta.json
-    #   - HOM：额外读取 raw/clicks.json 生成 hom_trials.csv / hom_summary.csv
-    #   - SIM：生成 sim_summary.csv
-    # ------------------------------------------------------------------
-    results_dir = paths["results"]
-    summary_dir = paths["summary"]
-    summary_dir.mkdir(parents=True, exist_ok=True)
-    if task_type == "HOM":
-        window_bins = None
-        if config.hom is not None:
-            window_bins = _compute_window_bins(
-                config.hom.window_ns,
-                config.emission.dt_ns,
-                detection_gate_ns=config.noise.detector_gate_ns,
-            )
-        trials_path = summary_dir / "hom_trials.csv"
-        tau_path = summary_dir / "hom_summary.csv"
-        # hom_trials：逐 run × shot 的明细（含点击 bin）
-        with open(trials_path, "w", encoding="utf-8", newline="") as trials_file:
-            trials_writer = csv.writer(trials_file)
-            trials_writer.writerow([
-                "tau_ns",
-                "run_index",
-                "shot_index",
-                "p_arrive",
-                "H1_bin",
-                "V1_bin",
-                "H2_bin",
-                "V2_bin",
-                "H1_dark",
-                "V1_dark",
-                "H2_dark",
-                "V2_dark",
-            ])
-            tau_states = {}
-            for meta_path in sorted(results_dir.glob("result_*/meta.json")):
-                try:
-                    data = json.loads(meta_path.read_text(encoding="utf-8"))
-                except Exception:
-                    continue
-                if data.get("mode") != "HOM":
-                    continue
-                tid = data.get("id", "")
-                m = re.match(r"hom_tau_([+-]?\d+\.\d+)_run_(\d+)", tid)
-                if not m:
-                    continue
-                tau_ns = float(m.group(1))
-                run_index = int(m.group(2))
-                metrics = data.get("metrics", {})
-                p_arrive = metrics.get("p_arrive")
-                tau_key = f"{tau_ns:.6f}"
-                # tau_states 用于汇总每个 τ 的统计
-                state = tau_states.setdefault(
-                    tau_key,
-                    {
-                        "tau_ns": tau_ns,
-                        "runs_total": 0,
-                        "coinc": 0,
-                        "p_arrive_sum": 0.0,
-                        "arrive_trials": 0.0,
-                        "shots_total": 0,
-                        "coinc_true": 0,
-                        "coinc_dark_any": 0,
-                        "coinc_dark_single": 0,
-                        "coinc_dark_double": 0,
-                        "dark_clicks_total": 0,
-                        "clicks_total": 0,
-                    },
-                )
-                state["runs_total"] += 1
-                if data.get("status") != "ok":
-                    continue
-                state["coinc"] += int(metrics.get("coinc", 0) or 0)
-                if p_arrive is not None:
-                    state["p_arrive_sum"] += float(p_arrive)
-                    # arrive_trials：按 p_arrive 估算有效试验数
-                    state["arrive_trials"] += float(p_arrive) * config.run.shots_per_run
-                clicks_path = meta_path.parent / "raw" / "clicks.json"
-                clicks = []
-                if clicks_path.exists():
-                    try:
-                        clicks = json.loads(clicks_path.read_text(encoding="utf-8")).get("clicks", [])
-                    except Exception:
-                        clicks = []
-                shots_in_run = len(clicks) if clicks else config.run.shots_per_run
-                state["shots_total"] += shots_in_run
-                # 无点击记录也写一行占位，便于对齐 run_index
-                if not clicks:
-                    trials_writer.writerow([
-                        f"{tau_ns:.6f}",
-                        run_index,
-                        -1,
-                        p_arrive,
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                    ])
-                else:
-                    # 每个 shot 一行，点击 bin 以分号拼接
-                    for shot_idx, shot_clicks in enumerate(clicks):
-                        bins = {"H1": "", "V1": "", "H2": "", "V2": ""}
-                        darks = {"H1": "", "V1": "", "H2": "", "V2": ""}
-                        events = []
-                        for click in shot_clicks:
-                            if len(click) < 3:
-                                raise ValueError("HOM clicks 至少包含 (det, bin, is_dark)")
-                            det = click[0]
-                            bin_idx = click[1]
-                            is_dark = bool(click[2])
-                            events.append(SimpleNamespace(detector=det, bin_index=bin_idx, is_dark=is_dark))
-                            if det in bins:
-                                bins[det] = f"{bin_idx}" if bins[det] == "" else f"{bins[det]};{bin_idx}"
-                                flag = "1" if is_dark else "0"
-                                darks[det] = flag if darks[det] == "" else f"{darks[det]};{flag}"
-
-                        dark_clicks = sum(1 for e in events if e.is_dark)
-                        state["dark_clicks_total"] += dark_clicks
-                        state["clicks_total"] += len(events)
-                        if events and _is_port_samepol_coincidence(events, window_bins):
-                            if dark_clicks == 0:
-                                state["coinc_true"] += 1
-                            else:
-                                state["coinc_dark_any"] += 1
-                                if dark_clicks == 1:
-                                    state["coinc_dark_single"] += 1
-                                else:
-                                    state["coinc_dark_double"] += 1
-                        trials_writer.writerow([
-                            f"{tau_ns:.6f}",
-                            run_index,
-                            shot_idx,
-                            p_arrive,
-                            bins["H1"],
-                            bins["V1"],
-                            bins["H2"],
-                            bins["V2"],
-                            darks["H1"],
-                            darks["V1"],
-                            darks["H2"],
-                            darks["V2"],
-                        ])
-        # hom_summary：按 τ 汇总统计
-        with open(tau_path, "w", encoding="utf-8", newline="") as tau_file:
-            tau_writer = csv.writer(tau_file)
-            tau_writer.writerow([
-                "tau_ns",
-                "runs_target",
-                "runs_total",
-                "coinc_counts",
-                "coinc_rate",
-                "p_arrive_avg",
-                "arrive_trials",
-                "window_ns",
-                "shots_per_run",
-                "shots_total",
-                "coinc_true",
-                "coinc_dark_any",
-                "coinc_dark_single",
-                "coinc_dark_double",
-                "dark_clicks_total",
-                "clicks_total",
-                "dark_click_rate",
-                "dark_click_rate_per_det",
-            ])
-            for tau_key in sorted(tau_states, key=lambda x: float(x)):
-                s = tau_states[tau_key]
-                runs_total = s["runs_total"]
-                # 平均值对全部已完成 run 取均值
-                p_arrive_avg = (s["p_arrive_sum"] / runs_total) if runs_total > 0 else 0.0
-                # coinc_rate：符合数 / 预计到达试验数
-                coinc_rate = (s["coinc"] / s["arrive_trials"]) if s["arrive_trials"] > 0 else 0.0
-                dark_click_rate = (s["dark_clicks_total"] / s["clicks_total"]) if s["clicks_total"] > 0 else 0.0
-                dark_click_rate_per_det = (
-                    s["dark_clicks_total"] / (s["shots_total"] * 4)
-                    if s["shots_total"] > 0
-                    else 0.0
-                )
-                tau_writer.writerow([
-                    f"{s['tau_ns']:.6f}",
-                    config.run.runs,
-                    s["runs_total"],
-                    s["coinc"],
-                    f"{coinc_rate:.8f}",
-                    f"{p_arrive_avg:.6f}",
-                    f"{s['arrive_trials']:.6f}",
-                    f"{config.hom.window_ns if config.hom else 0.0:.3f}",
-                    config.run.shots_per_run,
-                    s["shots_total"],
-                    s["coinc_true"],
-                    s["coinc_dark_any"],
-                    s["coinc_dark_single"],
-                    s["coinc_dark_double"],
-                    s["dark_clicks_total"],
-                    s["clicks_total"],
-                    f"{dark_click_rate:.8f}",
-                    f"{dark_click_rate_per_det:.8f}",
-                ])
-        return
-    if task_type == "SIM":
-        trials_path = summary_dir / "sim_trials.csv"
-        with open(trials_path, "w", encoding="utf-8", newline="") as trials_file:
-            trials_writer = csv.writer(trials_file)
-            trials_writer.writerow([
-                "run_index",
-                "shot_index",
-                "success",
-                "bell",
-                "p_arrive",
-                "p_arrive_11",
-                "p_arrive_same_arm",
-                "p_arrive_20",
-                "p_arrive_02",
-                "H1_bin",
-                "V1_bin",
-                "H2_bin",
-                "V2_bin",
-                "H1_dark",
-                "V1_dark",
-                "H2_dark",
-                "V2_dark",
-            ])
-            for meta_path in sorted(results_dir.glob("result_*/meta.json")):
-                try:
-                    data = json.loads(meta_path.read_text(encoding="utf-8"))
-                except Exception:
-                    continue
-                if data.get("mode") != "SIM":
-                    continue
-                tid = data.get("id", "")
-                m = re.match(r"sim_run_(\d+)", tid)
-                if not m:
-                    continue
-                run_index = int(m.group(1))
-                metrics = data.get("metrics", {})
-                p_arrive = metrics.get("p_arrive")
-                p_arrive_11 = metrics.get("p_arrive_11")
-                p_arrive_same_arm = metrics.get("p_arrive_same_arm")
-                p_arrive_20 = metrics.get("p_arrive_20")
-                p_arrive_02 = metrics.get("p_arrive_02")
-                clicks_path = meta_path.parent / "raw" / "clicks.json"
-                clicks = []
-                if clicks_path.exists():
-                    try:
-                        clicks = json.loads(clicks_path.read_text(encoding="utf-8")).get("clicks", [])
-                    except Exception:
-                        clicks = []
-                if not clicks:
-                    trials_writer.writerow([
-                        run_index,
-                        -1,
-                        "",
-                        "",
-                        p_arrive,
-                        p_arrive_11,
-                        p_arrive_same_arm,
-                        p_arrive_20,
-                        p_arrive_02,
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                    ])
-                    continue
-                for record in clicks:
-                    shot_idx = record.get("shot_index")
-                    success = record.get("success")
-                    bell = record.get("bell")
-                    shot_clicks = record.get("clicks", [])
-                    bins = {"H1": "", "V1": "", "H2": "", "V2": ""}
-                    darks = {"H1": "", "V1": "", "H2": "", "V2": ""}
-                    for click in shot_clicks:
-                        if len(click) < 3:
-                            raise ValueError("SIM clicks 至少包含 (det, bin, is_dark)")
-                        det = click[0]
-                        bin_idx = click[1]
-                        is_dark = bool(click[2])
-                        if det in bins:
-                            bins[det] = f"{bin_idx}" if bins[det] == "" else f"{bins[det]};{bin_idx}"
-                            flag = "1" if is_dark else "0"
-                            darks[det] = flag if darks[det] == "" else f"{darks[det]};{flag}"
-                    trials_writer.writerow([
-                        run_index,
-                        shot_idx,
-                        success,
-                        bell,
-                        p_arrive,
-                        p_arrive_11,
-                        p_arrive_same_arm,
-                        p_arrive_20,
-                        p_arrive_02,
-                        bins["H1"],
-                        bins["V1"],
-                        bins["H2"],
-                        bins["V2"],
-                        darks["H1"],
-                        darks["V1"],
-                        darks["H2"],
-                        darks["V2"],
-                    ])
-    summary_path = summary_dir / f"{task_type.lower()}_summary.csv"
-    with open(summary_path, "w", encoding="utf-8", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "id",
-            "mode",
-            "p_arrive",
-            "p_arrive_11",
-            "p_arrive_same_arm",
-            "p_arrive_20",
-            "p_arrive_02",
-            "coinc",
-            "timestamp",
-        ])
-        for meta_path in sorted(results_dir.glob("result_*/meta.json")):
-            try:
-                data = json.loads(meta_path.read_text(encoding="utf-8"))
-            except Exception:
-                continue
-            tid = data.get("id")
-            if not tid:
-                continue
-            m = data.get("metrics", {})
-            writer.writerow([
-                tid,
-                data.get("mode", task_type),
-                m.get("p_arrive"),
-                m.get("p_arrive_11"),
-                m.get("p_arrive_same_arm"),
-                m.get("p_arrive_20"),
-                m.get("p_arrive_02"),
-                m.get("coinc"),
-                data.get("timestamp"),
-            ])
+    summary.write_summary(task_type=task_type, paths=paths, config=config)
 
 
 def _recover_stale_tasks(paths: dict, stale_seconds: int = 600) -> None:
@@ -1190,6 +949,16 @@ def _run_worker_loop(
                 if click_records is not None:
                     # 每个 shot 的点击记录写入 raw/clicks.json
                     _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
+            elif task.get("mode") == "WINDOW_SCAN":
+                metrics, click_records = window_scan.run_window_scan_task(
+                    task=task,
+                    config=config,
+                    raw_dir=raw_dir,
+                    plots_dir=plots_dir,
+                    task_id=task_id,
+                )
+                if click_records is not None:
+                    _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
             else:
                 # SIM 任务：单 run 的成功统计与点击抽样
                 seed = task.get("seed")
@@ -1207,13 +976,25 @@ def _run_worker_loop(
                 metrics = {
                     "shots": run_stats["shots"],
                     "success": run_stats["success"],
+                    "run_index": run_index,
                 }
                 if success_metrics:
                     metrics["p_arrive"] = success_metrics.get("p_arrive")
+                    metrics["p_arrive_11"] = success_metrics.get("p_arrive_11")
+                    metrics["p_arrive_same_arm"] = success_metrics.get("p_arrive_same_arm")
                     metrics["parameter_snapshot"] = success_metrics.get("parameter_snapshot")
                     metrics["p_success_abs"] = success_metrics.get("p_success_abs")
                     metrics["p_success_true_abs"] = success_metrics.get("p_success_true_abs")
                     metrics["p_success_false_abs"] = success_metrics.get("p_success_false_abs")
+                    metrics["p_success_true_given_arrival"] = success_metrics.get("p_success_true_given_arrival")
+                    metrics["fidelity_all"] = success_metrics.get("fidelity_all")
+                    metrics["fidelity_true"] = success_metrics.get("fidelity_true")
+                    metrics["fidelity_false"] = success_metrics.get("fidelity_false")
+                    metrics["false_fraction"] = success_metrics.get("false_fraction")
+                    metrics["corr_exx"] = success_metrics.get("corr_exx")
+                    metrics["corr_eyy"] = success_metrics.get("corr_eyy")
+                    metrics["corr_ezz"] = success_metrics.get("corr_ezz")
+                    metrics["chsh_s_max"] = success_metrics.get("chsh_s_max")
                     metrics["p_success_signal_approx"] = success_metrics.get("p_success_signal_approx")
                     metrics["p_success_same_arm_approx"] = success_metrics.get("p_success_same_arm_approx")
                     metrics["p_success_intrinsic_dark_assisted"] = success_metrics.get(

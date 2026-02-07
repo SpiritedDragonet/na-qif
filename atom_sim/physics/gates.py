@@ -164,6 +164,29 @@ def order_two_port_detectors(detectors: List[str]) -> Tuple[str, ...]:
 _TWO_PORT_DETECTOR_ORDER = ("H1", "V1", "H2", "V2")
 
 
+def _resolve_two_port_probability_map(value: float | dict, field_name: str) -> dict:
+    """将标量或 detector->prob 映射统一解析为 H1/V1/H2/V2 四通道概率。"""
+    if isinstance(value, dict):
+        resolved = {}
+        for raw_key, raw_value in value.items():
+            detector = str(raw_key).strip().upper()
+            if detector not in _TWO_PORT_DETECTOR_ORDER:
+                raise ValueError(f"{field_name} 包含未知探测器: {raw_key}")
+            prob = float(raw_value)
+            if prob < 0.0 or prob > 1.0:
+                raise ValueError(f"{field_name}[{detector}] 必须在 [0, 1] 内，得到 {prob}")
+            resolved[detector] = prob
+        missing = [det for det in _TWO_PORT_DETECTOR_ORDER if det not in resolved]
+        if missing:
+            raise ValueError(f"{field_name} 缺少探测器参数: {missing}")
+        return resolved
+
+    prob = float(value)
+    if prob < 0.0 or prob > 1.0:
+        raise ValueError(f"{field_name} 必须在 [0, 1] 内，得到 {prob}")
+    return {detector: prob for detector in _TWO_PORT_DETECTOR_ORDER}
+
+
 def _enumerate_two_port_subsets() -> List[Tuple[str, ...]]:
     """枚举双端口探测器全集的所有子集（含空集）。"""
     subsets: List[Tuple[str, ...]] = []
@@ -181,7 +204,7 @@ def _enumerate_two_port_subsets() -> List[Tuple[str, ...]]:
 _TWO_PORT_SUBSETS = _enumerate_two_port_subsets()
 
 
-def apply_background_or_map(effects: dict, p_bg_click: float) -> dict:
+def apply_background_or_map(effects: dict, p_bg_click: float | dict) -> dict:
     """
     对单 bin 的 effect 集合施加背景点击 OR 后处理。
 
@@ -194,8 +217,8 @@ def apply_background_or_map(effects: dict, p_bg_click: float) -> dict:
     """
     if not effects:
         return {}
-    p_bg = float(np.clip(p_bg_click, 0.0, 1.0))
-    if p_bg <= 0.0:
+    p_bg_map = _resolve_two_port_probability_map(p_bg_click, "p_bg_click")
+    if max(p_bg_map.values()) <= 0.0:
         return effects
 
     mapped: dict = {}
@@ -208,16 +231,22 @@ def apply_background_or_map(effects: dict, p_bg_click: float) -> dict:
             dst_set = set(dst_key)
             if not src_set.issubset(dst_set):
                 continue
-            n_added = len(dst_set) - len(src_set)
-            n_absent = len(_TWO_PORT_DETECTOR_ORDER) - len(dst_set)
-            prob = (p_bg ** n_added) * ((1.0 - p_bg) ** n_absent)
+            prob = 1.0
+            for detector in _TWO_PORT_DETECTOR_ORDER:
+                if detector in src_set:
+                    continue
+                p_bg_local = p_bg_map[detector]
+                if detector in dst_set:
+                    prob *= p_bg_local
+                else:
+                    prob *= (1.0 - p_bg_local)
             if prob <= 0.0:
                 continue
             mapped[dst_key] = mapped.get(dst_key, 0) + prob * src_effect
     return mapped
 
 
-def apply_background_or_map_masked(effects_by_mask: dict, p_bg_click: float) -> dict:
+def apply_background_or_map_masked(effects_by_mask: dict, p_bg_click: float | dict) -> dict:
     """
     对按 intrinsic-dark mask 分组的 effect 施加背景 OR 后处理。
 
@@ -226,8 +255,8 @@ def apply_background_or_map_masked(effects_by_mask: dict, p_bg_click: float) -> 
     """
     if not effects_by_mask:
         return {}
-    p_bg = float(np.clip(p_bg_click, 0.0, 1.0))
-    if p_bg <= 0.0:
+    p_bg_map = _resolve_two_port_probability_map(p_bg_click, "p_bg_click")
+    if max(p_bg_map.values()) <= 0.0:
         return effects_by_mask
 
     mapped: dict = {}
@@ -240,9 +269,15 @@ def apply_background_or_map_masked(effects_by_mask: dict, p_bg_click: float) -> 
             dst_set = set(dst_key)
             if not src_set.issubset(dst_set):
                 continue
-            n_added = len(dst_set) - len(src_set)
-            n_absent = len(_TWO_PORT_DETECTOR_ORDER) - len(dst_set)
-            prob = (p_bg ** n_added) * ((1.0 - p_bg) ** n_absent)
+            prob = 1.0
+            for detector in _TWO_PORT_DETECTOR_ORDER:
+                if detector in src_set:
+                    continue
+                p_bg_local = p_bg_map[detector]
+                if detector in dst_set:
+                    prob *= p_bg_local
+                else:
+                    prob *= (1.0 - p_bg_local)
             if prob <= 0.0:
                 continue
             dst_mask_map = mapped.setdefault(dst_key, {})
@@ -252,10 +287,13 @@ def apply_background_or_map_masked(effects_by_mask: dict, p_bg_click: float) -> 
 
 
 def build_detection_effects_6d(
-    eta: float,
-    p_dark: float = 0.0,
+    eta: float | dict,
+    p_dark: float | dict = 0.0,
 ) -> Tuple[dict, dict, dict]:
     """构造 6D 端口空间的探测 POVM（含暗计数拆分）。"""
+
+    eta_map = _resolve_two_port_probability_map(eta, "eta")
+    p_dark_map = _resolve_two_port_probability_map(p_dark, "p_dark")
 
     def _order_detectors(detectors: List[str]) -> List[str]:
         order = {"H": 0, "V": 1}
@@ -264,13 +302,15 @@ def build_detection_effects_6d(
     def _split_with_dark(
         kraus: np.ndarray,
         detectors: List[str],
-        p_dark_local: float,
+        p_dark_local: dict,
     ) -> List[Tuple[np.ndarray, List[str], List[str]]]:
-        if not 0 <= p_dark_local <= 1:
-            raise ValueError(f"p_dark必须在[0, 1]内，得到 {p_dark_local}")
+        for det_key in ("H", "V"):
+            value = float(p_dark_local[det_key])
+            if value < 0.0 or value > 1.0:
+                raise ValueError(f"p_dark[{det_key}] 必须在 [0, 1] 内，得到 {value}")
 
         base_detectors = _order_detectors(detectors)
-        if p_dark_local <= 0:
+        if max(float(p_dark_local["H"]), float(p_dark_local["V"])) <= 0.0:
             return [(kraus, base_detectors, [])]
 
         off_detectors = [detector for detector in ("H", "V") if detector not in base_detectors]
@@ -279,11 +319,12 @@ def build_detection_effects_6d(
             prob = 1.0
             dark_detectors = []
             for detector, use_dark in zip(off_detectors, mask):
+                p_dark_detector = float(p_dark_local[detector])
                 if use_dark:
-                    prob *= p_dark_local
+                    prob *= p_dark_detector
                     dark_detectors.append(detector)
                 else:
-                    prob *= (1 - p_dark_local)
+                    prob *= (1 - p_dark_detector)
             if prob <= 0:
                 continue
             combined_detectors = _order_detectors(base_detectors + dark_detectors)
@@ -291,34 +332,37 @@ def build_detection_effects_6d(
         return entries
 
     def _build_port_kraus_entries_6d(
-        eta_local: float,
-        p_dark_local: float,
+        eta_h_local: float,
+        eta_v_local: float,
+        p_dark_h_local: float,
+        p_dark_v_local: float,
     ) -> List[Tuple[np.ndarray, List[str], List[str]]]:
+        p_dark_local = {"H": float(p_dark_h_local), "V": float(p_dark_v_local)}
         k00_6d = np.diag([
             1.0,
-            np.sqrt(1 - eta_local),
-            np.sqrt(1 - eta_local),
-            (1 - eta_local),
-            (1 - eta_local),
-            (1 - eta_local),
+            np.sqrt(1 - eta_h_local),
+            np.sqrt(1 - eta_v_local),
+            (1 - eta_h_local),
+            (1 - eta_v_local),
+            np.sqrt((1 - eta_h_local) * (1 - eta_v_local)),
         ]).astype(complex)
 
         k10a_6d = np.zeros((6, 6), dtype=complex)
-        k10a_6d[0, 1] = np.sqrt(eta_local)
+        k10a_6d[0, 1] = np.sqrt(eta_h_local)
         k10b_6d = np.zeros((6, 6), dtype=complex)
-        k10b_6d[0, 3] = np.sqrt(1 - (1 - eta_local) ** 2)
+        k10b_6d[0, 3] = np.sqrt(1 - (1 - eta_h_local) ** 2)
         k10c_6d = np.zeros((6, 6), dtype=complex)
-        k10c_6d[2, 5] = np.sqrt(eta_local * (1 - eta_local))
+        k10c_6d[2, 5] = np.sqrt(eta_h_local * (1 - eta_v_local))
 
         k01a_6d = np.zeros((6, 6), dtype=complex)
-        k01a_6d[0, 2] = np.sqrt(eta_local)
+        k01a_6d[0, 2] = np.sqrt(eta_v_local)
         k01b_6d = np.zeros((6, 6), dtype=complex)
-        k01b_6d[0, 4] = np.sqrt(1 - (1 - eta_local) ** 2)
+        k01b_6d[0, 4] = np.sqrt(1 - (1 - eta_v_local) ** 2)
         k01c_6d = np.zeros((6, 6), dtype=complex)
-        k01c_6d[1, 5] = np.sqrt(eta_local * (1 - eta_local))
+        k01c_6d[1, 5] = np.sqrt((1 - eta_h_local) * eta_v_local)
 
         k11_6d = np.zeros((6, 6), dtype=complex)
-        k11_6d[0, 5] = eta_local
+        k11_6d[0, 5] = np.sqrt(eta_h_local * eta_v_local)
 
         base_entries = [
             (k00_6d, []),
@@ -341,13 +385,24 @@ def build_detection_effects_6d(
                 entries.append((kraus_split, detectors_split, dark_split))
         return entries
 
-    port_entries = _build_port_kraus_entries_6d(eta, p_dark)
+    port_entries_1 = _build_port_kraus_entries_6d(
+        eta_map["H1"],
+        eta_map["V1"],
+        p_dark_map["H1"],
+        p_dark_map["V1"],
+    )
+    port_entries_2 = _build_port_kraus_entries_6d(
+        eta_map["H2"],
+        eta_map["V2"],
+        p_dark_map["H2"],
+        p_dark_map["V2"],
+    )
     kraus_list: List[np.ndarray] = []
     outcome_detectors: List[List[str]] = []
     outcome_dark: List[List[str]] = []
 
-    for k1, det1, dark1 in port_entries:
-        for k2, det2, dark2 in port_entries:
+    for k1, det1, dark1 in port_entries_1:
+        for k2, det2, dark2 in port_entries_2:
             k_two = np.kron(k1, k2)
 
             detectors = []
@@ -383,10 +438,13 @@ def build_detection_effects_6d(
 
 
 def build_detection_effects_9d(
-    eta: float,
-    p_dark: float = 0.0,
+    eta: float | dict,
+    p_dark: float | dict = 0.0,
 ) -> Tuple[dict, dict, dict]:
     """构造 9D 标签空间的探测 POVM（含暗计数拆分）。"""
+
+    eta_map = _resolve_two_port_probability_map(eta, "eta")
+    p_dark_map = _resolve_two_port_probability_map(p_dark, "p_dark")
 
     def _order_detectors(detectors: List[str]) -> List[str]:
         order = {"H": 0, "V": 1}
@@ -395,55 +453,76 @@ def build_detection_effects_9d(
     basis = [(a, b) for a in (0, 1, 2) for b in (0, 1, 2)]
     dim = 9
 
-    effects_by_mask_port = {}
-    for idx, (a_pol, b_pol) in enumerate(basis):
-        n_h = int(a_pol == 1) + int(b_pol == 1)
-        n_v = int(a_pol == 2) + int(b_pol == 2)
-        p_h_click = 1.0 - (1.0 - eta) ** n_h
-        p_v_click = 1.0 - (1.0 - eta) ** n_v
+    def _build_port_entries_9d(
+        eta_h_local: float,
+        eta_v_local: float,
+        p_dark_h_local: float,
+        p_dark_v_local: float,
+    ) -> list:
+        effects_by_mask_port = {}
+        for idx, (a_pol, b_pol) in enumerate(basis):
+            n_h = int(a_pol == 1) + int(b_pol == 1)
+            n_v = int(a_pol == 2) + int(b_pol == 2)
+            p_h_click = 1.0 - (1.0 - eta_h_local) ** n_h
+            p_v_click = 1.0 - (1.0 - eta_v_local) ** n_v
 
-        base_outcomes = [
-            ([], (1.0 - p_h_click) * (1.0 - p_v_click)),
-            (["H"], p_h_click * (1.0 - p_v_click)),
-            (["V"], (1.0 - p_h_click) * p_v_click),
-            (["H", "V"], p_h_click * p_v_click),
-        ]
+            base_outcomes = [
+                ([], (1.0 - p_h_click) * (1.0 - p_v_click)),
+                (["H"], p_h_click * (1.0 - p_v_click)),
+                (["V"], (1.0 - p_h_click) * p_v_click),
+                (["H", "V"], p_h_click * p_v_click),
+            ]
 
-        for base_detectors, p_true in base_outcomes:
-            if p_true <= 0:
-                continue
-            base_detectors = _order_detectors(base_detectors)
-            off_detectors = [detector for detector in ("H", "V") if detector not in base_detectors]
-            for mask in product([0, 1], repeat=len(off_detectors)):
-                prob = p_true
-                dark_detectors = []
-                for detector, use_dark in zip(off_detectors, mask):
-                    if use_dark:
-                        prob *= p_dark
-                        dark_detectors.append(detector)
-                    else:
-                        prob *= (1 - p_dark)
-                if prob <= 0:
+            for base_detectors, p_true in base_outcomes:
+                if p_true <= 0:
                     continue
-                dark_detectors = _order_detectors(dark_detectors)
-                final_detectors = _order_detectors(base_detectors + dark_detectors)
-                mask_map = effects_by_mask_port.setdefault(tuple(final_detectors), {})
-                effect = mask_map.get(tuple(dark_detectors))
-                if effect is None:
-                    effect = np.zeros((dim, dim), dtype=complex)
-                    mask_map[tuple(dark_detectors)] = effect
-                effect[idx, idx] += prob
+                base_detectors = _order_detectors(base_detectors)
+                off_detectors = [detector for detector in ("H", "V") if detector not in base_detectors]
+                for mask in product([0, 1], repeat=len(off_detectors)):
+                    prob = p_true
+                    dark_detectors = []
+                    for detector, use_dark in zip(off_detectors, mask):
+                        p_dark_local = p_dark_h_local if detector == "H" else p_dark_v_local
+                        if use_dark:
+                            prob *= p_dark_local
+                            dark_detectors.append(detector)
+                        else:
+                            prob *= (1.0 - p_dark_local)
+                    if prob <= 0.0:
+                        continue
+                    dark_detectors = _order_detectors(dark_detectors)
+                    final_detectors = _order_detectors(base_detectors + dark_detectors)
+                    mask_map = effects_by_mask_port.setdefault(tuple(final_detectors), {})
+                    effect = mask_map.get(tuple(dark_detectors))
+                    if effect is None:
+                        effect = np.zeros((dim, dim), dtype=complex)
+                        mask_map[tuple(dark_detectors)] = effect
+                    effect[idx, idx] += prob
 
-    port_entries = []
-    for key, mask_map in effects_by_mask_port.items():
-        for mask, effect in mask_map.items():
-            port_entries.append((effect, list(key), list(mask)))
+        entries = []
+        for key, mask_map in effects_by_mask_port.items():
+            for mask, effect in mask_map.items():
+                entries.append((effect, list(key), list(mask)))
+        return entries
+
+    port_entries_1 = _build_port_entries_9d(
+        eta_map["H1"],
+        eta_map["V1"],
+        p_dark_map["H1"],
+        p_dark_map["V1"],
+    )
+    port_entries_2 = _build_port_entries_9d(
+        eta_map["H2"],
+        eta_map["V2"],
+        p_dark_map["H2"],
+        p_dark_map["V2"],
+    )
 
     effects_all = {}
     effects_true = {}
     effects_by_darkmask = {}
-    for e1, det1, dark1 in port_entries:
-        for e2, det2, dark2 in port_entries:
+    for e1, det1, dark1 in port_entries_1:
+        for e2, det2, dark2 in port_entries_2:
             e_two = np.kron(e1, e2)
             detectors = []
             dark_detectors = []
@@ -644,8 +723,8 @@ def build_arrival_projectors_5d(
 
 def build_detection_effects_5d_by_bin(
     n_bins: int,
-    eta_det: float,
-    p_dark: float,
+    eta_det: float | dict,
+    p_dark: float | dict,
     bs_unitary_6d: Optional[np.ndarray],
     v_res: float,
     U_A: np.ndarray,

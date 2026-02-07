@@ -299,9 +299,12 @@ class MPSState:
 
         # 直接设置格点张量（单格点不需要SVD）
         self._mps.set_B(site, theta_arr, form='Th')
-        self._mps.canonical_form_finite(renormalize=True)
 
         return mu
+
+    def canonicalize(self, renormalize: bool = True) -> None:
+        """显式执行一次全链规范化。"""
+        self._mps.canonical_form_finite(renormalize=renormalize)
 
     def swap_sites(self, i: int) -> None:
         """
@@ -686,6 +689,7 @@ class DetectionContractionEngine:
         det_first: str,
         det_second: str,
         weight_eps: float,
+        window_bins: Optional[int],
     ) -> List[Tuple[str, str, int, int, float]]:
         key_first = self.order_detectors([det_first])
         key_second = self.order_detectors([det_second])
@@ -698,7 +702,10 @@ class DetectionContractionEngine:
                 op_first,
                 self.left_envs_identity[first_site],
             )
-            for second_site in range(first_site + 1, self.n_bins + 1):
+            j_end = self.n_bins
+            if window_bins is not None:
+                j_end = min(self.n_bins, first_site + window_bins)
+            for second_site in range(first_site + 1, j_end + 1):
                 op_second = effects_by_bin[second_site - 1].get(key_second, self.zero_effect)
                 env_j = self._apply_env_left(
                     self.b_list[second_site],
@@ -709,7 +716,7 @@ class DetectionContractionEngine:
                 weight = float(np.einsum('ij,ij->', env_j, self.right_envs[second_site + 1]).real)
                 if weight > weight_eps:
                     records.append((det_first, det_second, first_site - 1, second_site - 1, weight))
-                if second_site < self.n_bins:
+                if second_site < j_end:
                     env_mid = self._apply_env_left(
                         self.b_list[second_site],
                         self.bc_list[second_site],

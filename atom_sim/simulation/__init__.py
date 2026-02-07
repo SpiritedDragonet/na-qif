@@ -18,6 +18,7 @@ from .detection import (
     run_detection_self_checks,
     extract_qubit_state,
     compute_fidelity_with_bell,
+    compute_pauli_correlators_and_chsh,
 )
 from ..physics.gates import build_detection_effects_6d
 
@@ -36,4 +37,5 @@ __all__ = [
     'build_detection_effects_6d',
     'extract_qubit_state',
     'compute_fidelity_with_bell',
+    'compute_pauli_correlators_and_chsh',
 ]

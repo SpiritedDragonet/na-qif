@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
+import time
 
 import numpy as np
 
@@ -137,6 +138,45 @@ class DetectionPipelineResult:
     p_arrive: float
     metrics: Optional[SuccessEnumerationResult]
     samples: List[TwoPhotonDetectionResult]
+    timings: Optional[dict] = None
+
+
+def compute_pauli_correlators_and_chsh(qubit_state: np.ndarray) -> dict:
+    """计算双量子比特态的三基相关与 CHSH 最大值。"""
+    rho = np.asarray(qubit_state, dtype=complex)
+    if rho.shape != (4, 4):
+        raise ValueError(f"qubit_state 形状应为 (4,4)，得到 {rho.shape}")
+
+    trace_rho = float(np.trace(rho).real)
+    if trace_rho <= 1e-15:
+        return {
+            "corr_exx": 0.0,
+            "corr_eyy": 0.0,
+            "corr_ezz": 0.0,
+            "chsh_s_max": 0.0,
+        }
+
+    rho_norm = rho / trace_rho
+    sigma_x = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=complex)
+    sigma_y = np.array([[0.0, -1j], [1j, 0.0]], dtype=complex)
+    sigma_z = np.array([[1.0, 0.0], [0.0, -1.0]], dtype=complex)
+    pauli = (sigma_x, sigma_y, sigma_z)
+
+    corr = np.zeros((3, 3), dtype=float)
+    for i, sigma_i in enumerate(pauli):
+        for j, sigma_j in enumerate(pauli):
+            op = np.kron(sigma_i, sigma_j)
+            corr[i, j] = float(np.trace(rho_norm @ op).real)
+
+    eigvals = np.linalg.eigvalsh(corr.T @ corr)
+    eigvals_sorted = np.sort(np.maximum(eigvals, 0.0))[::-1]
+    chsh_s_max = float(2.0 * np.sqrt(eigvals_sorted[0] + eigvals_sorted[1]))
+    return {
+        "corr_exx": float(corr[0, 0]),
+        "corr_eyy": float(corr[1, 1]),
+        "corr_ezz": float(corr[2, 2]),
+        "chsh_s_max": chsh_s_max,
+    }
 
 
 P_ARRIVE_EPS = 1e-8
@@ -265,9 +305,9 @@ def _record_weight(
 def run_detection_pipeline(
     mps: MPSState,
     n_bins: int,
-    eta_det: float = 0.85,
-    p_dark_intrinsic: float = 0.0,
-    p_bg_qfc: float = 0.0,
+    eta_det: float | dict = 0.85,
+    p_dark_intrinsic: float | dict = 0.0,
+    p_bg_qfc: float | dict = 0.0,
     window_bins: Optional[int] = None,
     rng: Optional[np.random.Generator] = None,
     verbose: bool = True,
@@ -294,11 +334,33 @@ def run_detection_pipeline(
     """
     if rng is None:
         rng = np.random.default_rng()
+    timings = {}
+    detect_start = time.perf_counter()
+
+    def _resolve_detector_map(value: float | dict, field_name: str) -> dict:
+        order = ("H1", "V1", "H2", "V2")
+        if isinstance(value, dict):
+            resolved = {}
+            for raw_key, raw_value in value.items():
+                detector = str(raw_key).strip().upper()
+                if detector not in order:
+                    raise ValueError(f"{field_name} 包含未知探测器: {raw_key}")
+                resolved[detector] = float(np.clip(raw_value, 0.0, 1.0))
+            missing = [det for det in order if det not in resolved]
+            if missing:
+                raise ValueError(f"{field_name} 缺少探测器参数: {missing}")
+            return resolved
+        scalar = float(np.clip(value, 0.0, 1.0))
+        return {detector: scalar for detector in order}
+
+    eta_det_map = _resolve_detector_map(eta_det, "eta_det")
+    p_dark_intrinsic_map = _resolve_detector_map(p_dark_intrinsic, "p_dark_intrinsic")
+    p_bg_qfc_map = _resolve_detector_map(p_bg_qfc, "p_bg_qfc")
+    p_dark_intrinsic_scalar = max(p_dark_intrinsic_map.values())
+    p_bg_qfc_scalar = max(p_bg_qfc_map.values())
 
     mps = mps.copy()
     v_res = min(max(float(v_res), 0.0), 1.0)
-    p_dark_intrinsic = float(np.clip(p_dark_intrinsic, 0.0, 1.0))
-    p_bg_qfc = float(np.clip(p_bg_qfc, 0.0, 1.0))
 
     bin_start = 2 if (len(mps.d) >= 2 and mps.d[0] == 4 and mps.d[1] == 4) else 0
     bin_dim = mps.d[bin_start]
@@ -347,7 +409,7 @@ def run_detection_pipeline(
         p_arrive_02 = 0.0
         p_arrive_same_arm = 0.0
 
-    if p_arrive <= P_ARRIVE_EPS and p_dark_intrinsic <= 0.0 and p_bg_qfc <= 0.0:
+    if p_arrive <= P_ARRIVE_EPS and p_dark_intrinsic_scalar <= 0.0 and p_bg_qfc_scalar <= 0.0:
         if verbose:
             print(f"  p_arrive<{P_ARRIVE_EPS:.1e} 且无暗计数/背景噪声，跳过POVM收缩")
         metrics = None
@@ -370,13 +432,15 @@ def run_detection_pipeline(
             p_arrive=p_arrive,
             metrics=metrics,
             samples=_build_empty_samples(n_samples),
+            timings={"detection_total": time.perf_counter() - detect_start},
         )
 
     # 逐 bin 5D effect 构造：底层算符逻辑已下沉到 physics 层。
+    t0 = time.perf_counter()
     effects_all_by_bin, effects_true_by_bin, effects_mask_by_bin = build_detection_effects_5d_by_bin(
         n_bins=n_bins,
-        eta_det=eta_det,
-        p_dark=p_dark_intrinsic,
+        eta_det=eta_det_map,
+        p_dark=p_dark_intrinsic_map,
         bs_unitary_6d=bs_unitary_6d,
         v_res=v_res,
         U_A=U_A,
@@ -392,16 +456,17 @@ def run_detection_pipeline(
         phase_jitter_std=phase_jitter_std,
         rng=rng,
     )
+    timings["povm_effects"] = time.perf_counter() - t0
 
     effects_all_sig_by_bin = [dict(effects) for effects in effects_all_by_bin]
     effects_true_sig_by_bin = [dict(effects) for effects in effects_true_by_bin]
 
-    if p_bg_qfc > 0.0:
+    if p_bg_qfc_scalar > 0.0:
         # B3: 背景点击不再并入探测器本征暗计数 POVM，而是做观测端 OR 卷积。
-        effects_all_by_bin = [apply_background_or_map(effects, p_bg_qfc) for effects in effects_all_by_bin]
-        effects_true_by_bin = [apply_background_or_map(effects, p_bg_qfc) for effects in effects_true_by_bin]
+        effects_all_by_bin = [apply_background_or_map(effects, p_bg_qfc_map) for effects in effects_all_by_bin]
+        effects_true_by_bin = [apply_background_or_map(effects, p_bg_qfc_map) for effects in effects_true_by_bin]
         effects_mask_by_bin = [
-            apply_background_or_map_masked(effects_by_mask, p_bg_qfc)
+            apply_background_or_map_masked(effects_by_mask, p_bg_qfc_map)
             for effects_by_mask in effects_mask_by_bin
         ]
 
@@ -442,6 +507,7 @@ def run_detection_pipeline(
 
     metrics = None
     if compute_metrics:
+        t0 = time.perf_counter()
         if verbose:
             dim_pair = bin_dim * bin_dim
             print(f"  使用{bin_dim}D Kraus operators ({dim_pair}x{dim_pair}) - POVM收缩")
@@ -537,9 +603,11 @@ def run_detection_pipeline(
             p_success_intrinsic_dark_assisted=p_success_intrinsic_dark_assisted,
             p_success_bg_assisted=p_success_bg_assisted,
         )
+        timings["povm_enumeration"] = time.perf_counter() - t0
 
     if n_samples <= 0:
-        return DetectionPipelineResult(p_arrive=p_arrive, metrics=metrics, samples=[])
+        timings["detection_total"] = time.perf_counter() - detect_start
+        return DetectionPipelineResult(p_arrive=p_arrive, metrics=metrics, samples=[], timings=timings)
 
     patterns_records = [
         ("Psi-", ("H1", "V2")),
@@ -554,21 +622,46 @@ def run_detection_pipeline(
     for _, (det_a, det_b) in patterns_records:
         for record in engine.collect_same_bin_records(effects_all_by_bin, det_a, det_b, weight_eps):
             records.append(TwoClickRecord(*record))
-        for record in engine.collect_diff_bin_records(effects_all_by_bin, det_a, det_b, weight_eps):
+        for record in engine.collect_diff_bin_records(
+            effects_all_by_bin,
+            det_a,
+            det_b,
+            weight_eps,
+            window_bins,
+        ):
             records.append(TwoClickRecord(*record))
-        for record in engine.collect_diff_bin_records(effects_all_by_bin, det_b, det_a, weight_eps):
+        for record in engine.collect_diff_bin_records(
+            effects_all_by_bin,
+            det_b,
+            det_a,
+            weight_eps,
+            window_bins,
+        ):
             records.append(TwoClickRecord(*record))
 
     if not records:
-        return DetectionPipelineResult(p_arrive=p_arrive, metrics=metrics, samples=_build_empty_samples(n_samples))
+        timings["detection_total"] = time.perf_counter() - detect_start
+        return DetectionPipelineResult(
+            p_arrive=p_arrive,
+            metrics=metrics,
+            samples=_build_empty_samples(n_samples),
+            timings=timings,
+        )
 
     weights = np.array([max(0.0, record.weight) for record in records], dtype=float)
     total_weight = float(weights.sum())
     if total_weight <= weight_eps:
-        return DetectionPipelineResult(p_arrive=p_arrive, metrics=metrics, samples=_build_empty_samples(n_samples))
+        timings["detection_total"] = time.perf_counter() - detect_start
+        return DetectionPipelineResult(
+            p_arrive=p_arrive,
+            metrics=metrics,
+            samples=_build_empty_samples(n_samples),
+            timings=timings,
+        )
 
     probs = weights / total_weight
     samples: List[TwoPhotonDetectionResult] = []
+    t0 = time.perf_counter()
     for sample_index in range(1, n_samples + 1):
         record = records[int(rng.choice(len(records), p=probs))]
 
@@ -634,14 +727,13 @@ def run_detection_pipeline(
 
         success = False
         bell_state = ""
-        if window_bins is None or abs(record.bin_a - record.bin_b) <= window_bins:
-            detectors = {record.detector_a, record.detector_b}
-            if detectors == {"H1", "V2"} or detectors == {"V1", "H2"}:
-                success = True
-                bell_state = "Psi-"
-            elif detectors == {"H1", "V1"} or detectors == {"H2", "V2"}:
-                success = True
-                bell_state = "Psi+"
+        detectors = {record.detector_a, record.detector_b}
+        if detectors == {"H1", "V2"} or detectors == {"V1", "H2"}:
+            success = True
+            bell_state = "Psi-"
+        elif detectors == {"H1", "V1"} or detectors == {"H2", "V2"}:
+            success = True
+            bell_state = "Psi+"
 
         qubit_state = engine.compute_record_qubit_state(
             effects_by_bin=effects_all_by_bin,
@@ -677,8 +769,9 @@ def run_detection_pipeline(
                 p_true_given_record=float(p_true_given_record),
             )
         )
-
-    return DetectionPipelineResult(p_arrive=p_arrive, metrics=metrics, samples=samples)
+    timings["povm_sampling"] = time.perf_counter() - t0
+    timings["detection_total"] = time.perf_counter() - detect_start
+    return DetectionPipelineResult(p_arrive=p_arrive, metrics=metrics, samples=samples, timings=timings)
 
 
 def extract_qubit_state(mps: MPSState) -> Tuple[np.ndarray, float]:

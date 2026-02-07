@@ -78,6 +78,12 @@ atom_sim/
 │       ├── extract_qubit_state()
 │       └── compute_fidelity_with_bell()
 │
+├── experiment/                    # 任务实现层（按 task_type 拆分）
+│   ├── common.py                  # 跨任务共享配置/参数构造
+│   ├── single_run.py              # SIM 任务核心（单 run 执行）
+│   ├── hom.py                     # HOM 任务（tau 扫描）
+│   └── window_scan.py             # WINDOW_SCAN 任务（window 扫描）
+│
 ├── visualization/                 # 可视化层
 │   ├── __init__.py
 │   └── wavepacket.py              # 波包可视化
@@ -128,21 +134,25 @@ outputs/                           # 仿真输出目录（已 gitignore）
 ### 物理模式（task_type / mode）
 - **SIM**：单次/多次仿真（输出点击记录、成功率、保真度等）
 - **HOM**：HOM 扫描（输出 `hom_trials.csv` / `hom_summary.csv`）
+- **WINDOW_SCAN**：窗口扫描任务（输出 `window_scan_summary.csv`）
 - **SUMMARY**：内部汇总任务（不是 CLI 模式，由 worker 执行）
 
 ### 运行角色（role）
 - **server**：生成任务、监控进度、归档输出
-- **worker**：抢任务执行（SIM/HOM/SUMMARY）
+- **worker**：抢任务执行（SIM/HOM/WINDOW_SCAN/SUMMARY）
 - **both**：本机同时承担 server + worker
 
 ### 常用 CLI 选项（片段）
 ```
 --role server|worker|both
---task-type SIM|HOM
+--task-type SIM|HOM|WINDOW_SCAN
 --run-id <id>                 # 不传则自动选择最小可用 id
 --queue-root <path>           # 默认 ./queue
 --runs N --shots M
 --window-ns <float>           # SIM/HOM 符合时间窗 (ns)
+--window-sweep-start-ns <f>   # WINDOW_SCAN 起点
+--window-sweep-end-ns <f>     # WINDOW_SCAN 终点
+--window-sweep-step-ns <f>    # WINDOW_SCAN 步长
 --plot-all                    # 每个 run 都画图
 --no-plot                     # 禁止绘图（覆盖 plot-all）
 --enum-mode dark|no-dark|both # 成功事件枚举模式（both 同时输出基线）
@@ -159,7 +169,14 @@ outputs/                           # 仿真输出目录（已 gitignore）
   - `p_arrive_11`：A=1 且 B=1
   - `p_arrive_same_arm`：A=2,B=0 或 A=0,B=2
   - `p_arrive_20 / p_arrive_02`：同臂双光子拆分
+  - `p_success_abs / p_success_true_abs / p_success_false_abs`
+  - `p_success_true_given_arrival`
+  - `fidelity_all / fidelity_true / fidelity_false / false_fraction`
+  - `corr_exx / corr_eyy / corr_ezz / chsh_s_max`
 - `sim_trials.csv`：逐 shot 记录（含点击 bin 与暗计数标记），并带上述 `p_arrive_*` 列
+- `window_scan_trials.csv`：WINDOW_SCAN 逐 shot 明细
+- `window_scan_runs.csv`：WINDOW_SCAN 逐 (window_ns, run_index) 指标
+- `window_scan_summary.csv`：WINDOW_SCAN 按 window 聚合统计（扫描主结果）
 
 ## 数据流
 
@@ -235,9 +252,9 @@ mps, fiber_sample = sample_fiber_realization(...)
 pipeline = run_detection_pipeline(
     mps,
     n_bins,
-    eta_det=eta_det,
-    p_dark_intrinsic=p_dark_intrinsic,
-    p_bg_qfc=p_bg_qfc,
+    eta_det=eta_det,  # 标量或 {H1,V1,H2,V2} 映射
+    p_dark_intrinsic=p_dark_intrinsic,  # 标量或映射
+    p_bg_qfc=p_bg_qfc,  # 标量或映射
     bs_unitary=bs_gate_6d(),
 )
 # 结果：点击事件列表 / 成功率 / 保真度
@@ -278,7 +295,8 @@ SIM/HOM 产生的点击记录（`raw/clicks.json` 与 `sim_summary.csv`）格式
 fiber_params = FiberChannelParams(
     polarization_model="perturb",  # "haar", "perturb", 或 "euler"
     polarization_sigma=0.1,        # 旋转角度标准差 (rad)
-    eta_mean=0.57,                 # 平均透过率
+    # 平均透过率由链路长度与衰减自动计算：eta_mean = 10^(-(alpha*L)/10)
+    # 例如 alpha=0.2 dB/km, L=33 km -> eta_mean≈0.218
     eta_std=0.02,                  # 透过率波动
     pdl_sigma=0.02,                # 小PDL：H/V透过率相对差异
     phase_drift_std=0.2,           # 臂间相位漂移 (rad)

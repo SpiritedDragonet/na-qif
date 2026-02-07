@@ -16,6 +16,7 @@ import numpy as np
 from ..simulation import (
     run_detection_pipeline,
     compute_fidelity_with_bell,
+    compute_pauli_correlators_and_chsh,
 )
 from ..visualization import plot_dual_arm_heatmap
 from ..physics.gates import bs_gate_6d
@@ -173,6 +174,8 @@ def _run_single_simulation_core(
             file.write("=" * 60 + "\n")
             if "eta_det" in metrics:
                 file.write(f"eta_det = {metrics['eta_det']:.6f}\n")
+            if "eta_det_map" in metrics:
+                file.write(f"eta_det_map = {metrics['eta_det_map']}\n")
             if "window_bins" in metrics:
                 file.write(f"window_bins = {metrics['window_bins']}\n")
             if "window_ns" in metrics:
@@ -193,8 +196,12 @@ def _run_single_simulation_core(
                 file.write(f"p_noise_gate = {metrics['p_noise_gate']:.8f}\n")
             if "p_dark_intrinsic" in metrics:
                 file.write(f"p_dark_intrinsic = {metrics['p_dark_intrinsic']:.8f}\n")
+            if "p_dark_intrinsic_map" in metrics:
+                file.write(f"p_dark_intrinsic_map = {metrics['p_dark_intrinsic_map']}\n")
             if "p_bg" in metrics:
                 file.write(f"p_bg = {metrics['p_bg']:.8f}\n")
+            if "p_bg_map" in metrics:
+                file.write(f"p_bg_map = {metrics['p_bg_map']}\n")
             if "p_noise" in metrics:
                 file.write(f"p_noise = {metrics['p_noise']:.8f}\n")
             if "t_wait_us" in metrics:
@@ -296,6 +303,22 @@ def _run_single_simulation_core(
                 file.write(f"fidelity_false = {metrics['fidelity_false']:.6f}\n")
             else:
                 file.write("fidelity_false = N/A\n")
+            if metrics.get("corr_exx") is not None:
+                file.write(f"corr_exx = {metrics['corr_exx']:.6f}\n")
+            else:
+                file.write("corr_exx = N/A\n")
+            if metrics.get("corr_eyy") is not None:
+                file.write(f"corr_eyy = {metrics['corr_eyy']:.6f}\n")
+            else:
+                file.write("corr_eyy = N/A\n")
+            if metrics.get("corr_ezz") is not None:
+                file.write(f"corr_ezz = {metrics['corr_ezz']:.6f}\n")
+            else:
+                file.write("corr_ezz = N/A\n")
+            if metrics.get("chsh_s_max") is not None:
+                file.write(f"chsh_s_max = {metrics['chsh_s_max']:.6f}\n")
+            else:
+                file.write("chsh_s_max = N/A\n")
         return output_path
 
     # 目的：绘图占位与清理逻辑集中，避免散落多个函数。
@@ -466,8 +489,9 @@ def _run_single_simulation_core(
     )
     budget = param_store.noise_budget
     eta_det = param_store.eta_det
-    p_dark_intrinsic = budget.p_dark_intrinsic_bin
-    p_bg_qfc = budget.p_bg_bin
+    eta_det_map = param_store.eta_det_map
+    p_dark_intrinsic_map = param_store.p_dark_intrinsic_bin_map
+    p_bg_qfc_map = param_store.p_bg_bin_map
     print(
         f"\n探测器本底暗计数率: {budget.dark_rate_intrinsic_hz:.3f} Hz -> "
         f"p_dark_gate={budget.p_dark_intrinsic_gate:.3e}, p_dark_bin={budget.p_dark_intrinsic_bin:.3e}"
@@ -486,6 +510,9 @@ def _run_single_simulation_core(
         f"点击时间窗 window_bins = {param_store.window_bins} "
         f"(~{param_store.window_bins * result.dt_s * 1e9:.1f} ns), gate={budget.detection_gate_ns:.3f} ns"
     )
+    print(f"探测器效率映射 eta_det_map: {eta_det_map}")
+    print(f"暗计数/bin 映射 p_dark_intrinsic_map: {p_dark_intrinsic_map}")
+    print(f"背景/bin 映射 p_bg_map: {p_bg_qfc_map}")
 
     parameter_snapshot = _build_parameter_snapshot(config, param_store)
     # 重要：BS 已并入测量端。这里传入 U_BS，用 U^† E U 计算点击分布。
@@ -518,42 +545,69 @@ def _run_single_simulation_core(
         detect_start = time.perf_counter() if DEBUG_MODE else None
         pipeline = run_detection_pipeline(
             **detect_common,
-            p_dark_intrinsic=0.0,
-            p_bg_qfc=0.0,
+            p_dark_intrinsic={det: 0.0 for det in p_dark_intrinsic_map},
+            p_bg_qfc={det: 0.0 for det in p_bg_qfc_map},
             n_samples=shots_per_run,
             compute_metrics=True,
         )
         enum_no_dark = pipeline.metrics
         enum_main = enum_no_dark
         samples = pipeline.samples
+        if DEBUG_MODE and timings is not None and pipeline.timings:
+            timings["povm_effects"] = pipeline.timings.get("povm_effects", 0.0)
+            timings["povm_enumeration"] = pipeline.timings.get("povm_enumeration", 0.0)
+            timings["povm_sampling"] = pipeline.timings.get("povm_sampling", 0.0)
+            timings["detection_total"] = pipeline.timings.get("detection_total", 0.0)
     else:
         if enum_mode == "both":
             print("\n枚举成功事件（无暗计数基线）...")
             enum_pipeline = run_detection_pipeline(
                 **detect_common,
-                p_dark_intrinsic=0.0,
-                p_bg_qfc=0.0,
+                p_dark_intrinsic={det: 0.0 for det in p_dark_intrinsic_map},
+                p_bg_qfc={det: 0.0 for det in p_bg_qfc_map},
                 n_samples=0,
                 compute_metrics=True,
             )
             enum_no_dark = enum_pipeline.metrics
+            if DEBUG_MODE and timings is not None and enum_pipeline.timings:
+                timings["povm_effects"] = enum_pipeline.timings.get("povm_effects", 0.0)
+                timings["povm_enumeration"] = enum_pipeline.timings.get("povm_enumeration", 0.0)
         print("\n枚举成功事件（含暗计数）...")
         _on_stage("POVM抽样")
         print("\n运行探测和BSM（POVM抽样）...")
         detect_start = time.perf_counter() if DEBUG_MODE else None
         pipeline = run_detection_pipeline(
             **detect_common,
-            p_dark_intrinsic=p_dark_intrinsic,
-            p_bg_qfc=p_bg_qfc,
+            p_dark_intrinsic=p_dark_intrinsic_map,
+            p_bg_qfc=p_bg_qfc_map,
             n_samples=shots_per_run,
             compute_metrics=True,
         )
         enum_main = pipeline.metrics
         samples = pipeline.samples
+        if DEBUG_MODE and timings is not None and pipeline.timings:
+            timings["povm_effects"] = pipeline.timings.get("povm_effects", 0.0)
+            timings["povm_enumeration"] = pipeline.timings.get("povm_enumeration", 0.0)
+            timings["povm_sampling"] = pipeline.timings.get("povm_sampling", 0.0)
+            timings["detection_total"] = pipeline.timings.get("detection_total", 0.0)
+
+    corr_exx_vals = []
+    corr_eyy_vals = []
+    corr_ezz_vals = []
+    chsh_vals = []
+    for det_result in samples:
+        if not det_result.success:
+            continue
+        corr = compute_pauli_correlators_and_chsh(det_result.qubit_state)
+        corr_exx_vals.append(float(corr["corr_exx"]))
+        corr_eyy_vals.append(float(corr["corr_eyy"]))
+        corr_ezz_vals.append(float(corr["corr_ezz"]))
+        chsh_vals.append(float(corr["chsh_s_max"]))
 
     # 汇总统计量（跨 shots）
     success_metrics = {
         "eta_det": eta_det,
+        "eta_det_map": eta_det_map,
         "window_bins": param_store.window_bins,
         "window_ns": coincidence_window_ns,
         "detector_gate_ns": budget.detection_gate_ns,
@@ -564,7 +618,9 @@ def _run_single_simulation_core(
         "p_bg_gate": budget.p_bg_gate,
         "p_noise_gate": budget.p_noise_gate,
         "p_dark_intrinsic": budget.p_dark_intrinsic_bin,
+        "p_dark_intrinsic_map": p_dark_intrinsic_map,
         "p_bg": budget.p_bg_bin,
+        "p_bg_map": p_bg_qfc_map,
         "p_noise": budget.p_noise_bin,
         "t_wait_us": t_wait_us,
         "t2_us": t2_us,
@@ -592,7 +648,20 @@ def _run_single_simulation_core(
         "fidelity_false": enum_main.fidelity_false,
         "p_success_no_dark_abs": enum_no_dark.p_success if enum_no_dark is not None else None,
         "fidelity_no_dark": enum_no_dark.fidelity_declared if enum_no_dark is not None else None,
+        "corr_exx": float(np.mean(corr_exx_vals)) if corr_exx_vals else 0.0,
+        "corr_eyy": float(np.mean(corr_eyy_vals)) if corr_eyy_vals else 0.0,
+        "corr_ezz": float(np.mean(corr_ezz_vals)) if corr_ezz_vals else 0.0,
+        "chsh_s_max": float(np.mean(chsh_vals)) if chsh_vals else 0.0,
         "parameter_snapshot": parameter_snapshot,
+        "fiber_length_km": config.fiber.length_km,
+        "fiber_attenuation_db_per_km": config.fiber.attenuation_db_per_km,
+        "fiber_eta_std": config.fiber.eta_std,
+        "fiber_pdl_sigma": config.fiber.pdl_sigma,
+        "fiber_phase_drift_std": config.fiber.phase_drift_std,
+        "fiber_phase_slope_std": config.fiber.phase_slope_std,
+        "fiber_phase_jitter_std": config.fiber.phase_jitter_std,
+        "fiber_polarization_model": config.fiber.polarization_model,
+        "fiber_polarization_sigma": config.fiber.polarization_sigma,
     }
     # 误判占比：false / all
     success_metrics["false_fraction"] = (
@@ -735,9 +804,10 @@ def _run_single_simulation_core(
             ("project_1517", "1517投影"),
             ("fiber", "光纤"),
             ("dephase", "退相干"),
-            ("bs", "BS"),
             ("povm_effects", "POVM构建"),
-            ("detection_total", "探测抽样"),
+            ("povm_enumeration", "POVM枚举"),
+            ("povm_sampling", "POVM抽样"),
+            ("detection_total", "探测总计"),
         ]
         parts = []
         core_sum = 0.0
