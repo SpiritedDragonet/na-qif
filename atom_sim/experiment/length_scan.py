@@ -107,6 +107,7 @@ def run_length_scan_task(
                 rng=run_rng,
                 verbose=False,
                 bs_unitary=bs_unitary,
+                bs_theta=config.detector.bs_theta,
             )
             pipeline = run_detection_pipeline(
                 **detect_common,

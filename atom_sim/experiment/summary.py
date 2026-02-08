@@ -152,6 +152,8 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
             "corr_eyy",
             "corr_ezz",
             "chsh_s_max",
+            "p_success_intrinsic_dark_assisted",
+            "p_success_bg_assisted",
             "timestamp",
         ])
 
@@ -1715,5 +1717,7 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 m.get("corr_eyy"),
                 m.get("corr_ezz"),
                 m.get("chsh_s_max"),
+                m.get("p_success_intrinsic_dark_assisted"),
+                m.get("p_success_bg_assisted"),
                 data.get("timestamp"),
             ])

@@ -144,9 +144,10 @@ def _apply_kraus_state_pair(rho: np.ndarray, K_list_A: List[np.ndarray], K_list_
 
 
 def _infer_first_bin_site(mps: MPSState) -> int:
-    """Infer the first bin site index based on 4D atom sites."""
-    n_atom_sites = sum(1 for d in mps.d if d == 4)
-    return 2 if n_atom_sites >= 2 else 0
+    """Infer the first bin site index based on emitter-like leading sites."""
+    if len(mps.d) >= 4 and mps.d[2] == 5 and mps.d[3] == 5:
+        return 2
+    return 0
 
 
 def _validate_bin_rho_traces(
@@ -298,9 +299,8 @@ def plot_dual_arm_heatmap(
     fig, axes = plt.subplots(1, 2, figsize=(14.4, 7.2))
     # 注意：subplots_adjust 将在确定 display_atomic 后设置
 
-    # 检测是否有原子站点（4D站点）
-    n_atom_sites = sum(1 for d in mps.d if d == 4)
-    has_atomic_sites = n_atom_sites >= 2
+    # 检测是否有前导 emitter/原子站点（只要前两站不是 bin=5 即认为有）
+    has_atomic_sites = bool(len(mps.d) >= 4 and mps.d[2] == 5 and mps.d[3] == 5)
 
     # 确定first_bin_site
     if has_atomic_sites:

@@ -136,6 +136,7 @@ def _parse_run_params(argv):
     parser.add_argument("--fiber-polarization-sigma", dest="fiber_polarization_sigma", type=float, help="偏振小扰动模型标准差 (rad)")
     parser.add_argument("--fiber-group-velocity-mps", dest="fiber_group_velocity_mps", type=float, help="光纤群速度 (m/s)，用于自动计算 t_wait_us")
     parser.add_argument("--t-wait-overhead-us", dest="t_wait_overhead_us", type=float, help="等待时间固定开销 (us)，会加到 L/v_g 上")
+    parser.add_argument("--t-wait-length-scale", dest="t_wait_length_scale", type=float, help="等待时间线性系数：T_wait = scale*L/v_g + overhead")
 
     parser.add_argument("--tau", dest="tau", type=float, help="(HOM) 单一延迟 τ (ns)")
     parser.add_argument("--tau-start", dest="tau_start", type=float, help="(HOM) τ 起点 (ns)")
@@ -173,18 +174,34 @@ def _parse_run_params(argv):
     parser.add_argument("--detector-gate-ns", dest="detector_gate_ns", type=float, help="探测门宽 (ns)，用于将噪声概率从门宽映射到仿真 bin")
     parser.add_argument("--omega-peak-a", dest="omega_peak_a", type=float, help="A 臂驱动脉冲峰值 Ω_peak_A (rad/s)")
     parser.add_argument("--omega-peak-b", dest="omega_peak_b", type=float, help="B 臂驱动脉冲峰值 Ω_peak_B (rad/s)")
+    parser.add_argument("--drive-waveform-a", dest="drive_waveform_a", choices=["gaussian", "sech", "square"], help="A 臂驱动包络类型")
+    parser.add_argument("--drive-waveform-b", dest="drive_waveform_b", choices=["gaussian", "sech", "square"], help="B 臂驱动包络类型")
     parser.add_argument("--g-a", dest="g_a", type=float, help="A 臂原子-腔耦合强度 g_A (rad/s)")
     parser.add_argument("--g-b", dest="g_b", type=float, help="B 臂原子-腔耦合强度 g_B (rad/s)")
     parser.add_argument("--kappa-ex-a", dest="kappa_ex_a", type=float, help="A 臂腔外耦合衰减率 kappa_ex_A (rad/s)")
     parser.add_argument("--kappa-ex-b", dest="kappa_ex_b", type=float, help="B 臂腔外耦合衰减率 kappa_ex_B (rad/s)")
     parser.add_argument("--kappa-in-a", dest="kappa_in_a", type=float, help="A 臂腔内损耗衰减率 kappa_in_A (rad/s)")
     parser.add_argument("--kappa-in-b", dest="kappa_in_b", type=float, help="B 臂腔内损耗衰减率 kappa_in_B (rad/s)")
+    parser.add_argument("--kappa-ex-h-a", dest="kappa_ex_h_a", type=float, help="A 臂 H 偏振外耦合衰减率 kappa_ex_H_A (rad/s)")
+    parser.add_argument("--kappa-ex-v-a", dest="kappa_ex_v_a", type=float, help="A 臂 V 偏振外耦合衰减率 kappa_ex_V_A (rad/s)")
+    parser.add_argument("--kappa-in-h-a", dest="kappa_in_h_a", type=float, help="A 臂 H 偏振内损耗衰减率 kappa_in_H_A (rad/s)")
+    parser.add_argument("--kappa-in-v-a", dest="kappa_in_v_a", type=float, help="A 臂 V 偏振内损耗衰减率 kappa_in_V_A (rad/s)")
+    parser.add_argument("--kappa-ex-h-b", dest="kappa_ex_h_b", type=float, help="B 臂 H 偏振外耦合衰减率 kappa_ex_H_B (rad/s)")
+    parser.add_argument("--kappa-ex-v-b", dest="kappa_ex_v_b", type=float, help="B 臂 V 偏振外耦合衰减率 kappa_ex_V_B (rad/s)")
+    parser.add_argument("--kappa-in-h-b", dest="kappa_in_h_b", type=float, help="B 臂 H 偏振内损耗衰减率 kappa_in_H_B (rad/s)")
+    parser.add_argument("--kappa-in-v-b", dest="kappa_in_v_b", type=float, help="B 臂 V 偏振内损耗衰减率 kappa_in_V_B (rad/s)")
     parser.add_argument("--delta-u-a", dest="delta_u_a", type=float, help="A 臂 |u> 态失谐 delta_u_A (rad/s)")
     parser.add_argument("--delta-u-b", dest="delta_u_b", type=float, help="B 臂 |u> 态失谐 delta_u_B (rad/s)")
     parser.add_argument("--delta-e-a", dest="delta_e_a", type=float, help="A 臂 |e> 态失谐 delta_e_A (rad/s)")
     parser.add_argument("--delta-e-b", dest="delta_e_b", type=float, help="B 臂 |e> 态失谐 delta_e_B (rad/s)")
-    parser.add_argument("--gamma-loss-a", dest="gamma_loss_a", type=float, help="A 臂不可收集通道等效损耗率 gamma_loss_A (1/s)")
-    parser.add_argument("--gamma-loss-b", dest="gamma_loss_b", type=float, help="B 臂不可收集通道等效损耗率 gamma_loss_B (1/s)")
+    parser.add_argument("--gamma-sigma-plus-a", dest="gamma_sigma_plus_a", type=float, help="A 臂 |e>->|0> 自发辐射率 gamma_sigma_plus_A (1/s)")
+    parser.add_argument("--gamma-sigma-minus-a", dest="gamma_sigma_minus_a", type=float, help="A 臂 |e>->|1> 自发辐射率 gamma_sigma_minus_A (1/s)")
+    parser.add_argument("--gamma-sigma-plus-b", dest="gamma_sigma_plus_b", type=float, help="B 臂 |e>->|0> 自发辐射率 gamma_sigma_plus_B (1/s)")
+    parser.add_argument("--gamma-sigma-minus-b", dest="gamma_sigma_minus_b", type=float, help="B 臂 |e>->|1> 自发辐射率 gamma_sigma_minus_B (1/s)")
+    parser.add_argument("--delta-c-h-a", dest="delta_c_h_a", type=float, help="A 臂 H 腔模失谐 delta_c_H_A (rad/s)")
+    parser.add_argument("--delta-c-v-a", dest="delta_c_v_a", type=float, help="A 臂 V 腔模失谐 delta_c_V_A (rad/s)")
+    parser.add_argument("--delta-c-h-b", dest="delta_c_h_b", type=float, help="B 臂 H 腔模失谐 delta_c_H_B (rad/s)")
+    parser.add_argument("--delta-c-v-b", dest="delta_c_v_b", type=float, help="B 臂 V 腔模失谐 delta_c_V_B (rad/s)")
     parser.add_argument("--qfc-theta-h", dest="qfc_theta_h", type=float, help="QFC H转换角 theta_H (rad)")
     parser.add_argument("--qfc-theta-v", dest="qfc_theta_v", type=float, help="QFC V转换角 theta_V (rad)")
     parser.add_argument("--no-filter-780", dest="no_filter_780", action="store_true", help="关闭 780 滤波（保留 780 分量）")
@@ -236,6 +253,10 @@ def _parse_run_params(argv):
         config.emission.arm_A.omega_peak = float(args.omega_peak_a)
     if args.omega_peak_b is not None:
         config.emission.arm_B.omega_peak = float(args.omega_peak_b)
+    if args.drive_waveform_a is not None:
+        config.emission.drive_waveform_A = str(args.drive_waveform_a).strip().lower()
+    if args.drive_waveform_b is not None:
+        config.emission.drive_waveform_B = str(args.drive_waveform_b).strip().lower()
     if args.g_a is not None:
         config.emission.arm_A.g = float(args.g_a)
     if args.g_b is not None:
@@ -248,6 +269,22 @@ def _parse_run_params(argv):
         config.emission.arm_A.kappa_in = float(args.kappa_in_a)
     if args.kappa_in_b is not None:
         config.emission.arm_B.kappa_in = float(args.kappa_in_b)
+    if args.kappa_ex_h_a is not None:
+        config.emission.arm_A.kappa_ex_H = float(args.kappa_ex_h_a)
+    if args.kappa_ex_v_a is not None:
+        config.emission.arm_A.kappa_ex_V = float(args.kappa_ex_v_a)
+    if args.kappa_in_h_a is not None:
+        config.emission.arm_A.kappa_in_H = float(args.kappa_in_h_a)
+    if args.kappa_in_v_a is not None:
+        config.emission.arm_A.kappa_in_V = float(args.kappa_in_v_a)
+    if args.kappa_ex_h_b is not None:
+        config.emission.arm_B.kappa_ex_H = float(args.kappa_ex_h_b)
+    if args.kappa_ex_v_b is not None:
+        config.emission.arm_B.kappa_ex_V = float(args.kappa_ex_v_b)
+    if args.kappa_in_h_b is not None:
+        config.emission.arm_B.kappa_in_H = float(args.kappa_in_h_b)
+    if args.kappa_in_v_b is not None:
+        config.emission.arm_B.kappa_in_V = float(args.kappa_in_v_b)
     if args.delta_u_a is not None:
         config.emission.arm_A.delta_u = float(args.delta_u_a)
     if args.delta_u_b is not None:
@@ -256,10 +293,22 @@ def _parse_run_params(argv):
         config.emission.arm_A.delta_e = float(args.delta_e_a)
     if args.delta_e_b is not None:
         config.emission.arm_B.delta_e = float(args.delta_e_b)
-    if args.gamma_loss_a is not None:
-        config.emission.arm_A.gamma_loss = float(args.gamma_loss_a)
-    if args.gamma_loss_b is not None:
-        config.emission.arm_B.gamma_loss = float(args.gamma_loss_b)
+    if args.gamma_sigma_plus_a is not None:
+        config.emission.arm_A.gamma_sigma_plus = float(args.gamma_sigma_plus_a)
+    if args.gamma_sigma_minus_a is not None:
+        config.emission.arm_A.gamma_sigma_minus = float(args.gamma_sigma_minus_a)
+    if args.gamma_sigma_plus_b is not None:
+        config.emission.arm_B.gamma_sigma_plus = float(args.gamma_sigma_plus_b)
+    if args.gamma_sigma_minus_b is not None:
+        config.emission.arm_B.gamma_sigma_minus = float(args.gamma_sigma_minus_b)
+    if args.delta_c_h_a is not None:
+        config.emission.arm_A.delta_c_H = float(args.delta_c_h_a)
+    if args.delta_c_v_a is not None:
+        config.emission.arm_A.delta_c_V = float(args.delta_c_v_a)
+    if args.delta_c_h_b is not None:
+        config.emission.arm_B.delta_c_H = float(args.delta_c_h_b)
+    if args.delta_c_v_b is not None:
+        config.emission.arm_B.delta_c_V = float(args.delta_c_v_b)
     if args.qfc_theta_h is not None:
         config.qfc.theta_H = float(args.qfc_theta_h)
     if args.qfc_theta_v is not None:
@@ -321,6 +370,8 @@ def _parse_run_params(argv):
         config.run.fiber_group_velocity_mps = float(args.fiber_group_velocity_mps)
     if args.t_wait_overhead_us is not None:
         config.run.t_wait_overhead_us = float(args.t_wait_overhead_us)
+    if args.t_wait_length_scale is not None:
+        config.run.t_wait_length_scale = float(args.t_wait_length_scale)
 
     if config.run.runs < 1:
         parser.error("N_runs 必须 >= 1")
@@ -348,8 +399,32 @@ def _parse_run_params(argv):
         parser.error("fiber_group_velocity_mps 必须 > 0")
     if config.run.t_wait_overhead_us < 0.0:
         parser.error("t_wait_overhead_us 必须 >= 0")
-    if config.emission.arm_A.gamma_loss < 0.0 or config.emission.arm_B.gamma_loss < 0.0:
-        parser.error("gamma_loss_a / gamma_loss_b 必须 >= 0")
+    if config.run.t_wait_length_scale < 0.0:
+        parser.error("t_wait_length_scale 必须 >= 0")
+    for field_name, value in (
+        ("kappa_ex_A", config.emission.arm_A.kappa_ex),
+        ("kappa_ex_B", config.emission.arm_B.kappa_ex),
+        ("kappa_in_A", config.emission.arm_A.kappa_in),
+        ("kappa_in_B", config.emission.arm_B.kappa_in),
+        ("gamma_sigma_plus_A", config.emission.arm_A.gamma_sigma_plus),
+        ("gamma_sigma_minus_A", config.emission.arm_A.gamma_sigma_minus),
+        ("gamma_sigma_plus_B", config.emission.arm_B.gamma_sigma_plus),
+        ("gamma_sigma_minus_B", config.emission.arm_B.gamma_sigma_minus),
+    ):
+        if float(value) < 0.0:
+            parser.error(f"{field_name} 必须 >= 0")
+    for field_name, value in (
+        ("kappa_ex_H_A", config.emission.arm_A.kappa_ex_H),
+        ("kappa_ex_V_A", config.emission.arm_A.kappa_ex_V),
+        ("kappa_in_H_A", config.emission.arm_A.kappa_in_H),
+        ("kappa_in_V_A", config.emission.arm_A.kappa_in_V),
+        ("kappa_ex_H_B", config.emission.arm_B.kappa_ex_H),
+        ("kappa_ex_V_B", config.emission.arm_B.kappa_ex_V),
+        ("kappa_in_H_B", config.emission.arm_B.kappa_in_H),
+        ("kappa_in_V_B", config.emission.arm_B.kappa_in_V),
+    ):
+        if value is not None and float(value) < 0.0:
+            parser.error(f"{field_name} 必须 >= 0")
 
     # 成功事件枚举模式：
     #   - dark: 含暗计数

@@ -26,9 +26,16 @@ class AtomArmParams:
     g: float = 2 * np.pi * 20e6
     kappa_ex: float = 2 * np.pi * 20e6
     kappa_in: float = 2 * np.pi * 1e6
+    kappa_ex_H: Optional[float] = None
+    kappa_ex_V: Optional[float] = None
+    kappa_in_H: Optional[float] = None
+    kappa_in_V: Optional[float] = None
+    gamma_sigma_plus: float = 0.0
+    gamma_sigma_minus: float = 0.0
     delta_u: float = 0.0
     delta_e: float = 0.0
-    gamma_loss: float = 0.0
+    delta_c_H: float = 0.0
+    delta_c_V: float = 0.0
 
 
 @dataclass
@@ -38,6 +45,9 @@ class EmissionParams:
     dt_ns: float = 0.5
     chi_max: int = 50
     sigma: float = 10.0
+    # 驱动包络类型（默认高斯）；支持: gaussian / sech / square
+    drive_waveform_A: str = "gaussian"
+    drive_waveform_B: str = "gaussian"
     arm_A: AtomArmParams = field(default_factory=AtomArmParams)
     arm_B: AtomArmParams = field(default_factory=AtomArmParams)
     delay_ns: Optional[float] = None
@@ -154,6 +164,8 @@ class RunConfig:
     # 原子等待时间模型：按单程光纤飞行时间自动绑定。
     fiber_group_velocity_mps: float = 2.0e8
     t_wait_overhead_us: float = 0.0
+    # 等待时间线性系数：T_wait = scale * (L / v_g) + overhead。
+    t_wait_length_scale: float = 1.0
 
 
 @dataclass
@@ -421,6 +433,8 @@ def _build_parameter_snapshot(config: SimConfig, store: RunParameterStore) -> di
         "n_bins": emission.n_bins,
         "dt_ns": emission.dt_ns,
         "sigma_ns": emission.sigma,
+        "drive_waveform_A": emission.drive_waveform_A,
+        "drive_waveform_B": emission.drive_waveform_B,
         "omega_peak_A": arm_a.omega_peak,
         "omega_peak_B": arm_b.omega_peak,
         "g_A": arm_a.g,
@@ -429,17 +443,34 @@ def _build_parameter_snapshot(config: SimConfig, store: RunParameterStore) -> di
         "kappa_ex_B": arm_b.kappa_ex,
         "kappa_in_A": arm_a.kappa_in,
         "kappa_in_B": arm_b.kappa_in,
+        "kappa_ex_H_A": arm_a.kappa_ex_H,
+        "kappa_ex_V_A": arm_a.kappa_ex_V,
+        "kappa_in_H_A": arm_a.kappa_in_H,
+        "kappa_in_V_A": arm_a.kappa_in_V,
+        "kappa_ex_H_B": arm_b.kappa_ex_H,
+        "kappa_ex_V_B": arm_b.kappa_ex_V,
+        "kappa_in_H_B": arm_b.kappa_in_H,
+        "kappa_in_V_B": arm_b.kappa_in_V,
+        "gamma_sigma_plus_A": arm_a.gamma_sigma_plus,
+        "gamma_sigma_minus_A": arm_a.gamma_sigma_minus,
+        "gamma_sigma_plus_B": arm_b.gamma_sigma_plus,
+        "gamma_sigma_minus_B": arm_b.gamma_sigma_minus,
         "delta_u_A": arm_a.delta_u,
         "delta_u_B": arm_b.delta_u,
         "delta_e_A": arm_a.delta_e,
         "delta_e_B": arm_b.delta_e,
-        "gamma_loss_A": arm_a.gamma_loss,
-        "gamma_loss_B": arm_b.gamma_loss,
+        "delta_c_H_A": arm_a.delta_c_H,
+        "delta_c_V_A": arm_a.delta_c_V,
+        "delta_c_H_B": arm_b.delta_c_H,
+        "delta_c_V_B": arm_b.delta_c_V,
         "eta_det": store.eta_det,
         "eta_det_map": dict(store.eta_det_map),
         "v_res": store.v_res,
         "window_ns": store.window_ns,
         "window_bins": store.window_bins,
+        "fiber_group_velocity_mps": config.run.fiber_group_velocity_mps,
+        "t_wait_overhead_us": config.run.t_wait_overhead_us,
+        "t_wait_length_scale": config.run.t_wait_length_scale,
         "detector_gate_ns": budget.detection_gate_ns,
         "bins_per_gate": budget.bins_per_gate,
         "dark_rate_intrinsic_hz": budget.dark_rate_intrinsic_hz,
@@ -478,18 +509,25 @@ def _compute_t_wait_us_from_length(
     length_km: float,
     fiber_group_velocity_mps: float = 2.0e8,
     t_wait_overhead_us: float = 0.0,
+    t_wait_length_scale: float = 1.0,
 ) -> float:
     """
-    由链路长度计算原子等待时间（单程飞行时间 + 固定开销）。
+    由线性长度模型计算原子等待时间。
 
-    约定：
-      T_wait = L / v_g + T_overhead
-    其中 L 为单臂长度（m），v_g 为光纤群速度（m/s）。
+    模型：
+      T_wait = scale * (L / v_g) + T_overhead
+
+    其中：
+      - L：用于等待估计的等效长度（km -> m）
+      - v_g：光纤群速度（m/s）
+      - scale：线性系数（可表达单程/往返/协议附加等待）
     """
     length_m = max(0.0, float(length_km)) * 1e3
     vg = max(1.0, float(fiber_group_velocity_mps))
+    scale = max(0.0, float(t_wait_length_scale))
+    overhead = max(0.0, float(t_wait_overhead_us))
     flight_us = (length_m / vg) * 1e6
-    return float(max(0.0, flight_us + max(0.0, float(t_wait_overhead_us))))
+    return float(max(0.0, scale * flight_us + overhead))
 
 
 def _apply_atomic_dephasing(
@@ -512,14 +550,20 @@ def _apply_atomic_dephasing(
     if rng is None:
         rng = np.random.default_rng()
 
-    K0 = np.sqrt(1.0 - p_dephase) * np.eye(4, dtype=complex)
-    Z = np.diag([1.0, -1.0, 1.0, 1.0]).astype(complex)
-    K1 = np.sqrt(p_dephase) * Z
-    kraus_list = [K0, K1]
-
     # 原子位于链最左端：atomA(0), atomB(1)
+    # 当前主路径中站点是 emitter 维度（12D = atom4D ⊗ cavity3D），
+    # 因此退相干算符需在 atom 子空间定义后扩展为 atom⊗I_cavity。
     for site in (0, 1):
-        mps.apply_kraus_one_site(site, kraus_list, rng=rng)
+        site_dim = int(mps.d[site])
+        if site_dim % 4 != 0:
+            raise ValueError(f"原子站点维度应可被4整除，得到 site={site}, dim={site_dim}")
+        cavity_dim = site_dim // 4
+
+        z_atom = np.diag([1.0, -1.0, 1.0, 1.0]).astype(complex)
+        z_op = np.kron(z_atom, np.eye(cavity_dim, dtype=complex))
+        k0 = np.sqrt(1.0 - p_dephase) * np.eye(site_dim, dtype=complex)
+        k1 = np.sqrt(p_dephase) * z_op
+        mps.apply_kraus_one_site(site, [k0, k1], rng=rng)
     mps.canonicalize(renormalize=True)
 
     if verbose:
@@ -557,6 +601,7 @@ def _build_detection_kwargs(
     rng: np.random.Generator,
     verbose: bool,
     bs_unitary: np.ndarray,
+    bs_theta: float = np.pi / 4,
 ) -> dict:
     """
     统一拼装 run_detection_pipeline 的公共参数，避免多处重复与分叉。
@@ -569,6 +614,7 @@ def _build_detection_kwargs(
         "rng": rng,
         "verbose": verbose,
         "bs_unitary": bs_unitary,
+        "bs_theta": float(bs_theta),
         "fiber_sample": pipe.fiber_sample,
         "apply_filter_780": pipe.apply_filter_780,
         "theta_H": pipe.qfc_theta_H,
@@ -637,6 +683,8 @@ def run_emission_to_bs(
         chi_max=emission.chi_max,
         omega_peak_A=emission.arm_A.omega_peak,
         omega_peak_B=emission.arm_B.omega_peak,
+        drive_waveform_A=emission.drive_waveform_A,
+        drive_waveform_B=emission.drive_waveform_B,
         sigma=emission.sigma,
         delay_ns=delay_ns,
         delay_jitter_ns=delay_jitter_ns,
@@ -646,12 +694,26 @@ def run_emission_to_bs(
         kappa_ex_B=emission.arm_B.kappa_ex,
         kappa_in_A=emission.arm_A.kappa_in,
         kappa_in_B=emission.arm_B.kappa_in,
+        kappa_ex_H_A=emission.arm_A.kappa_ex_H,
+        kappa_ex_V_A=emission.arm_A.kappa_ex_V,
+        kappa_in_H_A=emission.arm_A.kappa_in_H,
+        kappa_in_V_A=emission.arm_A.kappa_in_V,
+        kappa_ex_H_B=emission.arm_B.kappa_ex_H,
+        kappa_ex_V_B=emission.arm_B.kappa_ex_V,
+        kappa_in_H_B=emission.arm_B.kappa_in_H,
+        kappa_in_V_B=emission.arm_B.kappa_in_V,
+        gamma_sigma_plus_A=emission.arm_A.gamma_sigma_plus,
+        gamma_sigma_minus_A=emission.arm_A.gamma_sigma_minus,
+        gamma_sigma_plus_B=emission.arm_B.gamma_sigma_plus,
+        gamma_sigma_minus_B=emission.arm_B.gamma_sigma_minus,
         delta_u_A=emission.arm_A.delta_u,
         delta_u_B=emission.arm_B.delta_u,
         delta_e_A=emission.arm_A.delta_e,
         delta_e_B=emission.arm_B.delta_e,
-        gamma_loss_A=emission.arm_A.gamma_loss,
-        gamma_loss_B=emission.arm_B.gamma_loss,
+        delta_c_H_A=emission.arm_A.delta_c_H,
+        delta_c_V_A=emission.arm_A.delta_c_V,
+        delta_c_H_B=emission.arm_B.delta_c_H,
+        delta_c_V_B=emission.arm_B.delta_c_V,
         rng=rng,
         verbose=verbose,
         diagnostics=emission_diagnostics,

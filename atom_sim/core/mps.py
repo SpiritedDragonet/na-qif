@@ -23,7 +23,7 @@ pip install physics-tenpy
 """
 
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 # TeNPy imports
@@ -484,9 +484,10 @@ class DetectionContractionEngine:
     detector_order_fn: Callable[[List[str]], Tuple[str, ...]]
     n_bins: int
     dim_atom: int
+    single_dim: int
     right_envs: List[np.ndarray]
     left_envs_identity: List[np.ndarray]
-    qubit_indices: List[int]
+    qubit_pair_ops: List[List[np.ndarray]]
     _left_envs_qubit: Optional[List[List[List[np.ndarray]]]] = None
 
     @staticmethod
@@ -531,6 +532,7 @@ class DetectionContractionEngine:
         e_no_list: List[np.ndarray],
         zero_effect: np.ndarray,
         detector_order_fn: Callable[[List[str]], Tuple[str, ...]],
+        qubit_levels: Tuple[int, int] = (0, 1),
     ) -> 'DetectionContractionEngine':
         b_list, bc_list = cls._prepare_grouped_pairs(state)
         grouped_bins = len(b_list) - 1
@@ -538,18 +540,45 @@ class DetectionContractionEngine:
             raise ValueError(f"n_bins={n_bins} 与分组后bin数量 {grouped_bins} 不一致")
 
         dim_atom = b_list[0].shape[1]
-        if dim_atom != 16:
-            raise ValueError(f"Atom pair site dimension {dim_atom} != 16")
 
         single_dim = int(round(np.sqrt(dim_atom)))
         if single_dim * single_dim != dim_atom:
             raise ValueError(f"Unexpected atom-pair dimension: {dim_atom}")
-        qubit_indices = [
-            0 * single_dim + 0,
-            0 * single_dim + 1,
-            1 * single_dim + 0,
-            1 * single_dim + 1,
+
+        atom_levels = 4 if single_dim % 4 == 0 else single_dim
+        cavity_levels = single_dim // atom_levels
+        q0, q1 = int(qubit_levels[0]), int(qubit_levels[1])
+        if q0 < 0 or q1 < 0 or q0 >= atom_levels or q1 >= atom_levels:
+            raise ValueError(
+                f"qubit_levels={qubit_levels} 超出原子编码维度 {atom_levels} 的索引范围"
+            )
+
+        def _single_site_qubit_op(row_level: int, col_level: int) -> np.ndarray:
+            op = np.zeros((single_dim, single_dim), dtype=complex)
+            for cavity_index in range(cavity_levels):
+                row = row_level * cavity_levels + cavity_index
+                col = col_level * cavity_levels + cavity_index
+                op[row, col] = 1.0
+            return op
+
+        local_op_cache: Dict[Tuple[int, int], np.ndarray] = {}
+        for row_level in (q0, q1):
+            for col_level in (q0, q1):
+                local_op_cache[(row_level, col_level)] = _single_site_qubit_op(row_level, col_level)
+
+        basis_levels = [
+            (q0, q0),
+            (q0, q1),
+            (q1, q0),
+            (q1, q1),
         ]
+        qubit_pair_ops = [[None for _ in range(4)] for _ in range(4)]
+        for row_index, (a_row, b_row) in enumerate(basis_levels):
+            for col_index, (a_col, b_col) in enumerate(basis_levels):
+                qubit_pair_ops[row_index][col_index] = np.kron(
+                    local_op_cache[(a_row, a_col)],
+                    local_op_cache[(b_row, b_col)],
+                )
 
         dummy = cls(
             b_list=b_list,
@@ -559,9 +588,10 @@ class DetectionContractionEngine:
             detector_order_fn=detector_order_fn,
             n_bins=n_bins,
             dim_atom=dim_atom,
+            single_dim=single_dim,
             right_envs=[],
             left_envs_identity=[],
-            qubit_indices=qubit_indices,
+            qubit_pair_ops=qubit_pair_ops,
         )
         dummy.right_envs = dummy.build_right_envs()
         atom_identity = np.eye(dim_atom, dtype=complex)
@@ -786,11 +816,9 @@ class DetectionContractionEngine:
         if self._left_envs_qubit is not None:
             return
         self._left_envs_qubit = [[None for _ in range(4)] for _ in range(4)]
-        for i, qi in enumerate(self.qubit_indices):
-            for j, qj in enumerate(self.qubit_indices):
-                atom_op = np.zeros((self.dim_atom, self.dim_atom), dtype=complex)
-                atom_op[qi, qj] = 1.0
-                self._left_envs_qubit[i][j] = self.build_left_envs(atom_op)
+        for i in range(4):
+            for j in range(4):
+                self._left_envs_qubit[i][j] = self.build_left_envs(self.qubit_pair_ops[i][j])
 
     def compute_record_qubit_state(
         self,

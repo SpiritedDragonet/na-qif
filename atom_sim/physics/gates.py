@@ -677,6 +677,8 @@ def build_arrival_projectors_5d(
     eta_V_A: float,
     eta_H_B: float,
     eta_V_B: float,
+    U_A: Optional[np.ndarray] = None,
+    U_B: Optional[np.ndarray] = None,
     apply_filter_780: bool = True,
 ) -> Tuple[Tuple[np.ndarray, np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """构造用于到达概率统计的 (pi0,pi1,pi2)（5D 账本）。"""
@@ -696,11 +698,18 @@ def build_arrival_projectors_5d(
     u_qfc_dag = u_qfc.conj().T
     p_5_from_3 = embed_5_from_3()
 
-    def _build_one_arm(eta_h: float, eta_v: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    u_a_3 = jones_3d(np.eye(2, dtype=complex) if U_A is None else U_A)
+    u_b_3 = jones_3d(np.eye(2, dtype=complex) if U_B is None else U_B)
+
+    def _build_one_arm(eta_h: float, eta_v: float, u_arm_3: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         k_loss = loss_channel_1517_single_photon(eta_h, eta_v)
         p0 = apply_channel_adjoint_single(pi0_3, k_loss)
         p1 = apply_channel_adjoint_single(pi1_3, k_loss)
         p2 = apply_channel_adjoint_single(pi2_3, k_loss)
+
+        p0 = u_arm_3.conj().T @ p0 @ u_arm_3
+        p1 = u_arm_3.conj().T @ p1 @ u_arm_3
+        p2 = u_arm_3.conj().T @ p2 @ u_arm_3
 
         p0 = p_5_from_3 @ p0 @ p_5_from_3.conj().T
         p1 = p_5_from_3 @ p1 @ p_5_from_3.conj().T
@@ -716,8 +725,8 @@ def build_arrival_projectors_5d(
         p2 = u_qfc_dag @ p2 @ u_qfc
         return p0, p1, p2
 
-    proj_a = _build_one_arm(eta_H_A, eta_V_A)
-    proj_b = _build_one_arm(eta_H_B, eta_V_B)
+    proj_a = _build_one_arm(eta_H_A, eta_V_A, u_a_3)
+    proj_b = _build_one_arm(eta_H_B, eta_V_B, u_b_3)
     return proj_a, proj_b
 
 
@@ -878,87 +887,161 @@ def _bs_gate_1517(theta: float = np.pi / 4) -> np.ndarray:
     return U_bs
 
 
+def _cavity_annihilation_ops_3d() -> Tuple[np.ndarray, np.ndarray]:
+    """
+    构造 3D 腔基序 |vac>,|H>,|V> 上的湮灭算符 a_H/a_V。
+    """
+    a_h = np.zeros((3, 3), dtype=complex)
+    a_h[0, 1] = 1.0
+    a_v = np.zeros((3, 3), dtype=complex)
+    a_v[0, 2] = 1.0
+    return a_h, a_v
+
+
+def build_emitter_operators_12d(
+    alpha: np.ndarray,
+    g: float,
+    h_atom: np.ndarray,
+    kappa_ex_H: float,
+    kappa_ex_V: float,
+    kappa_in_H: float,
+    kappa_in_V: float,
+    gamma_sigma_plus: float,
+    gamma_sigma_minus: float,
+    delta_c_H: float = 0.0,
+    delta_c_V: float = 0.0,
+) -> dict:
+    """
+    构造 12D emitter（atom4D ⊗ cavity3D）的哈密顿量与通道算符。
+
+    返回：
+      - h_emitter: (12,12)
+      - l_out: (L_H, L_V)
+      - collapse_ops: 不可见损耗 collapse 算符列表
+    """
+    alpha = np.asarray(alpha, dtype=complex)
+    if alpha.shape != (2, 2):
+        raise ValueError(f"alpha 形状应为 (2,2)，得到 {alpha.shape}")
+    h_atom = np.asarray(h_atom, dtype=complex)
+    if h_atom.shape != (4, 4):
+        raise ValueError(f"h_atom 形状应为 (4,4)，得到 {h_atom.shape}")
+
+    for name, value in (
+        ("kappa_ex_H", kappa_ex_H),
+        ("kappa_ex_V", kappa_ex_V),
+        ("kappa_in_H", kappa_in_H),
+        ("kappa_in_V", kappa_in_V),
+        ("gamma_sigma_plus", gamma_sigma_plus),
+        ("gamma_sigma_minus", gamma_sigma_minus),
+    ):
+        if float(value) < 0.0:
+            raise ValueError(f"{name} 必须 >= 0")
+
+    a_h, a_v = _cavity_annihilation_ops_3d()
+    a_h_dag = a_h.conj().T
+    a_v_dag = a_v.conj().T
+
+    i_atom = np.eye(4, dtype=complex)
+    i_cavity = np.eye(3, dtype=complex)
+
+    s_plus = atom_transition('+')
+    s_minus = atom_transition('-')
+
+    sigma_h = alpha[0, 0] * s_plus + alpha[0, 1] * s_minus
+    sigma_v = alpha[1, 0] * s_plus + alpha[1, 1] * s_minus
+
+    h_cavity = np.diag([0.0, float(delta_c_H), float(delta_c_V)]).astype(complex)
+    h_int = float(g) * (
+        np.kron(sigma_h, a_h_dag)
+        + np.kron(sigma_h.conj().T, a_h)
+        + np.kron(sigma_v, a_v_dag)
+        + np.kron(sigma_v.conj().T, a_v)
+    )
+    h_emitter = np.kron(h_atom, i_cavity) + np.kron(i_atom, h_cavity) + h_int
+
+    l_out_h = np.sqrt(float(kappa_ex_H)) * np.kron(i_atom, a_h)
+    l_out_v = np.sqrt(float(kappa_ex_V)) * np.kron(i_atom, a_v)
+
+    collapse_ops = []
+    if float(kappa_in_H) > 0.0:
+        collapse_ops.append(np.sqrt(float(kappa_in_H)) * np.kron(i_atom, a_h))
+    if float(kappa_in_V) > 0.0:
+        collapse_ops.append(np.sqrt(float(kappa_in_V)) * np.kron(i_atom, a_v))
+    if float(gamma_sigma_plus) > 0.0:
+        collapse_ops.append(np.sqrt(float(gamma_sigma_plus)) * np.kron(s_plus, i_cavity))
+    if float(gamma_sigma_minus) > 0.0:
+        collapse_ops.append(np.sqrt(float(gamma_sigma_minus)) * np.kron(s_minus, i_cavity))
+
+    return {
+        "h_emitter": h_emitter,
+        "l_out": (l_out_h, l_out_v),
+        "collapse_ops": collapse_ops,
+    }
+
+
 def emission_gate(
-    gamma: float,
     dt: float,
-    Alpha: np.ndarray,
+    h_emitter: np.ndarray,
+    l_out_h: np.ndarray,
+    l_out_v: np.ndarray,
     phase: float = 0.0,
-    H_sys: Optional[np.ndarray] = None,
     bin_first: bool = False
 ) -> np.ndarray:
     """
-    原子-光子纠缠的发射门 U_emit（嵌入5D bin空间）。
-
-        U_emit = exp(√(dt) * (L ⊗ b^†_780 - L^† ⊗ b_780))
-
-    其中 L = √gamma * (alpha_+ * S_+ + alpha_- * S_-)
-    且 S_± 是原子跃迁算符。
+    显式腔发射门 U_emit（12D emitter 嵌入 5D bin）。
 
     门嵌入5D bin空间：仅作用于 (vac, H_780, V_780) 子块，
     对 (H_1517, V_1517) 子块保持单位。
 
-    这在原子态和发射光子偏振之间创建纠缠。
-    发射的光子在780nm子空间中，稍后可通过QFC
-    转换为1517nm。
+    发射门作用在 emitter×780 子空间（36D），再嵌入到 emitter×bin（60D）。
 
     Parameters
     ----------
-    gamma : float
-        此时间步的单通道发射率（总发射率的一半）
     dt : float
         时间仓宽度
-    Alpha : np.ndarray
-        从原子跃迁到H/V的2x2偏振映射矩阵
-        [[alpha_H+, alpha_H-], [alpha_V+, alpha_V-]]
+    h_emitter : np.ndarray
+        显式 emitter 哈密顿量（12x12）
+    l_out_h : np.ndarray
+        H 偏振输出耦合算符（12x12）
+    l_out_v : np.ndarray
+        V 偏振输出耦合算符（12x12）
     phase : float
         发射波包的相位（会同时作用于H/V通道）
-    H_sys : np.ndarray, optional
-        原子系统哈密顿量（4x4），用于在单步门中同时加入驱动与失谐
     bin_first : bool
-        如果为 True，返回 I_1517 ⊗ U_12x12（作用于 bin × atom）
-        如果为 False，返回 U_12x12 ⊗ I_1517（作用于 atom × bin）
+        如果为 True，返回 I_1517 ⊗ U_36x36（作用于 bin × emitter）
+        如果为 False，返回 U_36x36 ⊗ I_1517（作用于 emitter × bin）
 
     Returns
     -------
     np.ndarray
-        20x20 幺正矩阵
-        - bin_first=False: 作用在 原子(4D) × bin(5D)
-        - bin_first=True: 作用在 bin(5D) × 原子(4D)
+        60x60 幺正矩阵
+        - bin_first=False: 作用在 emitter(12D) × bin(5D)
+        - bin_first=True: 作用在 bin(5D) × emitter(12D)
 
     Examples
     --------
-    >>> # 示例：圆偏振映射
-    >>> Alpha = np.array([[1, 0], [0, 1]])  # σ+ -> H, σ- -> V
-    >>> U = emission_gate(gamma=0.1, dt=1.0, Alpha=Alpha)
+    >>> # 示例：显式 emitter
+    >>> h = np.zeros((12, 12), dtype=complex)
+    >>> l = np.zeros((12, 12), dtype=complex)
+    >>> U = emission_gate(dt=1e-9, h_emitter=h, l_out_h=l, l_out_v=l)
     """
-    # ------------------------------------------------------------------
-    # 发射门的结构（碰撞模型离散化）：
-    #   U_emit = exp[ sqrt(dt) * (L ⊗ b^† - L^† ⊗ b)  - i dt (H_sys ⊗ I) ]
-    #
-    # 其中：
-    #   L = sqrt(gamma) * (alpha_+ S_+ + alpha_- S_-)
-    #   b^† 是 780nm 光子的产生算符（单光子截断）
-    #
-    # 该门在“原子 × 780”上是 12x12，再嵌入到 5D bin 得到 20x20。
-    # ------------------------------------------------------------------
-    # 原子跃迁算符
-    S_plus = atom_transition('+')  # |0><e|
-    S_minus = atom_transition('-')  # |1><e|
+    if dt <= 0.0:
+        raise ValueError("dt 必须 > 0")
 
-    # 提取Alpha矩阵元素
-    alpha_H_plus = Alpha[0, 0]
-    alpha_H_minus = Alpha[0, 1]
-    alpha_V_plus = Alpha[1, 0]
-    alpha_V_minus = Alpha[1, 1]
+    h_emitter = np.asarray(h_emitter, dtype=complex)
+    l_out_h = np.asarray(l_out_h, dtype=complex)
+    l_out_v = np.asarray(l_out_v, dtype=complex)
 
-    # 在原子(4D)上构造L算符
-    # L = √gamma * (alpha_H+ * S_+ + alpha_H- * S_-) 用于H偏振
-    # V偏振同理
-    sqrt_gamma = np.sqrt(gamma)
+    if h_emitter.shape[0] != h_emitter.shape[1]:
+        raise ValueError(f"h_emitter 必须为方阵，得到 {h_emitter.shape}")
+    dim_emitter = int(h_emitter.shape[0])
+    for name, op in (("l_out_h", l_out_h), ("l_out_v", l_out_v)):
+        if op.shape != (dim_emitter, dim_emitter):
+            raise ValueError(f"{name} 形状应为 ({dim_emitter},{dim_emitter})，得到 {op.shape}")
+
     phase_factor = np.exp(1j * phase) if phase != 0.0 else 1.0
-
-    L_H = phase_factor * sqrt_gamma * (alpha_H_plus * S_plus + alpha_H_minus * S_minus)
-    L_V = phase_factor * sqrt_gamma * (alpha_V_plus * S_plus + alpha_V_minus * S_minus)
+    l_h = phase_factor * l_out_h
+    l_v = phase_factor * l_out_v
 
     # 780上的光子算符（3D：vac, H, V）
     # b^†_H = |H><vac|
@@ -970,48 +1053,41 @@ def emission_gate(
     bV_dag[2, 0] = 1.0
     bV = bV_dag.conj().T
 
-    # 生成元：G = √dt * (L_H ⊗ b_H^† + L_V ⊗ b_V^† - h.c.)
+    # 生成元：G = √dt * (L_H ⊗ b_H^† + L_V ⊗ b_V^† - h.c.) - i dt (H_em ⊗ I)
     sqrt_dt = np.sqrt(dt)
 
-    G_H = sqrt_dt * (np.kron(L_H, bH_dag) - np.kron(L_H.conj().T, bH))
-    G_V = sqrt_dt * (np.kron(L_V, bV_dag) - np.kron(L_V.conj().T, bV))
-    G_12x12 = G_H + G_V
+    g_h = sqrt_dt * (np.kron(l_h, bH_dag) - np.kron(l_h.conj().T, bH))
+    g_v = sqrt_dt * (np.kron(l_v, bV_dag) - np.kron(l_v.conj().T, bV))
+    g_sys = -1j * dt * np.kron(h_emitter, np.eye(3, dtype=complex))
+    g_36x36 = g_h + g_v + g_sys
 
-    d_atom = L_H.shape[0]
-    if H_sys is not None:
-        if H_sys.shape != (d_atom, d_atom):
-            raise ValueError(f"H_sys 维度应为 ({d_atom},{d_atom})，实际为 {H_sys.shape}")
-        G_sys = -1j * dt * np.kron(H_sys, np.eye(3, dtype=complex))
-        G_12x12 = G_12x12 + G_sys
+    # 指数化得到 emitter×780 上的幺正
+    u_36x36 = expm(g_36x36)
 
-    # 指数化得到原子×780上的幺正
-    U_12x12 = expm(G_12x12)
-
-    # U_12x12 作用在 atom(4D) × 780(3D) 上，形状 (12, 12)
-    # Reshape 为 (d_atom, d_780, d_atom, d_780)
-    U_12x12_4d = U_12x12.reshape(d_atom, 3, d_atom, 3)
+    # Reshape 为 (d_emitter, d_780, d_emitter, d_780)
+    u_4d = u_36x36.reshape(dim_emitter, 3, dim_emitter, 3)
 
     if bin_first:
-        # bin × atom: (5D bin) × atom
+        # bin × emitter: (5D bin) × emitter
         # 在 bin-first 索引下嵌入 780 子块，其余 1517 分量保持单位
-        U_20 = np.eye(5 * d_atom, dtype=complex)
-        for iatom in range(d_atom):
+        u_60 = np.eye(5 * dim_emitter, dtype=complex)
+        for iatom in range(dim_emitter):
             for i780 in range(3):
-                row = i780 * d_atom + iatom
-                for jatom in range(d_atom):
+                row = i780 * dim_emitter + iatom
+                for jatom in range(dim_emitter):
                     for j780 in range(3):
-                        col = j780 * d_atom + jatom
-                        U_20[row, col] = U_12x12_4d[iatom, i780, jatom, j780]
+                        col = j780 * dim_emitter + jatom
+                        u_60[row, col] = u_4d[iatom, i780, jatom, j780]
     else:
-        # atom × bin: atom × (5D bin)
+        # emitter × bin: emitter × (5D bin)
         # 在 bin-last 索引下嵌入 780 子块，其余 1517 分量保持单位
-        U_20 = np.eye(d_atom * 5, dtype=complex)
-        for iatom in range(d_atom):
+        u_60 = np.eye(dim_emitter * 5, dtype=complex)
+        for iatom in range(dim_emitter):
             for i780 in range(3):
                 row = iatom * 5 + i780
-                for jatom in range(d_atom):
+                for jatom in range(dim_emitter):
                     for j780 in range(3):
                         col = jatom * 5 + j780
-                        U_20[row, col] = U_12x12_4d[iatom, i780, jatom, j780]
+                        u_60[row, col] = u_4d[iatom, i780, jatom, j780]
 
-    return U_20
+    return u_60

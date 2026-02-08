@@ -187,8 +187,12 @@ def _order_two_port_detectors(detectors: List[str]) -> Tuple[str, ...]:
     return order_two_port_detectors(detectors)
 
 
-def _build_bell_projector_full(target_bell: str) -> np.ndarray:
-    """构造 16D 原子对空间中的 Bell 投影（仅填充量子比特子块）。"""
+def _build_bell_projector_full(
+    target_bell: str,
+    single_dim: int = 4,
+    qubit_levels: Tuple[int, int] = (0, 1),
+) -> np.ndarray:
+    """构造原子对空间中的 Bell 投影（支持 12D emitter 的腔自由度偏迹口径）。"""
     bell_states = {
         "Phi+": np.array([1, 0, 0, 1]) / np.sqrt(2),
         "Phi-": np.array([1, 0, 0, -1]) / np.sqrt(2),
@@ -199,11 +203,42 @@ def _build_bell_projector_full(target_bell: str) -> np.ndarray:
         raise ValueError(f"未知的Bell态：{target_bell}")
     psi = bell_states[target_bell]
     proj_qubit = np.outer(psi, psi.conj())
-    proj_full = np.zeros((16, 16), dtype=complex)
-    qubit_indices = [0, 1, 4, 5]
-    for i, qi in enumerate(qubit_indices):
-        for j, qj in enumerate(qubit_indices):
-            proj_full[qi, qj] = proj_qubit[i, j]
+    dim_pair = single_dim * single_dim
+    q0, q1 = int(qubit_levels[0]), int(qubit_levels[1])
+    atom_levels = 4 if single_dim % 4 == 0 else single_dim
+    cavity_levels = single_dim // atom_levels
+    if q0 < 0 or q1 < 0 or q0 >= atom_levels or q1 >= atom_levels:
+        raise ValueError(
+            f"qubit_levels={qubit_levels} 超出原子编码维度 {atom_levels} 的索引范围"
+        )
+
+    def _single_site_basis_op(row_level: int, col_level: int) -> np.ndarray:
+        op = np.zeros((single_dim, single_dim), dtype=complex)
+        for cavity_index in range(cavity_levels):
+            row = row_level * cavity_levels + cavity_index
+            col = col_level * cavity_levels + cavity_index
+            op[row, col] = 1.0
+        return op
+
+    basis_levels = [
+        (q0, q0),
+        (q0, q1),
+        (q1, q0),
+        (q1, q1),
+    ]
+    local_cache = {
+        (row, col): _single_site_basis_op(row, col)
+        for row in (q0, q1)
+        for col in (q0, q1)
+    }
+
+    proj_full = np.zeros((dim_pair, dim_pair), dtype=complex)
+    for row_index, (a_row, b_row) in enumerate(basis_levels):
+        for col_index, (a_col, b_col) in enumerate(basis_levels):
+            coeff = proj_qubit[row_index, col_index]
+            if abs(coeff) <= 0.0:
+                continue
+            proj_full += coeff * np.kron(local_cache[(a_row, a_col)], local_cache[(b_row, b_col)])
     return proj_full
 
 
@@ -244,6 +279,45 @@ def _parse_fiber_sample(fiber_sample: Optional[tuple]) -> Tuple[np.ndarray, np.n
         float(phase_slope),
         float(phase_jitter_std),
     )
+
+
+def _scale_qfc_source_background_map(
+    p_bg_qfc_source_map: dict,
+    eta_H_A: float,
+    eta_V_A: float,
+    eta_H_B: float,
+    eta_V_B: float,
+    bs_theta: float,
+) -> dict:
+    """
+    将“源端 QFC 背景概率（每 bin）”映射为探测端 OR-map。
+
+    近似模型：
+    1) 源端背景在 A/B 臂产生后，先乘对应臂传输系数。
+    2) 在中心站 BS 处按 cos^2(theta)/sin^2(theta) 分流到两个端口。
+    3) 每个端口的背景在 H/V 探测器间按 1/2 均分。
+
+    该映射保留了关键物理尺度：源端背景会随链路透过率衰减。
+    """
+    eta_arm_a = float(np.clip(0.5 * (eta_H_A + eta_V_A), 0.0, 1.0))
+    eta_arm_b = float(np.clip(0.5 * (eta_H_B + eta_V_B), 0.0, 1.0))
+
+    p_src_a = float(np.clip(0.5 * (p_bg_qfc_source_map["H1"] + p_bg_qfc_source_map["V1"]), 0.0, 1.0))
+    p_src_b = float(np.clip(0.5 * (p_bg_qfc_source_map["H2"] + p_bg_qfc_source_map["V2"]), 0.0, 1.0))
+
+    theta = float(np.clip(bs_theta, 0.0, np.pi / 2.0))
+    c2 = float(np.cos(theta) ** 2)
+    s2 = float(np.sin(theta) ** 2)
+
+    p_port_1 = float(np.clip(p_src_a * eta_arm_a * c2 + p_src_b * eta_arm_b * s2, 0.0, 1.0))
+    p_port_2 = float(np.clip(p_src_a * eta_arm_a * s2 + p_src_b * eta_arm_b * c2, 0.0, 1.0))
+
+    return {
+        "H1": float(np.clip(0.5 * p_port_1, 0.0, 1.0)),
+        "V1": float(np.clip(0.5 * p_port_1, 0.0, 1.0)),
+        "H2": float(np.clip(0.5 * p_port_2, 0.0, 1.0)),
+        "V2": float(np.clip(0.5 * p_port_2, 0.0, 1.0)),
+    }
 
 
 def _build_empty_samples(n_samples: int) -> List[TwoPhotonDetectionResult]:
@@ -318,7 +392,9 @@ def run_detection_pipeline(
     apply_filter_780: bool = True,
     theta_H: float = np.pi / 4,
     theta_V: float = np.pi / 4,
+    bs_theta: float = np.pi / 4,
     v_res: float = 1.0,
+    qubit_levels: Tuple[int, int] = (0, 1),
 ) -> DetectionPipelineResult:
     """
     执行探测流水线（编排层）。
@@ -331,6 +407,7 @@ def run_detection_pipeline(
     注意：
     - 本函数不再承载底层算符生成和张量收缩细节；
     - v_res 仅表示“残差可区分度”，用于未显式建模因素的剩余项。
+    - 当原子站点是 12D emitter（atom×cavity）时，Bell 与 qubit 读出采用“腔偏迹口径”。
     """
     if rng is None:
         rng = np.random.default_rng()
@@ -355,20 +432,31 @@ def run_detection_pipeline(
 
     eta_det_map = _resolve_detector_map(eta_det, "eta_det")
     p_dark_intrinsic_map = _resolve_detector_map(p_dark_intrinsic, "p_dark_intrinsic")
-    p_bg_qfc_map = _resolve_detector_map(p_bg_qfc, "p_bg_qfc")
+    p_bg_qfc_source_map = _resolve_detector_map(p_bg_qfc, "p_bg_qfc")
     p_dark_intrinsic_scalar = max(p_dark_intrinsic_map.values())
-    p_bg_qfc_scalar = max(p_bg_qfc_map.values())
 
     mps = mps.copy()
     v_res = min(max(float(v_res), 0.0), 1.0)
 
-    bin_start = 2 if (len(mps.d) >= 2 and mps.d[0] == 4 and mps.d[1] == 4) else 0
+    # 支持“原子位点维度可变”场景：
+    # - 常规布局：atomA, atomB, A1, B1, ... -> bin_start=2
+    # - 纯光场输入：A1, B1, ... -> bin_start=0
+    bin_start = 2 if (len(mps.d) >= 4 and mps.d[2] == 5 and mps.d[3] == 5) else 0
     bin_dim = mps.d[bin_start]
     if bin_dim != 5:
         raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 5.")
 
     bs_unitary_6d = _validate_bs_unitary(bs_unitary)
     U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase_slope, phase_jitter_std = _parse_fiber_sample(fiber_sample)
+    p_bg_qfc_map = _scale_qfc_source_background_map(
+        p_bg_qfc_source_map,
+        eta_H_A=eta_H_A,
+        eta_V_A=eta_V_A,
+        eta_H_B=eta_H_B,
+        eta_V_B=eta_V_B,
+        bs_theta=bs_theta,
+    )
+    p_bg_qfc_scalar = max(p_bg_qfc_map.values())
 
     if verbose and n_samples > 0:
         print("\n" + "=" * 60)
@@ -386,6 +474,8 @@ def run_detection_pipeline(
         eta_V_A=eta_V_A,
         eta_H_B=eta_H_B,
         eta_V_B=eta_V_B,
+        U_A=U_A,
+        U_B=U_B,
         apply_filter_780=apply_filter_780,
     )
     p_arrive, p_arrive_11, p_arrive_20, p_arrive_02, p_arrive_same_arm = compute_joint_arrival_probabilities(
@@ -503,6 +593,7 @@ def run_detection_pipeline(
         e_no_list=e_no_list,
         zero_effect=zero_effect,
         detector_order_fn=order_two_port_detectors,
+        qubit_levels=qubit_levels,
     )
 
     metrics = None
@@ -513,7 +604,11 @@ def run_detection_pipeline(
             print(f"  使用{bin_dim}D Kraus operators ({dim_pair}x{dim_pair}) - POVM收缩")
 
         bell_projectors = {
-            bell: _build_bell_projector_full(bell)
+            bell: _build_bell_projector_full(
+                bell,
+                single_dim=engine.single_dim,
+                qubit_levels=qubit_levels,
+            )
             for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]
         }
         left_envs_bell = {
@@ -774,19 +869,44 @@ def run_detection_pipeline(
     return DetectionPipelineResult(p_arrive=p_arrive, metrics=metrics, samples=samples, timings=timings)
 
 
-def extract_qubit_state(mps: MPSState) -> Tuple[np.ndarray, float]:
-    """提取双原子 4x4 量子比特子块。"""
+def extract_qubit_state(
+    mps: MPSState,
+    qubit_levels: Tuple[int, int] = (0, 1),
+) -> Tuple[np.ndarray, float]:
+    """提取双量子比特 4x4 子块（对腔自由度做偏迹后再取编码态子空间）。"""
     dim_atom = mps.d[0]
-    if dim_atom != 4:
-        raise ValueError(f"Unexpected atom dimension: {dim_atom}. Expected 4.")
+    q0, q1 = int(qubit_levels[0]), int(qubit_levels[1])
+    atom_levels = 4 if dim_atom % 4 == 0 else dim_atom
+    cavity_levels = dim_atom // atom_levels
+    if q0 < 0 or q1 < 0 or q0 >= atom_levels or q1 >= atom_levels:
+        raise ValueError(
+            f"qubit_levels={qubit_levels} 超出原子编码维度 {atom_levels} 的索引范围"
+        )
     rho_full = mps.get_reduced_density([0, 1])
     if rho_full.ndim == 4:
         rho_full = rho_full.reshape(dim_atom * dim_atom, dim_atom * dim_atom)
-    qubit_indices = [0, 1, 4, 5]
+    basis_levels = [
+        (q0, q0),
+        (q0, q1),
+        (q1, q0),
+        (q1, q1),
+    ]
+
+    def _pair_index(atom_a_level: int, cav_a: int, atom_b_level: int, cav_b: int) -> int:
+        single_a = atom_a_level * cavity_levels + cav_a
+        single_b = atom_b_level * cavity_levels + cav_b
+        return single_a * dim_atom + single_b
+
     rho_qubit = np.zeros((4, 4), dtype=complex)
-    for i, qi in enumerate(qubit_indices):
-        for j, qj in enumerate(qubit_indices):
-            rho_qubit[i, j] = rho_full[qi, qj]
+    for row_index, (a_row, b_row) in enumerate(basis_levels):
+        for col_index, (a_col, b_col) in enumerate(basis_levels):
+            value = 0.0 + 0.0j
+            for cav_a in range(cavity_levels):
+                for cav_b in range(cavity_levels):
+                    row = _pair_index(a_row, cav_a, b_row, cav_b)
+                    col = _pair_index(a_col, cav_a, b_col, cav_b)
+                    value += rho_full[row, col]
+            rho_qubit[row_index, col_index] = value
     p_qubit = float(np.real(np.trace(rho_qubit)))
     return rho_qubit, p_qubit
 
@@ -884,7 +1004,7 @@ def run_detection_self_checks(verbose: bool = True) -> None:
             _assert_close(f"v_res=0(mask) key={key} mask={mask}", map_v0[mask], effect)
 
     # E2: 极限 sanity（eta=1, p_dark_intrinsic=0, p_bg_qfc=0, 理想链路）
-    local_dims = [4, 4] + [5, 5]
+    local_dims = [12, 12] + [5, 5]
     state_ideal = MPSState(local_dims=local_dims, init_state=[1, 1, 0, 0], max_bond=8)
     run_ideal = run_detection_pipeline(
         mps=state_ideal,

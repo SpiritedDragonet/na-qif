@@ -11,6 +11,64 @@ from typing import List
 import numpy as np
 
 
+def kraus_from_collapse_ops(c_ops: List[np.ndarray], dt_s: float) -> List[np.ndarray]:
+    """
+    由 collapse 算符列表构造单步 Kraus（一级离散化）。
+
+    给定 Lindblad 形式的 collapse 算符 C_j，本函数构造：
+        K0 = I - 0.5 * dt * Σ_j C_j^† C_j
+        Kj = sqrt(dt) * C_j
+
+    该构造在小 dt 下保持数值稳定，适合 time-bin 碰撞模型中的逐步抽样。
+
+    Parameters
+    ----------
+    c_ops : List[np.ndarray]
+        collapse 算符列表，每个形状为 (d, d)
+    dt_s : float
+        单步时间（秒）
+
+    Returns
+    -------
+    List[np.ndarray]
+        Kraus 列表 [K0, K1, ...]
+    """
+    if dt_s <= 0.0:
+        raise ValueError("dt_s 必须 > 0")
+    if not c_ops:
+        return []
+
+    dim = int(c_ops[0].shape[0])
+    if c_ops[0].shape != (dim, dim):
+        raise ValueError("collapse 算符必须是方阵")
+    for index, op in enumerate(c_ops, start=1):
+        if op.shape != (dim, dim):
+            raise ValueError(f"collapse 算符第 {index} 个维度不一致: {op.shape} != ({dim}, {dim})")
+
+    sum_cdagger_c = np.zeros((dim, dim), dtype=complex)
+    for op in c_ops:
+        sum_cdagger_c += op.conj().T @ op
+
+    k0 = np.eye(dim, dtype=complex) - 0.5 * float(dt_s) * sum_cdagger_c
+    k_list = [k0]
+    factor = np.sqrt(float(dt_s))
+    for op in c_ops:
+        k_list.append(factor * op)
+
+    # 数值健康检查：一级离散近似下应接近 I。
+    completeness = np.zeros((dim, dim), dtype=complex)
+    for kraus in k_list:
+        completeness += kraus.conj().T @ kraus
+    deviation = np.linalg.norm(completeness - np.eye(dim, dtype=complex))
+    if deviation > 1e-4:
+        raise ValueError(
+            f"kraus_from_collapse_ops: 完备性偏差过大 ({deviation:.3e})，"
+            "请减小 dt 或检查 collapse 参数量级"
+        )
+
+    return k_list
+
+
 def loss_channel_both_subspaces(
     eta_780: float,
     eta_H_1517: float,

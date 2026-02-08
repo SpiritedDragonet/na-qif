@@ -127,6 +127,7 @@ def run_bsm_scan_task(
             rng=run_rng,
             verbose=False,
             bs_unitary=bs_gate_6d(float(bs_theta)),
+            bs_theta=float(bs_theta),
         )
         pipeline = run_detection_pipeline(
             **detect_common,

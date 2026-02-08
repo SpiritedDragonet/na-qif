@@ -7,6 +7,10 @@
 ```
 total_simulation.py               # CLI 主入口（参数解析 + 任务调度）
 ├── _parse_run_params()           # 解析 CLI 参数
+├── _build_task_list()            # 生成 SIM/HOM/WINDOW/BSM/LENGTH/SUMMARY 任务
+├── _run_server_monitor()         # server 进度监控与 ETA 显示
+├── _run_worker_loop()            # worker 抢占任务并执行
+├── _write_summary()              # 调用 experiment.summary 产出汇总 CSV
 └── main()                        # 调度入口（内部含汇总/统计辅助函数）
 
 atom_sim/
@@ -48,7 +52,7 @@ atom_sim/
 │   ├── __init__.py
 │   ├── gates.py                   # 酉门 + 探测 effect 构造（底层）
 │   │   ├── qfc_gate()             # U_qfc: 780↔1517 频率转换 (5x5)
-│   │   ├── bs_gate_6d()           # U_BS: 50/50 分束器 (36x36, 仅1517nm)
+│   │   ├── bs_gate_6d()           # U_BS: 可调混合角分束器 (36x36, 仅1517nm)
 │   │   ├── emission_gate()        # U_emit: 原子-光子耦合 (20x20)
 │   │   ├── build_detection_effects_6d()/9d()
 │   │   ├── build_arrival_projectors_5d()
@@ -70,21 +74,38 @@ atom_sim/
 │   │
 │   └── detection.py               # 探测和分析
 │       ├── DetectionEvent
+│       ├── TwoClickRecord
 │       ├── TwoPhotonDetectionResult
 │       ├── SuccessEnumerationResult
+│       ├── DetectionPipelineResult
 │       ├── _order_two_port_detectors()  # 适配层
 │       ├── run_detection_pipeline()     # 编排：到达统计 + 枚举 + 抽样
+│       ├── compute_pauli_correlators_and_chsh() # 关联量与 CHSH
 │       ├── run_detection_self_checks()  # POVM 完备性/一致性自检
 │       ├── extract_qubit_state()
 │       └── compute_fidelity_with_bell()
 │
 ├── experiment/                    # 任务实现层（按 task_type 拆分）
 │   ├── common.py                  # 跨任务共享配置/参数构造
+│   │   ├── class SimConfig        # 总配置对象（run/emission/noise/detector/...）
+│   │   ├── run_emission_to_bs()   # 发射→QFC参数→光纤参数→退相干→BS诊断hook
+│   │   ├── _build_run_parameter_store() # 统一参数表（eta/噪声映射/窗口/预算）
+│   │   └── _build_detection_kwargs()    # 探测端统一入参组装
 │   ├── single_run.py              # SIM 任务核心（单 run 执行）
+│   │   ├── _run_single_trial()    # 单次物理链路调用
+│   │   └── _run_single_simulation_core() # SIM 主流程（枚举+抽样+落盘）
 │   ├── hom.py                     # HOM 任务（tau 扫描）
+│   │   ├── parse_hom_cli()        # HOM 参数解析
+│   │   ├── _build_hom_tau_values()# 生成 tau 扫描序列
+│   │   └── _run_hom_run()         # 单 tau 的 run 执行
 │   ├── window_scan.py             # WINDOW_SCAN 任务（window 扫描）
+│   │   └── run_window_scan_task() # 同 run 复用发射态，扫描 window_ns
 │   ├── bsm_scan.py                # BSM_SCAN 任务（BS 误差扫描）
-│   └── length_scan.py             # LENGTH_SCAN 任务（length 扫描）
+│   │   └── run_bsm_scan_task()    # 同 run 复用发射态，扫描 bs_theta
+│   ├── length_scan.py             # LENGTH_SCAN 任务（length 扫描）
+│   │   └── run_length_scan_task() # 按长度重跑链路，统计 event_rate_hz
+│   └── summary.py                 # 汇总任务输出
+│       └── write_summary()        # 输出 *_trials / *_runs / *_summary
 │
 ├── visualization/                 # 可视化层
 │   ├── __init__.py
@@ -113,6 +134,15 @@ outputs/                           # 仿真输出目录（已 gitignore）
     │   ├── hom_summary.csv
     │   ├── sim_trials.csv
     │   ├── sim_summary.csv
+    │   ├── window_scan_trials.csv
+    │   ├── window_scan_runs.csv
+    │   ├── window_scan_summary.csv
+    │   ├── bsm_scan_trials.csv
+    │   ├── bsm_scan_runs.csv
+    │   ├── bsm_scan_summary.csv
+    │   ├── length_scan_trials.csv
+    │   ├── length_scan_runs.csv
+    │   ├── length_scan_summary.csv
     │   └── server_done.flag
     ├── tasks/
     │   ├── pending/
@@ -176,6 +206,21 @@ outputs/                           # 仿真输出目录（已 gitignore）
 --qfc-theta-v <rad>           # QFC V 转换角
 --no-filter-780               # 关闭 780 滤波
 ```
+
+### 关键函数解释（按执行顺序）
+
+- `total_simulation._parse_run_params()`：解析 CLI 并组装 `SimConfig`，做参数合法性检查。
+- `total_simulation._build_task_list()`：把 `SIM/HOM/WINDOW_SCAN/BSM_SCAN/LENGTH_SCAN` 拆成任务 JSON。
+- `total_simulation._run_worker_loop()`：worker 抢占任务并分发到对应 experiment 模块执行。
+- `experiment.common.run_emission_to_bs()`：单次物理链路编排（发射→QFC/滤波参数→光纤参数→原子退相干→BS可视化hook）。
+- `experiment.common._build_run_parameter_store()`：构建本次 run 的统一参数表（eta、噪声概率映射、窗口、预算）。
+- `experiment.common._build_detection_kwargs()`：把 `PipelineResult + 参数表` 组装成探测端统一入参。
+- `simulation.detection.run_detection_pipeline()`：探测主算法（到达统计→POVM effect 构造→成功率枚举→点击抽样）。
+- `experiment.single_run._run_single_simulation_core()`：SIM 主流程，输出 success metrics 与逐 shot 点击记录。
+- `experiment.window_scan.run_window_scan_task()`：固定一次发射态，在同一 run 内扫描多个 `window_ns`。
+- `experiment.bsm_scan.run_bsm_scan_task()`：固定一次发射态，在同一 run 内扫描多个 `bs_theta`。
+- `experiment.length_scan.run_length_scan_task()`：按长度逐点重跑发射链路并统计 `event_rate_hz`。
+- `experiment.summary.write_summary()`：按任务类型写出 `*_trials.csv`/`*_runs.csv`/`*_summary.csv`。
 
 ## 输出字段速览（SIM）
 
@@ -257,37 +302,94 @@ atomA(4D) - atomB(4D) - A1(5D) - B1(5D) - A2(5D) - B2(5D) - ... - AN(5D) - BN(5D
 
 ## 仿真流程
 
-```python
-# (1) 发射：SWAP conveyor belt 协议
-result = run_dual_atom_emission(n_bins=100, ...)
-# 结果：原子在末尾，bins 包含 780nm 光子
+### 1) server 侧：任务生成
 
-# (2) 光纤采样（Heisenberg 参数，不改态）
-mps, fiber_sample = sample_fiber_realization(...)
-# 注：光纤的 Jones/损耗/相位漂移在 POVM 端使用 fiber_sample 重建。
+- 入口：`total_simulation._parse_run_params()` + `_build_task_list()`。
+- 产物：`queue/<run_id>/tasks/pending/task_*.json`。
+- 规则：
+  - `SIM`：每个 `run_index` 一个 task。
+  - `HOM`：每个 `tau × run_index` 一个 task。
+  - `WINDOW_SCAN`：每个 `run_index` 一个 task（task 内含 `windows_ns` 列表）。
+  - `BSM_SCAN`：每个 `run_index` 一个 task（task 内含 `bs_thetas` 列表）。
+  - `LENGTH_SCAN`：每个 `run_index` 一个 task（task 内含 `lengths_km` 列表）。
+  - 最后追加 `SUMMARY` task 统一汇总。
 
-# (3) 分束器并入测量端：构造 U_BS^† E U_BS
-# 结果：在不显式作用 BS 的情况下获取端口点击分布
+### 2) worker 侧：单个物理链路（`_run_single_trial`）
 
-# (4) 探测：POVM 枚举 + 抽样（QFC/过滤/光纤/BS 都已并入测量端）
-pipeline = run_detection_pipeline(
-    mps,
-    n_bins,
-    eta_det=eta_det,  # 标量或 {H1,V1,H2,V2} 映射
-    p_dark_intrinsic=p_dark_intrinsic,  # 标量或映射
-    p_bg_qfc=p_bg_qfc,  # 标量或映射
-    bs_unitary=bs_gate_6d(),
-)
-# 结果：点击事件列表 / 成功率 / 保真度
+输入：`rng`、`config`、可选 `delay_ns/delay_jitter_ns`、可选 `hooks`。
 
-# (5) BSM 宣告：检查成功模式
-# Ψ-: (H1, V2) 或 (V1, H2) - 跨端口不同偏振（反聚束）
-# Ψ+: (H1, V1) 或 (H2, V2) - 同端口不同偏振（聚束）
-```
+1. 先按链路长度计算等待时间：
+   - `t_wait_us = length_km * 1e3 / fiber_group_velocity_mps * 1e6 + t_wait_overhead_us`。
+2. 调用 `run_emission_to_bs()` 进入物理链路编排：
+   - 发射：`run_dual_atom_emission()` 在态端真实演化，得到 `EmissionResult`；
+   - QFC/滤波：仅记录 `qfc_theta_H/qfc_theta_V/apply_filter_780`（Heisenberg 参数）；
+   - 光纤：`sample_fiber_realization()` 采样
+     `fiber_sample=(U_A,U_B,eta_H_A,eta_V_A,eta_H_B,eta_V_B,phase,phase_slope,phase_jitter_std)`；
+   - 退相干：按
+     `p_dephase = 0.5 * (1 - exp(-t_wait_us / t2_us))`
+     在原子子空间施加 Kraus 通道 `_apply_atomic_dephasing()`；
+   - BS：不在态端显式作用，仅触发 `after_bs` 可视化 hook（真正 BS 在测量端并入 POVM）。
+3. 返回 `PipelineResult`，核心字段包括：
+   - `mps`（当前态）、`emission`（发射信息）、`fiber_sample`（光纤采样参数）；
+   - `qfc_theta_H/V`、`apply_filter_780`、`t_wait_us`、`p_dephase`；
+   - `timings`（若 debug 开启）。
+
+### 3) 探测端主算法（`run_detection_pipeline`）
+
+输入：`mps`、`n_bins`、`eta_det`、`p_dark_intrinsic`、`p_bg_qfc`、`bs_unitary`、
+`fiber_sample`、`theta_H/theta_V`、`apply_filter_780`、`v_res` 等。
+
+1. 先把探测器参数统一成四通道映射（`H1/V1/H2/V2`）：
+   - `eta_det_map`、`p_dark_intrinsic_map`、`p_bg_qfc_map`。
+2. 用收缩引擎计算到达统计：
+   - `p_arrive`、`p_arrive_11`、`p_arrive_same_arm`、`p_arrive_20`、`p_arrive_02`。
+3. 构造逐 bin 5D effect（核心）：
+   - `build_detection_effects_5d_by_bin()` 逐 bin 生成 effect；
+   - 把 QFC、780 滤波、光纤 Jones/损耗/相位、BS 共轭、暗计数/背景全部并入测量端；
+   - 用 `v_res` 执行干涉/可区分混合：`E = v_res * E_int + (1-v_res) * E_dist`。
+4. 枚举双点击记录并计算成功统计：
+   - 枚举对象是 `TwoClickRecord(det_a, det_b, bin_a, bin_b)`；
+   - 统计输出 `SuccessEnumerationResult`（成功率、保真度、true/false 成功分解等）。
+5. 若 `n_samples > 0`，从双点击分布抽样：
+   - 先按记录权重抽样点击组合；
+   - 再按 masked effect 抽样本征暗计数掩码；
+   - 并估计该次记录的背景辅助概率，打上 `source` 标签（`signal/dark_intrinsic/bg_qfc`）。
+6. 形成逐 shot 输出 `TwoPhotonDetectionResult`：
+   - 包含 `clicks`、`success`、`bell_state`、`qubit_state`、`dark_detectors` 等。
+7. BSM 宣告规则：
+   - `Psi-`: `{H1,V2}` 或 `{V1,H2}`；
+   - `Psi+`: `{H1,V1}` 或 `{H2,V2}`。
+8. 返回 `DetectionPipelineResult`：
+   - `p_arrive` + `metrics` + `samples` + `timings`。
+
+### 4) 参数表与噪声预算（`experiment.common`）
+
+- `RunParameterStore` 统一承载：
+  - `eta_det_map`（可按 H1/V1/H2/V2 分通道）；
+  - `p_dark_intrinsic_bin_map` / `p_bg_bin_map`；
+  - `window_ns` 与 `window_bins`；
+  - `NoiseBudget`（门宽、bin 映射概率等）。
+- `t_wait_us` 默认按 `length_km / fiber_group_velocity_mps + t_wait_overhead_us` 自动绑定。
+
+### 5) 各 task 的复用/重跑策略
+
+- `SIM`：每个 task 跑一次完整链路，输出单 run 指标与逐 shot 点击。
+- `HOM`：按 `tau` 切任务；每个 task 跑一次链路并做符合计数。
+- `WINDOW_SCAN`：同一 `run` 内复用一次发射态，只扫描 `window_ns`。
+- `BSM_SCAN`：同一 `run` 内复用一次发射态，只扫描 `bs_theta`。
+- `LENGTH_SCAN`：每个 `length_km` 都重跑发射链路（不复用发射态）。
+
+### 6) 结果落盘与汇总
+
+- task 结果写入：`results/result_<task_id>/meta.json` + `raw/clicks.json`。
+- `SUMMARY` 阶段由 `experiment.summary.write_summary()` 生成：
+  - `*_trials.csv`（逐 shot）
+  - `*_runs.csv`（逐 run 或逐扫描点）
+  - `*_summary.csv`（聚合统计）
 
 ### 点击记录格式
 
-SIM/HOM 产生的点击记录（`raw/clicks.json` 与 `sim_summary.csv`）格式为：
+SIM/HOM 产生的点击记录保存在 `raw/clicks.json`，并展开到 `*_trials.csv`（如 `sim_trials.csv`）中，格式为：
 
 ```
 [(detector, bin_index, is_dark, source), ...]
@@ -298,7 +400,7 @@ SIM/HOM 产生的点击记录（`raw/clicks.json` 与 `sim_summary.csv`）格式
 - `is_dark`: 是否为暗记数触发的点击（True/False）
 - `source`: 点击来源标签（`signal` / `dark_intrinsic` / `bg_qfc`）
 
-### 成功率字段（SIM / sim_summary.csv）
+### 成功率字段（SIM / `run*_success_metrics.txt` 与 `meta.json`）
 
 - `p_success_abs`：每次尝试的**总成功率**（含暗计数）
 - `p_success_true_abs`：成功中“纯真实点击”的部分
@@ -307,6 +409,10 @@ SIM/HOM 产生的点击记录（`raw/clicks.json` 与 `sim_summary.csv`）格式
 - `p_success_bg_assisted`：由QFC/链路背景点击辅助导致的成功率分量
 - `p_success_true_given_arrival`：在“两光子到达”条件下的真实成功率（`p_success_true_abs / p_arrive`）
 - `p_success_no_dark_abs`：暗计数关掉时的成功率基线（若枚举 no-dark）
+
+> 说明：`sim_summary.csv` 现已展开 `p_success_intrinsic_dark_assisted` 与
+> `p_success_bg_assisted` 两个细分字段；`p_success_no_dark_abs` 仍保留在
+> `run*_success_metrics.txt` / `meta.json` 口径中。
 
 ### FiberChannelParams
 
@@ -355,13 +461,10 @@ M = |sum_n (xi_A_n^H* xi_B_n^H + xi_A_n^V* xi_B_n^V)|^2
 ## 依赖项
 
 - `numpy` - 数组操作
+- scipy` - 线性代数（如 `expm`）
 - `physics-tenpy` - 张量网络后端
 - `matplotlib` - 可视化（热图/联合分布）
 
 ## 参考资料
 
-详见 `docs/` 目录中的详细规范（文件名含编号与状态标记）：
-- `3(部分完成_差PMD)_总设计图纸.md` - 整体架构
-- `5(已过时)_逐行流水表.md` - 早期执行流程（已淘汰）
-- `4(部分完成_差参数)_要模拟的对象与输出.md` - 实现规范
-- `6(部分完成_部分废案_差站点)_有关空间排列与直积构造相关修改建议.md` - 设计修正与历史方案
+详见 `docs/` 目录中的详细规范（文件名含编号与状态标记）

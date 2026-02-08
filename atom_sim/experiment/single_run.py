@@ -134,6 +134,7 @@ def _run_single_trial(
         length_km=config.fiber.length_km,
         fiber_group_velocity_mps=config.run.fiber_group_velocity_mps,
         t_wait_overhead_us=config.run.t_wait_overhead_us,
+        t_wait_length_scale=config.run.t_wait_length_scale,
     )
     pipe = run_emission_to_bs(
         emission=config.emission,
@@ -530,6 +531,7 @@ def _run_single_simulation_core(
         rng=run_rng,
         verbose=True,
         bs_unitary=bs_unitary,
+        bs_theta=config.detector.bs_theta,
     )
 
     _on_stage("成功事件统计 (POVM)")
@@ -818,19 +820,27 @@ def _run_single_simulation_core(
             ("detection_total", "探测总计"),
         ]
         parts = []
-        core_sum = 0.0
         for key, label in timing_order:
             if key in timings:
                 value = float(timings[key])
-                core_sum += value
                 parts.append(f"{label}={value:.2f}s")
         if parts:
             print("\n[调试耗时] " + " | ".join(parts))
         if "run_wall_total" in timings:
+            core_base_keys = ("emission", "filter_780", "project_1517", "fiber", "dephase")
+            core_sum = sum(float(timings[k]) for k in core_base_keys if k in timings)
+            if "detection_total" in timings:
+                core_sum += float(timings["detection_total"])
+            else:
+                core_sum += sum(
+                    float(timings[k])
+                    for k in ("povm_effects", "povm_enumeration", "povm_sampling")
+                    if k in timings
+                )
             wall = float(timings["run_wall_total"])
             overhead = max(0.0, wall - core_sum)
             print(
-                f"[调试总览] 核心阶段={core_sum:.2f}s | "
+                f"[调试总览] 核心阶段(去重)={core_sum:.2f}s | "
                 f"run墙钟={wall:.2f}s | 额外开销={overhead:.2f}s"
             )
     return run_stats, success_metrics, click_records

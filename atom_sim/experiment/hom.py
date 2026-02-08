@@ -202,6 +202,7 @@ def _run_hom_run(
         rng=run_rng,
         verbose=verbose,
         bs_unitary=bs_unitary,
+        bs_theta=config.detector.bs_theta,
     )
     coincidences = 0
     click_records = []
@@ -252,19 +253,23 @@ def _run_hom_run(
             ("detection_total", "探测总计"),
         ]
         parts = []
-        core_sum = 0.0
         for key, label in timing_order:
             if key in timings:
                 value = float(timings[key])
-                core_sum += value
                 parts.append(f"{label}={value:.2f}s")
         if parts:
             print(f"[HOM][调试耗时] tau={tau_ns:.3f} ns | " + " | ".join(parts))
+        core_base_keys = ("emission", "filter_780", "project_1517", "fiber", "dephase")
+        core_sum = sum(float(timings[k]) for k in core_base_keys if k in timings)
+        if "detection_total" in timings:
+            core_sum += float(timings["detection_total"])
+        else:
+            core_sum += sum(float(timings[k]) for k in ("povm_effects", "povm_sampling") if k in timings)
         wall = float(timings.get("run_wall_total", 0.0))
         overhead = max(0.0, wall - core_sum)
         print(
             f"[HOM][调试总览] tau={tau_ns:.3f} ns | "
-            f"核心阶段={core_sum:.2f}s | run墙钟={wall:.2f}s | 额外开销={overhead:.2f}s"
+            f"核心阶段(去重)={core_sum:.2f}s | run墙钟={wall:.2f}s | 额外开销={overhead:.2f}s"
         )
 
     return coincidences, p_arrive, click_records
