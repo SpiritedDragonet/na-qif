@@ -137,6 +137,7 @@ def _parse_run_params(argv):
     parser.add_argument("--fiber-group-velocity-mps", dest="fiber_group_velocity_mps", type=float, help="光纤群速度 (m/s)，用于自动计算 t_wait_us")
     parser.add_argument("--t-wait-overhead-us", dest="t_wait_overhead_us", type=float, help="等待时间固定开销 (us)，会加到 L/v_g 上")
     parser.add_argument("--t-wait-length-scale", dest="t_wait_length_scale", type=float, help="等待时间线性系数：T_wait = scale*L/v_g + overhead")
+    parser.add_argument("--t2-us", dest="t2_us", type=float, help="原子退相干时间 T2 (us)")
 
     parser.add_argument("--tau", dest="tau", type=float, help="(HOM) 单一延迟 τ (ns)")
     parser.add_argument("--tau-start", dest="tau_start", type=float, help="(HOM) τ 起点 (ns)")
@@ -212,6 +213,8 @@ def _parse_run_params(argv):
     parser.add_argument("--filter-cavity-detuning-mhz-b", dest="filter_cavity_detuning_mhz_b", type=float, help="B 臂滤波腔失谐 (MHz)")
     parser.add_argument("--filter-cavity-eta-peak-a", dest="filter_cavity_eta_peak_a", type=float, help="A 臂滤波腔峰值透过率")
     parser.add_argument("--filter-cavity-eta-peak-b", dest="filter_cavity_eta_peak_b", type=float, help="B 臂滤波腔峰值透过率")
+    parser.add_argument("--qfc-noise-sd-cps-per-mhz-a", dest="qfc_noise_sd_cps_per_mhz_a", type=float, help="A 臂QFC背景噪声谱密度 (cps/MHz)")
+    parser.add_argument("--qfc-noise-sd-cps-per-mhz-b", dest="qfc_noise_sd_cps_per_mhz_b", type=float, help="B 臂QFC背景噪声谱密度 (cps/MHz)")
     parser.add_argument("--no-filter-cavity", dest="no_filter_cavity", action="store_true", help="关闭QFC后1517滤波腔显式记忆")
     parser.add_argument("--enum-mode", dest="enum_mode", type=str, help="成功事件枚举模式：dark/no-dark/both")
     parser.add_argument("--plot-all", dest="plot_all", action="store_true", help="所有 run 都绘图（默认仅保留一个）")
@@ -337,6 +340,10 @@ def _parse_run_params(argv):
         config.qfc.filter_cavity.eta_peak_A = float(args.filter_cavity_eta_peak_a)
     if args.filter_cavity_eta_peak_b is not None:
         config.qfc.filter_cavity.eta_peak_B = float(args.filter_cavity_eta_peak_b)
+    if args.qfc_noise_sd_cps_per_mhz_a is not None:
+        config.qfc.qfc_noise_sd_cps_per_mhz_A = float(args.qfc_noise_sd_cps_per_mhz_a)
+    if args.qfc_noise_sd_cps_per_mhz_b is not None:
+        config.qfc.qfc_noise_sd_cps_per_mhz_B = float(args.qfc_noise_sd_cps_per_mhz_b)
     if args.no_filter_cavity:
         config.qfc.filter_cavity.enabled = False
 
@@ -396,6 +403,8 @@ def _parse_run_params(argv):
         config.run.t_wait_overhead_us = float(args.t_wait_overhead_us)
     if args.t_wait_length_scale is not None:
         config.run.t_wait_length_scale = float(args.t_wait_length_scale)
+    if args.t2_us is not None:
+        config.run.t2_us = float(args.t2_us)
 
     if config.run.runs < 1:
         parser.error("N_runs 必须 >= 1")
@@ -425,6 +434,8 @@ def _parse_run_params(argv):
         parser.error("t_wait_overhead_us 必须 >= 0")
     if config.run.t_wait_length_scale < 0.0:
         parser.error("t_wait_length_scale 必须 >= 0")
+    if config.run.t2_us <= 0.0:
+        parser.error("t2_us 必须 > 0")
     for field_name, value in (
         ("kappa_ex_A", config.emission.arm_A.kappa_ex),
         ("kappa_ex_B", config.emission.arm_B.kappa_ex),
@@ -478,6 +489,19 @@ def _parse_run_params(argv):
         parser.error("v_res 必须在 [0, 1] 内")
     if not (0.0 <= config.detector.bs_theta <= float(np.pi / 2.0)):
         parser.error("bs_theta 必须在 [0, pi/2] 内")
+    for field_name, value in (
+        ("filter_cavity_fwhm_mhz", config.qfc.filter_cavity.fwhm_mhz),
+        ("qfc_noise_sd_cps_per_mhz_A", config.qfc.qfc_noise_sd_cps_per_mhz_A),
+        ("qfc_noise_sd_cps_per_mhz_B", config.qfc.qfc_noise_sd_cps_per_mhz_B),
+    ):
+        if float(value) < 0.0:
+            parser.error(f"{field_name} 必须 >= 0")
+    for field_name, value in (
+        ("filter_cavity_eta_peak_A", config.qfc.filter_cavity.eta_peak_A),
+        ("filter_cavity_eta_peak_B", config.qfc.filter_cavity.eta_peak_B),
+    ):
+        if not (0.0 <= float(value) <= 1.0):
+            parser.error(f"{field_name} 必须在 [0,1] 内")
 
     if task_type == "HOM":
         config.hom = parse_hom_cli(args, parser)

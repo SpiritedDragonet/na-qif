@@ -146,6 +146,7 @@ def _run_single_trial(
         verbose=verbose,
         hooks=hooks,
         t_wait_us=t_wait_us,
+        t2_us=float(config.run.t2_us),
         record_timings=debug,
         emission_diagnostics=emission_diagnostics,
     )

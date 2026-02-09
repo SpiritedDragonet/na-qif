@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from typing import Optional, Callable, Any, Tuple
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import time
 import numpy as np
 
@@ -16,6 +16,12 @@ from ..physics import FiberChannelParams
 DEFAULT_DARK_RATE_INTRINSIC_HZ = 65.0
 DEFAULT_BG_RATE_MEAN_HZ = 165.0
 DEFAULT_BG_RATE_STD_HZ = float(np.sqrt(5.0))
+DEFAULT_QFC_EFFICIENCY = 0.57
+DEFAULT_QFC_THETA_RAD = float(np.arcsin(np.sqrt(DEFAULT_QFC_EFFICIENCY)))
+DEFAULT_QFC_NOISE_SD_CPS_PER_MHZ = 41.1
+DEFAULT_EMISSION_SIGMA_NS = 8.9
+DEFAULT_DELAY_JITTER_NS = 0.3
+DEFAULT_T2_US = 330.0
 DETECTOR_CHANNELS = ("H1", "V1", "H2", "V2")
 
 
@@ -44,14 +50,14 @@ class EmissionParams:
     n_bins: int = 100
     dt_ns: float = 0.5
     chi_max: int = 50
-    sigma: float = 10.0
+    sigma: float = DEFAULT_EMISSION_SIGMA_NS
     # 驱动包络类型（默认高斯）；支持: gaussian / sech / square
     drive_waveform_A: str = "gaussian"
     drive_waveform_B: str = "gaussian"
     arm_A: AtomArmParams = field(default_factory=AtomArmParams)
     arm_B: AtomArmParams = field(default_factory=AtomArmParams)
     delay_ns: Optional[float] = None
-    delay_jitter_ns: float = 0.5
+    delay_jitter_ns: float = DEFAULT_DELAY_JITTER_NS
     delay_random_range: Tuple[float, float] = (-10.0, 10.0)
 
 
@@ -131,11 +137,15 @@ class QfcFilterCavityParams:
 @dataclass
 class QfcParams:
     """QFC 参数（可扫）。"""
-    theta_H: float = np.pi / 4
-    theta_V: float = np.pi / 4
+    theta_H: float = DEFAULT_QFC_THETA_RAD
+    theta_V: float = DEFAULT_QFC_THETA_RAD
     phi_H: float = 0.0
     phi_V: float = 0.0
     apply_filter_780: bool = True
+    # QFC 背景噪声谱密度（cps/MHz），用于按“谱密度×带宽×链路η×探测η”估算默认背景率。
+    # 参考量级：41.1 cps/MHz（docs/43, docs/45 讨论口径）。
+    qfc_noise_sd_cps_per_mhz_A: float = DEFAULT_QFC_NOISE_SD_CPS_PER_MHZ
+    qfc_noise_sd_cps_per_mhz_B: float = DEFAULT_QFC_NOISE_SD_CPS_PER_MHZ
     filter_cavity: QfcFilterCavityParams = field(default_factory=QfcFilterCavityParams)
 
 
@@ -181,6 +191,8 @@ class RunConfig:
     t_wait_overhead_us: float = 0.0
     # 等待时间线性系数：T_wait = scale * (L / v_g) + overhead。
     t_wait_length_scale: float = 1.0
+    # 原子相干时间 T2（默认按文献基线设置）。
+    t2_us: float = DEFAULT_T2_US
 
 
 @dataclass
@@ -399,21 +411,60 @@ def _build_run_parameter_store(
             field_name="dark_rate_intrinsic_hz_map",
             min_value=0.0,
         )
-        bg_mean_map = _build_detector_value_map(
-            default_value=noise_budget.bg_rate_mean_hz,
-            overrides=config.noise.bg_rate_mean_hz_map,
-            field_name="bg_rate_mean_hz_map",
-            min_value=0.0,
+        use_qfc_sd_default_bg = (
+            not config.noise.bg_rate_mean_hz_map
+            and abs(float(config.noise.bg_rate_mean_hz) - DEFAULT_BG_RATE_MEAN_HZ) < 1e-12
         )
-        bg_std_map = _build_detector_value_map(
-            default_value=noise_budget.bg_rate_std_hz,
-            overrides=config.noise.bg_rate_std_hz_map,
-            field_name="bg_rate_std_hz_map",
-            min_value=0.0,
-        )
+        if use_qfc_sd_default_bg:
+            eta_link_mean = 10.0 ** (
+                -float(config.fiber.attenuation_db_per_km) * float(config.fiber.length_km) / 10.0
+            )
+            filter_bw_mhz = max(float(config.qfc.filter_cavity.fwhm_mhz), 0.0)
+            eta_filter_a = float(np.clip(config.qfc.filter_cavity.eta_peak_A, 0.0, 1.0))
+            eta_filter_b = float(np.clip(config.qfc.filter_cavity.eta_peak_B, 0.0, 1.0))
+            if not bool(config.qfc.filter_cavity.enabled):
+                # 关闭窄带滤波腔时，仅保留“源谱密度×链路×探测”口径。
+                eta_filter_a = 1.0
+                eta_filter_b = 1.0
+
+            sd_a = max(0.0, float(config.qfc.qfc_noise_sd_cps_per_mhz_A))
+            sd_b = max(0.0, float(config.qfc.qfc_noise_sd_cps_per_mhz_B))
+            bg_mean_map = {
+                "H1": sd_a * filter_bw_mhz * eta_filter_a * eta_link_mean * eta_det_map["H1"],
+                "V1": sd_a * filter_bw_mhz * eta_filter_a * eta_link_mean * eta_det_map["V1"],
+                "H2": sd_b * filter_bw_mhz * eta_filter_b * eta_link_mean * eta_det_map["H2"],
+                "V2": sd_b * filter_bw_mhz * eta_filter_b * eta_link_mean * eta_det_map["V2"],
+            }
+            if abs(float(config.noise.bg_rate_std_hz) - DEFAULT_BG_RATE_STD_HZ) < 1e-12 and not config.noise.bg_rate_std_hz_map:
+                # 默认情况下采用 Poisson 口径的 sqrt(rate) 作为每通道波动尺度。
+                bg_std_map = {
+                    detector: float(np.sqrt(max(bg_mean_map[detector], 0.0)))
+                    for detector in DETECTOR_CHANNELS
+                }
+            else:
+                bg_std_map = _build_detector_value_map(
+                    default_value=noise_budget.bg_rate_std_hz,
+                    overrides=config.noise.bg_rate_std_hz_map,
+                    field_name="bg_rate_std_hz_map",
+                    min_value=0.0,
+                )
+        else:
+            bg_mean_map = _build_detector_value_map(
+                default_value=noise_budget.bg_rate_mean_hz,
+                overrides=config.noise.bg_rate_mean_hz_map,
+                field_name="bg_rate_mean_hz_map",
+                min_value=0.0,
+            )
+            bg_std_map = _build_detector_value_map(
+                default_value=noise_budget.bg_rate_std_hz,
+                overrides=config.noise.bg_rate_std_hz_map,
+                field_name="bg_rate_std_hz_map",
+                min_value=0.0,
+            )
 
         p_dark_intrinsic_bin_map = {}
         p_bg_bin_map = {}
+        sampled_bg_rates = []
         for detector in DETECTOR_CHANNELS:
             p_dark_intrinsic_bin_map[detector] = _rate_to_bin_probability(
                 dark_rate_map[detector],
@@ -421,10 +472,30 @@ def _build_run_parameter_store(
                 ratio=ratio,
             )
             dark_rate_bg_local = max(0.0, rng.normal(bg_mean_map[detector], bg_std_map[detector]))
+            sampled_bg_rates.append(dark_rate_bg_local)
             p_bg_bin_map[detector] = _rate_to_bin_probability(
                 dark_rate_bg_local,
                 gate_dt_s=noise_budget.detection_gate_dt_s,
                 ratio=ratio,
+            )
+
+        if sampled_bg_rates:
+            dark_rate_bg_hz = float(np.mean(sampled_bg_rates))
+            bg_rate_mean_hz = float(np.mean(list(bg_mean_map.values())))
+            bg_rate_std_hz = float(np.mean(list(bg_std_map.values())))
+            p_bg_gate = 1.0 - np.exp(-dark_rate_bg_hz * noise_budget.detection_gate_dt_s)
+            p_noise_gate = 1.0 - (1.0 - noise_budget.p_dark_intrinsic_gate) * (1.0 - p_bg_gate)
+            p_bg_bin = 1.0 - (1.0 - p_bg_gate) ** ratio
+            p_noise_bin = 1.0 - (1.0 - noise_budget.p_dark_intrinsic_bin) * (1.0 - p_bg_bin)
+            noise_budget = replace(
+                noise_budget,
+                bg_rate_mean_hz=bg_rate_mean_hz,
+                bg_rate_std_hz=bg_rate_std_hz,
+                dark_rate_bg_hz=dark_rate_bg_hz,
+                p_bg_gate=float(np.clip(p_bg_gate, 0.0, 1.0)),
+                p_noise_gate=float(np.clip(p_noise_gate, 0.0, 1.0)),
+                p_bg_bin=float(np.clip(p_bg_bin, 0.0, 1.0)),
+                p_noise_bin=float(np.clip(p_noise_bin, 0.0, 1.0)),
             )
 
     return RunParameterStore(
@@ -478,6 +549,19 @@ def _build_parameter_snapshot(config: SimConfig, store: RunParameterStore) -> di
         "delta_c_V_A": arm_a.delta_c_V,
         "delta_c_H_B": arm_b.delta_c_H,
         "delta_c_V_B": arm_b.delta_c_V,
+        "qfc_theta_H": config.qfc.theta_H,
+        "qfc_theta_V": config.qfc.theta_V,
+        "qfc_phi_H": config.qfc.phi_H,
+        "qfc_phi_V": config.qfc.phi_V,
+        "qfc_apply_filter_780": config.qfc.apply_filter_780,
+        "qfc_noise_sd_cps_per_mhz_A": config.qfc.qfc_noise_sd_cps_per_mhz_A,
+        "qfc_noise_sd_cps_per_mhz_B": config.qfc.qfc_noise_sd_cps_per_mhz_B,
+        "filter_cavity_enabled": config.qfc.filter_cavity.enabled,
+        "filter_cavity_fwhm_mhz": config.qfc.filter_cavity.fwhm_mhz,
+        "filter_cavity_detuning_mhz_A": config.qfc.filter_cavity.detuning_mhz_A,
+        "filter_cavity_detuning_mhz_B": config.qfc.filter_cavity.detuning_mhz_B,
+        "filter_cavity_eta_peak_A": config.qfc.filter_cavity.eta_peak_A,
+        "filter_cavity_eta_peak_B": config.qfc.filter_cavity.eta_peak_B,
         "eta_det": store.eta_det,
         "eta_det_map": dict(store.eta_det_map),
         "v_res": store.v_res,
@@ -645,7 +729,7 @@ def run_emission_to_bs(
     verbose: bool = True,
     hooks: Optional[PipelineHooks] = None,
     t_wait_us: float = 80.0,
-    t2_us: float = 1000.0,
+    t2_us: float = DEFAULT_T2_US,
     record_timings: bool = False,
     emission_diagnostics: bool = False,
 ) -> PipelineResult:

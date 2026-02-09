@@ -197,6 +197,8 @@ outputs/                           # 仿真输出目录（已 gitignore）
 --attempt-overhead-us <f>     # LENGTH_SCAN 单次额外开销 (us)
 --fiber-group-velocity-mps <f># 自动 t_wait 的群速度 (m/s)
 --t-wait-overhead-us <f>      # 自动 t_wait 的固定额外开销 (us)
+--t-wait-length-scale <f>     # 自动 t_wait 的线性系数
+--t2-us <f>                   # 原子退相干时间 T2 (us)
 --bs-theta <rad>              # BS 混合角，sin^2(theta) 为跨端口透射概率
 --plot-all                    # 每个 run 都画图
 --no-plot                     # 禁止绘图（覆盖 plot-all）
@@ -204,7 +206,27 @@ outputs/                           # 仿真输出目录（已 gitignore）
 --v-res <0~1>                 # 残差可区分度（仅承载未显式建模因素）
 --qfc-theta-h <rad>           # QFC H 转换角
 --qfc-theta-v <rad>           # QFC V 转换角
+--qfc-phi-h <rad>             # QFC H 通道相位
+--qfc-phi-v <rad>             # QFC V 通道相位
 --no-filter-780               # 关闭 780 滤波
+--filter-cavity-fwhm-mhz <f>  # QFC 后滤波腔线宽 (MHz)
+--filter-cavity-detuning-mhz-a <f>
+--filter-cavity-detuning-mhz-b <f>
+--filter-cavity-eta-peak-a <f>
+--filter-cavity-eta-peak-b <f>
+--qfc-noise-sd-cps-per-mhz-a <f> # A 臂 QFC 背景谱密度
+--qfc-noise-sd-cps-per-mhz-b <f> # B 臂 QFC 背景谱密度
+--no-filter-cavity               # 关闭 QFC 后 1517 滤波腔显式记忆
+```
+
+### 一条可直接跑的新口径示例
+
+```bash
+python total_simulation.py --runs 1 --shots 1 --debug --no-plot \
+  --qfc-theta-h 0.856 --qfc-theta-v 0.856 \
+  --filter-cavity-fwhm-mhz 27 --filter-cavity-eta-peak-a 0.81 --filter-cavity-eta-peak-b 0.81 \
+  --qfc-noise-sd-cps-per-mhz-a 41.1 --qfc-noise-sd-cps-per-mhz-b 41.1 \
+  --t2-us 330 --window-ns 70
 ```
 
 ### 关键函数解释（按执行顺序）
@@ -370,7 +392,20 @@ atomA(4D) - atomB(4D) - A1(5D) - B1(5D) - A2(5D) - B2(5D) - ... - AN(5D) - BN(5D
   - `p_dark_intrinsic_bin_map` / `p_bg_bin_map`；
   - `window_ns` 与 `window_bins`；
   - `NoiseBudget`（门宽、bin 映射概率等）。
-- `t_wait_us` 默认按 `length_km / fiber_group_velocity_mps + t_wait_overhead_us` 自动绑定。
+- `t_wait_us` 默认按 `t_wait_length_scale * length_km / fiber_group_velocity_mps + t_wait_overhead_us` 自动绑定。
+- `p_bg_bin_map` 的默认口径（未显式覆盖 `bg_rate_mean_hz(_map)` 时）为：
+  `qfc_noise_sd_cps_per_mhz × filter_cavity_fwhm_mhz × eta_filter × eta_link × eta_det`，
+  再映射到 gate/bin 概率并逐通道采样。
+
+### 4.1 当前默认基线（文档41/43/44/45对齐）
+
+- `QfcParams.theta_H/theta_V ≈ 0.856 rad`（对应 `η_qfc≈0.57`）
+- `QfcFilterCavityParams.fwhm_mhz = 27.0`
+- `QfcFilterCavityParams.eta_peak_A/B = 0.81`
+- `QfcParams.qfc_noise_sd_cps_per_mhz_A/B = 41.1`
+- `EmissionParams.sigma = 8.9 ns`
+- `EmissionParams.delay_jitter_ns = 0.3 ns`
+- `RunConfig.t2_us = 330 us`
 
 ### 5) 各 task 的复用/重跑策略
 
@@ -436,8 +471,9 @@ U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase = fiber_params.sample_all(rn
 
 ### `t_wait_us` 自动绑定
 
-- 默认按单程光纤飞行时间自动计算：`t_wait_us = length_km * 1e3 / fiber_group_velocity_mps * 1e6 + t_wait_overhead_us`
-- 默认 `fiber_group_velocity_mps=2.0e8`，`t_wait_overhead_us=0`
+- 默认按单程光纤飞行时间自动计算：
+  `t_wait_us = t_wait_length_scale * (length_km * 1e3 / fiber_group_velocity_mps * 1e6) + t_wait_overhead_us`
+- 默认 `fiber_group_velocity_mps=2.0e8`，`t_wait_length_scale=1.0`，`t_wait_overhead_us=0`
 
 ### BS 可调分光比
 

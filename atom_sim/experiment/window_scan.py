@@ -171,6 +171,8 @@ def run_window_scan_task(
             "fidelity_all": enum_main.fidelity_declared,
             "fidelity_true": enum_main.fidelity_true,
             "fidelity_false": enum_main.fidelity_false,
+            "p_success_intrinsic_dark_assisted": enum_main.p_success_intrinsic_dark_assisted,
+            "p_success_bg_assisted": enum_main.p_success_bg_assisted,
             "false_fraction": (
                 enum_main.p_success_false / enum_main.p_success
                 if enum_main.p_success > 0
