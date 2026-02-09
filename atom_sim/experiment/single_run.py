@@ -352,7 +352,7 @@ def _run_single_simulation_core(
 
     stage_map = {
         "发射": 1,
-        "QFC (Heisenberg 参数)": 2,
+        "QFC + 滤波记忆(态端)": 2,
         "光纤信道 (Heisenberg 参数)": 3,
         "分束器(测量端) + 诊断/可视化": 4,
         "成功事件统计 (POVM)": 5,
@@ -428,12 +428,12 @@ def _run_single_simulation_core(
         step_index=1,
     )
     _after_qfc_filter = _make_plot_hook(
-        stage_name="After QFC (Heisenberg)",
+        stage_name="After QFC (State-side)",
         file_suffix="2_after_qfc",
         show_atomic=False,
         use_emission_obj=False,
         use_time_grid=True,
-        debug_stage="After QFC (Heisenberg)",
+        debug_stage="After QFC (State-side)",
         step_index=2,
     )
     _after_fiber = _make_plot_hook(
@@ -499,7 +499,7 @@ def _run_single_simulation_core(
     eta_det = param_store.eta_det
     eta_det_map = param_store.eta_det_map
     p_dark_intrinsic_map = param_store.p_dark_intrinsic_bin_map
-    p_bg_qfc_map = param_store.p_bg_bin_map
+    p_bg_source_map = param_store.p_bg_bin_map
     print(
         f"\n探测器本底暗计数率: {budget.dark_rate_intrinsic_hz:.3f} Hz -> "
         f"p_dark_gate={budget.p_dark_intrinsic_gate:.3e}, p_dark_bin={budget.p_dark_intrinsic_bin:.3e}"
@@ -508,9 +508,7 @@ def _run_single_simulation_core(
         f"背景噪声参数: mean={budget.bg_rate_mean_hz:.3f} Hz, std={budget.bg_rate_std_hz:.3f} Hz, "
         f"sampled={budget.dark_rate_bg_hz:.3f} Hz"
     )
-    print(
-        f"QFC/背景噪声概率: p_bg_gate={budget.p_bg_gate:.3e}, p_bg_bin={budget.p_bg_bin:.3e}"
-    )
+    print(f"源背景噪声概率: p_bg_gate={budget.p_bg_gate:.3e}, p_bg_bin={budget.p_bg_bin:.3e}")
     print(
         f"合并噪声概率(仅预算展示): p_noise_gate={budget.p_noise_gate:.3e}, p_noise_bin={budget.p_noise_bin:.3e}"
     )
@@ -520,7 +518,7 @@ def _run_single_simulation_core(
     )
     print(f"探测器效率映射 eta_det_map: {eta_det_map}")
     print(f"暗计数/bin 映射 p_dark_intrinsic_map: {p_dark_intrinsic_map}")
-    print(f"背景/bin 映射 p_bg_map: {p_bg_qfc_map}")
+    print(f"背景/bin 映射 p_bg_map: {p_bg_source_map}")
 
     parameter_snapshot = _build_parameter_snapshot(config, param_store)
     # 重要：BS 已并入测量端。这里传入 U_BS，用 U^† E U 计算点击分布。
@@ -555,7 +553,7 @@ def _run_single_simulation_core(
         pipeline = run_detection_pipeline(
             **detect_common,
             p_dark_intrinsic={det: 0.0 for det in p_dark_intrinsic_map},
-            p_bg_qfc={det: 0.0 for det in p_bg_qfc_map},
+            p_bg_source={det: 0.0 for det in p_bg_source_map},
             n_samples=shots_per_run,
             compute_metrics=True,
         )
@@ -573,7 +571,7 @@ def _run_single_simulation_core(
             enum_pipeline = run_detection_pipeline(
                 **detect_common,
                 p_dark_intrinsic={det: 0.0 for det in p_dark_intrinsic_map},
-                p_bg_qfc={det: 0.0 for det in p_bg_qfc_map},
+                p_bg_source={det: 0.0 for det in p_bg_source_map},
                 n_samples=0,
                 compute_metrics=True,
             )
@@ -588,7 +586,7 @@ def _run_single_simulation_core(
         pipeline = run_detection_pipeline(
             **detect_common,
             p_dark_intrinsic=p_dark_intrinsic_map,
-            p_bg_qfc=p_bg_qfc_map,
+            p_bg_source=p_bg_source_map,
             n_samples=shots_per_run,
             compute_metrics=True,
         )
@@ -629,7 +627,7 @@ def _run_single_simulation_core(
         "p_dark_intrinsic": budget.p_dark_intrinsic_bin,
         "p_dark_intrinsic_map": p_dark_intrinsic_map,
         "p_bg": budget.p_bg_bin,
-        "p_bg_map": p_bg_qfc_map,
+        "p_bg_map": p_bg_source_map,
         "p_noise": budget.p_noise_bin,
         "t_wait_us": t_wait_us,
         "t2_us": t2_us,
@@ -810,8 +808,7 @@ def _run_single_simulation_core(
     if DEBUG_MODE and timings:
         timing_order = [
             ("emission", "发射"),
-            ("filter_780", "780滤波"),
-            ("project_1517", "1517投影"),
+            ("qfc_filter_memory", "QFC+滤波记忆"),
             ("fiber", "光纤"),
             ("dephase", "退相干"),
             ("povm_effects", "POVM构建"),
@@ -827,7 +824,7 @@ def _run_single_simulation_core(
         if parts:
             print("\n[调试耗时] " + " | ".join(parts))
         if "run_wall_total" in timings:
-            core_base_keys = ("emission", "filter_780", "project_1517", "fiber", "dephase")
+            core_base_keys = ("emission", "qfc_filter_memory", "fiber", "dephase")
             core_sum = sum(float(timings[k]) for k in core_base_keys if k in timings)
             if "detection_total" in timings:
                 core_sum += float(timings["detection_total"])

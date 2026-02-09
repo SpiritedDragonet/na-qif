@@ -27,15 +27,19 @@ from ..hilbert.operators import (
     atom_transition,
 )
 from .channels import (
-    loss_channel_both_subspaces,
     loss_channel_1517_single_photon,
 )
 
 
 # 缓存的门（这些计算昂贵且不随每仓变化）
 
-@lru_cache(maxsize=8)
-def qfc_gate(theta_H: float = 0.0, theta_V: float = 0.0) -> np.ndarray:
+@lru_cache(maxsize=32)
+def qfc_gate(
+    theta_H: float = 0.0,
+    theta_V: float = 0.0,
+    phi_H: float = 0.0,
+    phi_V: float = 0.0,
+) -> np.ndarray:
     """
     量子频率转换门 U_qfc（5D bin）。
 
@@ -75,20 +79,83 @@ def qfc_gate(theta_H: float = 0.0, theta_V: float = 0.0) -> np.ndarray:
     sH = np.sin(theta_H)
     cV = np.cos(theta_V)
     sV = np.sin(theta_V)
+    phase_H = np.exp(1j * float(phi_H))
+    phase_V = np.exp(1j * float(phi_V))
 
     # H 偏振：|H_780> <-> |H_1517>
     U[1, 1] = cH
-    U[1, 3] = -sH
-    U[3, 1] = sH
+    U[1, 3] = -phase_H.conjugate() * sH
+    U[3, 1] = phase_H * sH
     U[3, 3] = cH
 
     # V 偏振：|V_780> <-> |V_1517>
     U[2, 2] = cV
-    U[2, 4] = -sV
-    U[4, 2] = sV
+    U[2, 4] = -phase_V.conjugate() * sV
+    U[4, 2] = phase_V * sV
     U[4, 4] = cV
 
     return U
+
+
+def filter_cavity_rt(
+    fwhm_hz: float,
+    dt_s: float,
+    detuning_hz: float = 0.0,
+) -> Tuple[complex, float]:
+    """由滤波腔线宽/失谐/离散步长计算单步记忆系数 (r, t)。"""
+    fwhm_hz = float(fwhm_hz)
+    dt_s = float(dt_s)
+    detuning_hz = float(detuning_hz)
+    if fwhm_hz <= 0.0:
+        raise ValueError(f"fwhm_hz 必须 > 0，得到 {fwhm_hz}")
+    if dt_s <= 0.0:
+        raise ValueError(f"dt_s 必须 > 0，得到 {dt_s}")
+
+    # 单极点滤波器离散化：
+    #   r = exp[-(pi*Delta_nu + i*2pi*delta) * dt]
+    # 其中 Delta_nu 为强度 FWHM，delta 为失谐。
+    r = np.exp(-(np.pi * fwhm_hz + 1j * 2.0 * np.pi * detuning_hz) * dt_s)
+    t = float(np.sqrt(max(0.0, 1.0 - abs(r) ** 2)))
+    return complex(r), t
+
+
+def filter_cavity_step_unitary_5d3d(
+    r: complex,
+    t: float,
+) -> np.ndarray:
+    """构造 (bin_5d ⊗ mem_3d) 的单步记忆门（15x15）。"""
+    r = complex(r)
+    t = float(t)
+    if t < 0.0:
+        raise ValueError(f"t 必须 >= 0，得到 {t}")
+    if abs(abs(r) ** 2 + t * t - 1.0) > 1e-8:
+        raise ValueError("(r, t) 不满足 |r|^2 + t^2 = 1，无法构造幺正步进门")
+
+    unitary = np.eye(15, dtype=complex)
+
+    # 5D bin 基序：|vac>, |H_780>, |V_780>, |H_1517>, |V_1517>
+    # 3D mem 基序：|vac>, |H>, |V>
+    def _index(bin_level: int, mem_level: int) -> int:
+        return int(bin_level * 3 + mem_level)
+
+    h_bin_mem = _index(3, 0)  # |H_1517, vac_mem>
+    h_vac_mem = _index(0, 1)  # |vac_bin, H_mem>
+    v_bin_mem = _index(4, 0)  # |V_1517, vac_mem>
+    v_vac_mem = _index(0, 2)  # |vac_bin, V_mem>
+
+    # H 子块
+    unitary[h_bin_mem, h_bin_mem] = r
+    unitary[h_bin_mem, h_vac_mem] = -t
+    unitary[h_vac_mem, h_bin_mem] = t
+    unitary[h_vac_mem, h_vac_mem] = np.conj(r)
+
+    # V 子块
+    unitary[v_bin_mem, v_bin_mem] = r
+    unitary[v_bin_mem, v_vac_mem] = -t
+    unitary[v_vac_mem, v_bin_mem] = t
+    unitary[v_vac_mem, v_vac_mem] = np.conj(r)
+
+    return unitary
 
 
 
@@ -671,31 +738,18 @@ def apply_channel_adjoint_single(op: np.ndarray, kraus_list: List[np.ndarray]) -
 
 
 def build_arrival_projectors_5d(
-    theta_H: float,
-    theta_V: float,
     eta_H_A: float,
     eta_V_A: float,
     eta_H_B: float,
     eta_V_B: float,
     U_A: Optional[np.ndarray] = None,
     U_B: Optional[np.ndarray] = None,
-    apply_filter_780: bool = True,
 ) -> Tuple[Tuple[np.ndarray, np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """构造用于到达概率统计的 (pi0,pi1,pi2)（5D 账本）。"""
     pi0_3 = np.diag([1, 0, 0]).astype(complex)
     pi1_3 = np.diag([0, 1, 1]).astype(complex)
     pi2_3 = np.zeros((3, 3), dtype=complex)
 
-    k_filter = None
-    if apply_filter_780:
-        k_filter = loss_channel_both_subspaces(
-            eta_780=0.0,
-            eta_H_1517=1.0,
-            eta_V_1517=1.0,
-        )
-
-    u_qfc = qfc_gate(theta_H=theta_H, theta_V=theta_V)
-    u_qfc_dag = u_qfc.conj().T
     p_5_from_3 = embed_5_from_3()
 
     u_a_3 = jones_3d(np.eye(2, dtype=complex) if U_A is None else U_A)
@@ -715,14 +769,6 @@ def build_arrival_projectors_5d(
         p1 = p_5_from_3 @ p1 @ p_5_from_3.conj().T
         p2 = p_5_from_3 @ p2 @ p_5_from_3.conj().T
 
-        if k_filter is not None:
-            p0 = apply_channel_adjoint_single(p0, k_filter)
-            p1 = apply_channel_adjoint_single(p1, k_filter)
-            p2 = apply_channel_adjoint_single(p2, k_filter)
-
-        p0 = u_qfc_dag @ p0 @ u_qfc
-        p1 = u_qfc_dag @ p1 @ u_qfc
-        p2 = u_qfc_dag @ p2 @ u_qfc
         return p0, p1, p2
 
     proj_a = _build_one_arm(eta_H_A, eta_V_A, u_a_3)
@@ -742,9 +788,6 @@ def build_detection_effects_5d_by_bin(
     eta_V_A: float,
     eta_H_B: float,
     eta_V_B: float,
-    apply_filter_780: bool,
-    theta_H: float,
-    theta_V: float,
     phase_slope: float,
     phase_jitter_std: float,
     rng: np.random.Generator,
@@ -792,17 +835,6 @@ def build_detection_effects_5d_by_bin(
     effects_true_3d = apply_local_channel_adjoint(effects_true_3d, k_a_3, k_b_3)
     effects_mask_3d = apply_local_channel_adjoint_masked(effects_mask_3d, k_a_3, k_b_3)
 
-    k_filter = None
-    if apply_filter_780:
-        k_filter = loss_channel_both_subspaces(
-            eta_780=0.0,
-            eta_H_1517=1.0,
-            eta_V_1517=1.0,
-        )
-
-    u_qfc = qfc_gate(theta_H=theta_H, theta_V=theta_V)
-    u_qfc_pair = np.kron(u_qfc, u_qfc)
-
     effects_all_by_bin: List[dict] = []
     effects_true_by_bin: List[dict] = []
     effects_mask_by_bin: List[dict] = []
@@ -829,15 +861,6 @@ def build_detection_effects_5d_by_bin(
         eff_all_5 = {key: embed_3d_to_5d(effect) for key, effect in eff_all_3.items()}
         eff_true_5 = {key: embed_3d_to_5d(effect) for key, effect in eff_true_3.items()}
         eff_mask_5 = map_effects_masked(eff_mask_3, embed_3d_to_5d)
-
-        if k_filter is not None:
-            eff_all_5 = apply_local_channel_adjoint(eff_all_5, k_filter, k_filter)
-            eff_true_5 = apply_local_channel_adjoint(eff_true_5, k_filter, k_filter)
-            eff_mask_5 = apply_local_channel_adjoint_masked(eff_mask_5, k_filter, k_filter)
-
-        eff_all_5 = apply_unitary_adjoint(eff_all_5, u_qfc_pair)
-        eff_true_5 = apply_unitary_adjoint(eff_true_5, u_qfc_pair)
-        eff_mask_5 = apply_unitary_adjoint_masked(eff_mask_5, u_qfc_pair)
 
         effects_all_by_bin.append(eff_all_5)
         effects_true_by_bin.append(eff_true_5)

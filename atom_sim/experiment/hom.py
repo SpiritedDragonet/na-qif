@@ -192,7 +192,7 @@ def _run_hom_run(
     )
     window_bins = param_store.window_bins
     p_dark_intrinsic_map = param_store.p_dark_intrinsic_bin_map
-    p_bg_qfc_map = param_store.p_bg_bin_map
+    p_bg_source_map = param_store.p_bg_bin_map
 
     # BS 并入测量端 (U^† E U)
     bs_unitary = bs_gate_6d(config.detector.bs_theta)
@@ -211,7 +211,7 @@ def _run_hom_run(
     pipeline = run_detection_pipeline(
         **detect_common,
         p_dark_intrinsic=p_dark_intrinsic_map,
-        p_bg_qfc=p_bg_qfc_map,
+        p_bg_source=p_bg_source_map,
         n_samples=shots_per_run,
         compute_metrics=False,
     )
@@ -244,8 +244,7 @@ def _run_hom_run(
         timings["run_wall_total"] = time.perf_counter() - run_wall_start
         timing_order = [
             ("emission", "发射"),
-            ("filter_780", "780滤波"),
-            ("project_1517", "1517投影"),
+            ("qfc_filter_memory", "QFC+滤波记忆"),
             ("fiber", "光纤"),
             ("dephase", "退相干"),
             ("povm_effects", "POVM构建"),
@@ -259,7 +258,7 @@ def _run_hom_run(
                 parts.append(f"{label}={value:.2f}s")
         if parts:
             print(f"[HOM][调试耗时] tau={tau_ns:.3f} ns | " + " | ".join(parts))
-        core_base_keys = ("emission", "filter_780", "project_1517", "fiber", "dephase")
+        core_base_keys = ("emission", "qfc_filter_memory", "fiber", "dephase")
         core_sum = sum(float(timings[k]) for k in core_base_keys if k in timings)
         if "detection_total" in timings:
             core_sum += float(timings["detection_total"])

@@ -281,8 +281,8 @@ def _parse_fiber_sample(fiber_sample: Optional[tuple]) -> Tuple[np.ndarray, np.n
     )
 
 
-def _scale_qfc_source_background_map(
-    p_bg_qfc_source_map: dict,
+def _scale_source_background_map(
+    p_bg_source_map: dict,
     eta_H_A: float,
     eta_V_A: float,
     eta_H_B: float,
@@ -290,7 +290,7 @@ def _scale_qfc_source_background_map(
     bs_theta: float,
 ) -> dict:
     """
-    将“源端 QFC 背景概率（每 bin）”映射为探测端 OR-map。
+    将“源端背景概率（每 bin）”映射为探测端 OR-map。
 
     近似模型：
     1) 源端背景在 A/B 臂产生后，先乘对应臂传输系数。
@@ -302,8 +302,8 @@ def _scale_qfc_source_background_map(
     eta_arm_a = float(np.clip(0.5 * (eta_H_A + eta_V_A), 0.0, 1.0))
     eta_arm_b = float(np.clip(0.5 * (eta_H_B + eta_V_B), 0.0, 1.0))
 
-    p_src_a = float(np.clip(0.5 * (p_bg_qfc_source_map["H1"] + p_bg_qfc_source_map["V1"]), 0.0, 1.0))
-    p_src_b = float(np.clip(0.5 * (p_bg_qfc_source_map["H2"] + p_bg_qfc_source_map["V2"]), 0.0, 1.0))
+    p_src_a = float(np.clip(0.5 * (p_bg_source_map["H1"] + p_bg_source_map["V1"]), 0.0, 1.0))
+    p_src_b = float(np.clip(0.5 * (p_bg_source_map["H2"] + p_bg_source_map["V2"]), 0.0, 1.0))
 
     theta = float(np.clip(bs_theta, 0.0, np.pi / 2.0))
     c2 = float(np.cos(theta) ** 2)
@@ -381,7 +381,7 @@ def run_detection_pipeline(
     n_bins: int,
     eta_det: float | dict = 0.85,
     p_dark_intrinsic: float | dict = 0.0,
-    p_bg_qfc: float | dict = 0.0,
+    p_bg_source: float | dict = 0.0,
     window_bins: Optional[int] = None,
     rng: Optional[np.random.Generator] = None,
     verbose: bool = True,
@@ -389,9 +389,6 @@ def run_detection_pipeline(
     compute_metrics: bool = False,
     bs_unitary: Optional[np.ndarray] = None,
     fiber_sample: Optional[tuple] = None,
-    apply_filter_780: bool = True,
-    theta_H: float = np.pi / 4,
-    theta_V: float = np.pi / 4,
     bs_theta: float = np.pi / 4,
     v_res: float = 1.0,
     qubit_levels: Tuple[int, int] = (0, 1),
@@ -432,7 +429,7 @@ def run_detection_pipeline(
 
     eta_det_map = _resolve_detector_map(eta_det, "eta_det")
     p_dark_intrinsic_map = _resolve_detector_map(p_dark_intrinsic, "p_dark_intrinsic")
-    p_bg_qfc_source_map = _resolve_detector_map(p_bg_qfc, "p_bg_qfc")
+    p_bg_source_map = _resolve_detector_map(p_bg_source, "p_bg_source")
     p_dark_intrinsic_scalar = max(p_dark_intrinsic_map.values())
 
     mps = mps.copy()
@@ -448,15 +445,15 @@ def run_detection_pipeline(
 
     bs_unitary_6d = _validate_bs_unitary(bs_unitary)
     U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase_slope, phase_jitter_std = _parse_fiber_sample(fiber_sample)
-    p_bg_qfc_map = _scale_qfc_source_background_map(
-        p_bg_qfc_source_map,
+    p_bg_map = _scale_source_background_map(
+        p_bg_source_map,
         eta_H_A=eta_H_A,
         eta_V_A=eta_V_A,
         eta_H_B=eta_H_B,
         eta_V_B=eta_V_B,
         bs_theta=bs_theta,
     )
-    p_bg_qfc_scalar = max(p_bg_qfc_map.values())
+    p_bg_scalar = max(p_bg_map.values())
 
     if verbose and n_samples > 0:
         print("\n" + "=" * 60)
@@ -468,15 +465,12 @@ def run_detection_pipeline(
     mps._mps.norm = 1.0
 
     proj_A, proj_B = build_arrival_projectors_5d(
-        theta_H=theta_H,
-        theta_V=theta_V,
         eta_H_A=eta_H_A,
         eta_V_A=eta_V_A,
         eta_H_B=eta_H_B,
         eta_V_B=eta_V_B,
         U_A=U_A,
         U_B=U_B,
-        apply_filter_780=apply_filter_780,
     )
     p_arrive, p_arrive_11, p_arrive_20, p_arrive_02, p_arrive_same_arm = compute_joint_arrival_probabilities(
         state=mps,
@@ -499,7 +493,7 @@ def run_detection_pipeline(
         p_arrive_02 = 0.0
         p_arrive_same_arm = 0.0
 
-    if p_arrive <= P_ARRIVE_EPS and p_dark_intrinsic_scalar <= 0.0 and p_bg_qfc_scalar <= 0.0:
+    if p_arrive <= P_ARRIVE_EPS and p_dark_intrinsic_scalar <= 0.0 and p_bg_scalar <= 0.0:
         if verbose:
             print(f"  p_arrive<{P_ARRIVE_EPS:.1e} 且无暗计数/背景噪声，跳过POVM收缩")
         metrics = None
@@ -539,9 +533,6 @@ def run_detection_pipeline(
         eta_V_A=eta_V_A,
         eta_H_B=eta_H_B,
         eta_V_B=eta_V_B,
-        apply_filter_780=apply_filter_780,
-        theta_H=theta_H,
-        theta_V=theta_V,
         phase_slope=phase_slope,
         phase_jitter_std=phase_jitter_std,
         rng=rng,
@@ -551,12 +542,12 @@ def run_detection_pipeline(
     effects_all_sig_by_bin = [dict(effects) for effects in effects_all_by_bin]
     effects_true_sig_by_bin = [dict(effects) for effects in effects_true_by_bin]
 
-    if p_bg_qfc_scalar > 0.0:
+    if p_bg_scalar > 0.0:
         # B3: 背景点击不再并入探测器本征暗计数 POVM，而是做观测端 OR 卷积。
-        effects_all_by_bin = [apply_background_or_map(effects, p_bg_qfc_map) for effects in effects_all_by_bin]
-        effects_true_by_bin = [apply_background_or_map(effects, p_bg_qfc_map) for effects in effects_true_by_bin]
+        effects_all_by_bin = [apply_background_or_map(effects, p_bg_map) for effects in effects_all_by_bin]
+        effects_true_by_bin = [apply_background_or_map(effects, p_bg_map) for effects in effects_true_by_bin]
         effects_mask_by_bin = [
-            apply_background_or_map_masked(effects_by_mask, p_bg_qfc_map)
+            apply_background_or_map_masked(effects_by_mask, p_bg_map)
             for effects_by_mask in effects_mask_by_bin
         ]
 
@@ -585,7 +576,22 @@ def run_detection_pipeline(
         if key not in effects_all_by_bin[0]:
             raise ValueError(f"缺少探测结果: detectors={list(key)}")
 
-    e_no_list = [effects_all_by_bin[idx].get(empty_key, zero_effect) for idx in range(n_bins)]
+    if len(mps.d) % 2 != 0:
+        raise ValueError(f"MPS站点数必须为偶数，当前 L={len(mps.d)}")
+    grouped_bins = len(mps.d) // 2 - 1
+    if grouped_bins < n_bins:
+        raise ValueError(f"grouped_bins={grouped_bins} 小于 n_bins={n_bins}")
+    e_no_list: List[np.ndarray] = []
+    for grouped_index in range(grouped_bins):
+        if grouped_index < n_bins:
+            e_no_list.append(effects_all_by_bin[grouped_index].get(empty_key, zero_effect))
+            continue
+        site_a = 2 + 2 * grouped_index
+        site_b = site_a + 1
+        if site_b >= len(mps.d):
+            raise ValueError(f"尾部分组索引越界: grouped_index={grouped_index}")
+        pair_dim = int(mps.d[site_a]) * int(mps.d[site_b])
+        e_no_list.append(np.eye(pair_dim, dtype=complex))
     # MPS 收缩引擎：底层 left/right env 逻辑下沉到 core 层。
     engine = DetectionContractionEngine.from_mps(
         state=mps,
@@ -805,7 +811,7 @@ def run_detection_pipeline(
                 source=(
                     "dark_intrinsic"
                     if record.detector_a in dark_detectors
-                    else ("bg_qfc" if bg_happened else "signal")
+                    else ("bg_source" if bg_happened else "signal")
                 ),
             ),
             DetectionEvent(
@@ -815,7 +821,7 @@ def run_detection_pipeline(
                 source=(
                     "dark_intrinsic"
                     if record.detector_b in dark_detectors
-                    else ("bg_qfc" if bg_happened else "signal")
+                    else ("bg_source" if bg_happened else "signal")
                 ),
             ),
         ]
@@ -1003,7 +1009,7 @@ def run_detection_self_checks(verbose: bool = True) -> None:
         for mask, effect in map_dist.items():
             _assert_close(f"v_res=0(mask) key={key} mask={mask}", map_v0[mask], effect)
 
-    # E2: 极限 sanity（eta=1, p_dark_intrinsic=0, p_bg_qfc=0, 理想链路）
+    # E2: 极限 sanity（eta=1, p_dark_intrinsic=0, p_bg_source=0, 理想链路）
     local_dims = [12, 12] + [5, 5]
     state_ideal = MPSState(local_dims=local_dims, init_state=[1, 1, 0, 0], max_bond=8)
     run_ideal = run_detection_pipeline(
@@ -1011,7 +1017,7 @@ def run_detection_self_checks(verbose: bool = True) -> None:
         n_bins=1,
         eta_det=1.0,
         p_dark_intrinsic=0.0,
-        p_bg_qfc=0.0,
+        p_bg_source=0.0,
         window_bins=0,
         rng=np.random.default_rng(42),
         verbose=False,
@@ -1019,9 +1025,6 @@ def run_detection_self_checks(verbose: bool = True) -> None:
         compute_metrics=True,
         bs_unitary=None,
         fiber_sample=None,
-        apply_filter_780=True,
-        theta_H=np.pi / 4,
-        theta_V=np.pi / 4,
         v_res=1.0,
     )
     if run_ideal.metrics is None:
@@ -1042,7 +1045,7 @@ def run_detection_self_checks(verbose: bool = True) -> None:
         n_bins=1,
         eta_det=0.85,
         p_dark_intrinsic=2.3e-6,
-        p_bg_qfc=0.0,
+        p_bg_source=0.0,
         window_bins=0,
         rng=np.random.default_rng(123),
         verbose=False,
@@ -1050,9 +1053,6 @@ def run_detection_self_checks(verbose: bool = True) -> None:
         compute_metrics=True,
         bs_unitary=None,
         fiber_sample=None,
-        apply_filter_780=True,
-        theta_H=np.pi / 4,
-        theta_V=np.pi / 4,
         v_res=0.7,
     )
     if run_mc.metrics is None:
@@ -1108,7 +1108,7 @@ def run_detection_self_checks(verbose: bool = True) -> None:
             n_bins=emission.get_n_bins(),
             eta_det=1.0,
             p_dark_intrinsic=0.0,
-            p_bg_qfc=0.0,
+            p_bg_source=0.0,
             window_bins=0,
             rng=rng,
             verbose=False,
@@ -1126,9 +1126,6 @@ def run_detection_self_checks(verbose: bool = True) -> None:
                 0.0,
                 0.0,
             ),
-            apply_filter_780=True,
-            theta_H=np.pi / 4,
-            theta_V=np.pi / 4,
             v_res=1.0,
         ).samples
         records = [1.0 if _is_port_samepol_coincidence(sample.clicks, 0) else 0.0 for sample in samples]

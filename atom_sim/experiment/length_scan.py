@@ -112,7 +112,7 @@ def run_length_scan_task(
             pipeline = run_detection_pipeline(
                 **detect_common,
                 p_dark_intrinsic=param_store.p_dark_intrinsic_bin_map,
-                p_bg_qfc=param_store.p_bg_bin_map,
+                p_bg_source=param_store.p_bg_bin_map,
                 n_samples=shots_per_run,
                 compute_metrics=True,
             )

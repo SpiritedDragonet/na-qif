@@ -117,11 +117,26 @@ class RunParameterStore:
 
 
 @dataclass
+class QfcFilterCavityParams:
+    """QFC 后 1517nm 窄带滤波腔参数（用于显式记忆模型）。"""
+
+    enabled: bool = True
+    fwhm_mhz: float = 27.0
+    detuning_mhz_A: float = 0.0
+    detuning_mhz_B: float = 0.0
+    eta_peak_A: float = 0.81
+    eta_peak_B: float = 0.81
+
+
+@dataclass
 class QfcParams:
     """QFC 参数（可扫）。"""
     theta_H: float = np.pi / 4
     theta_V: float = np.pi / 4
+    phi_H: float = 0.0
+    phi_V: float = 0.0
     apply_filter_780: bool = True
+    filter_cavity: QfcFilterCavityParams = field(default_factory=QfcFilterCavityParams)
 
 
 @dataclass
@@ -616,9 +631,6 @@ def _build_detection_kwargs(
         "bs_unitary": bs_unitary,
         "bs_theta": float(bs_theta),
         "fiber_sample": pipe.fiber_sample,
-        "apply_filter_780": pipe.apply_filter_780,
-        "theta_H": pipe.qfc_theta_H,
-        "theta_V": pipe.qfc_theta_V,
         "v_res": float(param_store.v_res),
     }
 
@@ -656,6 +668,7 @@ def run_emission_to_bs(
         run_dual_atom_emission,
         sample_fiber_realization,
         extract_qubit_state,
+        apply_qfc_filter_memory_chain,
     )
 
     if hooks is None:
@@ -664,6 +677,7 @@ def run_emission_to_bs(
         fiber = FiberParams()
     if qfc is None:
         qfc = QfcParams()
+    emission_chi_max = int(emission.chi_max)
     fiber_params = _build_fiber_params(fiber)
     delay_ns, delay_jitter_ns = _resolve_emission_delay(
         emission, rng, delay_ns, delay_jitter_ns
@@ -725,13 +739,34 @@ def run_emission_to_bs(
     if hooks.after_emission is not None:
         hooks.after_emission(emission)
 
-    _call_stage("QFC (Heisenberg 参数)")
+    _call_stage("QFC + 滤波记忆(态端)")
     t0 = time.perf_counter() if timings is not None else None
     qfc_theta_H = float(qfc.theta_H)
     qfc_theta_V = float(qfc.theta_V)
+    qfc_phi_H = float(qfc.phi_H)
+    qfc_phi_V = float(qfc.phi_V)
     apply_filter_780 = bool(qfc.apply_filter_780)
+    mps = apply_qfc_filter_memory_chain(
+        mps=mps,
+        n_bins=emission.get_n_bins(),
+        dt_s=emission.dt_s,
+        theta_H=qfc_theta_H,
+        theta_V=qfc_theta_V,
+        phi_H=qfc_phi_H,
+        phi_V=qfc_phi_V,
+        apply_filter_780=apply_filter_780,
+        filter_enabled=bool(qfc.filter_cavity.enabled),
+        filter_fwhm_mhz=float(qfc.filter_cavity.fwhm_mhz),
+        filter_detuning_mhz_A=float(qfc.filter_cavity.detuning_mhz_A),
+        filter_detuning_mhz_B=float(qfc.filter_cavity.detuning_mhz_B),
+        filter_eta_peak_A=float(qfc.filter_cavity.eta_peak_A),
+        filter_eta_peak_B=float(qfc.filter_cavity.eta_peak_B),
+        chi_max=emission_chi_max,
+        verbose=verbose,
+    )
+    emission.mps = mps
     if timings is not None and t0 is not None:
-        _ = time.perf_counter() - t0
+        timings["qfc_filter_memory"] = time.perf_counter() - t0
     if hooks.after_qfc_filter is not None:
         hooks.after_qfc_filter(
             emission,
@@ -739,7 +774,7 @@ def run_emission_to_bs(
             apply_filter_780=apply_filter_780,
         )
         if verbose:
-            print("QFC/滤波仅作为测量端参数写入（Heisenberg），未对态显式作用。")
+            print("QFC/滤波记忆已在态端显式作用。")
 
     _call_stage("光纤信道 (Heisenberg 参数)")
     t0 = time.perf_counter() if timings is not None else None

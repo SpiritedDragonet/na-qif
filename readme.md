@@ -322,7 +322,7 @@ atomA(4D) - atomB(4D) - A1(5D) - B1(5D) - A2(5D) - B2(5D) - ... - AN(5D) - BN(5D
    - `t_wait_us = length_km * 1e3 / fiber_group_velocity_mps * 1e6 + t_wait_overhead_us`。
 2. 调用 `run_emission_to_bs()` 进入物理链路编排：
    - 发射：`run_dual_atom_emission()` 在态端真实演化，得到 `EmissionResult`；
-   - QFC/滤波：仅记录 `qfc_theta_H/qfc_theta_V/apply_filter_780`（Heisenberg 参数）；
+   - QFC/滤波：在态端显式执行 `apply_qfc_filter_memory_chain()`（含 QFC + 滤波记忆链）；
    - 光纤：`sample_fiber_realization()` 采样
      `fiber_sample=(U_A,U_B,eta_H_A,eta_V_A,eta_H_B,eta_V_B,phase,phase_slope,phase_jitter_std)`；
    - 退相干：按
@@ -336,16 +336,17 @@ atomA(4D) - atomB(4D) - A1(5D) - B1(5D) - A2(5D) - B2(5D) - ... - AN(5D) - BN(5D
 
 ### 3) 探测端主算法（`run_detection_pipeline`）
 
-输入：`mps`、`n_bins`、`eta_det`、`p_dark_intrinsic`、`p_bg_qfc`、`bs_unitary`、
-`fiber_sample`、`theta_H/theta_V`、`apply_filter_780`、`v_res` 等。
+输入：`mps`、`n_bins`、`eta_det`、`p_dark_intrinsic`、`p_bg_source`、`bs_unitary`、
+`fiber_sample`、`v_res` 等。
 
 1. 先把探测器参数统一成四通道映射（`H1/V1/H2/V2`）：
-   - `eta_det_map`、`p_dark_intrinsic_map`、`p_bg_qfc_map`。
+   - `eta_det_map`、`p_dark_intrinsic_map`、`p_bg_source_map`。
 2. 用收缩引擎计算到达统计：
    - `p_arrive`、`p_arrive_11`、`p_arrive_same_arm`、`p_arrive_20`、`p_arrive_02`。
 3. 构造逐 bin 5D effect（核心）：
    - `build_detection_effects_5d_by_bin()` 逐 bin 生成 effect；
-   - 把 QFC、780 滤波、光纤 Jones/损耗/相位、BS 共轭、暗计数/背景全部并入测量端；
+   - 把光纤 Jones/损耗/相位、BS 共轭、暗计数/背景并入测量端；
+   - QFC/780 滤波由态端显式记忆链处理，不在探测端重复并入；
    - 用 `v_res` 执行干涉/可区分混合：`E = v_res * E_int + (1-v_res) * E_dist`。
 4. 枚举双点击记录并计算成功统计：
    - 枚举对象是 `TwoClickRecord(det_a, det_b, bin_a, bin_b)`；
@@ -353,7 +354,7 @@ atomA(4D) - atomB(4D) - A1(5D) - B1(5D) - A2(5D) - B2(5D) - ... - AN(5D) - BN(5D
 5. 若 `n_samples > 0`，从双点击分布抽样：
    - 先按记录权重抽样点击组合；
    - 再按 masked effect 抽样本征暗计数掩码；
-   - 并估计该次记录的背景辅助概率，打上 `source` 标签（`signal/dark_intrinsic/bg_qfc`）。
+   - 并估计该次记录的背景辅助概率，打上 `source` 标签（`signal/dark_intrinsic/bg_source`）。
 6. 形成逐 shot 输出 `TwoPhotonDetectionResult`：
    - 包含 `clicks`、`success`、`bell_state`、`qubit_state`、`dark_detectors` 等。
 7. BSM 宣告规则：
@@ -398,7 +399,7 @@ SIM/HOM 产生的点击记录保存在 `raw/clicks.json`，并展开到 `*_trial
 - `detector`: `H1` / `V1` / `H2` / `V2`
 - `bin_index`: 点击发生的时间仓索引
 - `is_dark`: 是否为暗记数触发的点击（True/False）
-- `source`: 点击来源标签（`signal` / `dark_intrinsic` / `bg_qfc`）
+- `source`: 点击来源标签（`signal` / `dark_intrinsic` / `bg_source`）
 
 ### 成功率字段（SIM / `run*_success_metrics.txt` 与 `meta.json`）
 
@@ -406,7 +407,7 @@ SIM/HOM 产生的点击记录保存在 `raw/clicks.json`，并展开到 `*_trial
 - `p_success_true_abs`：成功中“纯真实点击”的部分
 - `p_success_false_abs`：成功中“含暗计数”的部分（=`p_success_abs - p_success_true_abs`）
 - `p_success_intrinsic_dark_assisted`：由探测器本征暗计数辅助导致的成功率分量
-- `p_success_bg_assisted`：由QFC/链路背景点击辅助导致的成功率分量
+- `p_success_bg_assisted`：由源/链路背景点击辅助导致的成功率分量
 - `p_success_true_given_arrival`：在“两光子到达”条件下的真实成功率（`p_success_true_abs / p_arrive`）
 - `p_success_no_dark_abs`：暗计数关掉时的成功率基线（若枚举 no-dark）
 

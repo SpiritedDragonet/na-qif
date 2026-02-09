@@ -342,9 +342,29 @@ def plot_dual_arm_heatmap(
         # 从MPS中提取原子站点的约化密度矩阵
         rho_A = mps.get_reduced_density([0])
         rho_B = mps.get_reduced_density([1])
-        # 提取对角元素（概率）
-        atom_A_probs = np.diag(rho_A).real  # shape: (4,)
-        atom_B_probs = np.diag(rho_B).real  # shape: (4,)
+
+        # 统一口径：若原子站点是显式 emitter（12D=atom4D⊗cavity3D），
+        # 先对腔自由度偏迹，再得到原子4D概率；
+        # 若本身就是4D，则直接取对角。
+        def _extract_atom_probs(rho: np.ndarray) -> np.ndarray:
+            rho = np.asarray(rho, dtype=complex)
+            if rho.ndim != 2 or rho.shape[0] != rho.shape[1]:
+                raise ValueError(f"原子约化密度矩阵需为方阵，得到 {rho.shape}")
+            dim = int(rho.shape[0])
+            if dim == 4:
+                return np.diag(rho).real
+            if dim % 4 != 0:
+                raise ValueError(f"原子站点维度应为4或4的整数倍，得到 {dim}")
+            cavity_dim = dim // 4
+            probs = np.zeros(4, dtype=float)
+            for atom_level in range(4):
+                for cavity_index in range(cavity_dim):
+                    index = atom_level * cavity_dim + cavity_index
+                    probs[atom_level] += float(np.real(rho[index, index]))
+            return probs
+
+        atom_A_probs = _extract_atom_probs(rho_A)  # shape: (4,)
+        atom_B_probs = _extract_atom_probs(rho_B)  # shape: (4,)
         # 扩展为所有bin列显示相同的概率（整行同色）
         atom_A_for_bins = np.tile(atom_A_probs.reshape(4, 1), (1, n_bins))
         atom_B_for_bins = np.tile(atom_B_probs.reshape(4, 1), (1, n_bins))

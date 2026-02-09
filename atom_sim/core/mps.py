@@ -536,8 +536,12 @@ class DetectionContractionEngine:
     ) -> 'DetectionContractionEngine':
         b_list, bc_list = cls._prepare_grouped_pairs(state)
         grouped_bins = len(b_list) - 1
-        if grouped_bins != n_bins:
-            raise ValueError(f"n_bins={n_bins} 与分组后bin数量 {grouped_bins} 不一致")
+        if grouped_bins < n_bins:
+            raise ValueError(f"n_bins={n_bins} 超出分组后bin数量 {grouped_bins}")
+        if len(e_no_list) != grouped_bins:
+            raise ValueError(
+                f"e_no_list 长度 {len(e_no_list)} 与分组后bin数量 {grouped_bins} 不一致"
+            )
 
         dim_atom = b_list[0].shape[1]
 

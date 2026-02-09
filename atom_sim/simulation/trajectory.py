@@ -6,14 +6,23 @@
 每个时间仓按顺序处理：发射（态端），其余光学链路参数采样后推入测量端。
 """
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 from dataclasses import dataclass, field
 import numpy as np
+from tenpy.networks.mps import MPS as TeNPyMPS
+from tenpy.networks.site import BosonSite
 
 from ..core.mps import MPSState
 from ..hilbert.basis import BIN_SPACE
 from ..physics import kraus_from_collapse_ops
-from ..physics.gates import emission_gate, build_emitter_operators_12d
+from ..physics.gates import (
+    emission_gate,
+    build_emitter_operators_12d,
+    qfc_gate,
+    filter_cavity_rt,
+    filter_cavity_step_unitary_5d3d,
+)
+from ..physics.channels import loss_channel_both_subspaces
 
 
 # 维度常量，便于代码阅读
@@ -225,6 +234,154 @@ def sample_fiber_realization(
     _print_footer(mps, verbose, stage="Fiber Channel")
 
     return mps, (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std)
+
+
+def apply_qfc_filter_memory_chain(
+    mps: MPSState,
+    n_bins: int,
+    dt_s: float,
+    *,
+    theta_H: float,
+    theta_V: float,
+    phi_H: float,
+    phi_V: float,
+    apply_filter_780: bool,
+    filter_enabled: bool,
+    filter_fwhm_mhz: float,
+    filter_detuning_mhz_A: float,
+    filter_detuning_mhz_B: float,
+    filter_eta_peak_A: float,
+    filter_eta_peak_B: float,
+    chi_max: int,
+    verbose: bool = True,
+) -> MPSState:
+    """
+    在态端对发射后 MPS 施加 QFC + 滤波腔显式记忆链。
+
+    站点布局约定（输入）：atomA, atomB, A1, B1, ..., AN, BN
+    输出布局：atomA, atomB, A1, B1, ..., AN, BN, memA, memB
+    """
+    _print_header("QFC + Filter Memory (state-side)", verbose)
+
+    if n_bins <= 0:
+        _print_footer(mps, verbose, stage="QFC + Filter Memory")
+        return mps
+
+    # 1) 在链尾添加两条记忆模（A/B），不展开全波函数。
+    local_dims = mps.d.copy() + [3, 3]
+    mem_site = BosonSite(2, None)
+    mem_a = TeNPyMPS.from_product_state([mem_site], ['0'], bc='finite', form='B', unit_cell_width=1)
+    mem_b = TeNPyMPS.from_product_state([mem_site], ['0'], bc='finite', form='B', unit_cell_width=1)
+    psi_aug = TeNPyMPS.from_product_mps_covering(
+        [mps._mps.copy(), mem_a, mem_b],
+        [tuple(range(mps.L)), (mps.L,), (mps.L + 1,)],
+        bc='finite',
+        unit_cell_width=mps.L + 2,
+    )
+    psi_aug.canonical_form_finite(renormalize=True)
+    psi_aug.norm = 1.0
+    mps_aug = MPSState(local_dims=local_dims, max_bond=chi_max)
+    mps_aug._mps = psi_aug
+    mps_aug.max_bond = chi_max
+
+    u_qfc = qfc_gate(theta_H=theta_H, theta_V=theta_V, phi_H=phi_H, phi_V=phi_V)
+    rng = np.random.default_rng()
+
+    if filter_enabled:
+        r_a, t_a = filter_cavity_rt(
+            fwhm_hz=float(filter_fwhm_mhz) * 1e6,
+            dt_s=dt_s,
+            detuning_hz=float(filter_detuning_mhz_A) * 1e6,
+        )
+        r_b, t_b = filter_cavity_rt(
+            fwhm_hz=float(filter_fwhm_mhz) * 1e6,
+            dt_s=dt_s,
+            detuning_hz=float(filter_detuning_mhz_B) * 1e6,
+        )
+        u_step_a = filter_cavity_step_unitary_5d3d(r=r_a, t=t_a)
+        u_step_b = filter_cavity_step_unitary_5d3d(r=r_b, t=t_b)
+    else:
+        u_step_a = np.eye(15, dtype=complex)
+        u_step_b = np.eye(15, dtype=complex)
+
+    k_filter_a = None
+    k_filter_b = None
+    if apply_filter_780:
+        k_filter_a = loss_channel_both_subspaces(
+            eta_780=0.0,
+            eta_H_1517=float(filter_eta_peak_A),
+            eta_V_1517=float(filter_eta_peak_A),
+        )
+        k_filter_b = loss_channel_both_subspaces(
+            eta_780=0.0,
+            eta_H_1517=float(filter_eta_peak_B),
+            eta_V_1517=float(filter_eta_peak_B),
+        )
+
+    # 位置追踪：避免在swap后使用过时索引。
+    labels = ["atomA", "atomB"]
+    for idx in range(n_bins):
+        labels.append(f"A{idx}")
+        labels.append(f"B{idx}")
+    labels.extend(["memA", "memB"])
+    pos: Dict[str, int] = {label: index for index, label in enumerate(labels)}
+
+    def _swap_and_track(left_index: int) -> None:
+        right_index = left_index + 1
+        left_label = labels[left_index]
+        right_label = labels[right_index]
+        mps_aug.swap_sites(left_index)
+        labels[left_index], labels[right_index] = right_label, left_label
+        pos[left_label], pos[right_label] = right_index, left_index
+
+    # 2) 从右向左扫描 time bins（与发射阶段时间顺序一致）
+    for n in range(n_bins - 1, -1, -1):
+        label_a = f"A{n}"
+        label_b = f"B{n}"
+
+        # 2.1 QFC 单站点幺正
+        mps_aug.apply_kraus_one_site(pos[label_a], [u_qfc], rng=rng)
+        mps_aug.apply_kraus_one_site(pos[label_b], [u_qfc], rng=rng)
+
+        # 2.2 780 滤波 + 1517 峰值透过
+        if k_filter_a is not None:
+            mps_aug.apply_kraus_one_site(pos[label_a], k_filter_a, rng=rng)
+        if k_filter_b is not None:
+            mps_aug.apply_kraus_one_site(pos[label_b], k_filter_b, rng=rng)
+
+        # 2.3 记忆门（bin 与 mem 需相邻，先把 mem 移到 bin 右侧）
+        while pos["memA"] > pos[label_a] + 1:
+            _swap_and_track(pos["memA"] - 1)
+        while pos["memB"] > pos[label_b] + 1:
+            _swap_and_track(pos["memB"] - 1)
+
+        mps_aug.apply_bond_op(pos[label_a], u_step_a)
+        mps_aug.apply_bond_op(pos[label_b], u_step_b)
+
+    # 3) 将记忆模移回链尾，作为尾部隐状态保留（供后续收缩自动吸收）。
+    #    先推 memB 到最右端，再推 memA 到倒数第二位，
+    #    防止 memB 右移时把 memA 从尾部挤回中间。
+    while pos["memB"] < mps_aug.L - 1:
+        _swap_and_track(pos["memB"])
+    while pos["memA"] < mps_aug.L - 2:
+        _swap_and_track(pos["memA"])
+
+    # 4) 硬校验：bin 区必须保持 5D，尾部必须是两个 3D 记忆模。
+    expected_tail = [3, 3]
+    tail_dims = [int(mps_aug.d[-2]), int(mps_aug.d[-1])]
+    if tail_dims != expected_tail:
+        raise RuntimeError(
+            f"记忆模归位失败: tail_dims={tail_dims}, last_5={mps_aug.d[-5:]}"
+        )
+    bin_region = mps_aug.d[2: 2 + 2 * n_bins]
+    if any(int(dim) != 5 for dim in bin_region):
+        raise RuntimeError(
+            f"bin区域维度损坏: first_10={bin_region[:10]}, last_10={bin_region[-10:]}"
+        )
+
+    mps_aug.canonicalize(renormalize=True)
+    _print_footer(mps_aug, verbose, stage="QFC + Filter Memory")
+    return mps_aug
 
 
 # ============================================================================

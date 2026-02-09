@@ -8,6 +8,7 @@
 from .trajectory import (
     EmissionResult,
     run_dual_atom_emission,
+    apply_qfc_filter_memory_chain,
     sample_fiber_realization,
 )
 from .detection import (
@@ -26,6 +27,7 @@ __all__ = [
     # trajectory
     'EmissionResult',
     'run_dual_atom_emission',
+    'apply_qfc_filter_memory_chain',
     # apply_* functions
     'sample_fiber_realization',
     # detection (POVM sampling)

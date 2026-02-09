@@ -204,7 +204,15 @@ def _parse_run_params(argv):
     parser.add_argument("--delta-c-v-b", dest="delta_c_v_b", type=float, help="B 臂 V 腔模失谐 delta_c_V_B (rad/s)")
     parser.add_argument("--qfc-theta-h", dest="qfc_theta_h", type=float, help="QFC H转换角 theta_H (rad)")
     parser.add_argument("--qfc-theta-v", dest="qfc_theta_v", type=float, help="QFC V转换角 theta_V (rad)")
+    parser.add_argument("--qfc-phi-h", dest="qfc_phi_h", type=float, help="QFC H通道相位 phi_H (rad)")
+    parser.add_argument("--qfc-phi-v", dest="qfc_phi_v", type=float, help="QFC V通道相位 phi_V (rad)")
     parser.add_argument("--no-filter-780", dest="no_filter_780", action="store_true", help="关闭 780 滤波（保留 780 分量）")
+    parser.add_argument("--filter-cavity-fwhm-mhz", dest="filter_cavity_fwhm_mhz", type=float, help="QFC后1517滤波腔线宽 FWHM (MHz)")
+    parser.add_argument("--filter-cavity-detuning-mhz-a", dest="filter_cavity_detuning_mhz_a", type=float, help="A 臂滤波腔失谐 (MHz)")
+    parser.add_argument("--filter-cavity-detuning-mhz-b", dest="filter_cavity_detuning_mhz_b", type=float, help="B 臂滤波腔失谐 (MHz)")
+    parser.add_argument("--filter-cavity-eta-peak-a", dest="filter_cavity_eta_peak_a", type=float, help="A 臂滤波腔峰值透过率")
+    parser.add_argument("--filter-cavity-eta-peak-b", dest="filter_cavity_eta_peak_b", type=float, help="B 臂滤波腔峰值透过率")
+    parser.add_argument("--no-filter-cavity", dest="no_filter_cavity", action="store_true", help="关闭QFC后1517滤波腔显式记忆")
     parser.add_argument("--enum-mode", dest="enum_mode", type=str, help="成功事件枚举模式：dark/no-dark/both")
     parser.add_argument("--plot-all", dest="plot_all", action="store_true", help="所有 run 都绘图（默认仅保留一个）")
     parser.add_argument("--no-plot", dest="no_plot", action="store_true", help="完全禁止绘图（覆盖 plot-all）")
@@ -313,8 +321,24 @@ def _parse_run_params(argv):
         config.qfc.theta_H = float(args.qfc_theta_h)
     if args.qfc_theta_v is not None:
         config.qfc.theta_V = float(args.qfc_theta_v)
+    if args.qfc_phi_h is not None:
+        config.qfc.phi_H = float(args.qfc_phi_h)
+    if args.qfc_phi_v is not None:
+        config.qfc.phi_V = float(args.qfc_phi_v)
     if args.no_filter_780:
         config.qfc.apply_filter_780 = False
+    if args.filter_cavity_fwhm_mhz is not None:
+        config.qfc.filter_cavity.fwhm_mhz = float(args.filter_cavity_fwhm_mhz)
+    if args.filter_cavity_detuning_mhz_a is not None:
+        config.qfc.filter_cavity.detuning_mhz_A = float(args.filter_cavity_detuning_mhz_a)
+    if args.filter_cavity_detuning_mhz_b is not None:
+        config.qfc.filter_cavity.detuning_mhz_B = float(args.filter_cavity_detuning_mhz_b)
+    if args.filter_cavity_eta_peak_a is not None:
+        config.qfc.filter_cavity.eta_peak_A = float(args.filter_cavity_eta_peak_a)
+    if args.filter_cavity_eta_peak_b is not None:
+        config.qfc.filter_cavity.eta_peak_B = float(args.filter_cavity_eta_peak_b)
+    if args.no_filter_cavity:
+        config.qfc.filter_cavity.enabled = False
 
     # runs/shots/cores 是“任务粒度 + 并发预算”的核心参数
     config.run.runs = args.n_runs if args.n_runs is not None else config.run.runs
