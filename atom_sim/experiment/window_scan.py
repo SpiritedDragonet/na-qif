@@ -85,10 +85,11 @@ def run_window_scan_task(
     run_index = int(task.get("run_index", 0))
     shots_per_run = int(task.get("shots", config.run.shots_per_run))
 
-    windows_ns = [float(v) for v in task.get("windows_ns", [])]
-    if not windows_ns:
-        # 新语义：窗口列表来自运行配置，而不是逐 task 重复携带。
-        windows_ns = build_window_scan_values(config)
+    # 严格模式：WINDOW_SCAN 的窗口定义必须来自配置。
+    # 不再兼容旧任务里的 windows_ns，避免任务负载冗余与语义分叉。
+    if "windows_ns" in task:
+        raise ValueError("WINDOW_SCAN task 不再支持 windows_ns；请使用配置的 window_sweep_* 参数")
+    windows_ns = build_window_scan_values(config)
 
     run_rng = np.random.default_rng(seed)
     pipe = _run_single_trial(
