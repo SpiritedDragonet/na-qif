@@ -98,10 +98,13 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
 
         trials_writer.writerow([
             "window_ns",
+            "window_bins",
             "run_index",
             "shot_index",
             "success",
             "bell",
+            "accepted_by_window",
+            "p_true_given_record",
             "p_arrive",
             "p_arrive_11",
             "p_arrive_same_arm",
@@ -132,8 +135,10 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
         runs_writer.writerow([
             "id",
             "window_ns",
+            "window_bins",
             "run_index",
             "shots",
+            "accepted",
             "success",
             "p_arrive",
             "p_arrive_11",
@@ -207,14 +212,18 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                 corr_eyy = _safe_num(entry.get("corr_eyy"))
                 corr_ezz = _safe_num(entry.get("corr_ezz"))
                 chsh_s_max = _safe_num(entry.get("chsh_s_max"))
+                window_bins = int(entry.get("window_bins", 0) or 0)
                 shots = int(entry.get("shots", 0) or 0)
+                accepted = int(entry.get("accepted", 0) or 0)
                 success = int(entry.get("success", 0) or 0)
 
                 runs_writer.writerow([
                     tid,
                     window_ns,
+                    window_bins,
                     run_index,
                     shots,
+                    accepted,
                     success,
                     p_arrive,
                     p_arrive_11,
@@ -275,8 +284,11 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                 if not isinstance(records, list) or not records:
                     trials_writer.writerow([
                         window_ns,
+                        window_bins,
                         run_index,
                         -1,
+                        "",
+                        "",
                         "",
                         "",
                         p_arrive,
@@ -311,6 +323,8 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                     shot_idx = record.get("shot_index")
                     shot_success = record.get("success")
                     bell = record.get("bell")
+                    accepted_by_window = record.get("accepted_by_window")
+                    p_true_given_record = _safe_num(record.get("p_true_given_record"))
                     shot_clicks = record.get("clicks", [])
                     bins = {"H1": "", "V1": "", "H2": "", "V2": ""}
                     darks = {"H1": "", "V1": "", "H2": "", "V2": ""}
@@ -327,10 +341,13 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
 
                     trials_writer.writerow([
                         window_ns,
+                        window_bins,
                         run_index,
                         shot_idx,
                         shot_success,
                         bell,
+                        accepted_by_window,
+                        p_true_given_record,
                         p_arrive,
                         p_arrive_11,
                         p_arrive_same_arm,

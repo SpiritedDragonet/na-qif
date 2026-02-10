@@ -758,7 +758,7 @@ def _build_task_list(
     # 任务生成规则：
     #   - SIM：每个 run 一个 task
     #   - HOM：每个 τ × run 一个 task
-    #   - WINDOW_SCAN：每个 run 一个 task（task 内循环 windows）
+    #   - WINDOW_SCAN：每个 run 一个 task（窗口列表由配置统一定义，不写入 task）
     #   - BSM_SCAN：每个 run 一个 task（task 内循环 bs_thetas）
     #   - LENGTH_SCAN：每个 run 一个 task（task 内循环 lengths）
     #   - SUMMARY：最后追加一个汇总任务（由 worker 执行）
@@ -793,7 +793,6 @@ def _build_task_list(
                     _write_json_atomic(path, task)
                 task_count += 1
     elif task_type == "WINDOW_SCAN":
-        window_values = window_scan.build_window_scan_values(config)
         for run_index in range(n_runs):
             tid = f"wscan_run_{run_index:06d}"
             task = {
@@ -803,7 +802,6 @@ def _build_task_list(
                 "shots": shots_per_run,
                 "seed": 100000 + task_count + 1,
                 "config_hash": config_hash,
-                "windows_ns": [float(value) for value in window_values],
             }
             path = pending_dir / f"task_{tid}.json"
             if not path.exists():
