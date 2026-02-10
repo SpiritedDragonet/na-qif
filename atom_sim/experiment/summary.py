@@ -15,6 +15,29 @@ from .hom import _is_port_samepol_coincidence
 from .bsm_scan import BSM_PATTERN_KEYS
 
 
+CORE_TASK_MODE = "CORE_TRIAL"
+
+
+def _is_core_experiment(data: dict, experiment: str) -> bool:
+    return str(data.get("mode", "")).upper() == CORE_TASK_MODE and str(data.get("experiment", "")).upper() == experiment.upper()
+
+
+def _extract_run_index(metrics: dict, tid: str, patterns: tuple[str, ...]) -> int:
+    run_index_raw = metrics.get("run_index", 0)
+    try:
+        return int(run_index_raw or 0)
+    except Exception:
+        pass
+    for pattern in patterns:
+        m = re.match(pattern, tid)
+        if m:
+            try:
+                return int(m.group(1))
+            except Exception:
+                continue
+    return 0
+
+
 def _safe_num(value):
     if value is None:
         return None
@@ -169,15 +192,12 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                 data = json.loads(meta_path.read_text(encoding="utf-8"))
             except Exception:
                 continue
-            if data.get("mode") != "WINDOW_SCAN":
+            if not _is_core_experiment(data, "WINDOW_SCAN"):
                 continue
 
             tid = str(data.get("id", ""))
             metrics = data.get("metrics", {})
-            run_index = int(metrics.get("run_index", 0) or 0)
-            run_match = re.match(r"wscan_run_(\d+)", tid)
-            if run_match:
-                run_index = int(run_match.group(1))
+            run_index = _extract_run_index(metrics, tid, (r"wscan_run_(\d+)",))
 
             windows = metrics.get("windows", [])
             if not isinstance(windows, list):
@@ -658,15 +678,12 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
                 data = json.loads(meta_path.read_text(encoding="utf-8"))
             except Exception:
                 continue
-            if data.get("mode") != "LENGTH_SCAN":
+            if not _is_core_experiment(data, "LENGTH_SCAN"):
                 continue
 
             tid = str(data.get("id", ""))
             metrics = data.get("metrics", {})
-            run_index = int(metrics.get("run_index", 0) or 0)
-            run_match = re.match(r"lscan_run_(\d+)", tid)
-            if run_match:
-                run_index = int(run_match.group(1))
+            run_index = _extract_run_index(metrics, tid, (r"lscan_len_\d+_run_(\d+)", r"lscan_run_(\d+)"))
 
             lengths = metrics.get("lengths", [])
             if not isinstance(lengths, list):
@@ -1081,15 +1098,12 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
                 data = json.loads(meta_path.read_text(encoding="utf-8"))
             except Exception:
                 continue
-            if data.get("mode") != "BSM_SCAN":
+            if not _is_core_experiment(data, "BSM_SCAN"):
                 continue
 
             tid = str(data.get("id", ""))
             metrics = data.get("metrics", {})
-            run_index = int(metrics.get("run_index", 0) or 0)
-            run_match = re.match(r"bscan_run_(\d+)", tid)
-            if run_match:
-                run_index = int(run_match.group(1))
+            run_index = _extract_run_index(metrics, tid, (r"bscan_theta_\d+_run_(\d+)", r"bscan_run_(\d+)"))
 
             entries = metrics.get("bs_thetas", [])
             if not isinstance(entries, list):
@@ -1485,15 +1499,12 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                     data = json.loads(meta_path.read_text(encoding="utf-8"))
                 except Exception:
                     continue
-                if data.get("mode") != "HOM":
+                if not _is_core_experiment(data, "HOM"):
                     continue
                 tid = data.get("id", "")
-                m = re.match(r"hom_tau_([+-]?\d+\.\d+)_run_(\d+)", tid)
-                if not m:
-                    continue
-                tau_ns = float(m.group(1))
-                run_index = int(m.group(2))
                 metrics = data.get("metrics", {})
+                tau_ns = float(metrics.get("tau_ns", 0.0) or 0.0)
+                run_index = _extract_run_index(metrics, tid, (r"hom_tau_[+-]?\d+\.\d+_run_(\d+)",))
                 p_arrive = metrics.get("p_arrive")
                 tau_key = f"{tau_ns:.6f}"
                 # tau_states 用于汇总每个 τ 的统计
@@ -1700,14 +1711,11 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                     data = json.loads(meta_path.read_text(encoding="utf-8"))
                 except Exception:
                     continue
-                if data.get("mode") != "SIM":
+                if not _is_core_experiment(data, "SIM"):
                     continue
                 tid = data.get("id", "")
                 metrics = data.get("metrics", {})
-                run_index = int(metrics.get("run_index", 0) or 0)
-                m = re.match(r"sim_run_(\d+)", tid)
-                if m:
-                    run_index = int(m.group(1))
+                run_index = _extract_run_index(metrics, tid, (r"sim_run_(\d+)",))
                 task_mode = data.get("mode")
                 window_ns = metrics.get("window_ns")
                 p_arrive = metrics.get("p_arrive")

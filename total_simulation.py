@@ -12,9 +12,10 @@ import time
 import re
 import shutil
 import numpy as np
+from dataclasses import fields, is_dataclass
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, get_origin, get_args, Union, get_type_hints
 from concurrent.futures import ProcessPoolExecutor
 
 # Add project root to path (for running as standalone script)
@@ -32,6 +33,13 @@ from atom_sim.experiment.hom import (  # noqa: E402
 )
 from atom_sim.experiment import single_run, window_scan, length_scan, bsm_scan, summary  # noqa: E402
 from atom_sim.simulation import run_detection_self_checks  # noqa: E402
+
+
+TASK_PROTOCOL_VERSION = "v2_core_trial"
+RUN_MANIFEST_FILENAME = "run_manifest.json"
+CORE_TASK_MODE = "CORE_TRIAL"
+SUMMARY_TASK_MODE = "SUMMARY"
+SUPPORTED_EXPERIMENTS = {"SIM", "HOM", "WINDOW_SCAN", "BSM_SCAN", "LENGTH_SCAN"}
 
 
 def _install_output_tracker(marker_path: Optional[Path]) -> None:
@@ -769,48 +777,182 @@ def _write_json_atomic(path: Path, payload: dict) -> None:
     tmp.replace(path)
 
 
+def _to_plain_jsonable(value):
+    if is_dataclass(value):
+        return {field.name: _to_plain_jsonable(getattr(value, field.name)) for field in fields(value)}
+    if isinstance(value, dict):
+        return {key: _to_plain_jsonable(val) for key, val in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_plain_jsonable(item) for item in value]
+    return value
+
+
+def _resolve_dataclass_type(annotation):
+    if isinstance(annotation, type) and hasattr(annotation, "__dataclass_fields__"):
+        return annotation
+    origin = get_origin(annotation)
+    if origin is Union:
+        for arg in get_args(annotation):
+            if arg is type(None):
+                continue
+            if isinstance(arg, type) and hasattr(arg, "__dataclass_fields__"):
+                return arg
+    return None
+
+
+def _apply_dict_to_dataclass(target, payload: dict) -> None:
+    if not isinstance(payload, dict):
+        raise ValueError("SCHEMA_ERROR: manifest.config 必须是对象")
+    type_hints = get_type_hints(type(target))
+    for field in fields(target):
+        if field.name not in payload:
+            continue
+        incoming = payload[field.name]
+        current = getattr(target, field.name)
+        annotation = type_hints.get(field.name, field.type)
+        nested_type = _resolve_dataclass_type(annotation)
+
+        if incoming is None:
+            setattr(target, field.name, None)
+            continue
+
+        if isinstance(incoming, dict):
+            if is_dataclass(current):
+                _apply_dict_to_dataclass(current, incoming)
+                continue
+            if nested_type is not None:
+                nested_obj = nested_type()
+                _apply_dict_to_dataclass(nested_obj, incoming)
+                setattr(target, field.name, nested_obj)
+                continue
+
+        setattr(target, field.name, incoming)
+
+
+def _build_run_manifest(task_type: str, config_hash: str, config: SimConfig, scan: dict) -> dict:
+    return {
+        "protocol_version": TASK_PROTOCOL_VERSION,
+        "config_hash": config_hash,
+        "task_type": task_type,
+        "config": _to_plain_jsonable(config),
+        "scan": scan,
+    }
+
+
+def _write_run_manifest(paths: dict, task_type: str, config_hash: str, config: SimConfig, scan: dict) -> None:
+    manifest = _build_run_manifest(task_type=task_type, config_hash=config_hash, config=config, scan=scan)
+    _write_json_atomic(paths["summary"] / RUN_MANIFEST_FILENAME, manifest)
+
+
+def _load_run_manifest(paths: dict) -> dict:
+    manifest_path = paths["summary"] / RUN_MANIFEST_FILENAME
+    if not manifest_path.exists():
+        raise ValueError(f"SCHEMA_ERROR: 缺少 {RUN_MANIFEST_FILENAME}")
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(f"SCHEMA_ERROR: 无法读取 {RUN_MANIFEST_FILENAME}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("SCHEMA_ERROR: run_manifest 顶层必须是对象")
+    return data
+
+
+def _apply_manifest_to_config(config: SimConfig, manifest: dict) -> None:
+    protocol = str(manifest.get("protocol_version", "")).strip()
+    if protocol != TASK_PROTOCOL_VERSION:
+        raise ValueError(
+            f"SCHEMA_ERROR: protocol_version 不匹配，期望 {TASK_PROTOCOL_VERSION}，实际 {protocol or '缺失'}"
+        )
+    cfg_payload = manifest.get("config")
+    if not isinstance(cfg_payload, dict):
+        raise ValueError("SCHEMA_ERROR: run_manifest.config 缺失或类型错误")
+    _apply_dict_to_dataclass(config, cfg_payload)
+
+
+def _validate_task_schema(task: dict, manifest: dict) -> None:
+    task_hash = str(task.get("config_hash", "")).strip()
+    manifest_hash = str(manifest.get("config_hash", "")).strip()
+    if task_hash and manifest_hash and task_hash != manifest_hash:
+        raise RuntimeError(f"CONFIG_MISMATCH: task={task_hash} manifest={manifest_hash}")
+
+    mode = str(task.get("mode", "")).upper()
+    if mode not in {CORE_TASK_MODE, SUMMARY_TASK_MODE}:
+        raise ValueError(f"SCHEMA_ERROR: 不支持的 task.mode={mode}")
+
+    if mode == CORE_TASK_MODE:
+        experiment = str(task.get("experiment", "")).upper()
+        if experiment not in SUPPORTED_EXPERIMENTS:
+            raise ValueError(f"SCHEMA_ERROR: 不支持的 task.experiment={experiment}")
+        payload = task.get("payload", {})
+        if not isinstance(payload, dict):
+            raise ValueError("SCHEMA_ERROR: CORE_TRIAL 的 payload 必须是对象")
+        if experiment == "HOM" and "tau_ns" not in payload:
+            raise ValueError("SCHEMA_ERROR: HOM 缺少 payload.tau_ns")
+        if experiment == "BSM_SCAN" and "bs_theta" not in payload:
+            raise ValueError("SCHEMA_ERROR: BSM_SCAN 缺少 payload.bs_theta")
+        if experiment == "LENGTH_SCAN" and "length_km" not in payload:
+            raise ValueError("SCHEMA_ERROR: LENGTH_SCAN 缺少 payload.length_km")
+
+    if mode == SUMMARY_TASK_MODE:
+        summary_for = str(task.get("summary_for", "")).upper()
+        if summary_for not in SUPPORTED_EXPERIMENTS:
+            raise ValueError(f"SCHEMA_ERROR: SUMMARY 缺少合法 summary_for，当前={summary_for}")
+        manifest_task_type = str(manifest.get("task_type", "")).upper()
+        if manifest_task_type and summary_for != manifest_task_type:
+            raise RuntimeError(
+                f"CONFIG_MISMATCH: summary_for={summary_for} 与 manifest.task_type={manifest_task_type} 不一致"
+            )
+
+
 def _build_task_list(
     task_type: str,
     config: SimConfig,
     config_hash: str,
     pending_dir: Path,
-) -> int:
+) -> tuple[int, dict]:
     # ------------------------------------------------------------------
     # 任务生成规则：
-    #   - SIM：每个 run 一个 task
-    #   - HOM：每个 τ × run 一个 task
-    #   - WINDOW_SCAN：每个 run 一个 task（窗口列表由配置统一定义，不写入 task）
-    #   - BSM_SCAN：每个 run 一个 task（task 内循环 bs_thetas）
-    #   - LENGTH_SCAN：每个 run 一个 task（task 内循环 lengths）
-    #   - SUMMARY：最后追加一个汇总任务（由 worker 执行）
+    #   - 所有物理子任务统一为 mode=CORE_TRIAL
+    #   - 实验语义放在 experiment 字段
+    #   - 参数分为 run_manifest(全局) + task.payload(局部)
+    #   - SUMMARY 作为唯一汇总任务
     #
     # 所有任务只写入 pending/task_*.json，执行由 worker 完成。
     # ------------------------------------------------------------------
     n_runs = config.run.runs
     shots_per_run = config.run.shots_per_run
     task_count = 0
+    scan = {
+        "window_sweep_start_ns": config.run.window_sweep_start_ns,
+        "window_sweep_end_ns": config.run.window_sweep_end_ns,
+        "window_sweep_step_ns": config.run.window_sweep_step_ns,
+        "tau_values_ns": None,
+        "bs_theta_values": None,
+        "length_values_km": None,
+    }
     if task_type == "HOM":
         if config.hom is None:
             raise ValueError("HOM 任务需要 --mode HOM 并提供 tau 参数")
-        # τ 列表由 hom 配置决定（可能是随机或扫描）
-        tau_values = _build_hom_tau_values(config.hom)
+        tau_values = [float(v) for v in _build_hom_tau_values(config.hom)]
+        scan["tau_values_ns"] = tau_values
         for tau in tau_values:
             for run_index in range(n_runs):
-                # id 编码 tau 与 run_index，保证唯一性
                 tid = f"hom_tau_{tau:+.3f}_run_{run_index:06d}"
                 task = {
                     "id": tid,
-                    "mode": "HOM",
-                    "tau_ns": float(tau),
+                    "mode": CORE_TASK_MODE,
+                    "experiment": "HOM",
+                    "run_index": run_index,
                     "shots": shots_per_run,
-                    # seed 用于保证可重现；与 task_count 绑定
                     "seed": 100000 + task_count + 1,
                     "config_hash": config_hash,
-                    "window_ns": config.hom.window_ns,
+                    "payload": {
+                        "tau_ns": float(tau),
+                        "window_ns": float(config.hom.window_ns),
+                    },
                 }
                 path = pending_dir / f"task_{tid}.json"
                 if not path.exists():
-                    # 不覆盖已有任务，便于断点续算
                     _write_json_atomic(path, task)
                 task_count += 1
     elif task_type == "WINDOW_SCAN":
@@ -818,11 +960,13 @@ def _build_task_list(
             tid = f"wscan_run_{run_index:06d}"
             task = {
                 "id": tid,
-                "mode": "WINDOW_SCAN",
+                "mode": CORE_TASK_MODE,
+                "experiment": "WINDOW_SCAN",
                 "run_index": run_index,
                 "shots": shots_per_run,
                 "seed": 100000 + task_count + 1,
                 "config_hash": config_hash,
+                "payload": {},
             }
             path = pending_dir / f"task_{tid}.json"
             if not path.exists():
@@ -830,58 +974,69 @@ def _build_task_list(
             task_count += 1
     elif task_type == "BSM_SCAN":
         bs_values = bsm_scan.build_bsm_scan_values(config)
-        for run_index in range(n_runs):
-            tid = f"bscan_run_{run_index:06d}"
-            task = {
-                "id": tid,
-                "mode": "BSM_SCAN",
-                "run_index": run_index,
-                "shots": shots_per_run,
-                "seed": 100000 + task_count + 1,
-                "config_hash": config_hash,
-                "bs_thetas": [float(value) for value in bs_values],
-            }
-            path = pending_dir / f"task_{tid}.json"
-            if not path.exists():
-                _write_json_atomic(path, task)
-            task_count += 1
+        scan["bs_theta_values"] = [float(v) for v in bs_values]
+        for bs_idx, bs_theta in enumerate(bs_values):
+            for run_index in range(n_runs):
+                tid = f"bscan_theta_{bs_idx:04d}_run_{run_index:06d}"
+                task = {
+                    "id": tid,
+                    "mode": CORE_TASK_MODE,
+                    "experiment": "BSM_SCAN",
+                    "run_index": run_index,
+                    "shots": shots_per_run,
+                    "seed": 100000 + task_count + 1,
+                    "config_hash": config_hash,
+                    "payload": {
+                        "bs_theta": float(bs_theta),
+                    },
+                }
+                path = pending_dir / f"task_{tid}.json"
+                if not path.exists():
+                    _write_json_atomic(path, task)
+                task_count += 1
     elif task_type == "LENGTH_SCAN":
         length_values = length_scan.build_length_scan_values(config)
-        for run_index in range(n_runs):
-            tid = f"lscan_run_{run_index:06d}"
-            task = {
-                "id": tid,
-                "mode": "LENGTH_SCAN",
-                "run_index": run_index,
-                "shots": shots_per_run,
-                "seed": 100000 + task_count + 1,
-                "config_hash": config_hash,
-                "lengths_km": [float(value) for value in length_values],
-            }
-            path = pending_dir / f"task_{tid}.json"
-            if not path.exists():
-                _write_json_atomic(path, task)
-            task_count += 1
+        scan["length_values_km"] = [float(v) for v in length_values]
+        for length_idx, length_km in enumerate(length_values):
+            for run_index in range(n_runs):
+                tid = f"lscan_len_{length_idx:04d}_run_{run_index:06d}"
+                task = {
+                    "id": tid,
+                    "mode": CORE_TASK_MODE,
+                    "experiment": "LENGTH_SCAN",
+                    "run_index": run_index,
+                    "shots": shots_per_run,
+                    "seed": 100000 + task_count + 1,
+                    "config_hash": config_hash,
+                    "payload": {
+                        "length_km": float(length_km),
+                    },
+                }
+                path = pending_dir / f"task_{tid}.json"
+                if not path.exists():
+                    _write_json_atomic(path, task)
+                task_count += 1
     else:
         for run_index in range(n_runs):
-            # SIM：仅按 run_index 划分
             tid = f"sim_run_{run_index:06d}"
             task = {
                 "id": tid,
-                "mode": "SIM",
+                "mode": CORE_TASK_MODE,
+                "experiment": "SIM",
                 "run_index": run_index,
                 "shots": shots_per_run,
                 "seed": 100000 + task_count + 1,
                 "config_hash": config_hash,
+                "payload": {},
             }
             path = pending_dir / f"task_{tid}.json"
             if not path.exists():
                 _write_json_atomic(path, task)
             task_count += 1
-    # SUMMARY 任务：由 worker 在最后执行汇总
     summary_task = {
         "id": "summary",
-        "mode": "SUMMARY",
+        "mode": SUMMARY_TASK_MODE,
+        "experiment": task_type,
         "summary_for": task_type,
         "config_hash": config_hash,
     }
@@ -889,7 +1044,7 @@ def _build_task_list(
     if not summary_path.exists():
         _write_json_atomic(summary_path, summary_task)
     task_count += 1
-    return task_count
+    return task_count, scan
 
 
 def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
@@ -1134,17 +1289,27 @@ def _run_worker_loop(
         task = {}
         result_dir = None
         status = "ok"
+        error_type = ""
         err_msg = ""
         metrics = {}
+        task_mode = ""
+        task_experiment = ""
         try:
             task = json.loads(task_path.read_text(encoding="utf-8"))
             task_id = task.get("id", task_path.stem.replace("task_", ""))
+            task_mode = str(task.get("mode", "")).upper()
+            task_experiment = str(task.get("experiment", "")).upper()
+
+            manifest = _load_run_manifest(paths)
+            _apply_manifest_to_config(config, manifest)
+            _validate_task_schema(task, manifest)
+
             result_dir = paths["results"] / f"result_{task_id}"
             plots_dir = result_dir / "plots"
             raw_dir = result_dir / "raw"
             plots_dir.mkdir(parents=True, exist_ok=True)
             raw_dir.mkdir(parents=True, exist_ok=True)
-            if task.get("mode") == "SUMMARY" or _is_summary_task_path(task_path):
+            if task_mode == SUMMARY_TASK_MODE or _is_summary_task_path(task_path):
                 # SUMMARY 任务：集中汇总 CSV
                 summary_for = str(task.get("summary_for", "SIM")).upper()
                 _write_summary(summary_for, paths, config)
@@ -1154,13 +1319,17 @@ def _run_worker_loop(
                 except Exception:
                     pass
                 metrics = {"summary_for": summary_for}
-            elif task.get("mode") == "HOM":
+                task_experiment = summary_for
+            elif task_mode == CORE_TASK_MODE and task_experiment == "HOM":
                 # HOM 任务：单 τ × run 的统计
                 seed = task.get("seed")
                 seed = int(seed) if seed is not None else None
-                tau_ns = float(task.get("tau_ns", 0.0))
+                run_index = int(task.get("run_index", 0) or 0)
                 shots = int(task.get("shots", config.run.shots_per_run))
-                window_ns = float(task.get("window_ns", config.hom.window_ns if config.hom else 70.0))
+                payload = task.get("payload", {})
+                tau_ns = float(payload["tau_ns"])
+                default_window = config.hom.window_ns if config.hom is not None else config.run.window_ns
+                window_ns = float(payload.get("window_ns", default_window))
                 coincid, p_arrive, click_records = _run_hom_run(
                     tau_ns,
                     shots,
@@ -1172,13 +1341,17 @@ def _run_worker_loop(
                     rng_seed=seed,
                 )
                 metrics = {
+                    "run_index": run_index,
+                    "tau_ns": tau_ns,
+                    "window_ns": window_ns,
+                    "shots": shots,
                     "p_arrive": p_arrive,
                     "coinc": coincid,
                 }
                 if click_records is not None:
                     # 每个 shot 的点击记录写入 raw/clicks.json
                     _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
-            elif task.get("mode") == "WINDOW_SCAN":
+            elif task_mode == CORE_TASK_MODE and task_experiment == "WINDOW_SCAN":
                 metrics, click_records = window_scan.run_window_scan_task(
                     task=task,
                     config=config,
@@ -1188,7 +1361,7 @@ def _run_worker_loop(
                 )
                 if click_records is not None:
                     _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
-            elif task.get("mode") == "BSM_SCAN":
+            elif task_mode == CORE_TASK_MODE and task_experiment == "BSM_SCAN":
                 metrics, click_records = bsm_scan.run_bsm_scan_task(
                     task=task,
                     config=config,
@@ -1198,7 +1371,7 @@ def _run_worker_loop(
                 )
                 if click_records is not None:
                     _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
-            elif task.get("mode") == "LENGTH_SCAN":
+            elif task_mode == CORE_TASK_MODE and task_experiment == "LENGTH_SCAN":
                 metrics, click_records = length_scan.run_length_scan_task(
                     task=task,
                     config=config,
@@ -1208,7 +1381,7 @@ def _run_worker_loop(
                 )
                 if click_records is not None:
                     _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
-            else:
+            elif task_mode == CORE_TASK_MODE and task_experiment == "SIM":
                 # SIM 任务：单 run 的成功统计与点击抽样
                 seed = task.get("seed")
                 seed = int(seed) if seed is not None else None
@@ -1252,9 +1425,20 @@ def _run_worker_loop(
                     metrics["p_success_bg_assisted"] = success_metrics.get("p_success_bg_assisted")
                 if click_records is not None:
                     _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
+            else:
+                raise ValueError(
+                    f"SCHEMA_ERROR: 无法分发 task，mode={task_mode or '缺失'} "
+                    f"experiment={task_experiment or '缺失'}"
+                )
         except Exception as exc:
             status = "error"
             err_msg = str(exc)
+            if err_msg.startswith("SCHEMA_ERROR:"):
+                error_type = "SCHEMA_ERROR"
+            elif err_msg.startswith("CONFIG_MISMATCH:"):
+                error_type = "CONFIG_MISMATCH"
+            else:
+                error_type = "RUNTIME_ERROR"
         finally:
             stop_flag.set()
             t.join(timeout=1)
@@ -1265,13 +1449,16 @@ def _run_worker_loop(
             meta_path = result_dir / "meta.json"
             meta = {
                 "id": task_id,
-                "mode": task.get("mode", "SIM"),
+                "mode": task_mode or task.get("mode", CORE_TASK_MODE),
+                "experiment": task_experiment or task.get("experiment", "SIM"),
                 "status": status,
                 "timestamp": datetime.utcnow().isoformat() + "Z",
                 "metrics": metrics,
             }
             if err_msg:
                 meta["error"] = err_msg
+                meta["error_type"] = error_type or "RUNTIME_ERROR"
+                meta["error_detail"] = err_msg
             _write_json_atomic(meta_path, meta)
         except Exception:
             pass
@@ -1345,8 +1532,9 @@ def main():
                 done_flag.unlink()
             except Exception:
                 pass
-        # 生成任务列表（含 SUMMARY）
-        expected_total = _build_task_list(task_type, config, config_hash, paths["pending"])
+        # 生成任务列表（含 SUMMARY）并写入 manifest
+        expected_total, scan = _build_task_list(task_type, config, config_hash, paths["pending"])
+        _write_run_manifest(paths, task_type, config_hash, config, scan)
         print(f"[server] 任务总数: {expected_total} | queue: {paths['root']}")
         if role == "server":
             _run_server_monitor(
