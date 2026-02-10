@@ -14,7 +14,6 @@ from collections import Counter
 import numpy as np
 
 from ..simulation import (
-    run_detection_pipeline,
     compute_fidelity_with_bell,
     compute_pauli_correlators_and_chsh,
 )
@@ -23,11 +22,10 @@ from ..physics.gates import bs_gate_6d
 from .common import (
     SimConfig,
     PipelineHooks,
-    run_emission_to_bs,
+    run_trial_physics_core,
+    run_detection_core_from_pipe,
     _build_parameter_snapshot,
     _build_run_parameter_store,
-    _build_detection_kwargs,
-    _compute_t_wait_us_from_length,
 )
 
 # Debug toggle (default False)
@@ -127,30 +125,16 @@ def _run_single_trial(
     目的：抽出最小可复用的物理流程（发射->QFC->滤波->光纤->退相干->BS并入测量）。
     规则：delay_ns/delay_jitter_ns 优先采用显式传入，否则取配置默认。
     """
-    # 该函数只负责“物理链路”部分，不包含探测统计；
-    # 便于 SIM/HOM 复用并减少重复代码。
-    run_rng = rng or np.random.default_rng()
-    t_wait_us = _compute_t_wait_us_from_length(
-        length_km=config.fiber.length_km,
-        fiber_group_velocity_mps=config.run.fiber_group_velocity_mps,
-        t_wait_overhead_us=config.run.t_wait_overhead_us,
-        t_wait_length_scale=config.run.t_wait_length_scale,
-    )
-    pipe = run_emission_to_bs(
-        emission=config.emission,
-        rng=run_rng,
-        fiber=config.fiber,
-        qfc=config.qfc,
+    return run_trial_physics_core(
+        rng=rng,
+        config=config,
         delay_ns=delay_ns,
         delay_jitter_ns=delay_jitter_ns,
         verbose=verbose,
+        debug=debug,
         hooks=hooks,
-        t_wait_us=t_wait_us,
-        t2_us=float(config.run.t2_us),
-        record_timings=debug,
         emission_diagnostics=emission_diagnostics,
     )
-    return pipe
 
 def _run_single_simulation_core(
     output_dir: Path,
@@ -522,16 +506,6 @@ def _run_single_simulation_core(
     print(f"背景/bin 映射 p_bg_map: {p_bg_source_map}")
 
     parameter_snapshot = _build_parameter_snapshot(config, param_store)
-    # 重要：BS 已并入测量端。这里传入 U_BS，用 U^† E U 计算点击分布。
-    bs_unitary = bs_gate_6d(config.detector.bs_theta)
-    detect_common = _build_detection_kwargs(
-        pipe=pipe,
-        param_store=param_store,
-        rng=run_rng,
-        verbose=True,
-        bs_unitary=bs_unitary,
-        bs_theta=config.detector.bs_theta,
-    )
 
     _on_stage("成功事件统计 (POVM)")
     print(f"\n成功事件枚举模式: {enum_mode}")
@@ -551,12 +525,18 @@ def _run_single_simulation_core(
         _on_stage("POVM抽样")
         print("\n运行探测和BSM（POVM抽样）...")
         detect_start = time.perf_counter() if DEBUG_MODE else None
-        pipeline = run_detection_pipeline(
-            **detect_common,
-            p_dark_intrinsic={det: 0.0 for det in p_dark_intrinsic_map},
-            p_bg_source={det: 0.0 for det in p_bg_source_map},
-            n_samples=shots_per_run,
+        _, pipeline = run_detection_core_from_pipe(
+            pipe=pipe,
+            config=config,
+            rng=run_rng,
+            coincidence_window_ns=coincidence_window_ns,
+            shots_per_run=shots_per_run,
             compute_metrics=True,
+            verbose=True,
+            bs_theta=float(config.detector.bs_theta),
+            param_store=param_store,
+            p_dark_intrinsic_map={det: 0.0 for det in p_dark_intrinsic_map},
+            p_bg_source_map={det: 0.0 for det in p_bg_source_map},
         )
         enum_no_dark = pipeline.metrics
         enum_main = enum_no_dark
@@ -569,12 +549,18 @@ def _run_single_simulation_core(
     else:
         if enum_mode == "both":
             print("\n枚举成功事件（无暗计数基线）...")
-            enum_pipeline = run_detection_pipeline(
-                **detect_common,
-                p_dark_intrinsic={det: 0.0 for det in p_dark_intrinsic_map},
-                p_bg_source={det: 0.0 for det in p_bg_source_map},
-                n_samples=0,
+            _, enum_pipeline = run_detection_core_from_pipe(
+                pipe=pipe,
+                config=config,
+                rng=run_rng,
+                coincidence_window_ns=coincidence_window_ns,
+                shots_per_run=0,
                 compute_metrics=True,
+                verbose=True,
+                bs_theta=float(config.detector.bs_theta),
+                param_store=param_store,
+                p_dark_intrinsic_map={det: 0.0 for det in p_dark_intrinsic_map},
+                p_bg_source_map={det: 0.0 for det in p_bg_source_map},
             )
             enum_no_dark = enum_pipeline.metrics
             if DEBUG_MODE and timings is not None and enum_pipeline.timings:
@@ -584,12 +570,18 @@ def _run_single_simulation_core(
         _on_stage("POVM抽样")
         print("\n运行探测和BSM（POVM抽样）...")
         detect_start = time.perf_counter() if DEBUG_MODE else None
-        pipeline = run_detection_pipeline(
-            **detect_common,
-            p_dark_intrinsic=p_dark_intrinsic_map,
-            p_bg_source=p_bg_source_map,
-            n_samples=shots_per_run,
+        _, pipeline = run_detection_core_from_pipe(
+            pipe=pipe,
+            config=config,
+            rng=run_rng,
+            coincidence_window_ns=coincidence_window_ns,
+            shots_per_run=shots_per_run,
             compute_metrics=True,
+            verbose=True,
+            bs_theta=float(config.detector.bs_theta),
+            param_store=param_store,
+            p_dark_intrinsic_map=p_dark_intrinsic_map,
+            p_bg_source_map=p_bg_source_map,
         )
         enum_main = pipeline.metrics
         samples = pipeline.samples
@@ -634,7 +626,7 @@ def _run_single_simulation_core(
         "t2_us": t2_us,
         "p_dephase": p_dephase,
         "p_qubit_emit": p_qubit_emit,
-        "v_res": detect_common["v_res"],
+        "v_res": float(param_store.v_res),
         "bs_theta": float(config.detector.bs_theta),
         "bs_split_ratio": float(np.sin(config.detector.bs_theta) ** 2),
         "qfc_theta_H": pipe.qfc_theta_H,

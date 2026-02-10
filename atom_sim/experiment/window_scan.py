@@ -8,18 +8,13 @@ from __future__ import annotations
 import numpy as np
 from pathlib import Path
 
-from ..physics.gates import bs_gate_6d
 from ..simulation import (
-    run_detection_pipeline,
     compute_pauli_correlators_and_chsh,
     compute_fidelity_with_bell,
 )
-from .single_run import _run_single_trial
 from .common import (
     SimConfig,
-    _build_run_parameter_store,
-    _build_detection_kwargs,
-    _compute_window_bins,
+    run_trial_detection_core,
 )
 
 WINDOW_SCAN_METRIC_KEYS = (
@@ -89,60 +84,27 @@ def run_window_scan_task(
     # 不再兼容旧任务里的 windows_ns，避免任务负载冗余与语义分叉。
     if "windows_ns" in task:
         raise ValueError("WINDOW_SCAN task 不再支持 windows_ns；请使用配置的 window_sweep_* 参数")
-    windows_ns = build_window_scan_values(config)
+    _ = build_window_scan_values(config)
 
     run_rng = np.random.default_rng(seed)
-    pipe = _run_single_trial(
+    pipe, _param_store, pipeline = run_trial_detection_core(
         rng=run_rng,
         config=config,
         delay_ns=None,
         delay_jitter_ns=None,
+        coincidence_window_ns=float(config.run.window_ns),
+        shots_per_run=shots_per_run,
+        compute_metrics=True,
         verbose=False,
         debug=config.run.debug,
         hooks=None,
         emission_diagnostics=False,
-    )
-    emission = pipe.emission
-    bs_unitary = bs_gate_6d(config.detector.bs_theta)
-
-    # WINDOW_SCAN 新路径：
-    # 1) 每个 run 仅做一次探测采样（window_bins=None，保留全部双点击记录）；
-    # 2) 各窗口结果通过“对同一批 shot 点击记录做窗口判定”得到。
-    max_window_ns = max(windows_ns) if windows_ns else float(config.run.window_ns)
-    param_store = _build_run_parameter_store(
-        config=config,
-        emission_bin_dt_s=emission.dt_s,
-        coincidence_window_ns=max_window_ns,
-        rng=run_rng,
-    )
-    detect_common = _build_detection_kwargs(
-        pipe=pipe,
-        param_store=param_store,
-        rng=run_rng,
-        verbose=False,
-        bs_unitary=bs_unitary,
-        bs_theta=config.detector.bs_theta,
-    )
-    detect_common["window_bins"] = None
-    pipeline = run_detection_pipeline(
-        **detect_common,
-        p_dark_intrinsic=param_store.p_dark_intrinsic_bin_map,
-        p_bg_source=param_store.p_bg_bin_map,
-        n_samples=shots_per_run,
-        compute_metrics=False,
+        window_bins=None,
     )
 
-    def _is_click_record_within_window(clicks: list, window_bins: int) -> bool:
-        bins = [int(click[1]) for click in clicks if len(click) >= 2]
-        if len(bins) < 2:
-            return False
-        for i in range(len(bins)):
-            for j in range(i + 1, len(bins)):
-                if abs(bins[i] - bins[j]) <= window_bins:
-                    return True
-        return False
-
-    # 先把每个 shot 的原始信息缓存下来，避免在窗口循环里重复算保真度/关联量。
+    # WINDOW_SCAN 口径统一：
+    # - run 端只产出“无窗口限制”的统一点击记录与基础统计；
+    # - window 判定全部在 summary 阶段进行，避免 task 侧重复扫描窗口。
     shot_records = []
     for shot_index, sample in enumerate(pipeline.samples):
         click_pairs = [
@@ -186,107 +148,65 @@ def run_window_scan_task(
             }
         )
 
-    windows_metrics = []
-    clicks_by_window = {}
-    for window_ns in windows_ns:
-        window_bins = _compute_window_bins(
-            float(window_ns),
-            float(emission.dt_s) * 1e9,
-            detection_gate_ns=param_store.noise_budget.detection_gate_ns,
-        )
+    enum_main = pipeline.metrics
+    if enum_main is None:
+        raise RuntimeError("WINDOW_SCAN 需要 compute_metrics=True 且返回有效枚举结果")
 
-        corr_exx_vals = []
-        corr_eyy_vals = []
-        corr_ezz_vals = []
-        chsh_vals = []
-        fidelity_all_vals = []
-        fidelity_true_num = 0.0
-        fidelity_false_num = 0.0
-        success_count = 0
-        success_true_count = 0.0
-        success_false_count = 0.0
-        accepted_count = 0
-        click_records = []
-        for shot in shot_records:
-            accepted = _is_click_record_within_window(shot["clicks"], window_bins)
-            if accepted:
-                accepted_count += 1
-            shot_success = bool(shot["raw_success"] and accepted)
-            shot_bell = shot["raw_bell"] if shot_success else ""
-            p_true_given_record = float(shot["p_true_given_record"])
-            click_records.append(
-                {
-                    "shot_index": int(shot["shot_index"]),
-                    "success": shot_success,
-                    "bell": shot_bell,
-                    "clicks": list(shot["clicks"]),
-                    "accepted_by_window": accepted,
-                    "p_true_given_record": p_true_given_record,
-                }
-            )
-            if not shot_success:
-                continue
-            success_count += 1
-            success_true_count += p_true_given_record
-            success_false_count += 1.0 - p_true_given_record
-            fidelity_declared = float(shot["fidelity_declared"])
-            fidelity_all_vals.append(fidelity_declared)
-            fidelity_true_num += fidelity_declared * p_true_given_record
-            fidelity_false_num += fidelity_declared * (1.0 - p_true_given_record)
-            corr_exx_vals.append(float(shot["corr_exx"]))
-            corr_eyy_vals.append(float(shot["corr_eyy"]))
-            corr_ezz_vals.append(float(shot["corr_ezz"]))
-            chsh_vals.append(float(shot["chsh_s_max"]))
+    success_count = int(sum(1 for shot in shot_records if shot["raw_success"]))
+    success_true_count = float(sum(float(shot["p_true_given_record"]) for shot in shot_records if shot["raw_success"]))
+    success_false_count = float(success_count) - success_true_count
+    success_records = [shot for shot in shot_records if shot["raw_success"]]
+    fidelity_all_vals = [float(shot["fidelity_declared"]) for shot in success_records]
+    corr_exx_vals = [float(shot["corr_exx"]) for shot in success_records]
+    corr_eyy_vals = [float(shot["corr_eyy"]) for shot in success_records]
+    corr_ezz_vals = [float(shot["corr_ezz"]) for shot in success_records]
+    chsh_vals = [float(shot["chsh_s_max"]) for shot in success_records]
+    fidelity_true_num = float(
+        sum(float(shot["fidelity_declared"]) * float(shot["p_true_given_record"]) for shot in success_records)
+    )
+    fidelity_false_num = float(
+        sum(float(shot["fidelity_declared"]) * (1.0 - float(shot["p_true_given_record"])) for shot in success_records)
+    )
 
-        shots_total = float(max(shots_per_run, 1))
-        p_success_abs = float(success_count / shots_total)
-        p_success_true_abs = float(success_true_count / shots_total)
-        p_success_false_abs = float(success_false_count / shots_total)
+    entry = {
+        "run_index": run_index,
+        "shots": shots_per_run,
+        "success": success_count,
+        "window_ns": float(config.run.window_ns),
+        "window_bins": None,
+        "p_arrive": float(enum_main.p_arrive),
+        "p_arrive_11": float(enum_main.p_arrive_11),
+        "p_arrive_same_arm": float(enum_main.p_arrive_same_arm),
+        "p_arrive_20": float(enum_main.p_arrive_20),
+        "p_arrive_02": float(enum_main.p_arrive_02),
+        "p_success_abs": float(enum_main.p_success),
+        "p_success_true_abs": float(enum_main.p_success_true),
+        "p_success_false_abs": float(enum_main.p_success_false),
+        "p_success_true_given_arrival": float(enum_main.p_success_given_arrival),
+        "fidelity_all": float(np.mean(fidelity_all_vals)) if fidelity_all_vals else 0.0,
+        "fidelity_true": (float(fidelity_true_num / success_true_count) if success_true_count > 0.0 else 0.0),
+        "fidelity_false": (float(fidelity_false_num / success_false_count) if success_false_count > 0.0 else 0.0),
+        "p_success_intrinsic_dark_assisted": float(enum_main.p_success_intrinsic_dark_assisted),
+        "p_success_bg_assisted": float(enum_main.p_success_bg_assisted),
+        "false_fraction": (float(enum_main.p_success_false / enum_main.p_success) if enum_main.p_success > 0 else 0.0),
+        "corr_exx": float(np.mean(corr_exx_vals)) if corr_exx_vals else 0.0,
+        "corr_eyy": float(np.mean(corr_eyy_vals)) if corr_eyy_vals else 0.0,
+        "corr_ezz": float(np.mean(corr_ezz_vals)) if corr_ezz_vals else 0.0,
+        "chsh_s_max": float(np.mean(chsh_vals)) if chsh_vals else 0.0,
+    }
 
-        entry = {
-            "window_ns": float(window_ns),
-            "window_bins": int(window_bins),
-            "run_index": run_index,
-            "shots": shots_per_run,
-            "accepted": int(accepted_count),
-            "success": int(success_count),
-            "p_arrive": float(pipeline.p_arrive),
-            "p_arrive_11": None,
-            "p_arrive_same_arm": None,
-            "p_arrive_20": None,
-            "p_arrive_02": None,
-            "p_success_abs": p_success_abs,
-            "p_success_true_abs": p_success_true_abs,
-            "p_success_false_abs": p_success_false_abs,
-            "p_success_true_given_arrival": None,
-            "fidelity_all": float(np.mean(fidelity_all_vals)) if fidelity_all_vals else 0.0,
-            "fidelity_true": (
-                float(fidelity_true_num / success_true_count)
-                if success_true_count > 0.0
-                else 0.0
-            ),
-            "fidelity_false": (
-                float(fidelity_false_num / success_false_count)
-                if success_false_count > 0.0
-                else 0.0
-            ),
-            "p_success_intrinsic_dark_assisted": None,
-            "p_success_bg_assisted": None,
-            "false_fraction": (
-                p_success_false_abs / p_success_abs
-                if p_success_abs > 0.0
-                else 0.0
-            ),
-            "corr_exx": float(np.mean(corr_exx_vals)) if corr_exx_vals else 0.0,
-            "corr_eyy": float(np.mean(corr_eyy_vals)) if corr_eyy_vals else 0.0,
-            "corr_ezz": float(np.mean(corr_ezz_vals)) if corr_ezz_vals else 0.0,
-            "chsh_s_max": float(np.mean(chsh_vals)) if chsh_vals else 0.0,
+    click_records = [
+        {
+            "shot_index": int(shot["shot_index"]),
+            "success": bool(shot["raw_success"]),
+            "bell": shot["raw_bell"],
+            "clicks": list(shot["clicks"]),
+            "p_true_given_record": float(shot["p_true_given_record"]),
         }
-
-        windows_metrics.append(entry)
-        clicks_by_window[f"{float(window_ns):.9f}"] = click_records
+        for shot in shot_records
+    ]
 
     return {
         "run_index": run_index,
-        "windows": windows_metrics,
-    }, clicks_by_window
+        "window_scan": entry,
+    }, click_records

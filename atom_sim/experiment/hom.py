@@ -8,15 +8,12 @@ from typing import Optional
 
 import numpy as np
 
-from ..simulation import run_detection_pipeline
-from ..physics.gates import bs_gate_6d
 from .common import (
     HomConfig,
     SimConfig,
-    _build_run_parameter_store,
-    _build_detection_kwargs,
+    run_trial_physics_core,
+    run_detection_core_from_pipe,
 )
-from .single_run import _run_single_trial
 
 DEFAULT_TAU_RANDOM_RANGE_NS = (-10.0, 10.0)
 
@@ -168,53 +165,34 @@ def _run_hom_run(
     run_wall_start = time.perf_counter()
     run_rng = np.random.default_rng(rng_seed)
     timings = {} if debug else None
-    pipe = _run_single_trial(
+    pipe = run_trial_physics_core(
         rng=run_rng,
         config=config,
         delay_ns=tau_ns,
         delay_jitter_ns=delay_jitter_ns,
         verbose=verbose,
         debug=debug,
-        emission_diagnostics=False,
         hooks=None,
+        emission_diagnostics=False,
     )
     if debug and pipe.timings:
         timings.update(pipe.timings)
 
-    result = pipe.emission
-
-    bin_dt_s = result.dt_s
-    param_store = _build_run_parameter_store(
+    param_store, pipeline = run_detection_core_from_pipe(
+        pipe=pipe,
         config=config,
-        emission_bin_dt_s=bin_dt_s,
-        coincidence_window_ns=window_ns,
         rng=run_rng,
+        coincidence_window_ns=window_ns,
+        shots_per_run=shots_per_run,
+        compute_metrics=False,
+        verbose=verbose,
+        bs_theta=float(config.detector.bs_theta),
     )
     window_bins = param_store.window_bins
-    p_dark_intrinsic_map = param_store.p_dark_intrinsic_bin_map
-    p_bg_source_map = param_store.p_bg_bin_map
-
-    # BS 并入测量端 (U^† E U)
-    bs_unitary = bs_gate_6d(config.detector.bs_theta)
-    detect_common = _build_detection_kwargs(
-        pipe=pipe,
-        param_store=param_store,
-        rng=run_rng,
-        verbose=verbose,
-        bs_unitary=bs_unitary,
-        bs_theta=config.detector.bs_theta,
-    )
     coincidences = 0
     click_records = []
     detect_start = time.perf_counter() if debug else None
-    # 抽样双点击记录（POVM）；bs_unitary 将 BS 并入测量端
-    pipeline = run_detection_pipeline(
-        **detect_common,
-        p_dark_intrinsic=p_dark_intrinsic_map,
-        p_bg_source=p_bg_source_map,
-        n_samples=shots_per_run,
-        compute_metrics=False,
-    )
+    # 抽样双点击记录（POVM）；BS 已并入测量端
     if debug and timings is not None and pipeline.timings:
         timings["povm_effects"] = pipeline.timings.get("povm_effects", 0.0)
         timings["povm_sampling"] = pipeline.timings.get("povm_sampling", 0.0)

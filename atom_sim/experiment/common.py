@@ -719,6 +719,168 @@ def _build_detection_kwargs(
     }
 
 
+_WINDOW_BINS_UNSET = object()
+
+
+def run_trial_physics_core(
+    *,
+    rng: Optional[np.random.Generator],
+    config: SimConfig,
+    delay_ns: Optional[float],
+    delay_jitter_ns: Optional[float],
+    verbose: bool,
+    debug: bool,
+    hooks: Optional[PipelineHooks],
+    emission_diagnostics: bool,
+) -> PipelineResult:
+    """
+    统一单次物理链路核心（发射->QFC/滤波->光纤->退相干->BS并入测量）。
+
+    说明：
+    - 该函数不做探测统计；
+    - 所有 task 应复用该入口，避免重复造轮子。
+    """
+    run_rng = rng or np.random.default_rng()
+    t_wait_us = _compute_t_wait_us_from_length(
+        length_km=config.fiber.length_km,
+        fiber_group_velocity_mps=config.run.fiber_group_velocity_mps,
+        t_wait_overhead_us=config.run.t_wait_overhead_us,
+        t_wait_length_scale=config.run.t_wait_length_scale,
+    )
+    return run_emission_to_bs(
+        emission=config.emission,
+        rng=run_rng,
+        fiber=config.fiber,
+        qfc=config.qfc,
+        delay_ns=delay_ns,
+        delay_jitter_ns=delay_jitter_ns,
+        verbose=verbose,
+        hooks=hooks,
+        t_wait_us=t_wait_us,
+        t2_us=float(config.run.t2_us),
+        record_timings=debug,
+        emission_diagnostics=emission_diagnostics,
+    )
+
+
+def run_detection_core_from_pipe(
+    *,
+    pipe: PipelineResult,
+    config: SimConfig,
+    rng: np.random.Generator,
+    coincidence_window_ns: float,
+    shots_per_run: int,
+    compute_metrics: bool,
+    verbose: bool,
+    bs_theta: Optional[float] = None,
+    window_bins=_WINDOW_BINS_UNSET,
+    param_store: Optional[RunParameterStore] = None,
+    p_dark_intrinsic_map: Optional[dict] = None,
+    p_bg_source_map: Optional[dict] = None,
+):
+    """
+    基于已生成的单次物理链路态，执行统一探测 core。
+
+    参数说明：
+    - 若传入 param_store，将复用同一噪声预算（适用于 BSM/LENGTH 等扫描同一 run 内对比）；
+    - window_bins 可显式覆盖：
+      - 传入整数：使用该窗口；
+      - 传入 None：禁用窗口限制（保留全记录）；
+      - 不传：使用 param_store.window_bins。
+    """
+    from ..physics.gates import bs_gate_6d
+    from ..simulation import run_detection_pipeline
+
+    if param_store is None:
+        param_store = _build_run_parameter_store(
+            config=config,
+            emission_bin_dt_s=pipe.emission.dt_s,
+            coincidence_window_ns=float(coincidence_window_ns),
+            rng=rng,
+        )
+
+    bs_theta_value = float(config.detector.bs_theta if bs_theta is None else bs_theta)
+    detect_common = _build_detection_kwargs(
+        pipe=pipe,
+        param_store=param_store,
+        rng=rng,
+        verbose=verbose,
+        bs_unitary=bs_gate_6d(bs_theta_value),
+        bs_theta=bs_theta_value,
+    )
+    if window_bins is not _WINDOW_BINS_UNSET:
+        detect_common["window_bins"] = None if window_bins is None else int(window_bins)
+
+    dark_map = (
+        dict(param_store.p_dark_intrinsic_bin_map)
+        if p_dark_intrinsic_map is None
+        else dict(p_dark_intrinsic_map)
+    )
+    bg_map = (
+        dict(param_store.p_bg_bin_map)
+        if p_bg_source_map is None
+        else dict(p_bg_source_map)
+    )
+    pipeline = run_detection_pipeline(
+        **detect_common,
+        p_dark_intrinsic=dark_map,
+        p_bg_source=bg_map,
+        n_samples=int(shots_per_run),
+        compute_metrics=bool(compute_metrics),
+    )
+    return param_store, pipeline
+
+
+def run_trial_detection_core(
+    *,
+    rng: Optional[np.random.Generator],
+    config: SimConfig,
+    delay_ns: Optional[float],
+    delay_jitter_ns: Optional[float],
+    coincidence_window_ns: float,
+    shots_per_run: int,
+    compute_metrics: bool,
+    verbose: bool,
+    debug: bool,
+    hooks: Optional[PipelineHooks],
+    emission_diagnostics: bool,
+    bs_theta: Optional[float] = None,
+    window_bins=_WINDOW_BINS_UNSET,
+    p_dark_intrinsic_map: Optional[dict] = None,
+    p_bg_source_map: Optional[dict] = None,
+):
+    """
+    统一 trial+detect 入口：先跑物理链路，再跑探测统计。
+
+    返回：(pipe, param_store, pipeline)
+    """
+    run_rng = rng or np.random.default_rng()
+    pipe = run_trial_physics_core(
+        rng=run_rng,
+        config=config,
+        delay_ns=delay_ns,
+        delay_jitter_ns=delay_jitter_ns,
+        verbose=verbose,
+        debug=debug,
+        hooks=hooks,
+        emission_diagnostics=emission_diagnostics,
+    )
+    param_store, pipeline = run_detection_core_from_pipe(
+        pipe=pipe,
+        config=config,
+        rng=run_rng,
+        coincidence_window_ns=float(coincidence_window_ns),
+        shots_per_run=int(shots_per_run),
+        compute_metrics=bool(compute_metrics),
+        verbose=verbose,
+        bs_theta=bs_theta,
+        window_bins=window_bins,
+        p_dark_intrinsic_map=p_dark_intrinsic_map,
+        p_bg_source_map=p_bg_source_map,
+    )
+    return pipe, param_store, pipeline
+
+
 def run_emission_to_bs(
     emission: EmissionParams,
     rng: np.random.Generator,

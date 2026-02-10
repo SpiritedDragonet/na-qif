@@ -138,6 +138,10 @@ class DetectionPipelineResult:
     p_arrive: float
     metrics: Optional[SuccessEnumerationResult]
     samples: List[TwoPhotonDetectionResult]
+    # 抽样时枚举的“双点击记录集合”的总权重（绝对概率）。
+    # 注意：samples 是在该集合上条件化抽样得到；
+    # 若要恢复“每次尝试的绝对成功率”，需要用该权重做缩放。
+    p_records_total: float = 0.0
     timings: Optional[dict] = None
 
 
@@ -660,13 +664,9 @@ def run_detection_pipeline(
             patterns,
             window_bins,
         )
-        p_success_sig_true, _ = _accumulate_success_and_fidelity(
-            engine,
-            left_envs_bell,
-            effects_true_sig_by_bin,
-            patterns,
-            window_bins,
-        )
+        # effects_true_sig_by_bin 与上面的 p_success_true 使用同一 effect 集合，
+        # 无需重复做一次完全相同的收缩。
+        p_success_sig_true = p_success_true
         p_success_bg_assisted = float(max(0.0, p_success_all - p_success_sig_total))
         p_success_intrinsic_dark_assisted = float(max(0.0, p_success_sig_total - p_success_sig_true))
 
@@ -708,7 +708,13 @@ def run_detection_pipeline(
 
     if n_samples <= 0:
         timings["detection_total"] = time.perf_counter() - detect_start
-        return DetectionPipelineResult(p_arrive=p_arrive, metrics=metrics, samples=[], timings=timings)
+        return DetectionPipelineResult(
+            p_arrive=p_arrive,
+            metrics=metrics,
+            samples=[],
+            p_records_total=0.0,
+            timings=timings,
+        )
 
     patterns_records = [
         ("Psi-", ("H1", "V2")),
@@ -746,6 +752,7 @@ def run_detection_pipeline(
             p_arrive=p_arrive,
             metrics=metrics,
             samples=_build_empty_samples(n_samples),
+            p_records_total=0.0,
             timings=timings,
         )
 
@@ -757,47 +764,65 @@ def run_detection_pipeline(
             p_arrive=p_arrive,
             metrics=metrics,
             samples=_build_empty_samples(n_samples),
+            p_records_total=float(total_weight),
             timings=timings,
         )
 
     probs = weights / total_weight
     samples: List[TwoPhotonDetectionResult] = []
+    record_weight_cache: dict[int, Tuple[float, float]] = {}
+    record_mask_cache: dict[int, Tuple[List[Tuple[str, ...]], Optional[np.ndarray], float]] = {}
     t0 = time.perf_counter()
     for sample_index in range(1, n_samples + 1):
-        record = records[int(rng.choice(len(records), p=probs))]
+        record_index = int(rng.choice(len(records), p=probs))
+        record = records[record_index]
 
-        mask_candidates = [
-            empty_key,
-            _order_two_port_detectors([record.detector_a]),
-            _order_two_port_detectors([record.detector_b]),
-            _order_two_port_detectors([record.detector_a, record.detector_b]),
-        ]
-        mask_weights = [
-            max(
-                0.0,
-                engine.weight_record_masked(
-                    effects_mask_by_bin=effects_mask_by_bin,
-                    det_a=record.detector_a,
-                    det_b=record.detector_b,
-                    bin_a=record.bin_a,
-                    bin_b=record.bin_b,
-                    dark_mask=mask,
-                    empty_key=empty_key,
-                ),
-            )
-            for mask in mask_candidates
-        ]
-        total_mask_weight = float(sum(mask_weights))
+        mask_cached = record_mask_cache.get(record_index)
+        if mask_cached is None:
+            mask_candidates = [
+                empty_key,
+                _order_two_port_detectors([record.detector_a]),
+                _order_two_port_detectors([record.detector_b]),
+                _order_two_port_detectors([record.detector_a, record.detector_b]),
+            ]
+            mask_weights = [
+                max(
+                    0.0,
+                    engine.weight_record_masked(
+                        effects_mask_by_bin=effects_mask_by_bin,
+                        det_a=record.detector_a,
+                        det_b=record.detector_b,
+                        bin_a=record.bin_a,
+                        bin_b=record.bin_b,
+                        dark_mask=mask,
+                        empty_key=empty_key,
+                    ),
+                )
+                for mask in mask_candidates
+            ]
+            total_mask_weight = float(sum(mask_weights))
+            mask_probs = None
+            if total_mask_weight > weight_eps:
+                mask_probs = np.array(mask_weights, dtype=float) / total_mask_weight
+            mask_cached = (mask_candidates, mask_probs, total_mask_weight)
+            record_mask_cache[record_index] = mask_cached
+
+        mask_candidates, mask_probs, total_mask_weight = mask_cached
         if total_mask_weight <= weight_eps:
             mask_choice = empty_key
         else:
-            mask_probs = np.array(mask_weights, dtype=float) / total_mask_weight
             mask_choice = mask_candidates[int(rng.choice(len(mask_candidates), p=mask_probs))]
 
         dark_detectors = list(mask_choice) if mask_choice else []
         weight_obs_record = max(weight_eps, record.weight)
-        weight_true_record = _record_weight(engine, effects_true_sig_by_bin, record)
-        weight_sig_total_record = _record_weight(engine, effects_all_sig_by_bin, record)
+        cached_weights = record_weight_cache.get(record_index)
+        if cached_weights is None:
+            weight_true_record = _record_weight(engine, effects_true_sig_by_bin, record)
+            weight_sig_total_record = _record_weight(engine, effects_all_sig_by_bin, record)
+            cached_weights = (weight_true_record, weight_sig_total_record)
+            record_weight_cache[record_index] = cached_weights
+        else:
+            weight_true_record, weight_sig_total_record = cached_weights
         p_true_given_record = float(min(max(weight_true_record / weight_obs_record, 0.0), 1.0))
         p_bg_assist_record = float(
             min(max((weight_obs_record - weight_sig_total_record) / weight_obs_record, 0.0), 1.0)
@@ -872,7 +897,13 @@ def run_detection_pipeline(
         )
     timings["povm_sampling"] = time.perf_counter() - t0
     timings["detection_total"] = time.perf_counter() - detect_start
-    return DetectionPipelineResult(p_arrive=p_arrive, metrics=metrics, samples=samples, timings=timings)
+    return DetectionPipelineResult(
+        p_arrive=p_arrive,
+        metrics=metrics,
+        samples=samples,
+        p_records_total=float(total_weight),
+        timings=timings,
+    )
 
 
 def extract_qubit_state(

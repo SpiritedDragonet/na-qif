@@ -1,5 +1,6 @@
 [![QFC as a frequency-domain linear optics with the two polarization ...](https://tse4.mm.bing.net/th/id/OIP.K2Tg8X06r_iLDbsUOBLsxAHaFQ?pid=Api)](https://www.researchgate.net/figure/QFC-as-a-frequency-domain-linear-optics-with-the-two-polarization-modes-a-Concept-of-a_fig1_320619846?utm_source=chatgpt.com)
 
+
 你现在卡住的点其实是三件事混在了一起了：
 
 1. **QFC 本体（DFG 频率转换）**到底在“量子态/算符”层面是什么操作；

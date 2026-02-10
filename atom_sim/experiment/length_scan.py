@@ -8,13 +8,11 @@ from __future__ import annotations
 import numpy as np
 from pathlib import Path
 
-from ..physics.gates import bs_gate_6d
-from ..simulation import run_detection_pipeline, compute_pauli_correlators_and_chsh
-from .single_run import _run_single_trial
+from ..simulation import compute_pauli_correlators_and_chsh
 from .common import (
     SimConfig,
-    _build_run_parameter_store,
-    _build_detection_kwargs,
+    run_trial_physics_core,
+    run_detection_core_from_pipe,
     _compute_effective_attempt_rate_hz,
 )
 
@@ -70,7 +68,6 @@ def run_length_scan_task(
         lengths_km = [float(config.fiber.length_km)]
 
     run_rng = np.random.default_rng(seed)
-    bs_unitary = bs_gate_6d(config.detector.bs_theta)
     attempt_rate_hz_eff = _compute_effective_attempt_rate_hz(
         config.run.attempt_rate_hz,
         config.run.attempt_overhead_us,
@@ -83,7 +80,7 @@ def run_length_scan_task(
     try:
         for length_km in lengths_km:
             config.fiber.length_km = float(length_km)
-            pipe = _run_single_trial(
+            pipe = run_trial_physics_core(
                 rng=run_rng,
                 config=config,
                 delay_ns=None,
@@ -93,28 +90,15 @@ def run_length_scan_task(
                 hooks=None,
                 emission_diagnostics=False,
             )
-            emission = pipe.emission
-
-            param_store = _build_run_parameter_store(
-                config=config,
-                emission_bin_dt_s=emission.dt_s,
-                coincidence_window_ns=float(config.run.window_ns),
-                rng=run_rng,
-            )
-            detect_common = _build_detection_kwargs(
+            _param_store, pipeline = run_detection_core_from_pipe(
                 pipe=pipe,
-                param_store=param_store,
+                config=config,
                 rng=run_rng,
-                verbose=False,
-                bs_unitary=bs_unitary,
-                bs_theta=config.detector.bs_theta,
-            )
-            pipeline = run_detection_pipeline(
-                **detect_common,
-                p_dark_intrinsic=param_store.p_dark_intrinsic_bin_map,
-                p_bg_source=param_store.p_bg_bin_map,
-                n_samples=shots_per_run,
+                coincidence_window_ns=float(config.run.window_ns),
+                shots_per_run=shots_per_run,
                 compute_metrics=True,
+                verbose=False,
+                bs_theta=float(config.detector.bs_theta),
             )
 
             enum_main = pipeline.metrics
