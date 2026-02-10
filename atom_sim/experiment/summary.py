@@ -50,6 +50,7 @@ def _safe_num(value):
 def _finalize_group_summary(group: dict) -> dict:
     runs_total = int(group["runs_total"])
     shots_total = int(group["shots_total"])
+    accepted_total = int(group.get("accepted_total", 0))
 
     p_arrive_avg = (group["p_arrive_sum"] / runs_total) if runs_total > 0 else 0.0
     p_success_abs_avg = (group["p_success_abs_sum"] / runs_total) if runs_total > 0 else 0.0
@@ -80,12 +81,19 @@ def _finalize_group_summary(group: dict) -> dict:
         if p_success_false_abs_avg > 0
         else None
     )
+    acceptance_fraction_abs = (
+        (float(accepted_total) / float(shots_total))
+        if shots_total > 0
+        else 0.0
+    )
 
     return {
         "window_ns": group["window_ns"],
         "runs_target": group["runs_target"],
         "runs_total": runs_total,
         "shots_total": shots_total,
+        "accepted_total": accepted_total,
+        "acceptance_fraction_abs": acceptance_fraction_abs,
         "p_arrive_avg": p_arrive_avg,
         "p_success_abs_avg": p_success_abs_avg,
         "p_success_true_abs_avg": p_success_true_abs_avg,
@@ -406,6 +414,7 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                         "runs_target": config.run.runs,
                         "runs_total": 0,
                         "shots_total": 0,
+                        "accepted_total": 0,
                         "p_arrive_sum": 0.0,
                         "p_success_abs_sum": 0.0,
                         "p_success_true_abs_sum": 0.0,
@@ -422,6 +431,7 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
 
                 group["runs_total"] += 1
                 group["shots_total"] += shots
+                group["accepted_total"] += accepted
                 group["p_arrive_sum"] += p_arrive or 0.0
                 group["p_success_abs_sum"] += p_success_abs or 0.0
                 group["p_success_true_abs_sum"] += p_success_true_abs or 0.0
@@ -548,6 +558,8 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
             "runs_target",
             "runs_total",
             "shots_total",
+            "accepted_total",
+            "acceptance_fraction_abs",
             "p_arrive_avg",
             "p_success_abs_avg",
             "p_success_true_abs_avg",
@@ -572,6 +584,8 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                 row["runs_target"],
                 row["runs_total"],
                 row["shots_total"],
+                row["accepted_total"],
+                row["acceptance_fraction_abs"],
                 row["p_arrive_avg"],
                 row["p_success_abs_avg"],
                 row["p_success_true_abs_avg"],
