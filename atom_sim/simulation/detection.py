@@ -25,7 +25,7 @@ from ..core.mps import (
     MPSState,
     compute_joint_arrival_probabilities,
 )
-from ..hilbert.basis import embed_9_from_6, reduce_9d_effects_to_6d
+from ..hilbert.basis import embed_9d_dist_from_3d_pair, project_6d_to_3d
 from ..physics.gates import (
     apply_background_or_map,
     apply_background_or_map_masked,
@@ -1002,39 +1002,43 @@ def run_detection_self_checks(verbose: bool = True) -> None:
             mask_sum += masked
         _assert_close(f"9D mask decomposition key={key}", mask_sum, effect)
 
-    w = embed_9_from_6()
-    w_pair = np.kron(w, w)
-    reduced_all_dist = reduce_9d_effects_to_6d(effects_all_9d, w_pair)
-    reduced_true_dist = reduce_9d_effects_to_6d(effects_true_9d, w_pair)
-    reduced_mask_dist = map_effects_masked(
+    effects_all_3d_int = {key: project_6d_to_3d(effect) for key, effect in effects_all_6d.items()}
+    effects_true_3d_int = {key: project_6d_to_3d(effect) for key, effect in effects_true_6d.items()}
+    effects_mask_3d_int = map_effects_masked(effects_mask_6d, project_6d_to_3d)
+
+    j_dist = embed_9d_dist_from_3d_pair()
+    j_dag = j_dist.conj().T
+    effects_all_3d_dist = {key: j_dag @ effect @ j_dist for key, effect in effects_all_9d.items()}
+    effects_true_3d_dist = {key: j_dag @ effect @ j_dist for key, effect in effects_true_9d.items()}
+    effects_mask_3d_dist = map_effects_masked(
         effects_mask_9d,
-        lambda effect: w_pair.conj().T @ effect @ w_pair,
+        lambda effect: j_dag @ effect @ j_dist,
     )
 
-    mixed_all_v1 = mix_effects(effects_all_6d, reduced_all_dist, v_res=1.0)
-    mixed_true_v1 = mix_effects(effects_true_6d, reduced_true_dist, v_res=1.0)
-    mixed_mask_v1 = mix_effects_masked(effects_mask_6d, reduced_mask_dist, v_res=1.0)
-    mixed_all_v0 = mix_effects(effects_all_6d, reduced_all_dist, v_res=0.0)
-    mixed_true_v0 = mix_effects(effects_true_6d, reduced_true_dist, v_res=0.0)
-    mixed_mask_v0 = mix_effects_masked(effects_mask_6d, reduced_mask_dist, v_res=0.0)
+    mixed_all_v1 = mix_effects(effects_all_3d_int, effects_all_3d_dist, v_res=1.0)
+    mixed_true_v1 = mix_effects(effects_true_3d_int, effects_true_3d_dist, v_res=1.0)
+    mixed_mask_v1 = mix_effects_masked(effects_mask_3d_int, effects_mask_3d_dist, v_res=1.0)
+    mixed_all_v0 = mix_effects(effects_all_3d_int, effects_all_3d_dist, v_res=0.0)
+    mixed_true_v0 = mix_effects(effects_true_3d_int, effects_true_3d_dist, v_res=0.0)
+    mixed_mask_v0 = mix_effects_masked(effects_mask_3d_int, effects_mask_3d_dist, v_res=0.0)
 
-    for key in set(effects_all_6d.keys()) | set(reduced_all_dist.keys()):
-        if key in effects_all_6d:
-            _assert_close(f"v_res=1(all) key={key}", mixed_all_v1[key], effects_all_6d[key])
-        if key in reduced_all_dist:
-            _assert_close(f"v_res=0(all) key={key}", mixed_all_v0[key], reduced_all_dist[key])
+    for key in set(effects_all_3d_int.keys()) | set(effects_all_3d_dist.keys()):
+        if key in effects_all_3d_int:
+            _assert_close(f"v_res=1(all) key={key}", mixed_all_v1[key], effects_all_3d_int[key])
+        if key in effects_all_3d_dist:
+            _assert_close(f"v_res=0(all) key={key}", mixed_all_v0[key], effects_all_3d_dist[key])
 
-    for key in set(effects_true_6d.keys()) | set(reduced_true_dist.keys()):
-        if key in effects_true_6d:
-            _assert_close(f"v_res=1(true) key={key}", mixed_true_v1[key], effects_true_6d[key])
-        if key in reduced_true_dist:
-            _assert_close(f"v_res=0(true) key={key}", mixed_true_v0[key], reduced_true_dist[key])
+    for key in set(effects_true_3d_int.keys()) | set(effects_true_3d_dist.keys()):
+        if key in effects_true_3d_int:
+            _assert_close(f"v_res=1(true) key={key}", mixed_true_v1[key], effects_true_3d_int[key])
+        if key in effects_true_3d_dist:
+            _assert_close(f"v_res=0(true) key={key}", mixed_true_v0[key], effects_true_3d_dist[key])
 
-    for key in set(effects_mask_6d.keys()) | set(reduced_mask_dist.keys()):
+    for key in set(effects_mask_3d_int.keys()) | set(effects_mask_3d_dist.keys()):
         map_v1 = mixed_mask_v1.get(key, {})
         map_v0 = mixed_mask_v0.get(key, {})
-        map_int = effects_mask_6d.get(key, {})
-        map_dist = reduced_mask_dist.get(key, {})
+        map_int = effects_mask_3d_int.get(key, {})
+        map_dist = effects_mask_3d_dist.get(key, {})
         for mask, effect in map_int.items():
             _assert_close(f"v_res=1(mask) key={key} mask={mask}", map_v1[mask], effect)
         for mask, effect in map_dist.items():

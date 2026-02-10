@@ -211,8 +211,6 @@ def _run_single_simulation_core(
                 file.write(f"qfc_theta_H = {metrics['qfc_theta_H']:.6f}\n")
             if "qfc_theta_V" in metrics:
                 file.write(f"qfc_theta_V = {metrics['qfc_theta_V']:.6f}\n")
-            if "apply_filter_780" in metrics:
-                file.write(f"apply_filter_780 = {int(bool(metrics['apply_filter_780']))}\n")
             if metrics.get("p_arrive") is not None:
                 file.write(f"p_arrive = {metrics['p_arrive']:.8f}\n")
             else:
@@ -371,7 +369,6 @@ def _run_single_simulation_core(
             emission,
             fiber_sample=None,
             qfc_params=None,
-            apply_filter_780: bool = True,
             *_args,
         ):
             if _plot_gate_allow():
@@ -390,7 +387,6 @@ def _run_single_simulation_core(
                     kwargs["bs_unitary"] = bs_unitary
                 kwargs["qfc_params"] = qfc_params
                 kwargs["fiber_sample"] = fiber_sample
-                kwargs["apply_filter_780"] = apply_filter_780
                 plot_dual_arm_heatmap(target, **kwargs)
             if DEBUG_MODE:
                 save_debug_info(
@@ -631,7 +627,6 @@ def _run_single_simulation_core(
         "bs_split_ratio": float(np.sin(config.detector.bs_theta) ** 2),
         "qfc_theta_H": pipe.qfc_theta_H,
         "qfc_theta_V": pipe.qfc_theta_V,
-        "apply_filter_780": pipe.apply_filter_780,
         "p_arrive": enum_main.p_arrive,
         "p_arrive_11": enum_main.p_arrive_11,
         "p_arrive_20": enum_main.p_arrive_20,

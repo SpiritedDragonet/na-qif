@@ -40,8 +40,7 @@ atom_sim/
 │   ├── __init__.py
 │   ├── basis.py                   # 空间定义和张量积
 │   │   ├── class SubSpace          # 单子空间（780, 1517, atom）
-│   │   ├── embed_9_from_6()        # 6D->9D 标签嵌入
-│   │   └── reduce_9d_effects_to_6d() # 9D effect 回投影到 6D
+│   │   └── embed_9d_dist_from_3d_pair() # 3D输入对->9D标签空间嵌入（可区分分支）
 │   │
 │   └── operators.py               # 基本算符工厂
 │       ├── annihilation_op()      # 湮灭算符 a[i]（复用实现）
@@ -208,7 +207,14 @@ outputs/                           # 仿真输出目录（已 gitignore）
 --qfc-theta-v <rad>           # QFC V 转换角
 --qfc-phi-h <rad>             # QFC H 通道相位
 --qfc-phi-v <rad>             # QFC V 通道相位
---no-filter-780               # 关闭 780 滤波
+--alpha-h-plus-a <f>          # A 臂 Alpha[H,+]
+--alpha-h-minus-a <f>         # A 臂 Alpha[H,-]
+--alpha-v-plus-a <f>          # A 臂 Alpha[V,+]
+--alpha-v-minus-a <f>         # A 臂 Alpha[V,-]
+--alpha-h-plus-b <f>          # B 臂 Alpha[H,+]
+--alpha-h-minus-b <f>         # B 臂 Alpha[H,-]
+--alpha-v-plus-b <f>          # B 臂 Alpha[V,+]
+--alpha-v-minus-b <f>         # B 臂 Alpha[V,-]
 --filter-cavity-fwhm-mhz <f>  # QFC 后滤波腔线宽 (MHz)
 --filter-cavity-detuning-mhz-a <f>
 --filter-cavity-detuning-mhz-b <f>
@@ -353,7 +359,7 @@ atomA(4D) - atomB(4D) - A1(5D) - B1(5D) - A2(5D) - B2(5D) - ... - AN(5D) - BN(5D
    - BS：不在态端显式作用，仅触发 `after_bs` 可视化 hook（真正 BS 在测量端并入 POVM）。
 3. 返回 `PipelineResult`，核心字段包括：
    - `mps`（当前态）、`emission`（发射信息）、`fiber_sample`（光纤采样参数）；
-   - `qfc_theta_H/V`、`apply_filter_780`、`t_wait_us`、`p_dephase`；
+   - `qfc_theta_H/V`、`t_wait_us`、`p_dephase`；
    - `timings`（若 debug 开启）。
 
 ### 3) 探测端主算法（`run_detection_pipeline`）

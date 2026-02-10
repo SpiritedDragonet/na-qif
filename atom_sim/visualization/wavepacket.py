@@ -193,7 +193,6 @@ def plot_dual_arm_heatmap(
     bs_unitary: Optional[np.ndarray] = None,
     qfc_params: Optional[Tuple[float, float]] = None,
     fiber_sample: Optional[tuple] = None,
-    apply_filter_780: bool = True,
     arm_labels: Optional[Tuple[str, str]] = None,
 ) -> None:
     """
@@ -244,8 +243,6 @@ def plot_dual_arm_heatmap(
         光纤采样参数：
         (U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std)。
         用于 after_fiber / after_bs 的局域重建。
-    apply_filter_780 : bool
-        是否在可视化重建中应用 780 过滤（默认 True）。
     arm_labels : Tuple[str, str], optional
         自定义左右臂标题标签，默认使用 ("Arm A","Arm B")；
         若 bs_unitary 给出且未显式设置，则默认 ("Port 1","Port 2")。
@@ -419,9 +416,8 @@ def plot_dual_arm_heatmap(
 
     # 预计算通道算符
     U_qfc = qfc_gate(theta_H=theta_H, theta_V=theta_V)
-    eta_780 = 0.0 if apply_filter_780 else 1.0
     K_filter = loss_channel_both_subspaces(
-        eta_780=eta_780,
+        eta_780=0.0,
         eta_H_1517=1.0,
         eta_V_1517=1.0,
     )

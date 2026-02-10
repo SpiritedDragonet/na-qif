@@ -15,11 +15,10 @@ from scipy.linalg import expm
 from ..hilbert.basis import (
     SUBSPACE_1517,
     embed_3d_to_5d,
+    embed_9d_dist_from_3d_pair,
     embed_5_from_3,
-    embed_9_from_6,
     jones_3d,
     project_6d_to_3d,
-    reduce_9d_effects_to_6d,
 )
 from ..hilbert.operators import (
     annihilation_op,
@@ -800,11 +799,11 @@ def build_detection_effects_5d_by_bin(
         effects_true_6d = apply_unitary_adjoint(effects_true_6d, bs_unitary_6d)
         effects_mask_6d = apply_unitary_adjoint_masked(effects_mask_6d, bs_unitary_6d)
 
-    if v_res < 1.0:
-        effects_all_6d_int = effects_all_6d
-        effects_true_6d_int = effects_true_6d
-        effects_mask_6d_int = effects_mask_6d
+    effects_all_3d_int = {key: project_6d_to_3d(effect) for key, effect in effects_all_6d.items()}
+    effects_true_3d_int = {key: project_6d_to_3d(effect) for key, effect in effects_true_6d.items()}
+    effects_mask_3d_int = map_effects_masked(effects_mask_6d, project_6d_to_3d)
 
+    if v_res < 1.0:
         effects_all_9d, effects_true_9d, effects_mask_9d = build_detection_effects_9d(eta_det, p_dark)
         if bs_unitary_6d is not None:
             u_dist_9d = bs_gate_9d_dist(bs_unitary_6d)
@@ -812,22 +811,22 @@ def build_detection_effects_5d_by_bin(
             effects_true_9d = apply_unitary_adjoint(effects_true_9d, u_dist_9d)
             effects_mask_9d = apply_unitary_adjoint_masked(effects_mask_9d, u_dist_9d)
 
-        w = embed_9_from_6()
-        w_pair = np.kron(w, w)
-        effects_all_6d_dist = reduce_9d_effects_to_6d(effects_all_9d, w_pair)
-        effects_true_6d_dist = reduce_9d_effects_to_6d(effects_true_9d, w_pair)
-        effects_mask_6d_dist = map_effects_masked(
+        j_dist = embed_9d_dist_from_3d_pair()
+        j_dag = j_dist.conj().T
+        effects_all_3d_dist = {key: j_dag @ effect @ j_dist for key, effect in effects_all_9d.items()}
+        effects_true_3d_dist = {key: j_dag @ effect @ j_dist for key, effect in effects_true_9d.items()}
+        effects_mask_3d_dist = map_effects_masked(
             effects_mask_9d,
-            lambda effect: w_pair.conj().T @ effect @ w_pair,
+            lambda effect: j_dag @ effect @ j_dist,
         )
 
-        effects_all_6d = mix_effects(effects_all_6d_int, effects_all_6d_dist, v_res)
-        effects_true_6d = mix_effects(effects_true_6d_int, effects_true_6d_dist, v_res)
-        effects_mask_6d = mix_effects_masked(effects_mask_6d_int, effects_mask_6d_dist, v_res)
-
-    effects_all_3d = {key: project_6d_to_3d(effect) for key, effect in effects_all_6d.items()}
-    effects_true_3d = {key: project_6d_to_3d(effect) for key, effect in effects_true_6d.items()}
-    effects_mask_3d = map_effects_masked(effects_mask_6d, project_6d_to_3d)
+        effects_all_3d = mix_effects(effects_all_3d_int, effects_all_3d_dist, v_res)
+        effects_true_3d = mix_effects(effects_true_3d_int, effects_true_3d_dist, v_res)
+        effects_mask_3d = mix_effects_masked(effects_mask_3d_int, effects_mask_3d_dist, v_res)
+    else:
+        effects_all_3d = effects_all_3d_int
+        effects_true_3d = effects_true_3d_int
+        effects_mask_3d = effects_mask_3d_int
 
     k_a_3 = loss_channel_1517_single_photon(float(eta_H_A), float(eta_V_A))
     k_b_3 = loss_channel_1517_single_photon(float(eta_H_B), float(eta_V_B))

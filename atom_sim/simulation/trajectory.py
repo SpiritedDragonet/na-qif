@@ -245,7 +245,6 @@ def apply_qfc_filter_memory_chain(
     theta_V: float,
     phi_H: float,
     phi_V: float,
-    apply_filter_780: bool,
     filter_enabled: bool,
     filter_fwhm_mhz: float,
     filter_detuning_mhz_A: float,
@@ -304,19 +303,16 @@ def apply_qfc_filter_memory_chain(
         u_step_a = np.eye(15, dtype=complex)
         u_step_b = np.eye(15, dtype=complex)
 
-    k_filter_a = None
-    k_filter_b = None
-    if apply_filter_780:
-        k_filter_a = loss_channel_both_subspaces(
-            eta_780=0.0,
-            eta_H_1517=float(filter_eta_peak_A),
-            eta_V_1517=float(filter_eta_peak_A),
-        )
-        k_filter_b = loss_channel_both_subspaces(
-            eta_780=0.0,
-            eta_H_1517=float(filter_eta_peak_B),
-            eta_V_1517=float(filter_eta_peak_B),
-        )
+    k_filter_a = loss_channel_both_subspaces(
+        eta_780=0.0,
+        eta_H_1517=float(filter_eta_peak_A),
+        eta_V_1517=float(filter_eta_peak_A),
+    )
+    k_filter_b = loss_channel_both_subspaces(
+        eta_780=0.0,
+        eta_H_1517=float(filter_eta_peak_B),
+        eta_V_1517=float(filter_eta_peak_B),
+    )
 
     # 位置追踪：避免在swap后使用过时索引。
     labels = ["atomA", "atomB"]
@@ -344,10 +340,8 @@ def apply_qfc_filter_memory_chain(
         mps_aug.apply_kraus_one_site(pos[label_b], [u_qfc], rng=rng)
 
         # 2.2 780 滤波 + 1517 峰值透过
-        if k_filter_a is not None:
-            mps_aug.apply_kraus_one_site(pos[label_a], k_filter_a, rng=rng)
-        if k_filter_b is not None:
-            mps_aug.apply_kraus_one_site(pos[label_b], k_filter_b, rng=rng)
+        mps_aug.apply_kraus_one_site(pos[label_a], k_filter_a, rng=rng)
+        mps_aug.apply_kraus_one_site(pos[label_b], k_filter_b, rng=rng)
 
         # 2.3 记忆门（bin 与 mem 需相邻，先把 mem 移到 bin 右侧）
         while pos["memA"] > pos[label_a] + 1:
@@ -438,8 +432,8 @@ def run_dual_atom_emission(
     n_bins: int = 200,
     dt_ns: float = 0.2,
     chi_max: int = 50,
-    Alpha_A: Optional[np.ndarray] = None,
-    Alpha_B: Optional[np.ndarray] = None,
+    Alpha_A: np.ndarray = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=complex),
+    Alpha_B: np.ndarray = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=complex),
     omega_peak_A: float = 2 * np.pi * 20e6,
     omega_peak_B: float = 2 * np.pi * 20e6,
     drive_waveform_A: str = "gaussian",
@@ -497,9 +491,9 @@ def run_dual_atom_emission(
         时间步长（纳秒）
     chi_max : int
         MPS最大键维度
-    Alpha_A : np.ndarray, optional
+    Alpha_A : np.ndarray
         原子A的2x2偏振矩阵
-    Alpha_B : np.ndarray, optional
+    Alpha_B : np.ndarray
         原子B的2x2偏振矩阵
     omega_peak_A : float
         原子A的驱动脉冲峰值幅度（Ω峰值，rad/s）
@@ -619,12 +613,12 @@ def run_dual_atom_emission(
     kappa_ex_H_B_used, kappa_ex_V_B_used, kappa_in_H_B_used, kappa_in_V_B_used = _resolve_kappa_polarized(
         kappa_ex_B, kappa_in_B, kappa_ex_H_B, kappa_ex_V_B, kappa_in_H_B, kappa_in_V_B
     )
-    # 设置默认Alpha矩阵
-    if Alpha_A is None:
-        # Alpha 是 2×2 偏振耦合矩阵（默认单位阵）
-        Alpha_A = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=complex)
-    if Alpha_B is None:
-        Alpha_B = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=complex)
+    Alpha_A = np.asarray(Alpha_A, dtype=complex)
+    Alpha_B = np.asarray(Alpha_B, dtype=complex)
+    if Alpha_A.shape != (2, 2):
+        raise ValueError(f"Alpha_A 形状应为 (2,2)，得到 {Alpha_A.shape}")
+    if Alpha_B.shape != (2, 2):
+        raise ValueError(f"Alpha_B 形状应为 (2,2)，得到 {Alpha_B.shape}")
 
     if verbose:
         print("\n时间网格:")

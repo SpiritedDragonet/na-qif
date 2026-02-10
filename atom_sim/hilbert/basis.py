@@ -119,45 +119,37 @@ def embed_3d_to_5d(op_3d: np.ndarray) -> np.ndarray:
 
 
 @lru_cache(maxsize=4)
-def embed_9_from_6() -> np.ndarray:
+def embed_9d_dist_from_3d_pair() -> np.ndarray:
     """
-    6D -> 9D 标签嵌入（单端口）。
+    3D×3D 输入对 -> 9D×9D 标签空间嵌入（81x9）。
 
-    6D 基：|vac>, |H>, |V>, |2H>, |2V>, |HV>
-    9D 基：(|a>,|b>) 的 Kronecker 顺序，其中每个标签子空间是 {vac,H,V}。
+    物理含义：可区分极限下，源 a 光子只出现在 A 臂，源 b 光子只出现在 B 臂。
+    因此对输入基 |x_A, y_B>（x,y∈{vac,H,V}）有
 
-    映射规则：
-      |H>  -> (|H_a>+|H_b>)/sqrt(2)
-      |V>  -> (|V_a>+|V_b>)/sqrt(2)
-      |2H> -> |H_a H_b>
-      |2V> -> |V_a V_b>
-      |HV> -> (|H_a V_b>+|V_a H_b>)/sqrt(2)
+        J |x_A, y_B> = |x_{aA}, vac_{bA}, vac_{aB}, y_{bB}>
+
+    其中标签空间按 (aA, bA, aB, bB) 的 3×3×3×3 顺序展平。
+
+    返回矩阵 J 的形状为 (81, 9)，可用于
+
+        E_dist_3d = J^† E_dist_9d J
+
+    注意：该嵌入与 6D 对称化嵌入不同；这里是“来源标签与输入臂绑定”。
     """
-    W = np.zeros((9, 6), dtype=complex)
+    J = np.zeros((81, 9), dtype=complex)
 
-    def idx(a: int, b: int) -> int:
-        return a * 3 + b
+    def idx3(left: int, right: int) -> int:
+        return left * 3 + right
 
-    inv_sqrt2 = 1.0 / np.sqrt(2.0)
+    def idx81(a_a: int, b_a: int, a_b: int, b_b: int) -> int:
+        return ((a_a * 3 + b_a) * 3 + a_b) * 3 + b_b
 
-    W[idx(0, 0), 0] = 1.0
-    W[idx(1, 0), 1] = inv_sqrt2
-    W[idx(0, 1), 1] = inv_sqrt2
-    W[idx(2, 0), 2] = inv_sqrt2
-    W[idx(0, 2), 2] = inv_sqrt2
-    W[idx(1, 1), 3] = 1.0
-    W[idx(2, 2), 4] = 1.0
-    W[idx(1, 2), 5] = inv_sqrt2
-    W[idx(2, 1), 5] = inv_sqrt2
-    return W
-
-
-def reduce_9d_effects_to_6d(effects_9d: dict, W_pair: np.ndarray) -> dict:
-    """将 9D×9D 双端口 effect 回投影到 6D×6D。"""
-    if not effects_9d:
-        return {}
-    W_dag = W_pair.conj().T
-    return {key: W_dag @ effect @ W_pair for key, effect in effects_9d.items()}
+    for a_in in range(3):
+        for b_in in range(3):
+            in_index = idx3(a_in, b_in)
+            out_index = idx81(a_in, 0, 0, b_in)
+            J[out_index, in_index] = 1.0
+    return J
 
 
 def jones_3d(U_2x2: np.ndarray) -> np.ndarray:

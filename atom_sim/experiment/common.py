@@ -42,6 +42,13 @@ class AtomArmParams:
     delta_e: float = 0.0
     delta_c_H: float = 0.0
     delta_c_V: float = 0.0
+    # 偏振耦合矩阵 Alpha（2x2，默认单位阵）：
+    #   [[alpha_h_plus, alpha_h_minus],
+    #    [alpha_v_plus, alpha_v_minus]]
+    alpha_h_plus: float = 1.0
+    alpha_h_minus: float = 0.0
+    alpha_v_plus: float = 0.0
+    alpha_v_minus: float = 1.0
 
 
 @dataclass
@@ -141,7 +148,6 @@ class QfcParams:
     theta_V: float = DEFAULT_QFC_THETA_RAD
     phi_H: float = 0.0
     phi_V: float = 0.0
-    apply_filter_780: bool = True
     # QFC 背景噪声谱密度（cps/MHz），用于按“谱密度×带宽×链路η×探测η”估算默认背景率。
     # 参考量级：41.1 cps/MHz（docs/43, docs/45 讨论口径）。
     qfc_noise_sd_cps_per_mhz_A: float = DEFAULT_QFC_NOISE_SD_CPS_PER_MHZ
@@ -219,6 +225,17 @@ class SimConfig:
     qfc: QfcParams = field(default_factory=QfcParams)
     fiber: FiberParams = field(default_factory=FiberParams)
     hom: Optional[HomConfig] = None
+
+
+def _alpha_matrix(arm: AtomArmParams) -> np.ndarray:
+    """将配置中的 Alpha 元素组装为 2x2 偏振耦合矩阵。"""
+    return np.array(
+        [
+            [complex(arm.alpha_h_plus), complex(arm.alpha_h_minus)],
+            [complex(arm.alpha_v_plus), complex(arm.alpha_v_minus)],
+        ],
+        dtype=complex,
+    )
 
 
 def _resolve_emission_delay(
@@ -549,11 +566,18 @@ def _build_parameter_snapshot(config: SimConfig, store: RunParameterStore) -> di
         "delta_c_V_A": arm_a.delta_c_V,
         "delta_c_H_B": arm_b.delta_c_H,
         "delta_c_V_B": arm_b.delta_c_V,
+        "alpha_A": [
+            [float(arm_a.alpha_h_plus), float(arm_a.alpha_h_minus)],
+            [float(arm_a.alpha_v_plus), float(arm_a.alpha_v_minus)],
+        ],
+        "alpha_B": [
+            [float(arm_b.alpha_h_plus), float(arm_b.alpha_h_minus)],
+            [float(arm_b.alpha_v_plus), float(arm_b.alpha_v_minus)],
+        ],
         "qfc_theta_H": config.qfc.theta_H,
         "qfc_theta_V": config.qfc.theta_V,
         "qfc_phi_H": config.qfc.phi_H,
         "qfc_phi_V": config.qfc.phi_V,
-        "qfc_apply_filter_780": config.qfc.apply_filter_780,
         "qfc_noise_sd_cps_per_mhz_A": config.qfc.qfc_noise_sd_cps_per_mhz_A,
         "qfc_noise_sd_cps_per_mhz_B": config.qfc.qfc_noise_sd_cps_per_mhz_B,
         "filter_cavity_enabled": config.qfc.filter_cavity.enabled,
@@ -673,9 +697,9 @@ def _apply_atomic_dephasing(
 class PipelineHooks:
     on_stage: Optional[Callable[[str], None]] = None
     after_emission: Optional[Callable[[Any], None]] = None
-    after_qfc_filter: Optional[Callable[[Any, Tuple[float, float], bool], None]] = None
-    after_fiber: Optional[Callable[[Any, tuple, Tuple[float, float], bool], None]] = None
-    after_bs: Optional[Callable[[Any, tuple, Tuple[float, float], bool], None]] = None
+    after_qfc_filter: Optional[Callable[[Any, Tuple[float, float]], None]] = None
+    after_fiber: Optional[Callable[[Any, tuple, Tuple[float, float]], None]] = None
+    after_bs: Optional[Callable[[Any, tuple, Tuple[float, float]], None]] = None
 
 
 @dataclass
@@ -686,7 +710,6 @@ class PipelineResult:
     fiber_sample: Optional[tuple]
     qfc_theta_H: float
     qfc_theta_V: float
-    apply_filter_780: bool
     t_wait_us: float
     t2_us: float
     p_dephase: float
@@ -941,6 +964,8 @@ def run_emission_to_bs(
         n_bins=emission.n_bins,
         dt_ns=emission.dt_ns,
         chi_max=emission.chi_max,
+        Alpha_A=_alpha_matrix(emission.arm_A),
+        Alpha_B=_alpha_matrix(emission.arm_B),
         omega_peak_A=emission.arm_A.omega_peak,
         omega_peak_B=emission.arm_B.omega_peak,
         drive_waveform_A=emission.drive_waveform_A,
@@ -991,7 +1016,6 @@ def run_emission_to_bs(
     qfc_theta_V = float(qfc.theta_V)
     qfc_phi_H = float(qfc.phi_H)
     qfc_phi_V = float(qfc.phi_V)
-    apply_filter_780 = bool(qfc.apply_filter_780)
     mps = apply_qfc_filter_memory_chain(
         mps=mps,
         n_bins=emission.get_n_bins(),
@@ -1000,7 +1024,6 @@ def run_emission_to_bs(
         theta_V=qfc_theta_V,
         phi_H=qfc_phi_H,
         phi_V=qfc_phi_V,
-        apply_filter_780=apply_filter_780,
         filter_enabled=bool(qfc.filter_cavity.enabled),
         filter_fwhm_mhz=float(qfc.filter_cavity.fwhm_mhz),
         filter_detuning_mhz_A=float(qfc.filter_cavity.detuning_mhz_A),
@@ -1017,7 +1040,6 @@ def run_emission_to_bs(
         hooks.after_qfc_filter(
             emission,
             qfc_params=(qfc_theta_H, qfc_theta_V),
-            apply_filter_780=apply_filter_780,
         )
         if verbose:
             print("QFC/滤波记忆已在态端显式作用。")
@@ -1038,7 +1060,6 @@ def run_emission_to_bs(
             emission,
             fiber_sample=fiber_sample,
             qfc_params=(qfc_theta_H, qfc_theta_V),
-            apply_filter_780=apply_filter_780,
         )
         if verbose:
             print("光纤噪声仅作为测量端参数写入（Heisenberg），未对态显式作用。")
@@ -1064,7 +1085,6 @@ def run_emission_to_bs(
             emission,
             fiber_sample=fiber_sample,
             qfc_params=(qfc_theta_H, qfc_theta_V),
-            apply_filter_780=apply_filter_780,
         )
 
     return PipelineResult(
@@ -1074,7 +1094,6 @@ def run_emission_to_bs(
         fiber_sample=fiber_sample,
         qfc_theta_H=qfc_theta_H,
         qfc_theta_V=qfc_theta_V,
-        apply_filter_780=apply_filter_780,
         t_wait_us=t_wait_us,
         t2_us=t2_us,
         p_dephase=p_dephase,

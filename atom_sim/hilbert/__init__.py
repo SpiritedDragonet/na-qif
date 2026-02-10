@@ -12,8 +12,7 @@ from .basis import (
     SUBSPACE_1517,
     SUBSPACE_BIN5,
     BIN_SPACE,
-    embed_9_from_6,
-    reduce_9d_effects_to_6d,
+    embed_9d_dist_from_3d_pair,
 )
 from .operators import (
     annihilation_op,
@@ -28,8 +27,7 @@ __all__ = [
     'SUBSPACE_1517',
     'SUBSPACE_BIN5',
     'BIN_SPACE',
-    'embed_9_from_6',
-    'reduce_9d_effects_to_6d',
+    'embed_9d_dist_from_3d_pair',
     # operators
     'annihilation_op',
     'creation_op',

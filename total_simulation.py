@@ -207,7 +207,14 @@ def _parse_run_params(argv):
     parser.add_argument("--qfc-theta-v", dest="qfc_theta_v", type=float, help="QFC V转换角 theta_V (rad)")
     parser.add_argument("--qfc-phi-h", dest="qfc_phi_h", type=float, help="QFC H通道相位 phi_H (rad)")
     parser.add_argument("--qfc-phi-v", dest="qfc_phi_v", type=float, help="QFC V通道相位 phi_V (rad)")
-    parser.add_argument("--no-filter-780", dest="no_filter_780", action="store_true", help="关闭 780 滤波（保留 780 分量）")
+    parser.add_argument("--alpha-h-plus-a", dest="alpha_h_plus_a", type=float, help="A 臂 Alpha[H,+] 偏振耦合系数")
+    parser.add_argument("--alpha-h-minus-a", dest="alpha_h_minus_a", type=float, help="A 臂 Alpha[H,-] 偏振耦合系数")
+    parser.add_argument("--alpha-v-plus-a", dest="alpha_v_plus_a", type=float, help="A 臂 Alpha[V,+] 偏振耦合系数")
+    parser.add_argument("--alpha-v-minus-a", dest="alpha_v_minus_a", type=float, help="A 臂 Alpha[V,-] 偏振耦合系数")
+    parser.add_argument("--alpha-h-plus-b", dest="alpha_h_plus_b", type=float, help="B 臂 Alpha[H,+] 偏振耦合系数")
+    parser.add_argument("--alpha-h-minus-b", dest="alpha_h_minus_b", type=float, help="B 臂 Alpha[H,-] 偏振耦合系数")
+    parser.add_argument("--alpha-v-plus-b", dest="alpha_v_plus_b", type=float, help="B 臂 Alpha[V,+] 偏振耦合系数")
+    parser.add_argument("--alpha-v-minus-b", dest="alpha_v_minus_b", type=float, help="B 臂 Alpha[V,-] 偏振耦合系数")
     parser.add_argument("--filter-cavity-fwhm-mhz", dest="filter_cavity_fwhm_mhz", type=float, help="QFC后1517滤波腔线宽 FWHM (MHz)")
     parser.add_argument("--filter-cavity-detuning-mhz-a", dest="filter_cavity_detuning_mhz_a", type=float, help="A 臂滤波腔失谐 (MHz)")
     parser.add_argument("--filter-cavity-detuning-mhz-b", dest="filter_cavity_detuning_mhz_b", type=float, help="B 臂滤波腔失谐 (MHz)")
@@ -320,6 +327,22 @@ def _parse_run_params(argv):
         config.emission.arm_B.delta_c_H = float(args.delta_c_h_b)
     if args.delta_c_v_b is not None:
         config.emission.arm_B.delta_c_V = float(args.delta_c_v_b)
+    if args.alpha_h_plus_a is not None:
+        config.emission.arm_A.alpha_h_plus = float(args.alpha_h_plus_a)
+    if args.alpha_h_minus_a is not None:
+        config.emission.arm_A.alpha_h_minus = float(args.alpha_h_minus_a)
+    if args.alpha_v_plus_a is not None:
+        config.emission.arm_A.alpha_v_plus = float(args.alpha_v_plus_a)
+    if args.alpha_v_minus_a is not None:
+        config.emission.arm_A.alpha_v_minus = float(args.alpha_v_minus_a)
+    if args.alpha_h_plus_b is not None:
+        config.emission.arm_B.alpha_h_plus = float(args.alpha_h_plus_b)
+    if args.alpha_h_minus_b is not None:
+        config.emission.arm_B.alpha_h_minus = float(args.alpha_h_minus_b)
+    if args.alpha_v_plus_b is not None:
+        config.emission.arm_B.alpha_v_plus = float(args.alpha_v_plus_b)
+    if args.alpha_v_minus_b is not None:
+        config.emission.arm_B.alpha_v_minus = float(args.alpha_v_minus_b)
     if args.qfc_theta_h is not None:
         config.qfc.theta_H = float(args.qfc_theta_h)
     if args.qfc_theta_v is not None:
@@ -328,8 +351,6 @@ def _parse_run_params(argv):
         config.qfc.phi_H = float(args.qfc_phi_h)
     if args.qfc_phi_v is not None:
         config.qfc.phi_V = float(args.qfc_phi_v)
-    if args.no_filter_780:
-        config.qfc.apply_filter_780 = False
     if args.filter_cavity_fwhm_mhz is not None:
         config.qfc.filter_cavity.fwhm_mhz = float(args.filter_cavity_fwhm_mhz)
     if args.filter_cavity_detuning_mhz_a is not None:
