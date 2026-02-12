@@ -175,11 +175,20 @@ outputs/                           # 仿真输出目录（已 gitignore）
 - **worker**：抢任务执行（SIM/HOM/WINDOW_SCAN/BSM_SCAN/LENGTH_SCAN/SUMMARY）
 - **both**：本机同时承担 server + worker
 
+### run-id 续算与重建语义
+- 当 `--role server|both` 且指定的 `--run-id` 已存在时，程序进入**续算模式**（不会重建任务）。
+- 续算模式下，CLI 中传入的任务/物理参数会被**自动忽略并给出警告**，统一以 `summary/run_manifest.json` 为准。
+- 若需要让新参数生效，请使用 `--rebuild-run`（`role=server/both` 支持，且必须配合 `--run-id`）：
+  - 先将旧 run 归档为 `_u`
+  - 再按当前 CLI 参数重建任务并重新运行
+- `role=worker` 不接受 `--run-id`，worker 只负责抢占并执行任务。
+
 ### 常用 CLI 选项（片段）
 ```
 --role server|worker|both
 --task-type SIM|HOM|WINDOW_SCAN|BSM_SCAN|LENGTH_SCAN
 --run-id <id>                 # 不传则自动选择最小可用 id
+--rebuild-run                 # 仅具备 server 能力的角色（server/both）；旧 run 归档 _u 后按当前参数重建
 --queue-root <path>           # 默认 ./queue
 --runs N --shots M
 --window-ns <float>           # SIM/HOM 符合时间窗 (ns)

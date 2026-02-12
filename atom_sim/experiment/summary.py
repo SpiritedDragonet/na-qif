@@ -51,6 +51,27 @@ def _finalize_group_summary(group: dict) -> dict:
     runs_total = int(group["runs_total"])
     shots_total = int(group["shots_total"])
     accepted_total = int(group.get("accepted_total", 0))
+    p_two_click_abs_avg = (group["p_two_click_abs_sum"] / runs_total) if runs_total > 0 else 0.0
+    accepted_cond_given_two_click_avg = (
+        (group["accepted_cond_given_two_click_sum"] / runs_total)
+        if runs_total > 0
+        else 0.0
+    )
+    success_cond_given_two_click_avg = (
+        (group["success_cond_given_two_click_sum"] / runs_total)
+        if runs_total > 0
+        else 0.0
+    )
+    success_true_cond_given_two_click_avg = (
+        (group["success_true_cond_given_two_click_sum"] / runs_total)
+        if runs_total > 0
+        else 0.0
+    )
+    success_false_cond_given_two_click_avg = (
+        (group["success_false_cond_given_two_click_sum"] / runs_total)
+        if runs_total > 0
+        else 0.0
+    )
 
     p_arrive_avg = (group["p_arrive_sum"] / runs_total) if runs_total > 0 else 0.0
     p_success_abs_avg = (group["p_success_abs_sum"] / runs_total) if runs_total > 0 else 0.0
@@ -94,6 +115,11 @@ def _finalize_group_summary(group: dict) -> dict:
         "shots_total": shots_total,
         "accepted_total": accepted_total,
         "acceptance_fraction_abs": acceptance_fraction_abs,
+        "p_two_click_abs_avg": p_two_click_abs_avg,
+        "accepted_cond_given_two_click_avg": accepted_cond_given_two_click_avg,
+        "success_cond_given_two_click_avg": success_cond_given_two_click_avg,
+        "success_true_cond_given_two_click_avg": success_true_cond_given_two_click_avg,
+        "success_false_cond_given_two_click_avg": success_false_cond_given_two_click_avg,
         "p_arrive_avg": p_arrive_avg,
         "p_success_abs_avg": p_success_abs_avg,
         "p_success_true_abs_avg": p_success_true_abs_avg,
@@ -173,6 +199,11 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
             "shots",
             "accepted",
             "success",
+            "p_two_click_abs",
+            "accepted_cond_given_two_click",
+            "success_cond_given_two_click",
+            "success_true_cond_given_two_click",
+            "success_false_cond_given_two_click",
             "p_arrive",
             "p_arrive_11",
             "p_arrive_same_arm",
@@ -207,28 +238,20 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
             metrics = data.get("metrics", {})
             run_index = _extract_run_index(metrics, tid, (r"wscan_run_(\d+)",))
 
-            windows = metrics.get("windows", [])
-            if not isinstance(windows, list):
-                windows = []
-
-            # 新口径：WINDOW_SCAN task 仅输出一次“无窗口限制”的统一记录，
-            # 窗口判定全部在 summary 阶段完成。
-            if not windows and isinstance(metrics.get("window_scan"), dict):
-                windows = [metrics.get("window_scan")]
+            base_entry = metrics.get("window_scan")
+            if not isinstance(base_entry, dict):
+                raise ValueError("WINDOW_SCAN summary 需要 metrics.window_scan")
 
             clicks_path = meta_path.parent / "raw" / "clicks.json"
-            clicks_by_window = {}
             clicks_shared = []
             if clicks_path.exists():
                 try:
-                    raw_clicks = json.loads(clicks_path.read_text(encoding="utf-8")).get("clicks", {})
-                    if isinstance(raw_clicks, dict):
-                        clicks_by_window = raw_clicks
-                    elif isinstance(raw_clicks, list):
-                        clicks_shared = raw_clicks
-                except Exception:
-                    clicks_by_window = {}
-                    clicks_shared = []
+                    raw_clicks = json.loads(clicks_path.read_text(encoding="utf-8")).get("clicks", [])
+                except Exception as exc:
+                    raise ValueError(f"WINDOW_SCAN clicks.json 读取失败: {exc}") from exc
+                if not isinstance(raw_clicks, list):
+                    raise ValueError("WINDOW_SCAN clicks 必须为 list")
+                clicks_shared = raw_clicks
 
             window_values = []
             if (
@@ -266,90 +289,96 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                     return False
                 return _record_within_window_bins(record, window_bins)
 
-            # 新口径若没有直接给 windows 列表，则在 summary 中按 window_sweep_* 展开。
-            if windows and clicks_shared and len(windows) == 1 and windows[0].get("window_bins") is None:
-                base_entry = windows[0]
-                expanded_windows = []
-                for window_ns in window_values:
-                    window_bins = _compute_window_bins(
-                        float(window_ns),
-                        float(config.emission.dt_ns),
-                        detection_gate_ns=config.noise.detector_gate_ns,
-                    )
-                    accepted = 0
-                    success = 0
-                    success_true_sum = 0.0
-                    success_false_sum = 0.0
-                    fidelity_all_vals = []
-                    fidelity_true_num = 0.0
-                    fidelity_false_num = 0.0
-                    corr_exx_vals = []
-                    corr_eyy_vals = []
-                    corr_ezz_vals = []
-                    chsh_vals = []
-                    for record in clicks_shared:
-                        in_window = _record_within_window_bins(record, window_bins)
-                        if in_window:
-                            accepted += 1
-                        if not _record_success_by_window(record, window_bins):
-                            continue
-                        success += 1
-                        p_true = _safe_num(record.get("p_true_given_record")) or 0.0
-                        success_true_sum += p_true
-                        success_false_sum += 1.0 - p_true
-                        fidelity_declared = _safe_num(record.get("fidelity_declared")) or 0.0
-                        corr_exx = _safe_num(record.get("corr_exx")) or 0.0
-                        corr_eyy = _safe_num(record.get("corr_eyy")) or 0.0
-                        corr_ezz = _safe_num(record.get("corr_ezz")) or 0.0
-                        chsh = _safe_num(record.get("chsh_s_max")) or 0.0
-                        fidelity_all_vals.append(fidelity_declared)
-                        fidelity_true_num += fidelity_declared * p_true
-                        fidelity_false_num += fidelity_declared * (1.0 - p_true)
-                        corr_exx_vals.append(corr_exx)
-                        corr_eyy_vals.append(corr_eyy)
-                        corr_ezz_vals.append(corr_ezz)
-                        chsh_vals.append(chsh)
-                    shots = int(base_entry.get("shots", len(clicks_shared)) or len(clicks_shared))
-                    shots_total = float(max(shots, 1))
-                    p_success_abs = float(success / shots_total)
-                    p_success_true_abs = float(success_true_sum / shots_total)
-                    p_success_false_abs = float(success_false_sum / shots_total)
-                    expanded_windows.append(
-                        {
-                            "window_ns": float(window_ns),
-                            "window_bins": int(window_bins),
-                            "run_index": int(base_entry.get("run_index", run_index) or run_index),
-                            "shots": shots,
-                            "accepted": int(accepted),
-                            "success": int(success),
-                            "p_arrive": _safe_num(base_entry.get("p_arrive")),
-                            "p_arrive_11": _safe_num(base_entry.get("p_arrive_11")),
-                            "p_arrive_same_arm": _safe_num(base_entry.get("p_arrive_same_arm")),
-                            "p_arrive_20": _safe_num(base_entry.get("p_arrive_20")),
-                            "p_arrive_02": _safe_num(base_entry.get("p_arrive_02")),
-                            "p_success_abs": p_success_abs,
-                            "p_success_true_abs": p_success_true_abs,
-                            "p_success_false_abs": p_success_false_abs,
-                            "p_success_true_given_arrival": (
-                                p_success_true_abs / _safe_num(base_entry.get("p_arrive_11"))
-                                if (_safe_num(base_entry.get("p_arrive_11")) or 0.0) > 0.0
-                                else 0.0
-                            ),
-                            "fidelity_all": float(np.mean(fidelity_all_vals)) if fidelity_all_vals else 0.0,
-                            "fidelity_true": (fidelity_true_num / success_true_sum) if success_true_sum > 0.0 else 0.0,
-                            "fidelity_false": (fidelity_false_num / success_false_sum) if success_false_sum > 0.0 else 0.0,
-                            "false_fraction": (p_success_false_abs / p_success_abs) if p_success_abs > 0.0 else 0.0,
-                            "corr_exx": float(np.mean(corr_exx_vals)) if corr_exx_vals else 0.0,
-                            "corr_eyy": float(np.mean(corr_eyy_vals)) if corr_eyy_vals else 0.0,
-                            "corr_ezz": float(np.mean(corr_ezz_vals)) if corr_ezz_vals else 0.0,
-                            "chsh_s_max": float(np.mean(chsh_vals)) if chsh_vals else 0.0,
-                            "p_success_intrinsic_dark_assisted": _safe_num(base_entry.get("p_success_intrinsic_dark_assisted")),
-                            "p_success_bg_assisted": _safe_num(base_entry.get("p_success_bg_assisted")),
-                        }
-                    )
-                windows = expanded_windows
+            expanded_windows = []
+            for window_ns in window_values:
+                window_bins = _compute_window_bins(
+                    float(window_ns),
+                    float(config.emission.dt_ns),
+                    detection_gate_ns=config.noise.detector_gate_ns,
+                )
+                accepted = 0
+                success = 0
+                success_true_sum = 0.0
+                success_false_sum = 0.0
+                fidelity_all_vals = []
+                fidelity_true_num = 0.0
+                fidelity_false_num = 0.0
+                corr_exx_vals = []
+                corr_eyy_vals = []
+                corr_ezz_vals = []
+                chsh_vals = []
+                for record in clicks_shared:
+                    in_window = _record_within_window_bins(record, window_bins)
+                    if in_window:
+                        accepted += 1
+                    if not _record_success_by_window(record, window_bins):
+                        continue
+                    success += 1
+                    p_true = _safe_num(record.get("p_true_given_record")) or 0.0
+                    success_true_sum += p_true
+                    success_false_sum += 1.0 - p_true
+                    fidelity_declared = _safe_num(record.get("fidelity_declared")) or 0.0
+                    corr_exx = _safe_num(record.get("corr_exx")) or 0.0
+                    corr_eyy = _safe_num(record.get("corr_eyy")) or 0.0
+                    corr_ezz = _safe_num(record.get("corr_ezz")) or 0.0
+                    chsh = _safe_num(record.get("chsh_s_max")) or 0.0
+                    fidelity_all_vals.append(fidelity_declared)
+                    fidelity_true_num += fidelity_declared * p_true
+                    fidelity_false_num += fidelity_declared * (1.0 - p_true)
+                    corr_exx_vals.append(corr_exx)
+                    corr_eyy_vals.append(corr_eyy)
+                    corr_ezz_vals.append(corr_ezz)
+                    chsh_vals.append(chsh)
+                shots = int(base_entry.get("shots", len(clicks_shared)) or len(clicks_shared))
+                shots_total = float(max(shots, 1))
+                p_two_click_abs = float(_safe_num(base_entry.get("p_two_click_abs")) or 0.0)
+                accepted_cond_given_two_click = float(accepted / shots_total)
+                success_cond_given_two_click = float(success / shots_total)
+                success_true_cond_given_two_click = float(success_true_sum / shots_total)
+                success_false_cond_given_two_click = float(success_false_sum / shots_total)
+                p_success_abs = float(p_two_click_abs * success_cond_given_two_click)
+                p_success_true_abs = float(p_two_click_abs * success_true_cond_given_two_click)
+                p_success_false_abs = float(p_two_click_abs * success_false_cond_given_two_click)
+                expanded_windows.append(
+                    {
+                        "window_ns": float(window_ns),
+                        "window_bins": int(window_bins),
+                        "run_index": int(base_entry.get("run_index", run_index) or run_index),
+                        "shots": shots,
+                        "accepted": int(accepted),
+                        "success": int(success),
+                        "p_two_click_abs": p_two_click_abs,
+                        "accepted_cond_given_two_click": accepted_cond_given_two_click,
+                        "success_cond_given_two_click": success_cond_given_two_click,
+                        "success_true_cond_given_two_click": success_true_cond_given_two_click,
+                        "success_false_cond_given_two_click": success_false_cond_given_two_click,
+                        "p_arrive": _safe_num(base_entry.get("p_arrive")),
+                        "p_arrive_11": _safe_num(base_entry.get("p_arrive_11")),
+                        "p_arrive_same_arm": _safe_num(base_entry.get("p_arrive_same_arm")),
+                        "p_arrive_20": _safe_num(base_entry.get("p_arrive_20")),
+                        "p_arrive_02": _safe_num(base_entry.get("p_arrive_02")),
+                        "p_success_abs": p_success_abs,
+                        "p_success_true_abs": p_success_true_abs,
+                        "p_success_false_abs": p_success_false_abs,
+                        "p_success_true_given_arrival": (
+                            p_success_true_abs / _safe_num(base_entry.get("p_arrive_11"))
+                            if (_safe_num(base_entry.get("p_arrive_11")) or 0.0) > 0.0
+                            else 0.0
+                        ),
+                        "fidelity_all": float(np.mean(fidelity_all_vals)) if fidelity_all_vals else 0.0,
+                        "fidelity_true": (fidelity_true_num / success_true_sum) if success_true_sum > 0.0 else 0.0,
+                        "fidelity_false": (fidelity_false_num / success_false_sum) if success_false_sum > 0.0 else 0.0,
+                        "false_fraction": (p_success_false_abs / p_success_abs) if p_success_abs > 0.0 else 0.0,
+                        "corr_exx": float(np.mean(corr_exx_vals)) if corr_exx_vals else 0.0,
+                        "corr_eyy": float(np.mean(corr_eyy_vals)) if corr_eyy_vals else 0.0,
+                        "corr_ezz": float(np.mean(corr_ezz_vals)) if corr_ezz_vals else 0.0,
+                        "chsh_s_max": float(np.mean(chsh_vals)) if chsh_vals else 0.0,
+                        "p_success_intrinsic_dark_assisted": _safe_num(base_entry.get("p_success_intrinsic_dark_assisted")),
+                        "p_success_bg_assisted": _safe_num(base_entry.get("p_success_bg_assisted")),
+                    }
+                )
 
-            for entry in windows:
+            for entry in expanded_windows:
                 window_ns = float(entry.get("window_ns", 0.0) or 0.0)
                 window_key = f"{window_ns:.9f}"
 
@@ -376,6 +405,11 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                 shots = int(entry.get("shots", 0) or 0)
                 accepted = int(entry.get("accepted", 0) or 0)
                 success = int(entry.get("success", 0) or 0)
+                p_two_click_abs = _safe_num(entry.get("p_two_click_abs"))
+                accepted_cond_given_two_click = _safe_num(entry.get("accepted_cond_given_two_click"))
+                success_cond_given_two_click = _safe_num(entry.get("success_cond_given_two_click"))
+                success_true_cond_given_two_click = _safe_num(entry.get("success_true_cond_given_two_click"))
+                success_false_cond_given_two_click = _safe_num(entry.get("success_false_cond_given_two_click"))
 
                 runs_writer.writerow([
                     tid,
@@ -385,6 +419,11 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                     shots,
                     accepted,
                     success,
+                    p_two_click_abs,
+                    accepted_cond_given_two_click,
+                    success_cond_given_two_click,
+                    success_true_cond_given_two_click,
+                    success_false_cond_given_two_click,
                     p_arrive,
                     p_arrive_11,
                     p_arrive_same_arm,
@@ -415,6 +454,11 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                         "runs_total": 0,
                         "shots_total": 0,
                         "accepted_total": 0,
+                        "p_two_click_abs_sum": 0.0,
+                        "accepted_cond_given_two_click_sum": 0.0,
+                        "success_cond_given_two_click_sum": 0.0,
+                        "success_true_cond_given_two_click_sum": 0.0,
+                        "success_false_cond_given_two_click_sum": 0.0,
                         "p_arrive_sum": 0.0,
                         "p_success_abs_sum": 0.0,
                         "p_success_true_abs_sum": 0.0,
@@ -432,6 +476,11 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                 group["runs_total"] += 1
                 group["shots_total"] += shots
                 group["accepted_total"] += accepted
+                group["p_two_click_abs_sum"] += p_two_click_abs or 0.0
+                group["accepted_cond_given_two_click_sum"] += accepted_cond_given_two_click or 0.0
+                group["success_cond_given_two_click_sum"] += success_cond_given_two_click or 0.0
+                group["success_true_cond_given_two_click_sum"] += success_true_cond_given_two_click or 0.0
+                group["success_false_cond_given_two_click_sum"] += success_false_cond_given_two_click or 0.0
                 group["p_arrive_sum"] += p_arrive or 0.0
                 group["p_success_abs_sum"] += p_success_abs or 0.0
                 group["p_success_true_abs_sum"] += p_success_true_abs or 0.0
@@ -444,17 +493,15 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                 group["corr_ezz_sum"] += corr_ezz or 0.0
                 group["chsh_s_max_sum"] += chsh_s_max or 0.0
 
-                records = clicks_by_window.get(window_key, [])
-                if not records and clicks_shared:
-                    records = []
-                    for record in clicks_shared:
-                        shot_copy = dict(record)
-                        in_window = _record_within_window_bins(shot_copy, int(window_bins))
-                        shot_copy["accepted_by_window"] = bool(in_window)
-                        shot_copy["success"] = bool(_record_success_by_window(shot_copy, int(window_bins)))
-                        shot_copy["bell"] = shot_copy.get("bell") if shot_copy.get("success") else ""
-                        records.append(shot_copy)
-                if not isinstance(records, list) or not records:
+                records = []
+                for record in clicks_shared:
+                    shot_copy = dict(record)
+                    in_window = _record_within_window_bins(shot_copy, int(window_bins))
+                    shot_copy["accepted_by_window"] = bool(in_window)
+                    shot_copy["success"] = bool(_record_success_by_window(shot_copy, int(window_bins)))
+                    shot_copy["bell"] = shot_copy.get("bell") if shot_copy.get("success") else ""
+                    records.append(shot_copy)
+                if not records:
                     trials_writer.writerow([
                         window_ns,
                         window_bins,
@@ -560,6 +607,11 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
             "shots_total",
             "accepted_total",
             "acceptance_fraction_abs",
+            "p_two_click_abs_avg",
+            "accepted_cond_given_two_click_avg",
+            "success_cond_given_two_click_avg",
+            "success_true_cond_given_two_click_avg",
+            "success_false_cond_given_two_click_avg",
             "p_arrive_avg",
             "p_success_abs_avg",
             "p_success_true_abs_avg",
@@ -586,6 +638,11 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                 row["shots_total"],
                 row["accepted_total"],
                 row["acceptance_fraction_abs"],
+                row["p_two_click_abs_avg"],
+                row["accepted_cond_given_two_click_avg"],
+                row["success_cond_given_two_click_avg"],
+                row["success_true_cond_given_two_click_avg"],
+                row["success_false_cond_given_two_click_avg"],
                 row["p_arrive_avg"],
                 row["p_success_abs_avg"],
                 row["p_success_true_abs_avg"],
@@ -1866,6 +1923,8 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
             "corr_eyy",
             "corr_ezz",
             "chsh_s_max",
+            "p_success_intrinsic_dark_assisted",
+            "p_success_bg_assisted",
             "timestamp",
         ])
         for meta_path in sorted(results_dir.glob("result_*/meta.json")):

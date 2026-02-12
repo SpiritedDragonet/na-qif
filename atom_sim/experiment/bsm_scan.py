@@ -6,6 +6,7 @@ BSM_SCAN 任务：按中心站 BS 混合角扫描运行 SIM 核心。
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Iterator
 
 import numpy as np
 
@@ -191,4 +192,16 @@ def run_bsm_scan_task(
         "run_index": run_index,
         "bs_thetas": [entry],
     }, {f"{float(bs_theta):.9f}": click_records}
+
+
+def iter_bsm_scan_core_tasks(config: SimConfig) -> Iterator[dict]:
+    bs_values = build_bsm_scan_values(config)
+    for bs_idx, bs_theta in enumerate(bs_values):
+        for run_index in range(config.run.runs):
+            yield {
+                "id": f"bscan_theta_{bs_idx:04d}_run_{run_index:06d}",
+                "experiment": "BSM_SCAN",
+                "run_index": run_index,
+                "payload": {"bs_theta": float(bs_theta)},
+            }
 

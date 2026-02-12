@@ -28,10 +28,8 @@ from atom_sim.experiment.common import (  # noqa: E402
 from atom_sim.experiment.hom import (  # noqa: E402
     parse_hom_cli,
     validate_no_hom_args,
-    _build_hom_tau_values,
-    _run_hom_run,
 )
-from atom_sim.experiment import single_run, window_scan, length_scan, bsm_scan, summary  # noqa: E402
+from atom_sim.experiment import single_run, hom, window_scan, length_scan, bsm_scan, summary  # noqa: E402
 from atom_sim.simulation import run_detection_self_checks  # noqa: E402
 
 
@@ -40,6 +38,31 @@ RUN_MANIFEST_FILENAME = "run_manifest.json"
 CORE_TASK_MODE = "CORE_TRIAL"
 SUMMARY_TASK_MODE = "SUMMARY"
 SUPPORTED_EXPERIMENTS = {"SIM", "HOM", "WINDOW_SCAN", "BSM_SCAN", "LENGTH_SCAN"}
+SERVER_CAPABILITY_CLI_DESTS = {"run_id", "rebuild_run"}
+RESUME_PASSTHROUGH_CLI_DESTS = {
+    "role",
+    "queue_root",
+    "run_id",
+    "rebuild_run",
+    "server_progress",
+    "server_progress_quiet_secs",
+    "server_progress_inline",
+    "self_check",
+}
+CORE_TASK_BUILDERS = {
+    "SIM": single_run.iter_sim_core_tasks,
+    "HOM": hom.iter_hom_core_tasks,
+    "WINDOW_SCAN": window_scan.iter_window_scan_core_tasks,
+    "BSM_SCAN": bsm_scan.iter_bsm_scan_core_tasks,
+    "LENGTH_SCAN": length_scan.iter_length_scan_core_tasks,
+}
+CORE_TRIAL_TASK_RUNNERS = {
+    "SIM": single_run.run_sim_task,
+    "HOM": hom.run_hom_task,
+    "WINDOW_SCAN": window_scan.run_window_scan_task,
+    "BSM_SCAN": bsm_scan.run_bsm_scan_task,
+    "LENGTH_SCAN": length_scan.run_length_scan_task,
+}
 
 
 def _install_output_tracker(marker_path: Optional[Path]) -> None:
@@ -54,9 +77,12 @@ def _install_output_tracker(marker_path: Optional[Path]) -> None:
 
     def _tracked_print(*args, **kwargs):
         try:
+            is_main_thread = threading.current_thread() is threading.main_thread()
             # 只在 marker 目录已存在时更新心跳，
             # 避免 run 已归档后再次 print 把旧 queue/<run>/heartbeat 重建出来。
-            if marker_path.parent.exists():
+            # 且仅统计主线程输出，避免 both 模式下 monitor 线程自己的进度打印
+            # 反向触发 quiet window，导致“看起来每 quiet_secs 才刷一次进度”。
+            if is_main_thread and marker_path.parent.exists():
                 marker_path.touch()
         except Exception:
             pass
@@ -71,7 +97,7 @@ def _parse_run_params(argv):
     # 复杂点：mode/task_type/role 三套概念并存——
     #   - role: server/worker/both（调度角色）
     #   - mode/task_type: SIM/HOM/WINDOW_SCAN/LENGTH_SCAN/BSM_SCAN（物理任务类型）
-    #   - queue_root/run_id: 决定任务目录隔离与任务回收策略
+    #   - queue_root/run_id: run_id 仅 server/both 使用，用于任务目录隔离与续算
     parser = argparse.ArgumentParser(
         prog="python total_simulation.py",
         formatter_class=argparse.RawTextHelpFormatter,
@@ -83,8 +109,8 @@ def _parse_run_params(argv):
             "  # 主节点（服务端）\n"
             "  python total_simulation.py --role server --queue-root /mnt/quantum_sim/queue --run-id homA "
             "--task-type HOM --runs 120 --tau-start -40 --tau-end 40 --tau-step 2 --shots 1\n"
-            "  # 抢占式节点（worker）\n"
-            "  python total_simulation.py --role worker --queue-root /mnt/quantum_sim/queue --run-id homA --cores 64\n"
+            "  # 抢占式节点（worker）：不指定 run-id，自动抢当前 queue 下可执行任务\n"
+            "  python total_simulation.py --role worker --queue-root /mnt/quantum_sim/queue --cores 64\n"
             "  # 本地运行（server + worker）\n"
             "  python total_simulation.py --role both --queue-root /mnt/quantum_sim/queue --run-id simA --task-type SIM --runs 10\n"
             "  # 窗口扫描任务（WINDOW_SCAN）\n"
@@ -120,9 +146,9 @@ def _parse_run_params(argv):
         help="server 进度输出的静默窗口（秒）；在此期间检测到 worker 输出则跳过显示",
     )
     parser.add_argument("--queue-root", dest="queue_root", type=str, default="queue", help="任务队列根目录（默认项目根目录下的 queue）")
-    parser.add_argument("--run-id", dest="run_id", type=str, help="运行ID（用于隔离多次任务；未提供则自动选择最小可用ID）")
+    parser.add_argument("--run-id", dest="run_id", type=str, help="运行ID（仅 server/both 使用；用于隔离任务与断点续算）")
+    parser.add_argument("--rebuild-run", dest="rebuild_run", action="store_true", help="仅 server 能力可用（role=server/both）；当 run-id 已存在时先归档为 _u 再按当前参数重建任务")
     parser.add_argument("--task-type", dest="task_type", type=str, choices=["SIM", "HOM", "WINDOW_SCAN", "LENGTH_SCAN", "BSM_SCAN"], help="任务类型：SIM / HOM / WINDOW_SCAN / LENGTH_SCAN / BSM_SCAN（默认随 --mode）")
-    parser.add_argument("--config-hash", dest="config_hash", type=str, help="任务配置版本标识（默认自动读取 git）")
     parser.add_argument("--runs", "--n-runs", dest="n_runs", type=int, help="仿真 run 次数（默认 1）")
     parser.add_argument("--shots", "--shots-per-run", dest="shots_per_run", type=int, help="每个 run 的探测采样次数（默认 1）")
     parser.add_argument(
@@ -133,84 +159,100 @@ def _parse_run_params(argv):
     )
     parser.add_argument("--mode", "--trial-type", dest="mode", help="运行模式：SIM 或 HOM（默认 SIM）")
     parser.add_argument("--no-fiber-noise", dest="no_fiber_noise", action="store_true", help="关闭光纤噪声")
-    parser.add_argument("--fiber-length-km", dest="fiber_length_km", type=float, help="光纤长度 (km)，用于计算平均透过率")
-    parser.add_argument("--fiber-atten-db-per-km", dest="fiber_atten_db_per_km", type=float, help="光纤衰减 (dB/km)")
-    parser.add_argument("--fiber-eta-std", dest="fiber_eta_std", type=float, help="透过率随机波动标准差")
-    parser.add_argument("--fiber-pdl-sigma", dest="fiber_pdl_sigma", type=float, help="PDL 相对差异标准差")
-    parser.add_argument("--fiber-phase-drift-std", dest="fiber_phase_drift_std", type=float, help="两臂相位漂移标准差 (rad)")
-    parser.add_argument("--fiber-phase-slope-std", dest="fiber_phase_slope_std", type=float, help="相位斜率标准差 (rad/bin)")
-    parser.add_argument("--fiber-phase-jitter-std", dest="fiber_phase_jitter_std", type=float, help="单bin相位抖动标准差 (rad)")
-    parser.add_argument("--fiber-polarization-model", dest="fiber_polarization_model", choices=["fixed", "haar", "perturb", "euler"], help="光纤偏振模型")
-    parser.add_argument("--fiber-polarization-sigma", dest="fiber_polarization_sigma", type=float, help="偏振小扰动模型标准差 (rad)")
-    parser.add_argument("--fiber-group-velocity-mps", dest="fiber_group_velocity_mps", type=float, help="光纤群速度 (m/s)，用于自动计算 t_wait_us")
-    parser.add_argument("--t-wait-overhead-us", dest="t_wait_overhead_us", type=float, help="等待时间固定开销 (us)，会加到 L/v_g 上")
-    parser.add_argument("--t-wait-length-scale", dest="t_wait_length_scale", type=float, help="等待时间线性系数：T_wait = scale*L/v_g + overhead")
-    parser.add_argument("--t2-us", dest="t2_us", type=float, help="原子退相干时间 T2 (us)")
-
-    parser.add_argument("--tau", dest="tau", type=float, help="(HOM) 单一延迟 τ (ns)")
-    parser.add_argument("--tau-start", dest="tau_start", type=float, help="(HOM) τ 起点 (ns)")
-    parser.add_argument("--tau-end", dest="tau_end", type=float, help="(HOM) τ 终点 (ns)")
-    parser.add_argument("--tau-step", dest="tau_step", type=float, help="(HOM) τ 步长 (ns)")
-    parser.add_argument("--tau-points", dest="tau_points", type=int, help="(HOM) τ 采样点数")
-    parser.add_argument("--window-ns", dest="window_ns", type=float, help="(HOM) 符合窗口 (ns)")
-    parser.add_argument("--window-sweep-start-ns", dest="window_sweep_start_ns", type=float, help="(WINDOW_SCAN) 扫描起点窗口 (ns)")
-    parser.add_argument("--window-sweep-end-ns", dest="window_sweep_end_ns", type=float, help="(WINDOW_SCAN) 扫描终点窗口 (ns)")
-    parser.add_argument("--window-sweep-step-ns", dest="window_sweep_step_ns", type=float, help="(WINDOW_SCAN) 扫描步长窗口 (ns)")
-    parser.add_argument("--bs-sweep-start-theta", dest="bs_sweep_start_theta", type=float, help="(BSM_SCAN) 扫描起点 BS theta (rad)")
-    parser.add_argument("--bs-sweep-end-theta", dest="bs_sweep_end_theta", type=float, help="(BSM_SCAN) 扫描终点 BS theta (rad)")
-    parser.add_argument("--bs-sweep-step-theta", dest="bs_sweep_step_theta", type=float, help="(BSM_SCAN) 扫描步长 BS theta (rad)")
-    parser.add_argument("--length-sweep-start-km", dest="length_sweep_start_km", type=float, help="(LENGTH_SCAN) 扫描起点长度 (km)")
-    parser.add_argument("--length-sweep-end-km", dest="length_sweep_end_km", type=float, help="(LENGTH_SCAN) 扫描终点长度 (km)")
-    parser.add_argument("--length-sweep-step-km", dest="length_sweep_step_km", type=float, help="(LENGTH_SCAN) 扫描步长长度 (km)")
-    parser.add_argument("--attempt-rate-hz", dest="attempt_rate_hz", type=float, help="(LENGTH_SCAN) 基础尝试率 (Hz)")
-    parser.add_argument("--attempt-overhead-us", dest="attempt_overhead_us", type=float, help="(LENGTH_SCAN) 单次额外时延 (us)")
+    for option, dest, cast, help_text in (
+        ("--fiber-length-km", "fiber_length_km", float, "光纤长度 (km)，用于计算平均透过率"),
+        ("--fiber-atten-db-per-km", "fiber_atten_db_per_km", float, "光纤衰减 (dB/km)"),
+        ("--fiber-eta-std", "fiber_eta_std", float, "透过率随机波动标准差"),
+        ("--fiber-pdl-sigma", "fiber_pdl_sigma", float, "PDL 相对差异标准差"),
+        ("--fiber-phase-drift-std", "fiber_phase_drift_std", float, "两臂相位漂移标准差 (rad)"),
+        ("--fiber-phase-slope-std", "fiber_phase_slope_std", float, "相位斜率标准差 (rad/bin)"),
+        ("--fiber-phase-jitter-std", "fiber_phase_jitter_std", float, "单bin相位抖动标准差 (rad)"),
+        ("--fiber-polarization-sigma", "fiber_polarization_sigma", float, "偏振小扰动模型标准差 (rad)"),
+        ("--fiber-group-velocity-mps", "fiber_group_velocity_mps", float, "光纤群速度 (m/s)，用于自动计算 t_wait_us"),
+        ("--t-wait-overhead-us", "t_wait_overhead_us", float, "等待时间固定开销 (us)，会加到 L/v_g 上"),
+        ("--t-wait-length-scale", "t_wait_length_scale", float, "等待时间线性系数：T_wait = scale*L/v_g + overhead"),
+        ("--t2-us", "t2_us", float, "原子退相干时间 T2 (us)"),
+        ("--tau", "tau", float, "(HOM) 单一延迟 τ (ns)"),
+        ("--tau-start", "tau_start", float, "(HOM) τ 起点 (ns)"),
+        ("--tau-end", "tau_end", float, "(HOM) τ 终点 (ns)"),
+        ("--tau-step", "tau_step", float, "(HOM) τ 步长 (ns)"),
+        ("--tau-points", "tau_points", int, "(HOM) τ 采样点数"),
+        ("--window-ns", "window_ns", float, "(HOM) 符合窗口 (ns)"),
+        ("--window-sweep-start-ns", "window_sweep_start_ns", float, "(WINDOW_SCAN) 扫描起点窗口 (ns)"),
+        ("--window-sweep-end-ns", "window_sweep_end_ns", float, "(WINDOW_SCAN) 扫描终点窗口 (ns)"),
+        ("--window-sweep-step-ns", "window_sweep_step_ns", float, "(WINDOW_SCAN) 扫描步长窗口 (ns)"),
+        ("--bs-sweep-start-theta", "bs_sweep_start_theta", float, "(BSM_SCAN) 扫描起点 BS theta (rad)"),
+        ("--bs-sweep-end-theta", "bs_sweep_end_theta", float, "(BSM_SCAN) 扫描终点 BS theta (rad)"),
+        ("--bs-sweep-step-theta", "bs_sweep_step_theta", float, "(BSM_SCAN) 扫描步长 BS theta (rad)"),
+        ("--length-sweep-start-km", "length_sweep_start_km", float, "(LENGTH_SCAN) 扫描起点长度 (km)"),
+        ("--length-sweep-end-km", "length_sweep_end_km", float, "(LENGTH_SCAN) 扫描终点长度 (km)"),
+        ("--length-sweep-step-km", "length_sweep_step_km", float, "(LENGTH_SCAN) 扫描步长长度 (km)"),
+        ("--attempt-rate-hz", "attempt_rate_hz", float, "(LENGTH_SCAN) 基础尝试率 (Hz)"),
+        ("--attempt-overhead-us", "attempt_overhead_us", float, "(LENGTH_SCAN) 单次额外时延 (us)"),
+    ):
+        parser.add_argument(option, dest=dest, type=cast, help=help_text)
+    parser.add_argument(
+        "--fiber-polarization-model",
+        dest="fiber_polarization_model",
+        choices=["fixed", "haar", "perturb", "euler"],
+        help="光纤偏振模型",
+    )
 
     parser.add_argument("--dark-hz", dest="dark_rate_intrinsic_hz", type=float, help="探测器本底暗计数率 (Hz)")
-    parser.add_argument("--dark-hz-h1", dest="dark_hz_h1", type=float, help="H1 通道本底暗计数率 (Hz)；未指定则用 --dark-hz")
-    parser.add_argument("--dark-hz-v1", dest="dark_hz_v1", type=float, help="V1 通道本底暗计数率 (Hz)；未指定则用 --dark-hz")
-    parser.add_argument("--dark-hz-h2", dest="dark_hz_h2", type=float, help="H2 通道本底暗计数率 (Hz)；未指定则用 --dark-hz")
-    parser.add_argument("--dark-hz-v2", dest="dark_hz_v2", type=float, help="V2 通道本底暗计数率 (Hz)；未指定则用 --dark-hz")
     parser.add_argument("--bg-mean-hz", dest="bg_rate_mean_hz", type=float, help="背景噪声均值 (Hz)")
-    parser.add_argument("--bg-mean-hz-h1", dest="bg_mean_hz_h1", type=float, help="H1 通道背景噪声均值 (Hz)；未指定则用 --bg-mean-hz")
-    parser.add_argument("--bg-mean-hz-v1", dest="bg_mean_hz_v1", type=float, help="V1 通道背景噪声均值 (Hz)；未指定则用 --bg-mean-hz")
-    parser.add_argument("--bg-mean-hz-h2", dest="bg_mean_hz_h2", type=float, help="H2 通道背景噪声均值 (Hz)；未指定则用 --bg-mean-hz")
-    parser.add_argument("--bg-mean-hz-v2", dest="bg_mean_hz_v2", type=float, help="V2 通道背景噪声均值 (Hz)；未指定则用 --bg-mean-hz")
     parser.add_argument("--bg-std-hz", dest="bg_rate_std_hz", type=float, help="背景噪声标准差 (Hz)")
-    parser.add_argument("--bg-std-hz-h1", dest="bg_std_hz_h1", type=float, help="H1 通道背景噪声标准差 (Hz)；未指定则用 --bg-std-hz")
-    parser.add_argument("--bg-std-hz-v1", dest="bg_std_hz_v1", type=float, help="V1 通道背景噪声标准差 (Hz)；未指定则用 --bg-std-hz")
-    parser.add_argument("--bg-std-hz-h2", dest="bg_std_hz_h2", type=float, help="H2 通道背景噪声标准差 (Hz)；未指定则用 --bg-std-hz")
-    parser.add_argument("--bg-std-hz-v2", dest="bg_std_hz_v2", type=float, help="V2 通道背景噪声标准差 (Hz)；未指定则用 --bg-std-hz")
+    for channel in ("h1", "v1", "h2", "v2"):
+        channel_tag = channel.upper()
+        parser.add_argument(
+            f"--dark-hz-{channel}",
+            dest=f"dark_hz_{channel}",
+            type=float,
+            help=f"{channel_tag} 通道本底暗计数率 (Hz)；未指定则用 --dark-hz",
+        )
+        for opt_prefix, dest_prefix, label in (
+            ("bg-mean-hz", "bg_mean_hz", "背景噪声均值"),
+            ("bg-std-hz", "bg_std_hz", "背景噪声标准差"),
+        ):
+            parser.add_argument(
+                f"--{opt_prefix}-{channel}",
+                dest=f"{dest_prefix}_{channel}",
+                type=float,
+                help=f"{channel_tag} 通道{label} (Hz)；未指定则用 --{opt_prefix}",
+            )
     parser.add_argument("--detector-gate-ns", dest="detector_gate_ns", type=float, help="探测门宽 (ns)，用于将噪声概率从门宽映射到仿真 bin")
     parser.add_argument("--omega-peak-a", dest="omega_peak_a", type=float, help="A 臂驱动脉冲峰值 Ω_peak_A (rad/s)")
     parser.add_argument("--omega-peak-b", dest="omega_peak_b", type=float, help="B 臂驱动脉冲峰值 Ω_peak_B (rad/s)")
     parser.add_argument("--drive-waveform-a", dest="drive_waveform_a", choices=["gaussian", "sech", "square"], help="A 臂驱动包络类型")
     parser.add_argument("--drive-waveform-b", dest="drive_waveform_b", choices=["gaussian", "sech", "square"], help="B 臂驱动包络类型")
-    parser.add_argument("--g-a", dest="g_a", type=float, help="A 臂原子-腔耦合强度 g_A (rad/s)")
-    parser.add_argument("--g-b", dest="g_b", type=float, help="B 臂原子-腔耦合强度 g_B (rad/s)")
-    parser.add_argument("--kappa-ex-a", dest="kappa_ex_a", type=float, help="A 臂腔外耦合衰减率 kappa_ex_A (rad/s)")
-    parser.add_argument("--kappa-ex-b", dest="kappa_ex_b", type=float, help="B 臂腔外耦合衰减率 kappa_ex_B (rad/s)")
-    parser.add_argument("--kappa-in-a", dest="kappa_in_a", type=float, help="A 臂腔内损耗衰减率 kappa_in_A (rad/s)")
-    parser.add_argument("--kappa-in-b", dest="kappa_in_b", type=float, help="B 臂腔内损耗衰减率 kappa_in_B (rad/s)")
-    parser.add_argument("--kappa-ex-h-a", dest="kappa_ex_h_a", type=float, help="A 臂 H 偏振外耦合衰减率 kappa_ex_H_A (rad/s)")
-    parser.add_argument("--kappa-ex-v-a", dest="kappa_ex_v_a", type=float, help="A 臂 V 偏振外耦合衰减率 kappa_ex_V_A (rad/s)")
-    parser.add_argument("--kappa-in-h-a", dest="kappa_in_h_a", type=float, help="A 臂 H 偏振内损耗衰减率 kappa_in_H_A (rad/s)")
-    parser.add_argument("--kappa-in-v-a", dest="kappa_in_v_a", type=float, help="A 臂 V 偏振内损耗衰减率 kappa_in_V_A (rad/s)")
-    parser.add_argument("--kappa-ex-h-b", dest="kappa_ex_h_b", type=float, help="B 臂 H 偏振外耦合衰减率 kappa_ex_H_B (rad/s)")
-    parser.add_argument("--kappa-ex-v-b", dest="kappa_ex_v_b", type=float, help="B 臂 V 偏振外耦合衰减率 kappa_ex_V_B (rad/s)")
-    parser.add_argument("--kappa-in-h-b", dest="kappa_in_h_b", type=float, help="B 臂 H 偏振内损耗衰减率 kappa_in_H_B (rad/s)")
-    parser.add_argument("--kappa-in-v-b", dest="kappa_in_v_b", type=float, help="B 臂 V 偏振内损耗衰减率 kappa_in_V_B (rad/s)")
-    parser.add_argument("--delta-u-a", dest="delta_u_a", type=float, help="A 臂 |u> 态失谐 delta_u_A (rad/s)")
-    parser.add_argument("--delta-u-b", dest="delta_u_b", type=float, help="B 臂 |u> 态失谐 delta_u_B (rad/s)")
-    parser.add_argument("--delta-e-a", dest="delta_e_a", type=float, help="A 臂 |e> 态失谐 delta_e_A (rad/s)")
-    parser.add_argument("--delta-e-b", dest="delta_e_b", type=float, help="B 臂 |e> 态失谐 delta_e_B (rad/s)")
-    parser.add_argument("--gamma-sigma-plus-a", dest="gamma_sigma_plus_a", type=float, help="A 臂 |e>->|0> 自发辐射率 gamma_sigma_plus_A (1/s)")
-    parser.add_argument("--gamma-sigma-minus-a", dest="gamma_sigma_minus_a", type=float, help="A 臂 |e>->|1> 自发辐射率 gamma_sigma_minus_A (1/s)")
-    parser.add_argument("--gamma-sigma-plus-b", dest="gamma_sigma_plus_b", type=float, help="B 臂 |e>->|0> 自发辐射率 gamma_sigma_plus_B (1/s)")
-    parser.add_argument("--gamma-sigma-minus-b", dest="gamma_sigma_minus_b", type=float, help="B 臂 |e>->|1> 自发辐射率 gamma_sigma_minus_B (1/s)")
-    parser.add_argument("--delta-c-h-a", dest="delta_c_h_a", type=float, help="A 臂 H 腔模失谐 delta_c_H_A (rad/s)")
-    parser.add_argument("--delta-c-v-a", dest="delta_c_v_a", type=float, help="A 臂 V 腔模失谐 delta_c_V_A (rad/s)")
-    parser.add_argument("--delta-c-h-b", dest="delta_c_h_b", type=float, help="B 臂 H 腔模失谐 delta_c_H_B (rad/s)")
-    parser.add_argument("--delta-c-v-b", dest="delta_c_v_b", type=float, help="B 臂 V 腔模失谐 delta_c_V_B (rad/s)")
+    for option, dest, help_text in (
+        ("--g-a", "g_a", "A 臂原子-腔耦合强度 g_A (rad/s)"),
+        ("--g-b", "g_b", "B 臂原子-腔耦合强度 g_B (rad/s)"),
+        ("--kappa-ex-a", "kappa_ex_a", "A 臂腔外耦合衰减率 kappa_ex_A (rad/s)"),
+        ("--kappa-ex-b", "kappa_ex_b", "B 臂腔外耦合衰减率 kappa_ex_B (rad/s)"),
+        ("--kappa-in-a", "kappa_in_a", "A 臂腔内损耗衰减率 kappa_in_A (rad/s)"),
+        ("--kappa-in-b", "kappa_in_b", "B 臂腔内损耗衰减率 kappa_in_B (rad/s)"),
+        ("--kappa-ex-h-a", "kappa_ex_h_a", "A 臂 H 偏振外耦合衰减率 kappa_ex_H_A (rad/s)"),
+        ("--kappa-ex-v-a", "kappa_ex_v_a", "A 臂 V 偏振外耦合衰减率 kappa_ex_V_A (rad/s)"),
+        ("--kappa-in-h-a", "kappa_in_h_a", "A 臂 H 偏振内损耗衰减率 kappa_in_H_A (rad/s)"),
+        ("--kappa-in-v-a", "kappa_in_v_a", "A 臂 V 偏振内损耗衰减率 kappa_in_V_A (rad/s)"),
+        ("--kappa-ex-h-b", "kappa_ex_h_b", "B 臂 H 偏振外耦合衰减率 kappa_ex_H_B (rad/s)"),
+        ("--kappa-ex-v-b", "kappa_ex_v_b", "B 臂 V 偏振外耦合衰减率 kappa_ex_V_B (rad/s)"),
+        ("--kappa-in-h-b", "kappa_in_h_b", "B 臂 H 偏振内损耗衰减率 kappa_in_H_B (rad/s)"),
+        ("--kappa-in-v-b", "kappa_in_v_b", "B 臂 V 偏振内损耗衰减率 kappa_in_V_B (rad/s)"),
+        ("--delta-u-a", "delta_u_a", "A 臂 |u> 态失谐 delta_u_A (rad/s)"),
+        ("--delta-u-b", "delta_u_b", "B 臂 |u> 态失谐 delta_u_B (rad/s)"),
+        ("--delta-e-a", "delta_e_a", "A 臂 |e> 态失谐 delta_e_A (rad/s)"),
+        ("--delta-e-b", "delta_e_b", "B 臂 |e> 态失谐 delta_e_B (rad/s)"),
+        ("--gamma-sigma-plus-a", "gamma_sigma_plus_a", "A 臂 |e>->|0> 自发辐射率 gamma_sigma_plus_A (1/s)"),
+        ("--gamma-sigma-minus-a", "gamma_sigma_minus_a", "A 臂 |e>->|1> 自发辐射率 gamma_sigma_minus_A (1/s)"),
+        ("--gamma-sigma-plus-b", "gamma_sigma_plus_b", "B 臂 |e>->|0> 自发辐射率 gamma_sigma_plus_B (1/s)"),
+        ("--gamma-sigma-minus-b", "gamma_sigma_minus_b", "B 臂 |e>->|1> 自发辐射率 gamma_sigma_minus_B (1/s)"),
+        ("--delta-c-h-a", "delta_c_h_a", "A 臂 H 腔模失谐 delta_c_H_A (rad/s)"),
+        ("--delta-c-v-a", "delta_c_v_a", "A 臂 V 腔模失谐 delta_c_V_A (rad/s)"),
+        ("--delta-c-h-b", "delta_c_h_b", "B 臂 H 腔模失谐 delta_c_H_B (rad/s)"),
+        ("--delta-c-v-b", "delta_c_v_b", "B 臂 V 腔模失谐 delta_c_V_B (rad/s)"),
+    ):
+        parser.add_argument(option, dest=dest, type=float, help=help_text)
     parser.add_argument("--qfc-theta-h", dest="qfc_theta_h", type=float, help="QFC H转换角 theta_H (rad)")
     parser.add_argument("--qfc-theta-v", dest="qfc_theta_v", type=float, help="QFC V转换角 theta_V (rad)")
     parser.add_argument("--qfc-phi-h", dest="qfc_phi_h", type=float, help="QFC H通道相位 phi_H (rad)")
@@ -235,16 +277,30 @@ def _parse_run_params(argv):
     parser.add_argument("--plot-all", dest="plot_all", action="store_true", help="所有 run 都绘图（默认仅保留一个）")
     parser.add_argument("--no-plot", dest="no_plot", action="store_true", help="完全禁止绘图（覆盖 plot-all）")
     parser.add_argument("--eta-det", dest="eta_det", type=float, help="探测效率 η (0~1)")
-    parser.add_argument("--eta-det-h1", dest="eta_det_h1", type=float, help="H1 通道探测效率 η (0~1)；未指定则用 --eta-det")
-    parser.add_argument("--eta-det-v1", dest="eta_det_v1", type=float, help="V1 通道探测效率 η (0~1)；未指定则用 --eta-det")
-    parser.add_argument("--eta-det-h2", dest="eta_det_h2", type=float, help="H2 通道探测效率 η (0~1)；未指定则用 --eta-det")
-    parser.add_argument("--eta-det-v2", dest="eta_det_v2", type=float, help="V2 通道探测效率 η (0~1)；未指定则用 --eta-det")
+    for channel in ("h1", "v1", "h2", "v2"):
+        parser.add_argument(
+            f"--eta-det-{channel}",
+            dest=f"eta_det_{channel}",
+            type=float,
+            help=f"{channel.upper()} 通道探测效率 η (0~1)；未指定则用 --eta-det",
+        )
     parser.add_argument("--ideal-det", dest="ideal_det", action="store_true", help="理想探测（eta_det=1, 无噪声）")
     parser.add_argument("--bs-theta", dest="bs_theta", type=float, help="中心站 BS 混合角 theta (rad)，sin^2(theta) 为跨端口透射概率")
     parser.add_argument("--v-res", dest="v_res", type=float, help="残差可区分度 V_res (0~1)")
     parser.add_argument("--debug", dest="debug", action="store_true", help="开启调试模式（输出耗时等）")
     parser.add_argument("--self-check", dest="self_check", action="store_true", help="仅运行探测端自检并退出")
     args = parser.parse_args(argv[1:])
+    has_server_capability = args.role in ("server", "both")
+    has_worker_capability = args.role in ("worker", "both")
+    explicit_cli_dests = set()
+    option_actions = parser._option_string_actions
+    for token in argv[1:]:
+        if not token.startswith("--"):
+            continue
+        option = token.split("=", 1)[0]
+        action = option_actions.get(option)
+        if action is not None:
+            explicit_cli_dests.add(action.dest)
 
     # run-id 仅用于目录命名，因此要严格限制为“非路径字符串”
     run_id = args.run_id.strip() if args.run_id else None
@@ -253,16 +309,83 @@ def _parse_run_params(argv):
             parser.error("run-id 不能包含路径分隔符")
         if run_id in (".", ".."):
             parser.error("run-id 不能为 . 或 ..")
+    if not has_server_capability:
+        invalid = sorted(dst for dst in explicit_cli_dests if dst in SERVER_CAPABILITY_CLI_DESTS)
+        if invalid:
+            parser.error(
+                "当前 role 不具备 server 能力，不能使用: "
+                + ", ".join(invalid)
+                + "（server/both 可用）"
+            )
+    if bool(args.rebuild_run) and run_id is None:
+        parser.error("--rebuild-run 需要与 --run-id 一起使用")
 
     # 构造默认配置，然后用 CLI 覆盖。注意：SimConfig 是“可序列化的仿真输入快照”。
     config = SimConfig()
 
-    if args.dark_rate_intrinsic_hz is not None:
-        config.noise.dark_rate_intrinsic_hz = args.dark_rate_intrinsic_hz
-    if args.bg_rate_mean_hz is not None:
-        config.noise.bg_rate_mean_hz = args.bg_rate_mean_hz
-    if args.bg_rate_std_hz is not None:
-        config.noise.bg_rate_std_hz = args.bg_rate_std_hz
+    def _set_arg_if_present(arg_name: str, target, attr_name: str, cast=None) -> None:
+        raw = getattr(args, arg_name)
+        if raw is None:
+            return
+        setattr(target, attr_name, cast(raw) if cast is not None else raw)
+
+    for arg_name, target, attr_name, cast in (
+        ("dark_rate_intrinsic_hz", config.noise, "dark_rate_intrinsic_hz", float),
+        ("bg_rate_mean_hz", config.noise, "bg_rate_mean_hz", float),
+        ("bg_rate_std_hz", config.noise, "bg_rate_std_hz", float),
+        ("detector_gate_ns", config.noise, "detector_gate_ns", float),
+        ("omega_peak_a", config.emission.arm_A, "omega_peak", float),
+        ("omega_peak_b", config.emission.arm_B, "omega_peak", float),
+        ("drive_waveform_a", config.emission, "drive_waveform_A", lambda value: str(value).strip().lower()),
+        ("drive_waveform_b", config.emission, "drive_waveform_B", lambda value: str(value).strip().lower()),
+        ("g_a", config.emission.arm_A, "g", float),
+        ("g_b", config.emission.arm_B, "g", float),
+        ("kappa_ex_a", config.emission.arm_A, "kappa_ex", float),
+        ("kappa_ex_b", config.emission.arm_B, "kappa_ex", float),
+        ("kappa_in_a", config.emission.arm_A, "kappa_in", float),
+        ("kappa_in_b", config.emission.arm_B, "kappa_in", float),
+        ("kappa_ex_h_a", config.emission.arm_A, "kappa_ex_H", float),
+        ("kappa_ex_v_a", config.emission.arm_A, "kappa_ex_V", float),
+        ("kappa_in_h_a", config.emission.arm_A, "kappa_in_H", float),
+        ("kappa_in_v_a", config.emission.arm_A, "kappa_in_V", float),
+        ("kappa_ex_h_b", config.emission.arm_B, "kappa_ex_H", float),
+        ("kappa_ex_v_b", config.emission.arm_B, "kappa_ex_V", float),
+        ("kappa_in_h_b", config.emission.arm_B, "kappa_in_H", float),
+        ("kappa_in_v_b", config.emission.arm_B, "kappa_in_V", float),
+        ("delta_u_a", config.emission.arm_A, "delta_u", float),
+        ("delta_u_b", config.emission.arm_B, "delta_u", float),
+        ("delta_e_a", config.emission.arm_A, "delta_e", float),
+        ("delta_e_b", config.emission.arm_B, "delta_e", float),
+        ("gamma_sigma_plus_a", config.emission.arm_A, "gamma_sigma_plus", float),
+        ("gamma_sigma_minus_a", config.emission.arm_A, "gamma_sigma_minus", float),
+        ("gamma_sigma_plus_b", config.emission.arm_B, "gamma_sigma_plus", float),
+        ("gamma_sigma_minus_b", config.emission.arm_B, "gamma_sigma_minus", float),
+        ("delta_c_h_a", config.emission.arm_A, "delta_c_H", float),
+        ("delta_c_v_a", config.emission.arm_A, "delta_c_V", float),
+        ("delta_c_h_b", config.emission.arm_B, "delta_c_H", float),
+        ("delta_c_v_b", config.emission.arm_B, "delta_c_V", float),
+        ("alpha_h_plus_a", config.emission.arm_A, "alpha_h_plus", float),
+        ("alpha_h_minus_a", config.emission.arm_A, "alpha_h_minus", float),
+        ("alpha_v_plus_a", config.emission.arm_A, "alpha_v_plus", float),
+        ("alpha_v_minus_a", config.emission.arm_A, "alpha_v_minus", float),
+        ("alpha_h_plus_b", config.emission.arm_B, "alpha_h_plus", float),
+        ("alpha_h_minus_b", config.emission.arm_B, "alpha_h_minus", float),
+        ("alpha_v_plus_b", config.emission.arm_B, "alpha_v_plus", float),
+        ("alpha_v_minus_b", config.emission.arm_B, "alpha_v_minus", float),
+        ("qfc_theta_h", config.qfc, "theta_H", float),
+        ("qfc_theta_v", config.qfc, "theta_V", float),
+        ("qfc_phi_h", config.qfc, "phi_H", float),
+        ("qfc_phi_v", config.qfc, "phi_V", float),
+        ("filter_cavity_fwhm_mhz", config.qfc.filter_cavity, "fwhm_mhz", float),
+        ("filter_cavity_detuning_mhz_a", config.qfc.filter_cavity, "detuning_mhz_A", float),
+        ("filter_cavity_detuning_mhz_b", config.qfc.filter_cavity, "detuning_mhz_B", float),
+        ("filter_cavity_eta_peak_a", config.qfc.filter_cavity, "eta_peak_A", float),
+        ("filter_cavity_eta_peak_b", config.qfc.filter_cavity, "eta_peak_B", float),
+        ("qfc_noise_sd_cps_per_mhz_a", config.qfc, "qfc_noise_sd_cps_per_mhz_A", float),
+        ("qfc_noise_sd_cps_per_mhz_b", config.qfc, "qfc_noise_sd_cps_per_mhz_B", float),
+    ):
+        _set_arg_if_present(arg_name, target, attr_name, cast)
+
     for detector in ("h1", "v1", "h2", "v2"):
         dark_value = getattr(args, f"dark_hz_{detector}", None)
         if dark_value is not None:
@@ -273,115 +396,16 @@ def _parse_run_params(argv):
         bg_std_value = getattr(args, f"bg_std_hz_{detector}", None)
         if bg_std_value is not None:
             config.noise.bg_rate_std_hz_map[detector.upper()] = float(bg_std_value)
-    if args.detector_gate_ns is not None:
-        config.noise.detector_gate_ns = float(args.detector_gate_ns)
-    if args.omega_peak_a is not None:
-        config.emission.arm_A.omega_peak = float(args.omega_peak_a)
-    if args.omega_peak_b is not None:
-        config.emission.arm_B.omega_peak = float(args.omega_peak_b)
-    if args.drive_waveform_a is not None:
-        config.emission.drive_waveform_A = str(args.drive_waveform_a).strip().lower()
-    if args.drive_waveform_b is not None:
-        config.emission.drive_waveform_B = str(args.drive_waveform_b).strip().lower()
-    if args.g_a is not None:
-        config.emission.arm_A.g = float(args.g_a)
-    if args.g_b is not None:
-        config.emission.arm_B.g = float(args.g_b)
-    if args.kappa_ex_a is not None:
-        config.emission.arm_A.kappa_ex = float(args.kappa_ex_a)
-    if args.kappa_ex_b is not None:
-        config.emission.arm_B.kappa_ex = float(args.kappa_ex_b)
-    if args.kappa_in_a is not None:
-        config.emission.arm_A.kappa_in = float(args.kappa_in_a)
-    if args.kappa_in_b is not None:
-        config.emission.arm_B.kappa_in = float(args.kappa_in_b)
-    if args.kappa_ex_h_a is not None:
-        config.emission.arm_A.kappa_ex_H = float(args.kappa_ex_h_a)
-    if args.kappa_ex_v_a is not None:
-        config.emission.arm_A.kappa_ex_V = float(args.kappa_ex_v_a)
-    if args.kappa_in_h_a is not None:
-        config.emission.arm_A.kappa_in_H = float(args.kappa_in_h_a)
-    if args.kappa_in_v_a is not None:
-        config.emission.arm_A.kappa_in_V = float(args.kappa_in_v_a)
-    if args.kappa_ex_h_b is not None:
-        config.emission.arm_B.kappa_ex_H = float(args.kappa_ex_h_b)
-    if args.kappa_ex_v_b is not None:
-        config.emission.arm_B.kappa_ex_V = float(args.kappa_ex_v_b)
-    if args.kappa_in_h_b is not None:
-        config.emission.arm_B.kappa_in_H = float(args.kappa_in_h_b)
-    if args.kappa_in_v_b is not None:
-        config.emission.arm_B.kappa_in_V = float(args.kappa_in_v_b)
-    if args.delta_u_a is not None:
-        config.emission.arm_A.delta_u = float(args.delta_u_a)
-    if args.delta_u_b is not None:
-        config.emission.arm_B.delta_u = float(args.delta_u_b)
-    if args.delta_e_a is not None:
-        config.emission.arm_A.delta_e = float(args.delta_e_a)
-    if args.delta_e_b is not None:
-        config.emission.arm_B.delta_e = float(args.delta_e_b)
-    if args.gamma_sigma_plus_a is not None:
-        config.emission.arm_A.gamma_sigma_plus = float(args.gamma_sigma_plus_a)
-    if args.gamma_sigma_minus_a is not None:
-        config.emission.arm_A.gamma_sigma_minus = float(args.gamma_sigma_minus_a)
-    if args.gamma_sigma_plus_b is not None:
-        config.emission.arm_B.gamma_sigma_plus = float(args.gamma_sigma_plus_b)
-    if args.gamma_sigma_minus_b is not None:
-        config.emission.arm_B.gamma_sigma_minus = float(args.gamma_sigma_minus_b)
-    if args.delta_c_h_a is not None:
-        config.emission.arm_A.delta_c_H = float(args.delta_c_h_a)
-    if args.delta_c_v_a is not None:
-        config.emission.arm_A.delta_c_V = float(args.delta_c_v_a)
-    if args.delta_c_h_b is not None:
-        config.emission.arm_B.delta_c_H = float(args.delta_c_h_b)
-    if args.delta_c_v_b is not None:
-        config.emission.arm_B.delta_c_V = float(args.delta_c_v_b)
-    if args.alpha_h_plus_a is not None:
-        config.emission.arm_A.alpha_h_plus = float(args.alpha_h_plus_a)
-    if args.alpha_h_minus_a is not None:
-        config.emission.arm_A.alpha_h_minus = float(args.alpha_h_minus_a)
-    if args.alpha_v_plus_a is not None:
-        config.emission.arm_A.alpha_v_plus = float(args.alpha_v_plus_a)
-    if args.alpha_v_minus_a is not None:
-        config.emission.arm_A.alpha_v_minus = float(args.alpha_v_minus_a)
-    if args.alpha_h_plus_b is not None:
-        config.emission.arm_B.alpha_h_plus = float(args.alpha_h_plus_b)
-    if args.alpha_h_minus_b is not None:
-        config.emission.arm_B.alpha_h_minus = float(args.alpha_h_minus_b)
-    if args.alpha_v_plus_b is not None:
-        config.emission.arm_B.alpha_v_plus = float(args.alpha_v_plus_b)
-    if args.alpha_v_minus_b is not None:
-        config.emission.arm_B.alpha_v_minus = float(args.alpha_v_minus_b)
-    if args.qfc_theta_h is not None:
-        config.qfc.theta_H = float(args.qfc_theta_h)
-    if args.qfc_theta_v is not None:
-        config.qfc.theta_V = float(args.qfc_theta_v)
-    if args.qfc_phi_h is not None:
-        config.qfc.phi_H = float(args.qfc_phi_h)
-    if args.qfc_phi_v is not None:
-        config.qfc.phi_V = float(args.qfc_phi_v)
-    if args.filter_cavity_fwhm_mhz is not None:
-        config.qfc.filter_cavity.fwhm_mhz = float(args.filter_cavity_fwhm_mhz)
-    if args.filter_cavity_detuning_mhz_a is not None:
-        config.qfc.filter_cavity.detuning_mhz_A = float(args.filter_cavity_detuning_mhz_a)
-    if args.filter_cavity_detuning_mhz_b is not None:
-        config.qfc.filter_cavity.detuning_mhz_B = float(args.filter_cavity_detuning_mhz_b)
-    if args.filter_cavity_eta_peak_a is not None:
-        config.qfc.filter_cavity.eta_peak_A = float(args.filter_cavity_eta_peak_a)
-    if args.filter_cavity_eta_peak_b is not None:
-        config.qfc.filter_cavity.eta_peak_B = float(args.filter_cavity_eta_peak_b)
-    if args.qfc_noise_sd_cps_per_mhz_a is not None:
-        config.qfc.qfc_noise_sd_cps_per_mhz_A = float(args.qfc_noise_sd_cps_per_mhz_a)
-    if args.qfc_noise_sd_cps_per_mhz_b is not None:
-        config.qfc.qfc_noise_sd_cps_per_mhz_B = float(args.qfc_noise_sd_cps_per_mhz_b)
     if args.no_filter_cavity:
         config.qfc.filter_cavity.enabled = False
 
     # runs/shots/cores 是“任务粒度 + 并发预算”的核心参数
-    config.run.runs = args.n_runs if args.n_runs is not None else config.run.runs
-    config.run.shots_per_run = (
-        args.shots_per_run if args.shots_per_run is not None else config.run.shots_per_run
-    )
-    config.run.cores = args.cores if args.cores is not None else config.run.cores
+    for arg_name, attr_name in (
+        ("n_runs", "runs"),
+        ("shots_per_run", "shots_per_run"),
+        ("cores", "cores"),
+    ):
+        _set_arg_if_present(arg_name, config.run, attr_name, int)
     # mode 与 task_type 的一致性约束：
     #   - mode 代表“当前命令意图”，task_type 代表“写入任务的类型”
     #   - 若两者同时给出，必须完全一致，否则会造成任务与执行逻辑错配
@@ -390,50 +414,50 @@ def _parse_run_params(argv):
     if args.task_type is not None and args.mode is not None and task_type != mode:
         parser.error("task-type 与 mode 冲突，请保持一致")
     config.mode = task_type
+    task_scan_attr_groups = {
+        "WINDOW_SCAN": (
+            "window_sweep_start_ns",
+            "window_sweep_end_ns",
+            "window_sweep_step_ns",
+        ),
+        "BSM_SCAN": (
+            "bs_sweep_start_theta",
+            "bs_sweep_end_theta",
+            "bs_sweep_step_theta",
+        ),
+        "LENGTH_SCAN": (
+            "length_sweep_start_km",
+            "length_sweep_end_km",
+            "length_sweep_step_km",
+        ),
+    }
+    for attr_name in task_scan_attr_groups.get(task_type, ()):
+        setattr(config.run, attr_name, getattr(args, attr_name))
+
     if task_type == "WINDOW_SCAN":
-        config.run.window_sweep_start_ns = args.window_sweep_start_ns
-        config.run.window_sweep_end_ns = args.window_sweep_end_ns
-        config.run.window_sweep_step_ns = args.window_sweep_step_ns
-    if task_type == "BSM_SCAN":
-        config.run.bs_sweep_start_theta = args.bs_sweep_start_theta
-        config.run.bs_sweep_end_theta = args.bs_sweep_end_theta
-        config.run.bs_sweep_step_theta = args.bs_sweep_step_theta
+        pass
     if task_type == "LENGTH_SCAN":
-        config.run.length_sweep_start_km = args.length_sweep_start_km
-        config.run.length_sweep_end_km = args.length_sweep_end_km
-        config.run.length_sweep_step_km = args.length_sweep_step_km
-        if args.attempt_rate_hz is not None:
-            config.run.attempt_rate_hz = float(args.attempt_rate_hz)
-        if args.attempt_overhead_us is not None:
-            config.run.attempt_overhead_us = float(args.attempt_overhead_us)
+        _set_arg_if_present("attempt_rate_hz", config.run, "attempt_rate_hz", float)
+        _set_arg_if_present("attempt_overhead_us", config.run, "attempt_overhead_us", float)
+
     # 光纤噪声开关（注意：这会影响到统计与物理可解释性）
     config.fiber.noise_enabled = not args.no_fiber_noise
-    if args.fiber_length_km is not None:
-        config.fiber.length_km = float(args.fiber_length_km)
-    if args.fiber_atten_db_per_km is not None:
-        config.fiber.attenuation_db_per_km = float(args.fiber_atten_db_per_km)
-    if args.fiber_eta_std is not None:
-        config.fiber.eta_std = float(args.fiber_eta_std)
-    if args.fiber_pdl_sigma is not None:
-        config.fiber.pdl_sigma = float(args.fiber_pdl_sigma)
-    if args.fiber_phase_drift_std is not None:
-        config.fiber.phase_drift_std = float(args.fiber_phase_drift_std)
-    if args.fiber_phase_slope_std is not None:
-        config.fiber.phase_slope_std = float(args.fiber_phase_slope_std)
-    if args.fiber_phase_jitter_std is not None:
-        config.fiber.phase_jitter_std = float(args.fiber_phase_jitter_std)
-    if args.fiber_polarization_model is not None:
-        config.fiber.polarization_model = str(args.fiber_polarization_model)
-    if args.fiber_polarization_sigma is not None:
-        config.fiber.polarization_sigma = float(args.fiber_polarization_sigma)
-    if args.fiber_group_velocity_mps is not None:
-        config.run.fiber_group_velocity_mps = float(args.fiber_group_velocity_mps)
-    if args.t_wait_overhead_us is not None:
-        config.run.t_wait_overhead_us = float(args.t_wait_overhead_us)
-    if args.t_wait_length_scale is not None:
-        config.run.t_wait_length_scale = float(args.t_wait_length_scale)
-    if args.t2_us is not None:
-        config.run.t2_us = float(args.t2_us)
+    for arg_name, target, attr_name, cast in (
+        ("fiber_length_km", config.fiber, "length_km", float),
+        ("fiber_atten_db_per_km", config.fiber, "attenuation_db_per_km", float),
+        ("fiber_eta_std", config.fiber, "eta_std", float),
+        ("fiber_pdl_sigma", config.fiber, "pdl_sigma", float),
+        ("fiber_phase_drift_std", config.fiber, "phase_drift_std", float),
+        ("fiber_phase_slope_std", config.fiber, "phase_slope_std", float),
+        ("fiber_phase_jitter_std", config.fiber, "phase_jitter_std", float),
+        ("fiber_polarization_model", config.fiber, "polarization_model", str),
+        ("fiber_polarization_sigma", config.fiber, "polarization_sigma", float),
+        ("fiber_group_velocity_mps", config.run, "fiber_group_velocity_mps", float),
+        ("t_wait_overhead_us", config.run, "t_wait_overhead_us", float),
+        ("t_wait_length_scale", config.run, "t_wait_length_scale", float),
+        ("t2_us", config.run, "t2_us", float),
+    ):
+        _set_arg_if_present(arg_name, target, attr_name, cast)
 
     if config.run.runs < 1:
         parser.error("N_runs 必须 >= 1")
@@ -499,8 +523,7 @@ def _parse_run_params(argv):
         parser.error("enum-mode 仅支持 dark / no-dark / both")
 
     # 探测效率与理想探测的互斥/覆盖逻辑
-    if args.eta_det is not None:
-        config.detector.eta_det = float(args.eta_det)
+    _set_arg_if_present("eta_det", config.detector, "eta_det", float)
     for detector in ("h1", "v1", "h2", "v2"):
         eta_value = getattr(args, f"eta_det_{detector}", None)
         if eta_value is not None:
@@ -508,10 +531,8 @@ def _parse_run_params(argv):
     config.detector.ideal_det = bool(args.ideal_det)
     if config.detector.ideal_det:
         config.detector.eta_det = 1.0
-    if args.bs_theta is not None:
-        config.detector.bs_theta = float(args.bs_theta)
-    if args.v_res is not None:
-        config.detector.v_res = float(args.v_res)
+    _set_arg_if_present("bs_theta", config.detector, "bs_theta", float)
+    _set_arg_if_present("v_res", config.detector, "v_res", float)
     if not (0.0 < config.detector.eta_det <= 1.0):
         parser.error("eta_det 必须在 (0, 1] 内")
     if not (0.0 <= config.detector.v_res <= 1.0):
@@ -540,80 +561,39 @@ def _parse_run_params(argv):
         if args.window_ns is not None:
             config.run.window_ns = float(args.window_ns)
 
-    if task_type == "WINDOW_SCAN":
+    scan_validators = {
+        "WINDOW_SCAN": window_scan.validate_window_scan_config,
+        "BSM_SCAN": bsm_scan.validate_bsm_scan_config,
+        "LENGTH_SCAN": length_scan.validate_length_scan_config,
+    }
+    validator = scan_validators.get(task_type)
+    if validator is not None:
         try:
-            window_scan.validate_window_scan_config(config)
-        except ValueError as exc:
-            parser.error(str(exc))
-    if task_type == "BSM_SCAN":
-        try:
-            bsm_scan.validate_bsm_scan_config(config)
-        except ValueError as exc:
-            parser.error(str(exc))
-    if task_type == "LENGTH_SCAN":
-        try:
-            length_scan.validate_length_scan_config(config)
+            validator(config)
         except ValueError as exc:
             parser.error(str(exc))
 
     config.run.plot_all = bool(args.plot_all)
     config.run.plot_enabled = not bool(args.no_plot)
     config.run.debug = bool(args.debug)
-    if args.server_progress is None:
-        server_progress = True
-    else:
-        server_progress = bool(args.server_progress)
-    if args.server_progress_quiet_secs is None:
-        progress_quiet_secs = 20.0 if args.role == "both" else 0.0
-    else:
-        progress_quiet_secs = max(0.0, float(args.server_progress_quiet_secs))
-    progress_inline = args.role == "server"
+    server_progress = True if args.server_progress is None else bool(args.server_progress)
+    progress_quiet_secs = (
+        20.0 if (has_server_capability and has_worker_capability) else 0.0
+    ) if args.server_progress_quiet_secs is None else max(0.0, float(args.server_progress_quiet_secs))
+    progress_inline = has_server_capability and not has_worker_capability
     return (
         config,
         args.role,
         args.queue_root,
         run_id,
+        bool(args.rebuild_run),
+        sorted(explicit_cli_dests),
         task_type,
-        args.config_hash,
         server_progress,
         progress_quiet_secs,
         progress_inline,
         bool(args.self_check),
     )
-
-
-def _resolve_config_hash(explicit: Optional[str]) -> str:
-    # 目的：给任务打一个“配置版本号”标签，便于结果可追溯。
-    # 优先级：显式传入 > git HEAD > 简化字符串。
-    if explicit:
-        return explicit
-    git_dir = PROJECT_ROOT / ".git"
-    head_path = git_dir / "HEAD"
-    if not head_path.exists():
-        return "git:unknown"
-    head = head_path.read_text(encoding="utf-8").strip()
-    if head.startswith("ref:"):
-        ref = head.split("ref:", 1)[1].strip()
-        ref_path = git_dir / ref
-        if ref_path.exists():
-            return f"git:{ref_path.read_text(encoding='utf-8').strip()}"
-        packed = git_dir / "packed-refs"
-        if packed.exists():
-            for line in packed.read_text(encoding="utf-8").splitlines():
-                if line.startswith("#") or " " not in line:
-                    continue
-                sha, name = line.split(" ", 1)
-                if name.strip() == ref:
-                    return f"git:{sha.strip()}"
-    return f"git:{head[:12]}"
-
-
-def _resolve_queue_root(path_str: str) -> Path:
-    # 规则：相对路径一律解释为“项目根目录下的 queue 子树”
-    path = Path(path_str)
-    if not path.is_absolute():
-        return (PROJECT_ROOT / path).resolve()
-    return path
 
 
 def _queue_paths(queue_root: Path) -> dict:
@@ -643,16 +623,6 @@ def _ensure_queue_dirs(paths: dict) -> None:
     paths["heartbeat"].mkdir(parents=True, exist_ok=True)
 
 
-def _run_id_sort_key(run_id: str) -> tuple:
-    # 规则：纯数字 run_id 优先排序，其次按前缀数字排序，再按字典序
-    if run_id.isdigit():
-        return (0, int(run_id), run_id)
-    m = re.match(r"(\d+)", run_id)
-    if m:
-        return (0, int(m.group(1)), run_id)
-    return (1, run_id)
-
-
 def _discover_run_roots(base_root: Path) -> list:
     # 扫描所有可能的 run 目录（以 tasks/pending 为识别特征）
     if not base_root.exists():
@@ -664,29 +634,29 @@ def _discover_run_roots(base_root: Path) -> list:
         pending_dir = child / "tasks" / "pending"
         if pending_dir.exists():
             roots.append(child)
-    return sorted(roots, key=lambda p: _run_id_sort_key(p.name))
+    return sorted(
+        roots,
+        key=lambda p: (
+            (0, int(m.group(1)), p.name)
+            if (m := re.match(r"(\d+)", p.name))
+            else (1, p.name)
+        ),
+    )
 
 
-def _is_summary_task_path(path: Path) -> bool:
-    # summary 任务是整个 run 的“最终汇总步骤”
-    return path.name == "task_summary.json"
-
-
-def _is_run_complete(run_root: Path) -> bool:
-    # 完成判定：pending/inprogress 均空 + server_done.flag 存在
-    pending = run_root / "tasks" / "pending"
-    inprogress = run_root / "tasks" / "inprogress"
-    done_flag = run_root / "summary" / "server_done.flag"
-    if not pending.exists() or not inprogress.exists():
-        return False
-    if not done_flag.exists():
-        return False
-    return (not any(pending.glob("task_*.json"))) and (not any(inprogress.glob("task_*.json")))
-
-
-def _is_run_active(run_root: Path, stale_seconds: int = 600) -> bool:
-    # 活跃判定：server heartbeat 或 inprogress 文件近期被 touch
+def _is_run_active(run_root: Path, stale_seconds: int = 120, startup_grace_seconds: int = 20) -> bool:
+    # 活跃判定：
+    #   - 新建 run 的短暂保护窗口（避免并发 server 启动瞬间误归档）
+    #   - server 心跳新鲜
+    #   - 任一 worker 心跳新鲜
+    #   - inprogress 任务近期被 touch
     now = time.time()
+    try:
+        if now - run_root.stat().st_mtime <= startup_grace_seconds:
+            return True
+    except FileNotFoundError:
+        return False
+
     heartbeat = run_root / "summary" / "server_heartbeat.txt"
     if heartbeat.exists():
         try:
@@ -694,6 +664,16 @@ def _is_run_active(run_root: Path, stale_seconds: int = 600) -> bool:
                 return True
         except FileNotFoundError:
             pass
+
+    worker_heartbeat_dir = run_root / "heartbeat"
+    if worker_heartbeat_dir.exists():
+        for hb in worker_heartbeat_dir.glob("worker_*.txt"):
+            try:
+                if now - hb.stat().st_mtime <= stale_seconds:
+                    return True
+            except FileNotFoundError:
+                continue
+
     inprogress_dir = run_root / "tasks" / "inprogress"
     if inprogress_dir.exists():
         for task_path in inprogress_dir.glob("task_*.json"):
@@ -705,17 +685,6 @@ def _is_run_active(run_root: Path, stale_seconds: int = 600) -> bool:
     return False
 
 
-def _pick_output_root(outputs_root: Path, name: str) -> Path:
-    # 归档命名冲突处理：若同名存在，则追加 _1, _2, ...
-    dest = outputs_root / name
-    if not dest.exists():
-        return dest
-    suffix = 1
-    while (outputs_root / f"{name}_{suffix}").exists():
-        suffix += 1
-    return outputs_root / f"{name}_{suffix}"
-
-
 def _archive_run(run_root: Path, outputs_root: Path, unfinished: bool = False) -> Optional[Path]:
     # 将一个 run_root 目录整体移动到 outputs/<timestamp>（未完成则加 _u）
     if not run_root.exists():
@@ -723,7 +692,12 @@ def _archive_run(run_root: Path, outputs_root: Path, unfinished: bool = False) -
     outputs_root.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
     name = f"{stamp}_u" if unfinished else stamp
-    dest = _pick_output_root(outputs_root, name)
+    dest = outputs_root / name
+    if dest.exists():
+        suffix = 1
+        while (outputs_root / f"{name}_{suffix}").exists():
+            suffix += 1
+        dest = outputs_root / f"{name}_{suffix}"
     try:
         shutil.move(str(run_root), str(dest))
     except Exception as exc:
@@ -738,35 +712,30 @@ def _archive_existing_runs(
     base_root: Path,
     outputs_root: Path,
     exclude_run_id: Optional[str] = None,
-    stale_seconds: int = 600,
+    stale_seconds: int = 120,
 ) -> None:
     # 扫描所有 run 根目录：
-    #   - 已完成 -> 直接归档
     #   - 活跃 -> 保留
-    #   - 非活跃 -> 归档为未完成（_u）
+    #   - 非活跃 -> 一律归档为未完成（_u）
     for run_root in _discover_run_roots(base_root):
         if exclude_run_id and run_root.name == exclude_run_id:
-            continue
-        if _is_run_complete(run_root):
-            _archive_run(run_root, outputs_root, unfinished=False)
             continue
         if _is_run_active(run_root, stale_seconds=stale_seconds):
             continue
         _archive_run(run_root, outputs_root, unfinished=True)
 
 
-def _pick_next_run_id(base_root: Path) -> str:
-    # 规则：从 1 开始找最小未使用的纯数字 run_id
-    used = set()
-    for child in base_root.iterdir():
-        if not child.is_dir():
-            continue
-        if child.name.isdigit():
-            used.add(int(child.name))
+def _reserve_next_run_id(base_root: Path) -> str:
+    # 原子分配 run-id：并发 server 同时启动时，确保不会领到同一个 id。
     candidate = 1
-    while candidate in used:
-        candidate += 1
-    return str(candidate)
+    while True:
+        run_id = str(candidate)
+        run_root = base_root / run_id
+        try:
+            run_root.mkdir(parents=False, exist_ok=False)
+            return run_id
+        except FileExistsError:
+            candidate += 1
 
 
 def _write_json_atomic(path: Path, payload: dict) -> None:
@@ -787,19 +756,6 @@ def _to_plain_jsonable(value):
     return value
 
 
-def _resolve_dataclass_type(annotation):
-    if isinstance(annotation, type) and hasattr(annotation, "__dataclass_fields__"):
-        return annotation
-    origin = get_origin(annotation)
-    if origin is Union:
-        for arg in get_args(annotation):
-            if arg is type(None):
-                continue
-            if isinstance(arg, type) and hasattr(arg, "__dataclass_fields__"):
-                return arg
-    return None
-
-
 def _apply_dict_to_dataclass(target, payload: dict) -> None:
     if not isinstance(payload, dict):
         raise ValueError("SCHEMA_ERROR: manifest.config 必须是对象")
@@ -810,7 +766,18 @@ def _apply_dict_to_dataclass(target, payload: dict) -> None:
         incoming = payload[field.name]
         current = getattr(target, field.name)
         annotation = type_hints.get(field.name, field.type)
-        nested_type = _resolve_dataclass_type(annotation)
+        nested_type = None
+        if isinstance(annotation, type) and hasattr(annotation, "__dataclass_fields__"):
+            nested_type = annotation
+        else:
+            origin = get_origin(annotation)
+            if origin is Union:
+                for arg in get_args(annotation):
+                    if arg is type(None):
+                        continue
+                    if isinstance(arg, type) and hasattr(arg, "__dataclass_fields__"):
+                        nested_type = arg
+                        break
 
         if incoming is None:
             setattr(target, field.name, None)
@@ -829,18 +796,12 @@ def _apply_dict_to_dataclass(target, payload: dict) -> None:
         setattr(target, field.name, incoming)
 
 
-def _build_run_manifest(task_type: str, config_hash: str, config: SimConfig, scan: dict) -> dict:
-    return {
+def _write_run_manifest(paths: dict, task_type: str, config: SimConfig) -> None:
+    manifest = {
         "protocol_version": TASK_PROTOCOL_VERSION,
-        "config_hash": config_hash,
         "task_type": task_type,
         "config": _to_plain_jsonable(config),
-        "scan": scan,
     }
-
-
-def _write_run_manifest(paths: dict, task_type: str, config_hash: str, config: SimConfig, scan: dict) -> None:
-    manifest = _build_run_manifest(task_type=task_type, config_hash=config_hash, config=config, scan=scan)
     _write_json_atomic(paths["summary"] / RUN_MANIFEST_FILENAME, manifest)
 
 
@@ -870,11 +831,6 @@ def _apply_manifest_to_config(config: SimConfig, manifest: dict) -> None:
 
 
 def _validate_task_schema(task: dict, manifest: dict) -> None:
-    task_hash = str(task.get("config_hash", "")).strip()
-    manifest_hash = str(manifest.get("config_hash", "")).strip()
-    if task_hash and manifest_hash and task_hash != manifest_hash:
-        raise RuntimeError(f"CONFIG_MISMATCH: task={task_hash} manifest={manifest_hash}")
-
     mode = str(task.get("mode", "")).upper()
     if mode not in {CORE_TASK_MODE, SUMMARY_TASK_MODE}:
         raise ValueError(f"SCHEMA_ERROR: 不支持的 task.mode={mode}")
@@ -907,9 +863,8 @@ def _validate_task_schema(task: dict, manifest: dict) -> None:
 def _build_task_list(
     task_type: str,
     config: SimConfig,
-    config_hash: str,
     pending_dir: Path,
-) -> tuple[int, dict]:
+) -> int:
     # ------------------------------------------------------------------
     # 任务生成规则：
     #   - 所有物理子任务统一为 mode=CORE_TRIAL
@@ -919,136 +874,46 @@ def _build_task_list(
     #
     # 所有任务只写入 pending/task_*.json，执行由 worker 完成。
     # ------------------------------------------------------------------
-    n_runs = config.run.runs
     shots_per_run = config.run.shots_per_run
     task_count = 0
-    scan = {
-        "window_sweep_start_ns": config.run.window_sweep_start_ns,
-        "window_sweep_end_ns": config.run.window_sweep_end_ns,
-        "window_sweep_step_ns": config.run.window_sweep_step_ns,
-        "tau_values_ns": None,
-        "bs_theta_values": None,
-        "length_values_km": None,
-    }
-    if task_type == "HOM":
-        if config.hom is None:
-            raise ValueError("HOM 任务需要 --mode HOM 并提供 tau 参数")
-        tau_values = [float(v) for v in _build_hom_tau_values(config.hom)]
-        scan["tau_values_ns"] = tau_values
-        for tau in tau_values:
-            for run_index in range(n_runs):
-                tid = f"hom_tau_{tau:+.3f}_run_{run_index:06d}"
-                task = {
-                    "id": tid,
-                    "mode": CORE_TASK_MODE,
-                    "experiment": "HOM",
-                    "run_index": run_index,
-                    "shots": shots_per_run,
-                    "seed": 100000 + task_count + 1,
-                    "config_hash": config_hash,
-                    "payload": {
-                        "tau_ns": float(tau),
-                        "window_ns": float(config.hom.window_ns),
-                    },
-                }
-                path = pending_dir / f"task_{tid}.json"
-                if not path.exists():
-                    _write_json_atomic(path, task)
-                task_count += 1
-    elif task_type == "WINDOW_SCAN":
-        for run_index in range(n_runs):
-            tid = f"wscan_run_{run_index:06d}"
-            task = {
-                "id": tid,
-                "mode": CORE_TASK_MODE,
-                "experiment": "WINDOW_SCAN",
-                "run_index": run_index,
-                "shots": shots_per_run,
-                "seed": 100000 + task_count + 1,
-                "config_hash": config_hash,
-                "payload": {},
-            }
-            path = pending_dir / f"task_{tid}.json"
-            if not path.exists():
-                _write_json_atomic(path, task)
-            task_count += 1
-    elif task_type == "BSM_SCAN":
-        bs_values = bsm_scan.build_bsm_scan_values(config)
-        scan["bs_theta_values"] = [float(v) for v in bs_values]
-        for bs_idx, bs_theta in enumerate(bs_values):
-            for run_index in range(n_runs):
-                tid = f"bscan_theta_{bs_idx:04d}_run_{run_index:06d}"
-                task = {
-                    "id": tid,
-                    "mode": CORE_TASK_MODE,
-                    "experiment": "BSM_SCAN",
-                    "run_index": run_index,
-                    "shots": shots_per_run,
-                    "seed": 100000 + task_count + 1,
-                    "config_hash": config_hash,
-                    "payload": {
-                        "bs_theta": float(bs_theta),
-                    },
-                }
-                path = pending_dir / f"task_{tid}.json"
-                if not path.exists():
-                    _write_json_atomic(path, task)
-                task_count += 1
-    elif task_type == "LENGTH_SCAN":
-        length_values = length_scan.build_length_scan_values(config)
-        scan["length_values_km"] = [float(v) for v in length_values]
-        for length_idx, length_km in enumerate(length_values):
-            for run_index in range(n_runs):
-                tid = f"lscan_len_{length_idx:04d}_run_{run_index:06d}"
-                task = {
-                    "id": tid,
-                    "mode": CORE_TASK_MODE,
-                    "experiment": "LENGTH_SCAN",
-                    "run_index": run_index,
-                    "shots": shots_per_run,
-                    "seed": 100000 + task_count + 1,
-                    "config_hash": config_hash,
-                    "payload": {
-                        "length_km": float(length_km),
-                    },
-                }
-                path = pending_dir / f"task_{tid}.json"
-                if not path.exists():
-                    _write_json_atomic(path, task)
-                task_count += 1
-    else:
-        for run_index in range(n_runs):
-            tid = f"sim_run_{run_index:06d}"
-            task = {
-                "id": tid,
-                "mode": CORE_TASK_MODE,
-                "experiment": "SIM",
-                "run_index": run_index,
-                "shots": shots_per_run,
-                "seed": 100000 + task_count + 1,
-                "config_hash": config_hash,
-                "payload": {},
-            }
-            path = pending_dir / f"task_{tid}.json"
-            if not path.exists():
-                _write_json_atomic(path, task)
-            task_count += 1
+
+    def _emit_core_task(task_id: str, experiment: str, run_index: int, payload: Optional[dict] = None) -> None:
+        nonlocal task_count
+        task = {
+            "id": task_id,
+            "mode": CORE_TASK_MODE,
+            "experiment": experiment,
+            "run_index": run_index,
+            "shots": shots_per_run,
+            "seed": 100000 + task_count + 1,
+            "payload": payload or {},
+        }
+        task_path = pending_dir / f"task_{task_id}.json"
+        if not task_path.exists():
+            _write_json_atomic(task_path, task)
+        task_count += 1
+
+    builder = CORE_TASK_BUILDERS.get(task_type)
+    if builder is None:
+        raise ValueError(f"不支持的 task_type: {task_type}")
+    for entry in builder(config):
+        _emit_core_task(
+            task_id=str(entry["id"]),
+            experiment=str(entry["experiment"]),
+            run_index=int(entry["run_index"]),
+            payload=entry.get("payload") or {},
+        )
     summary_task = {
         "id": "summary",
         "mode": SUMMARY_TASK_MODE,
         "experiment": task_type,
         "summary_for": task_type,
-        "config_hash": config_hash,
     }
     summary_path = pending_dir / "task_summary.json"
     if not summary_path.exists():
         _write_json_atomic(summary_path, summary_task)
     task_count += 1
-    return task_count, scan
-
-
-def _write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
-    summary.write_summary(task_type=task_type, paths=paths, config=config)
+    return task_count
 
 
 def _recover_stale_tasks(paths: dict, stale_seconds: int = 600) -> None:
@@ -1067,17 +932,23 @@ def _recover_stale_tasks(paths: dict, stale_seconds: int = 600) -> None:
             continue
 
 
-def _format_duration(seconds: float) -> str:
-    seconds = max(0, int(seconds))
-    hours = seconds // 3600
-    minutes = (seconds % 3600) // 60
-    secs = seconds % 60
-    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+def _requeue_inprogress_to_pending(paths: dict) -> int:
+    moved = 0
+    for task_path in sorted(paths["inprogress"].glob("task_*.json")):
+        pending_path = paths["pending"] / task_path.name
+        try:
+            if pending_path.exists():
+                task_path.unlink()
+            else:
+                task_path.replace(pending_path)
+            moved += 1
+        except FileNotFoundError:
+            continue
+    return moved
 
 
 def _run_server_monitor(
     paths: dict,
-    expected_total: int,
     done_flag_path: Optional[Path] = None,
     show_progress: bool = True,
     quiet_output_path: Optional[Path] = None,
@@ -1090,6 +961,13 @@ def _run_server_monitor(
     #   - 回收 stale inprogress
     #   - 定期打印进度：done / inprogress / pending
     # ------------------------------------------------------------------
+    def _format_duration(seconds: float) -> str:
+        seconds = max(0, int(seconds))
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        secs = seconds % 60
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
     last_report = 0.0
     last_heartbeat = 0.0
     heartbeat_path = paths["summary"] / "server_heartbeat.txt"
@@ -1115,12 +993,9 @@ def _run_server_monitor(
             except FileNotFoundError:
                 quiet_recent = False
         if show_progress and (not quiet_recent) and now - last_report >= 5:
-            # total 以 expected_total 为优先（避免被回收/新增波动）
-            total = (
-                expected_total
-                if expected_total > 0
-                else done_count + len(pending) + len(inprogress) + error_count
-            )
+            # 总量与 ETA 统一使用实时队列总数，
+            # 便于运行中手工删减/新增 pending 任务时进度与 ETA 同步更新。
+            total = done_count + len(pending) + len(inprogress) + error_count
             elapsed = now - start_ts
             eta = "--:--:--"
             if done_count > 0 and total > done_count:
@@ -1136,8 +1011,19 @@ def _run_server_monitor(
             else:
                 print(msg, flush=True)
             last_report = now
-        if done_flag_path is not None and done_flag_path.exists():
-            print()
+        if not pending and not inprogress:
+            if show_progress:
+                if inline:
+                    print()
+                print(
+                    f"[server] 队列已空，结束监控（已完成 {done_count} | 失败 {error_count}）",
+                    flush=True,
+                )
+            if done_flag_path is not None:
+                try:
+                    done_flag_path.write_text("done", encoding="utf-8")
+                except Exception:
+                    pass
             break
         time.sleep(5)
 
@@ -1172,6 +1058,7 @@ def _run_worker_loop(
     last_heartbeat = 0.0
     seen_task = False
     empty_rounds = 0
+
     while True:
         if not auto_pick and paths is None and exit_when_done:
             root_path = Path(queue_root)
@@ -1187,9 +1074,9 @@ def _run_worker_loop(
                 if not pending_all:
                     continue
                 # 优先抢“非 summary”任务；summary 只有在无人执行时才领
-                non_summary_pending = [p for p in pending_all if not _is_summary_task_path(p)]
+                non_summary_pending = [p for p in pending_all if p.name != "task_summary.json"]
                 non_summary_inprogress = [
-                    p for p in run_paths["inprogress"].glob("task_*.json") if not _is_summary_task_path(p)
+                    p for p in run_paths["inprogress"].glob("task_*.json") if p.name != "task_summary.json"
                 ]
                 if non_summary_pending or not non_summary_inprogress:
                     picked = run_paths
@@ -1241,9 +1128,9 @@ def _run_worker_loop(
             backoff_idx = min(backoff_idx + 1, len(backoff) - 1)
             continue
         # pending 优先非 summary；若只剩 summary 且无非 summary 在跑则领
-        non_summary_pending = [p for p in pending_all if not _is_summary_task_path(p)]
+        non_summary_pending = [p for p in pending_all if p.name != "task_summary.json"]
         non_summary_inprogress = [
-            p for p in paths["inprogress"].glob("task_*.json") if not _is_summary_task_path(p)
+            p for p in paths["inprogress"].glob("task_*.json") if p.name != "task_summary.json"
         ]
         if non_summary_pending:
             pending = non_summary_pending
@@ -1305,124 +1192,30 @@ def _run_worker_loop(
             _validate_task_schema(task, manifest)
 
             result_dir = paths["results"] / f"result_{task_id}"
-            plots_dir = result_dir / "plots"
-            raw_dir = result_dir / "raw"
-            plots_dir.mkdir(parents=True, exist_ok=True)
-            raw_dir.mkdir(parents=True, exist_ok=True)
-            if task_mode == SUMMARY_TASK_MODE or _is_summary_task_path(task_path):
+            result_dir.mkdir(parents=True, exist_ok=True)
+            if task_mode == SUMMARY_TASK_MODE:
                 # SUMMARY 任务：集中汇总 CSV
                 summary_for = str(task.get("summary_for", "SIM")).upper()
-                _write_summary(summary_for, paths, config)
-                done_flag = paths["summary"] / "server_done.flag"
-                try:
-                    done_flag.write_text("done", encoding="utf-8")
-                except Exception:
-                    pass
+                summary.write_summary(task_type=summary_for, paths=paths, config=config)
                 metrics = {"summary_for": summary_for}
                 task_experiment = summary_for
-            elif task_mode == CORE_TASK_MODE and task_experiment == "HOM":
-                # HOM 任务：单 τ × run 的统计
-                seed = task.get("seed")
-                seed = int(seed) if seed is not None else None
-                run_index = int(task.get("run_index", 0) or 0)
-                shots = int(task.get("shots", config.run.shots_per_run))
-                payload = task.get("payload", {})
-                tau_ns = float(payload["tau_ns"])
-                default_window = config.hom.window_ns if config.hom is not None else config.run.window_ns
-                window_ns = float(payload.get("window_ns", default_window))
-                coincid, p_arrive, click_records = _run_hom_run(
-                    tau_ns,
-                    shots,
-                    config,
-                    window_ns,
-                    delay_jitter_ns=0.0,
-                    verbose=False,
-                    debug=config.run.debug,
-                    rng_seed=seed,
-                )
-                metrics = {
-                    "run_index": run_index,
-                    "tau_ns": tau_ns,
-                    "window_ns": window_ns,
-                    "shots": shots,
-                    "p_arrive": p_arrive,
-                    "coinc": coincid,
-                }
-                if click_records is not None:
-                    # 每个 shot 的点击记录写入 raw/clicks.json
-                    _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
-            elif task_mode == CORE_TASK_MODE and task_experiment == "WINDOW_SCAN":
-                metrics, click_records = window_scan.run_window_scan_task(
-                    task=task,
-                    config=config,
-                    raw_dir=raw_dir,
-                    plots_dir=plots_dir,
-                    task_id=task_id,
-                )
-                if click_records is not None:
-                    _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
-            elif task_mode == CORE_TASK_MODE and task_experiment == "BSM_SCAN":
-                metrics, click_records = bsm_scan.run_bsm_scan_task(
-                    task=task,
-                    config=config,
-                    raw_dir=raw_dir,
-                    plots_dir=plots_dir,
-                    task_id=task_id,
-                )
-                if click_records is not None:
-                    _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
-            elif task_mode == CORE_TASK_MODE and task_experiment == "LENGTH_SCAN":
-                metrics, click_records = length_scan.run_length_scan_task(
-                    task=task,
-                    config=config,
-                    raw_dir=raw_dir,
-                    plots_dir=plots_dir,
-                    task_id=task_id,
-                )
-                if click_records is not None:
-                    _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
-            elif task_mode == CORE_TASK_MODE and task_experiment == "SIM":
-                # SIM 任务：单 run 的成功统计与点击抽样
-                seed = task.get("seed")
-                seed = int(seed) if seed is not None else None
-                run_index = int(task.get("run_index", 1))
-                run_stats, success_metrics, click_records = single_run._run_single_simulation_core(
-                    output_dir=raw_dir,
-                    run_index=run_index,
-                    config=config,
-                    show_plots=config.run.plot_all,
-                    plot_dir=plots_dir,
-                    run_tag=task_id,
-                    seed=seed,
-                )
-                metrics = {
-                    "shots": run_stats["shots"],
-                    "success": run_stats["success"],
-                    "run_index": run_index,
-                }
-                if success_metrics:
-                    metrics["p_arrive"] = success_metrics.get("p_arrive")
-                    metrics["p_arrive_11"] = success_metrics.get("p_arrive_11")
-                    metrics["p_arrive_same_arm"] = success_metrics.get("p_arrive_same_arm")
-                    metrics["parameter_snapshot"] = success_metrics.get("parameter_snapshot")
-                    metrics["p_success_abs"] = success_metrics.get("p_success_abs")
-                    metrics["p_success_true_abs"] = success_metrics.get("p_success_true_abs")
-                    metrics["p_success_false_abs"] = success_metrics.get("p_success_false_abs")
-                    metrics["p_success_true_given_arrival"] = success_metrics.get("p_success_true_given_arrival")
-                    metrics["fidelity_all"] = success_metrics.get("fidelity_all")
-                    metrics["fidelity_true"] = success_metrics.get("fidelity_true")
-                    metrics["fidelity_false"] = success_metrics.get("fidelity_false")
-                    metrics["false_fraction"] = success_metrics.get("false_fraction")
-                    metrics["corr_exx"] = success_metrics.get("corr_exx")
-                    metrics["corr_eyy"] = success_metrics.get("corr_eyy")
-                    metrics["corr_ezz"] = success_metrics.get("corr_ezz")
-                    metrics["chsh_s_max"] = success_metrics.get("chsh_s_max")
-                    metrics["p_success_signal_approx"] = success_metrics.get("p_success_signal_approx")
-                    metrics["p_success_same_arm_approx"] = success_metrics.get("p_success_same_arm_approx")
-                    metrics["p_success_intrinsic_dark_assisted"] = success_metrics.get(
-                        "p_success_intrinsic_dark_assisted"
+            elif task_mode == CORE_TASK_MODE:
+                plots_dir = result_dir / "plots"
+                raw_dir = result_dir / "raw"
+                plots_dir.mkdir(parents=True, exist_ok=True)
+                raw_dir.mkdir(parents=True, exist_ok=True)
+                runner = CORE_TRIAL_TASK_RUNNERS.get(task_experiment)
+                if runner is None:
+                    raise ValueError(
+                        f"SCHEMA_ERROR: 无法分发 CORE_TRIAL，experiment={task_experiment or '缺失'}"
                     )
-                    metrics["p_success_bg_assisted"] = success_metrics.get("p_success_bg_assisted")
+                metrics, click_records = runner(
+                    task=task,
+                    config=config,
+                    raw_dir=raw_dir,
+                    plots_dir=plots_dir,
+                    task_id=task_id,
+                )
                 if click_records is not None:
                     _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
             else:
@@ -1488,68 +1281,116 @@ def main():
         role,
         queue_root,
         run_id,
+        rebuild_run,
+        explicit_cli_dests,
         task_type,
-        config_hash,
         server_progress,
         progress_quiet_secs,
         progress_inline,
         self_check,
     ) = _parse_run_params(sys.argv)
+    has_server_capability = role in ("server", "both")
+    has_worker_capability = role in ("worker", "both")
+    run_monitor_in_background = has_server_capability and has_worker_capability
     if self_check:
         print("[self-check] 运行探测端一致性检查...")
         run_detection_self_checks(verbose=False)
         print("[self-check] 完成")
         return
-    config_hash = _resolve_config_hash(config_hash)
     task_type = task_type.upper()
     # queue_root 支持相对路径（相对项目根目录）
-    base_root = _resolve_queue_root(queue_root)
+    base_root = Path(queue_root)
+    if not base_root.is_absolute():
+        base_root = (PROJECT_ROOT / base_root).resolve()
     outputs_root = PROJECT_ROOT / "outputs"
-    if role in ("server", "both"):
+    resume_existing_run = False
+    if has_server_capability:
         base_root.mkdir(parents=True, exist_ok=True)
         outputs_root.mkdir(parents=True, exist_ok=True)
         # 启动前归档旧 run（未完成则加 _u）
         _archive_existing_runs(base_root, outputs_root, exclude_run_id=run_id)
         if run_id is None:
-            # 未指定 run-id 则自动找最小可用数字
-            run_id = _pick_next_run_id(base_root)
+            # 未指定 run-id 则自动分配一个唯一 id（并发安全）
+            run_id = _reserve_next_run_id(base_root)
             print(f"[server] 未指定 run-id，自动选择: {run_id}")
     run_root = base_root / run_id if run_id else base_root
     paths = _queue_paths(run_root)
-    if role in ("server", "both"):
+    if has_server_capability:
         if run_root.exists() and any(run_root.iterdir()):
-            raise SystemExit(f"run-id 已存在且非空: {run_root}")
+            if rebuild_run:
+                archived = _archive_run(run_root, outputs_root, unfinished=True)
+                if archived is None:
+                    raise SystemExit(f"重建 run 失败，无法先归档已有 run-id: {run_root}")
+                resume_existing_run = False
+                print(f"[server] 检测到已有 run-id，已归档为未完成并重建: {run_root}")
+            else:
+                resume_existing_run = True
         _ensure_queue_dirs(paths)
+        heartbeat_path = paths["summary"] / "server_heartbeat.txt"
+        try:
+            heartbeat_path.write_text(str(int(time.time())), encoding="utf-8")
+        except Exception:
+            pass
+        if resume_existing_run:
+            print(f"[server] 检测到已有 run-id，进入断点续算: {run_root}")
+            recovered = _requeue_inprogress_to_pending(paths)
+            if recovered > 0:
+                print(f"[server] 已回收 inprogress -> pending: {recovered} 个任务")
+            manifest_path = paths["summary"] / RUN_MANIFEST_FILENAME
+            if not manifest_path.exists():
+                raise SystemExit(f"断点续算失败：缺少 {RUN_MANIFEST_FILENAME}，路径={paths['summary']}")
     elif run_id:
         _ensure_queue_dirs(paths)
     single_run.DEBUG_MODE = config.run.debug
 
     expected_total = 0
     done_flag = paths["summary"] / "server_done.flag"
-    if role in ("server", "both"):
+    if has_server_capability:
         if done_flag.exists():
             try:
                 done_flag.unlink()
             except Exception:
                 pass
-        # 生成任务列表（含 SUMMARY）并写入 manifest
-        expected_total, scan = _build_task_list(task_type, config, config_hash, paths["pending"])
-        _write_run_manifest(paths, task_type, config_hash, config, scan)
+        if resume_existing_run:
+            manifest = _load_run_manifest(paths)
+            _apply_manifest_to_config(config, manifest)
+            task_type = str(manifest.get("task_type", task_type)).upper()
+            ignored_cli = sorted(
+                dst
+                for dst in explicit_cli_dests
+                if dst not in RESUME_PASSTHROUGH_CLI_DESTS
+            )
+            if ignored_cli:
+                msg = (
+                    "[server] 警告：续算模式下以下任务/物理参数将被自动忽略，"
+                    f"统一以 run_manifest 为准: {', '.join(ignored_cli)}；"
+                    "如需应用新参数，请使用 --rebuild-run。"
+                )
+                print(msg)
+                try:
+                    (paths["summary"] / "resume_ignored_cli_args.txt").write_text(msg + "\n", encoding="utf-8")
+                except Exception:
+                    pass
+            expected_total = sum(
+                len(list(paths[section].glob("task_*.json")))
+                for section in ("pending", "inprogress", "done", "error")
+            )
+        else:
+            # 先写 manifest，再生成任务列表（避免中断时缺少 run_manifest）
+            _write_run_manifest(paths, task_type, config)
+            expected_total = _build_task_list(task_type, config, paths["pending"])
         print(f"[server] 任务总数: {expected_total} | queue: {paths['root']}")
-        if role == "server":
+        if not has_worker_capability:
             _run_server_monitor(
                 paths,
-                expected_total,
                 done_flag,
                 show_progress=server_progress,
                 quiet_output_path=None,
                 quiet_secs=0.0,
                 inline=progress_inline,
             )
-            _archive_run(run_root, outputs_root)
-            return
 
-    if role in ("worker", "both"):
+    if has_worker_capability:
         # 核数预算：留 1 核给系统
         core_budget = max(1, min(config.run.cores, os.cpu_count() or 1))
         reserve = 1
@@ -1573,16 +1414,16 @@ def main():
             os.environ["MKL_NUM_THREADS"] = "1"
             os.environ["OPENBLAS_NUM_THREADS"] = "1"
             os.environ["NUMEXPR_NUM_THREADS"] = "1"
+        queue_exec_root = run_root if run_id else base_root
         queue_hint = str(paths["root"]) if run_id else str(base_root)
         print(f"[worker] cores={core_budget} | workers={worker_count} | queue={queue_hint}")
 
-        if role == "both":
+        if run_monitor_in_background:
             output_tracker_path = paths["heartbeat"] / "worker_output.txt"
             monitor_thread = threading.Thread(
                 target=_run_server_monitor,
                 args=(
                     paths,
-                    expected_total,
                     done_flag,
                     server_progress,
                     output_tracker_path,
@@ -1592,14 +1433,14 @@ def main():
             )
             monitor_thread.start()
 
-        exit_when_done = role == "both" or (role == "worker" and run_id is not None)
+        exit_when_done = has_worker_capability
         done_flag_arg = str(done_flag) if run_id is not None else None
         auto_pick = run_id is None
         tracker_path = None if run_id is None else (paths["heartbeat"] / "worker_output.txt")
         if worker_count == 1:
             _run_worker_loop(
                 1,
-                str(run_root if run_id else base_root),
+                str(queue_exec_root),
                 config,
                 exit_when_done,
                 done_flag_arg,
@@ -1615,7 +1456,7 @@ def main():
                         executor.submit(
                             _run_worker_loop,
                             idx + 1,
-                            str(run_root if run_id else base_root),
+                            str(queue_exec_root),
                             config,
                             exit_when_done,
                             done_flag_arg,
@@ -1625,9 +1466,18 @@ def main():
                     )
                 for future in futures:
                     future.result()
-        if role == "both":
+        if run_monitor_in_background:
             monitor_thread.join()
-            _archive_run(run_root, outputs_root)
+
+    if has_server_capability:
+        _archive_run(
+            run_root,
+            outputs_root,
+            unfinished=(
+                any(paths["pending"].glob("task_*.json"))
+                or any(paths["inprogress"].glob("task_*.json"))
+            ),
+        )
 
 
 if __name__ == "__main__":

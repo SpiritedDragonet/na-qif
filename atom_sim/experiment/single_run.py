@@ -8,7 +8,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Iterator
 from collections import Counter
 
 import numpy as np
@@ -30,6 +30,29 @@ from .common import (
 
 # Debug toggle (default False)
 DEBUG_MODE = False
+
+SIM_TASK_METRIC_KEYS = (
+    "window_ns",
+    "p_arrive",
+    "p_arrive_11",
+    "p_arrive_same_arm",
+    "p_arrive_20",
+    "p_arrive_02",
+    "p_success_abs",
+    "p_success_true_abs",
+    "p_success_false_abs",
+    "p_success_true_given_arrival",
+    "fidelity_all",
+    "fidelity_true",
+    "fidelity_false",
+    "false_fraction",
+    "corr_exx",
+    "corr_eyy",
+    "corr_ezz",
+    "chsh_s_max",
+    "p_success_intrinsic_dark_assisted",
+    "p_success_bg_assisted",
+)
 
 def save_debug_info(
     mps,
@@ -829,3 +852,50 @@ def _run_single_simulation_core(
                 f"run墙钟={wall:.2f}s | 额外开销={overhead:.2f}s"
             )
     return run_stats, success_metrics, click_records
+
+
+def iter_sim_core_tasks(config: SimConfig) -> Iterator[dict]:
+    for run_index in range(config.run.runs):
+        yield {
+            "id": f"sim_run_{run_index:06d}",
+            "experiment": "SIM",
+            "run_index": run_index,
+            "payload": {},
+        }
+
+
+def build_sim_task_metrics(run_stats: dict, run_index: int, success_metrics: dict) -> dict:
+    metrics = {
+        "shots": run_stats["shots"],
+        "success": run_stats["success"],
+        "run_index": run_index,
+    }
+    if not isinstance(success_metrics, dict):
+        return metrics
+    for key in SIM_TASK_METRIC_KEYS:
+        if key in success_metrics:
+            metrics[key] = success_metrics.get(key)
+    return metrics
+
+
+def run_sim_task(
+    task: dict,
+    config: SimConfig,
+    raw_dir: Path,
+    plots_dir: Path,
+    task_id: str,
+) -> tuple[dict, Optional[list]]:
+    seed_raw = task.get("seed")
+    seed = int(seed_raw) if seed_raw is not None else None
+    run_index = int(task.get("run_index", 1))
+    run_stats, success_metrics, click_records = _run_single_simulation_core(
+        output_dir=raw_dir,
+        run_index=run_index,
+        config=config,
+        show_plots=config.run.plot_all,
+        plot_dir=plots_dir,
+        run_tag=task_id,
+        seed=seed,
+    )
+    metrics = build_sim_task_metrics(run_stats, run_index, success_metrics)
+    return metrics, click_records

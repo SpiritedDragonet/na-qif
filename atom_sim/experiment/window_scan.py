@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 from pathlib import Path
+from typing import Iterator
 
 from ..simulation import (
     compute_pauli_correlators_and_chsh,
@@ -152,9 +153,16 @@ def run_window_scan_task(
     if enum_main is None:
         raise RuntimeError("WINDOW_SCAN 需要 compute_metrics=True 且返回有效枚举结果")
 
+    accepted_count = int(len(shot_records))
     success_count = int(sum(1 for shot in shot_records if shot["raw_success"]))
     success_true_count = float(sum(float(shot["p_true_given_record"]) for shot in shot_records if shot["raw_success"]))
     success_false_count = float(success_count) - success_true_count
+    shots_total = float(max(shots_per_run, 1))
+    p_two_click_abs = float(np.clip(pipeline.p_records_total, 0.0, 1.0))
+    accepted_cond_given_two_click = float(accepted_count / shots_total)
+    success_cond_given_two_click = float(success_count / shots_total)
+    success_true_cond_given_two_click = float(success_true_count / shots_total)
+    success_false_cond_given_two_click = float(success_false_count / shots_total)
     success_records = [shot for shot in shot_records if shot["raw_success"]]
     fidelity_all_vals = [float(shot["fidelity_declared"]) for shot in success_records]
     corr_exx_vals = [float(shot["corr_exx"]) for shot in success_records]
@@ -171,7 +179,13 @@ def run_window_scan_task(
     entry = {
         "run_index": run_index,
         "shots": shots_per_run,
+        "accepted": accepted_count,
         "success": success_count,
+        "p_two_click_abs": p_two_click_abs,
+        "accepted_cond_given_two_click": accepted_cond_given_two_click,
+        "success_cond_given_two_click": success_cond_given_two_click,
+        "success_true_cond_given_two_click": success_true_cond_given_two_click,
+        "success_false_cond_given_two_click": success_false_cond_given_two_click,
         "window_ns": float(config.run.window_ns),
         "window_bins": None,
         "p_arrive": float(enum_main.p_arrive),
@@ -202,6 +216,11 @@ def run_window_scan_task(
             "bell": shot["raw_bell"],
             "clicks": list(shot["clicks"]),
             "p_true_given_record": float(shot["p_true_given_record"]),
+            "fidelity_declared": float(shot["fidelity_declared"]),
+            "corr_exx": float(shot["corr_exx"]),
+            "corr_eyy": float(shot["corr_eyy"]),
+            "corr_ezz": float(shot["corr_ezz"]),
+            "chsh_s_max": float(shot["chsh_s_max"]),
         }
         for shot in shot_records
     ]
@@ -210,3 +229,14 @@ def run_window_scan_task(
         "run_index": run_index,
         "window_scan": entry,
     }, click_records
+
+
+def iter_window_scan_core_tasks(config: SimConfig) -> Iterator[dict]:
+    _ = build_window_scan_values(config)
+    for run_index in range(config.run.runs):
+        yield {
+            "id": f"wscan_run_{run_index:06d}",
+            "experiment": "WINDOW_SCAN",
+            "run_index": run_index,
+            "payload": {},
+        }

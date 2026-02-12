@@ -4,7 +4,8 @@ HOM 实验仿真：统计符合率随延迟 tau 的变化。
 """
 
 import time
-from typing import Optional
+from pathlib import Path
+from typing import Optional, Iterator
 
 import numpy as np
 
@@ -250,3 +251,57 @@ def _run_hom_run(
         )
 
     return coincidences, p_arrive, click_records
+
+
+def iter_hom_core_tasks(config: SimConfig) -> Iterator[dict]:
+    if config.hom is None:
+        raise ValueError("HOM 任务需要 --mode HOM 并提供 tau 参数")
+    tau_values = [float(v) for v in _build_hom_tau_values(config.hom)]
+    for tau in tau_values:
+        for run_index in range(config.run.runs):
+            yield {
+                "id": f"hom_tau_{tau:+.3f}_run_{run_index:06d}",
+                "experiment": "HOM",
+                "run_index": run_index,
+                "payload": {
+                    "tau_ns": float(tau),
+                    "window_ns": float(config.hom.window_ns),
+                },
+            }
+
+
+def run_hom_task(
+    task: dict,
+    config: SimConfig,
+    raw_dir: Path,
+    plots_dir: Path,
+    task_id: str,
+) -> tuple[dict, Optional[list]]:
+    _ = raw_dir, plots_dir, task_id
+    seed_raw = task.get("seed")
+    seed = int(seed_raw) if seed_raw is not None else None
+    run_index = int(task.get("run_index", 0) or 0)
+    shots = int(task.get("shots", config.run.shots_per_run))
+    payload = task.get("payload", {})
+    tau_ns = float(payload["tau_ns"])
+    default_window = config.hom.window_ns if config.hom is not None else config.run.window_ns
+    window_ns = float(payload.get("window_ns", default_window))
+    coincid, p_arrive, click_records = _run_hom_run(
+        tau_ns,
+        shots,
+        config,
+        window_ns,
+        delay_jitter_ns=0.0,
+        verbose=False,
+        debug=config.run.debug,
+        rng_seed=seed,
+    )
+    metrics = {
+        "run_index": run_index,
+        "tau_ns": tau_ns,
+        "window_ns": window_ns,
+        "shots": shots,
+        "p_arrive": p_arrive,
+        "coinc": coincid,
+    }
+    return metrics, click_records

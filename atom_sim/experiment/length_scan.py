@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 from pathlib import Path
+from typing import Iterator
 
 from ..simulation import compute_pauli_correlators_and_chsh
 from .common import (
@@ -164,3 +165,15 @@ def run_length_scan_task(
         "run_index": run_index,
         "lengths": [entry],
     }, {f"{float(length_km):.9f}": click_records}
+
+
+def iter_length_scan_core_tasks(config: SimConfig) -> Iterator[dict]:
+    length_values = build_length_scan_values(config)
+    for length_idx, length_km in enumerate(length_values):
+        for run_index in range(config.run.runs):
+            yield {
+                "id": f"lscan_len_{length_idx:04d}_run_{run_index:06d}",
+                "experiment": "LENGTH_SCAN",
+                "run_index": run_index,
+                "payload": {"length_km": float(length_km)},
+            }
