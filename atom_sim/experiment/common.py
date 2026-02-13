@@ -134,6 +134,8 @@ class QfcFilterCavityParams:
     """QFC 后 1517nm 窄带滤波腔参数（用于显式记忆模型）。"""
 
     enabled: bool = True
+    # 是否启用显式记忆动力学（会引入跨-bin关联并显著抬升张量复杂度）。
+    dynamics_enabled: bool = False
     fwhm_mhz: float = 27.0
     detuning_mhz_A: float = 0.0
     detuning_mhz_B: float = 0.0
@@ -581,6 +583,7 @@ def _build_parameter_snapshot(config: SimConfig, store: RunParameterStore) -> di
         "qfc_noise_sd_cps_per_mhz_A": config.qfc.qfc_noise_sd_cps_per_mhz_A,
         "qfc_noise_sd_cps_per_mhz_B": config.qfc.qfc_noise_sd_cps_per_mhz_B,
         "filter_cavity_enabled": config.qfc.filter_cavity.enabled,
+        "filter_cavity_dynamics_enabled": config.qfc.filter_cavity.dynamics_enabled,
         "filter_cavity_fwhm_mhz": config.qfc.filter_cavity.fwhm_mhz,
         "filter_cavity_detuning_mhz_A": config.qfc.filter_cavity.detuning_mhz_A,
         "filter_cavity_detuning_mhz_B": config.qfc.filter_cavity.detuning_mhz_B,
@@ -1020,11 +1023,13 @@ def run_emission_to_bs(
         mps=mps,
         n_bins=emission.get_n_bins(),
         dt_s=emission.dt_s,
+        rng=rng,
         theta_H=qfc_theta_H,
         theta_V=qfc_theta_V,
         phi_H=qfc_phi_H,
         phi_V=qfc_phi_V,
         filter_enabled=bool(qfc.filter_cavity.enabled),
+        filter_dynamics_enabled=bool(qfc.filter_cavity.enabled and qfc.filter_cavity.dynamics_enabled),
         filter_fwhm_mhz=float(qfc.filter_cavity.fwhm_mhz),
         filter_detuning_mhz_A=float(qfc.filter_cavity.detuning_mhz_A),
         filter_detuning_mhz_B=float(qfc.filter_cavity.detuning_mhz_B),

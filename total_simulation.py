@@ -272,7 +272,21 @@ def _parse_run_params(argv):
     parser.add_argument("--filter-cavity-eta-peak-b", dest="filter_cavity_eta_peak_b", type=float, help="B 臂滤波腔峰值透过率")
     parser.add_argument("--qfc-noise-sd-cps-per-mhz-a", dest="qfc_noise_sd_cps_per_mhz_a", type=float, help="A 臂QFC背景噪声谱密度 (cps/MHz)")
     parser.add_argument("--qfc-noise-sd-cps-per-mhz-b", dest="qfc_noise_sd_cps_per_mhz_b", type=float, help="B 臂QFC背景噪声谱密度 (cps/MHz)")
-    parser.add_argument("--no-filter-cavity", dest="no_filter_cavity", action="store_true", help="关闭QFC后1517滤波腔显式记忆")
+    parser.add_argument("--no-filter-cavity", dest="no_filter_cavity", action="store_true", help="关闭QFC后1517滤波腔（包含记忆与插损）")
+    dynamics_group = parser.add_mutually_exclusive_group()
+    dynamics_group.add_argument(
+        "--filter-cavity-dynamics",
+        dest="filter_cavity_dynamics",
+        action="store_true",
+        help="启用1517滤波腔显式记忆动力学（更慢，可能抬升chi）",
+    )
+    dynamics_group.add_argument(
+        "--no-filter-cavity-dynamics",
+        dest="filter_cavity_dynamics",
+        action="store_false",
+        help="关闭1517滤波腔显式记忆动力学，仅保留QFC+插损快速路径（默认）",
+    )
+    parser.set_defaults(filter_cavity_dynamics=None)
     parser.add_argument("--enum-mode", dest="enum_mode", type=str, help="成功事件枚举模式：dark/no-dark/both")
     parser.add_argument("--plot-all", dest="plot_all", action="store_true", help="所有 run 都绘图（默认仅保留一个）")
     parser.add_argument("--no-plot", dest="no_plot", action="store_true", help="完全禁止绘图（覆盖 plot-all）")
@@ -396,8 +410,13 @@ def _parse_run_params(argv):
         bg_std_value = getattr(args, f"bg_std_hz_{detector}", None)
         if bg_std_value is not None:
             config.noise.bg_rate_std_hz_map[detector.upper()] = float(bg_std_value)
+    if args.no_filter_cavity and args.filter_cavity_dynamics is True:
+        parser.error("--filter-cavity-dynamics 与 --no-filter-cavity 不能同时使用")
     if args.no_filter_cavity:
         config.qfc.filter_cavity.enabled = False
+        config.qfc.filter_cavity.dynamics_enabled = False
+    elif args.filter_cavity_dynamics is not None:
+        config.qfc.filter_cavity.dynamics_enabled = bool(args.filter_cavity_dynamics)
 
     # runs/shots/cores 是“任务粒度 + 并发预算”的核心参数
     for arg_name, attr_name in (
