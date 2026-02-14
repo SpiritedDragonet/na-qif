@@ -282,12 +282,18 @@ def plot_dual_arm_heatmap(
     # 从结果中提取MPS和时间参数
     if isinstance(result, EmissionResult):
         mps = result.mps
+        first_bin_site = _infer_first_bin_site(mps)
         n_bins = result.get_n_bins()
         dt_s = _resolve_dt_s(time_grid, result.dt_s)
         has_atom_evol = True
     else:  # MPSState
         mps = result
-        n_bins = (mps.L - 2) // 2  # 从链长度推断
+        first_bin_site = _infer_first_bin_site(mps)
+        # 显式记忆路径：链尾 [memA, memB] = [3D, 3D]，不计入时间仓。
+        tail_sites = 0
+        if (mps.L - first_bin_site) >= 4 and int(mps.d[-2]) == 3 and int(mps.d[-1]) == 3:
+            tail_sites = 2
+        n_bins = max(0, (mps.L - first_bin_site - tail_sites) // 2)
         dt_s = _resolve_dt_s(time_grid, 1.0)
         has_atom_evol = False
     time_axis_s = np.arange(n_bins) * dt_s
@@ -296,14 +302,8 @@ def plot_dual_arm_heatmap(
     fig, axes = plt.subplots(1, 2, figsize=(14.4, 7.2))
     # 注意：subplots_adjust 将在确定 display_atomic 后设置
 
-    # 检测是否有前导 emitter/原子站点（只要前两站不是 bin=5 即认为有）
-    has_atomic_sites = bool(len(mps.d) >= 4 and mps.d[2] == 5 and mps.d[3] == 5)
-
-    # 确定first_bin_site
-    if has_atomic_sites:
-        first_bin_site = 2  #前两个站点是原子
-    else:
-        first_bin_site = 0  #没有原子站点
+    # 根据 first_bin_site 判断是否有前导原子站点
+    has_atomic_sites = bool(first_bin_site == 2)
 
     if validate:
         _validate_bin_rho_traces(mps, n_bins, tol=trace_tol)
