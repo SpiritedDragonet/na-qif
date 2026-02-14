@@ -151,11 +151,8 @@ class RunParameterStore:
 
 @dataclass
 class QfcFilterCavityParams:
-    """QFC 后 1517nm 窄带滤波腔参数（用于显式记忆模型）。"""
+    """QFC 后 1517nm 窄带滤波腔参数（显式记忆链唯一路径）。"""
 
-    enabled: bool = True
-    # 是否启用显式记忆动力学（会引入跨-bin关联并显著抬升张量复杂度）。
-    dynamics_enabled: bool = False
     fwhm_mhz: float = 27.0
     detuning_mhz_A: float = 0.0
     detuning_mhz_B: float = 0.0
@@ -461,10 +458,6 @@ def _build_run_parameter_store(
             filter_bw_mhz = max(float(config.qfc.filter_cavity.fwhm_mhz), 0.0)
             eta_filter_a = float(np.clip(config.qfc.filter_cavity.eta_peak_A, 0.0, 1.0))
             eta_filter_b = float(np.clip(config.qfc.filter_cavity.eta_peak_B, 0.0, 1.0))
-            if not bool(config.qfc.filter_cavity.enabled):
-                # 关闭窄带滤波腔时，仅保留“源谱密度×链路×探测”口径。
-                eta_filter_a = 1.0
-                eta_filter_b = 1.0
 
             sd_a = max(0.0, float(config.qfc.qfc_noise_sd_cps_per_mhz_A))
             sd_b = max(0.0, float(config.qfc.qfc_noise_sd_cps_per_mhz_B))
@@ -602,8 +595,6 @@ def _build_parameter_snapshot(config: SimConfig, store: RunParameterStore) -> di
         "qfc_phi_V": config.qfc.phi_V,
         "qfc_noise_sd_cps_per_mhz_A": config.qfc.qfc_noise_sd_cps_per_mhz_A,
         "qfc_noise_sd_cps_per_mhz_B": config.qfc.qfc_noise_sd_cps_per_mhz_B,
-        "filter_cavity_enabled": config.qfc.filter_cavity.enabled,
-        "filter_cavity_dynamics_enabled": config.qfc.filter_cavity.dynamics_enabled,
         "filter_cavity_fwhm_mhz": config.qfc.filter_cavity.fwhm_mhz,
         "filter_cavity_detuning_mhz_A": config.qfc.filter_cavity.detuning_mhz_A,
         "filter_cavity_detuning_mhz_B": config.qfc.filter_cavity.detuning_mhz_B,
@@ -1048,8 +1039,6 @@ def run_emission_to_bs(
         theta_V=qfc_theta_V,
         phi_H=qfc_phi_H,
         phi_V=qfc_phi_V,
-        filter_enabled=bool(qfc.filter_cavity.enabled),
-        filter_dynamics_enabled=bool(qfc.filter_cavity.enabled and qfc.filter_cavity.dynamics_enabled),
         filter_fwhm_mhz=float(qfc.filter_cavity.fwhm_mhz),
         filter_detuning_mhz_A=float(qfc.filter_cavity.detuning_mhz_A),
         filter_detuning_mhz_B=float(qfc.filter_cavity.detuning_mhz_B),

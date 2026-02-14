@@ -246,8 +246,6 @@ def apply_qfc_filter_memory_chain(
     theta_V: float,
     phi_H: float,
     phi_V: float,
-    filter_enabled: bool,
-    filter_dynamics_enabled: bool,
     filter_fwhm_mhz: float,
     filter_detuning_mhz_A: float,
     filter_detuning_mhz_B: float,
@@ -261,10 +259,8 @@ def apply_qfc_filter_memory_chain(
 
     站点布局约定（输入）：atomA, atomB, A1, B1, ..., AN, BN
 
-    输出布局（取决于 filter_dynamics_enabled）：
-    - False（快速路径，默认）：仅逐 bin QFC + 插损，不引入显式记忆模；
-      输出仍为 atomA, atomB, A1, B1, ..., AN, BN。
-    - True（显式记忆路径）：在链尾追加两条 3D 记忆模；
+    输出布局（唯一路径）：
+    - 在链尾追加两条 3D 记忆模；
       输出为 atomA, atomB, A1, B1, ..., AN, BN, memA, memB。
 
     物理口径：
@@ -281,8 +277,8 @@ def apply_qfc_filter_memory_chain(
     if rng is None:
         rng = np.random.default_rng()
 
-    eta_peak_a = float(filter_eta_peak_A) if filter_enabled else 1.0
-    eta_peak_b = float(filter_eta_peak_B) if filter_enabled else 1.0
+    eta_peak_a = float(filter_eta_peak_A)
+    eta_peak_b = float(filter_eta_peak_B)
     k_filter_a = loss_channel_both_subspaces(
         eta_780=0.0,
         eta_H_1517=eta_peak_a,
@@ -294,27 +290,7 @@ def apply_qfc_filter_memory_chain(
         eta_V_1517=eta_peak_b,
     )
 
-    # 快速路径：仅做逐bin QFC + 插损，不引入显式记忆模，避免 χ 膨胀。
-    if not filter_dynamics_enabled:
-        mps_fast = mps.copy()
-        for n in range(n_bins - 1, -1, -1):
-            site_a = 2 + 2 * n
-            site_b = site_a + 1
-            if site_b >= mps_fast.L:
-                raise RuntimeError(
-                    f"QFC快速路径索引越界: n={n}, site_a={site_a}, site_b={site_b}, L={mps_fast.L}"
-                )
-            mps_fast.apply_kraus_one_site(site_a, [u_qfc], rng=rng)
-            mps_fast.apply_kraus_one_site(site_b, [u_qfc], rng=rng)
-            mps_fast.apply_kraus_one_site(site_a, k_filter_a, rng=rng)
-            mps_fast.apply_kraus_one_site(site_b, k_filter_b, rng=rng)
-        mps_fast.canonicalize(renormalize=True)
-        if verbose:
-            print("  滤波腔显式记忆动力学已关闭：采用逐bin QFC+插损快速路径。")
-        _print_footer(mps_fast, verbose, stage="QFC + Filter Memory")
-        return mps_fast
-
-    # 记忆路径：在链尾添加两条记忆模（A/B），并通过 bin<->mem 邻接门产生跨 bin 关联。
+    # 显式记忆路径：在链尾添加两条记忆模（A/B），并通过 bin<->mem 邻接门产生跨 bin 关联。
     local_dims = mps.d.copy() + [3, 3]
     mem_site = BosonSite(2, None)
     mem_a = TeNPyMPS.from_product_state([mem_site], ['0'], bc='finite', form='B', unit_cell_width=1)
