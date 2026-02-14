@@ -24,7 +24,6 @@ from .common import (
     run_trial_physics_core,
     run_detection_core_from_pipe,
     write_click_records,
-    _build_parameter_snapshot,
     _build_run_parameter_store,
 )
 
@@ -615,8 +614,6 @@ def _run_single_simulation_core(
     print(f"暗计数/bin 映射 p_dark_intrinsic_map: {p_dark_intrinsic_map}")
     print(f"背景/bin 映射 p_bg_map: {p_bg_detector_map}")
 
-    parameter_snapshot = _build_parameter_snapshot(config, param_store)
-
     _on_stage("成功事件统计 (POVM)")
     print(f"\n成功事件枚举模式: {enum_mode}")
     enum_no_dark = None
@@ -759,7 +756,6 @@ def _run_single_simulation_core(
         "mps_trunc_total_calls": int(trunc_stats["total_calls"]),
         "mps_trunc_total_eps": float(trunc_stats["total_eps"]),
         "mps_trunc_total_eps_max": float(trunc_stats["total_eps_max"]),
-        "parameter_snapshot": parameter_snapshot,
         "fiber_length_km": config.fiber.length_km,
         "fiber_attenuation_db_per_km": config.fiber.attenuation_db_per_km,
         "fiber_eta_std": config.fiber.eta_std,

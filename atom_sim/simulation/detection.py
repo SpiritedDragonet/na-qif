@@ -1137,16 +1137,23 @@ def run_detection_self_checks(verbose: bool = True) -> None:
     # E4: HOM delay 形状基线（无噪声时，tau=0 的同偏振跨端口符合应不高于大延迟）
     from ..simulation.trajectory import run_dual_atom_emission
     from ..physics.gates import bs_gate_6d
+    from ..experiment.common import (
+        SimConfig,
+        build_emission_kernel_kwargs,
+        build_hom_self_check_setup,
+    )
+
+    base_cfg = SimConfig()
+    hom_emission_cfg, hom_samples, hom_tau_far_ns = build_hom_self_check_setup(base_cfg.emission)
+    hom_emission_kwargs = build_emission_kernel_kwargs(hom_emission_cfg)
 
     def _hom_coincidence_for_tau(delay_ns: float) -> float:
         rng = np.random.default_rng(2026 + int(round(delay_ns * 10.0)))
         emission = run_dual_atom_emission(
-            n_bins=10,
-            dt_ns=0.5,
-            chi_max=20,
-            sigma=3.0,
+            **hom_emission_kwargs,
             delay_ns=delay_ns,
             delay_jitter_ns=0.0,
+            rng=rng,
             verbose=False,
             diagnostics=False,
         )
@@ -1159,7 +1166,7 @@ def run_detection_self_checks(verbose: bool = True) -> None:
             window_bins=0,
             rng=rng,
             verbose=False,
-            n_samples=36,
+            n_samples=hom_samples,
             compute_metrics=False,
             bs_unitary=bs_gate_6d(),
             fiber_sample=(
@@ -1179,7 +1186,7 @@ def run_detection_self_checks(verbose: bool = True) -> None:
         return float(np.mean(records))
 
     hom_tau0 = _hom_coincidence_for_tau(0.0)
-    hom_tau_far = _hom_coincidence_for_tau(20.0)
+    hom_tau_far = _hom_coincidence_for_tau(hom_tau_far_ns)
     if hom_tau0 - hom_tau_far > 0.15:
         raise AssertionError(
             f"E4 HOM baseline unexpected: tau0={hom_tau0:.4f} > tau_far={hom_tau_far:.4f}"

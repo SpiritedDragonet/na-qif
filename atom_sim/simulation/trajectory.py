@@ -435,26 +435,26 @@ def _build_h_sys(omega: complex, delta_u: float, delta_e: float) -> np.ndarray:
 # ============================================================================
 
 def run_dual_atom_emission(
-    n_bins: int = 200,
-    dt_ns: float = 0.2,
-    chi_max: int = 50,
+    n_bins: Optional[int] = None,
+    dt_ns: Optional[float] = None,
+    chi_max: Optional[int] = None,
     Alpha_A: np.ndarray = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=complex),
     Alpha_B: np.ndarray = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=complex),
-    omega_peak_A: float = 2 * np.pi * 20e6,
-    omega_peak_B: float = 2 * np.pi * 20e6,
+    omega_peak_A: Optional[float] = None,
+    omega_peak_B: Optional[float] = None,
     drive_waveform_A: str = "gaussian",
     drive_waveform_B: str = "gaussian",
     t0_A: Optional[float] = None,
     t0_B: Optional[float] = None,
-    sigma: float = 12.0,
+    sigma: Optional[float] = None,
     delay_ns: float = 0.0,
     delay_jitter_ns: float = 0.0,
-    g_A: float = 2 * np.pi * 20e6,
-    g_B: float = 2 * np.pi * 20e6,
-    kappa_ex_A: float = 2 * np.pi * 20e6,
-    kappa_ex_B: float = 2 * np.pi * 20e6,
-    kappa_in_A: float = 2 * np.pi * 1e6,
-    kappa_in_B: float = 2 * np.pi * 1e6,
+    g_A: Optional[float] = None,
+    g_B: Optional[float] = None,
+    kappa_ex_A: Optional[float] = None,
+    kappa_ex_B: Optional[float] = None,
+    kappa_in_A: Optional[float] = None,
+    kappa_in_B: Optional[float] = None,
     kappa_ex_H_A: Optional[float] = None,
     kappa_ex_V_A: Optional[float] = None,
     kappa_in_H_A: Optional[float] = None,
@@ -463,18 +463,18 @@ def run_dual_atom_emission(
     kappa_ex_V_B: Optional[float] = None,
     kappa_in_H_B: Optional[float] = None,
     kappa_in_V_B: Optional[float] = None,
-    gamma_sigma_plus_A: float = 0.0,
-    gamma_sigma_minus_A: float = 0.0,
-    gamma_sigma_plus_B: float = 0.0,
-    gamma_sigma_minus_B: float = 0.0,
-    delta_u_A: float = 0.0,
-    delta_u_B: float = 0.0,
-    delta_e_A: float = 0.0,
-    delta_e_B: float = 0.0,
-    delta_c_H_A: float = 0.0,
-    delta_c_V_A: float = 0.0,
-    delta_c_H_B: float = 0.0,
-    delta_c_V_B: float = 0.0,
+    gamma_sigma_plus_A: Optional[float] = None,
+    gamma_sigma_minus_A: Optional[float] = None,
+    gamma_sigma_plus_B: Optional[float] = None,
+    gamma_sigma_minus_B: Optional[float] = None,
+    delta_u_A: Optional[float] = None,
+    delta_u_B: Optional[float] = None,
+    delta_e_A: Optional[float] = None,
+    delta_e_B: Optional[float] = None,
+    delta_c_H_A: Optional[float] = None,
+    delta_c_V_A: Optional[float] = None,
+    delta_c_H_B: Optional[float] = None,
+    delta_c_V_B: Optional[float] = None,
     rng: Optional[np.random.Generator] = None,
     verbose: bool = True,
     diagnostics: bool = False,
@@ -524,9 +524,9 @@ def run_dual_atom_emission(
     g_A, g_B : float
         A/B 臂原子-腔耦合强度（rad/s）
     kappa_ex_A, kappa_ex_B : float
-        A/B 臂腔外耦合衰减率（rad/s，H/V 公共默认值）
+        A/B 臂腔外耦合衰减率（1/s，H/V 公共默认值）
     kappa_in_A, kappa_in_B : float
-        A/B 臂腔内损耗衰减率（rad/s，H/V 公共默认值）
+        A/B 臂腔内损耗衰减率（1/s，H/V 公共默认值）
     kappa_ex_H_*, kappa_ex_V_*, kappa_in_H_*, kappa_in_V_* : float, optional
         H/V 分偏振通道参数；若未给出则回退到对应公共 kappa_*。
     gamma_sigma_plus_*, gamma_sigma_minus_* : float
@@ -564,6 +564,65 @@ def run_dual_atom_emission(
         print("=" * 70)
         print("双原子发射仿真（原子向左移动方案）")
         print("=" * 70)
+
+    required_params = (
+        ("n_bins", n_bins),
+        ("dt_ns", dt_ns),
+        ("chi_max", chi_max),
+        ("omega_peak_A", omega_peak_A),
+        ("omega_peak_B", omega_peak_B),
+        ("sigma", sigma),
+        ("g_A", g_A),
+        ("g_B", g_B),
+        ("kappa_ex_A", kappa_ex_A),
+        ("kappa_ex_B", kappa_ex_B),
+        ("kappa_in_A", kappa_in_A),
+        ("kappa_in_B", kappa_in_B),
+        ("gamma_sigma_plus_A", gamma_sigma_plus_A),
+        ("gamma_sigma_minus_A", gamma_sigma_minus_A),
+        ("gamma_sigma_plus_B", gamma_sigma_plus_B),
+        ("gamma_sigma_minus_B", gamma_sigma_minus_B),
+        ("delta_u_A", delta_u_A),
+        ("delta_u_B", delta_u_B),
+        ("delta_e_A", delta_e_A),
+        ("delta_e_B", delta_e_B),
+        ("delta_c_H_A", delta_c_H_A),
+        ("delta_c_V_A", delta_c_V_A),
+        ("delta_c_H_B", delta_c_H_B),
+        ("delta_c_V_B", delta_c_V_B),
+    )
+    missing = [name for name, value in required_params if value is None]
+    if missing:
+        raise ValueError(
+            "发射参数缺失: "
+            + ", ".join(missing)
+            + "。请从 experiment/common.py 的统一配置入口显式传入。"
+        )
+
+    n_bins = int(n_bins)
+    dt_ns = float(dt_ns)
+    chi_max = int(chi_max)
+    omega_peak_A = float(omega_peak_A)
+    omega_peak_B = float(omega_peak_B)
+    sigma = float(sigma)
+    g_A = float(g_A)
+    g_B = float(g_B)
+    kappa_ex_A = float(kappa_ex_A)
+    kappa_ex_B = float(kappa_ex_B)
+    kappa_in_A = float(kappa_in_A)
+    kappa_in_B = float(kappa_in_B)
+    gamma_sigma_plus_A = float(gamma_sigma_plus_A)
+    gamma_sigma_minus_A = float(gamma_sigma_minus_A)
+    gamma_sigma_plus_B = float(gamma_sigma_plus_B)
+    gamma_sigma_minus_B = float(gamma_sigma_minus_B)
+    delta_u_A = float(delta_u_A)
+    delta_u_B = float(delta_u_B)
+    delta_e_A = float(delta_e_A)
+    delta_e_B = float(delta_e_B)
+    delta_c_H_A = float(delta_c_H_A)
+    delta_c_V_A = float(delta_c_V_A)
+    delta_c_H_B = float(delta_c_H_B)
+    delta_c_V_B = float(delta_c_V_B)
 
     # 时间参数
     dt_s = dt_ns * 1e-9
@@ -641,24 +700,24 @@ def run_dual_atom_emission(
             f"waveform={drive_waveform_B}, t0={t0_B:.1f} ns, sigma={sigma:.1f} ns"
         )
         print(
-            f"  A臂: g={g_A:.3e}, kappa_ex={kappa_ex_A:.3e}, kappa_in={kappa_in_A:.3e}, "
-            f"delta_u={delta_u_A:.3e}, delta_e={delta_e_A:.3e}"
+            f"  A臂: g={g_A:.3e} rad/s, kappa_ex={kappa_ex_A:.3e} 1/s, kappa_in={kappa_in_A:.3e} 1/s, "
+            f"delta_u={delta_u_A:.3e} rad/s, delta_e={delta_e_A:.3e} rad/s"
         )
         print(
-            f"      polarized: kappa_ex(H/V)=({kappa_ex_H_A_used:.3e}, {kappa_ex_V_A_used:.3e}), "
-            f"kappa_in(H/V)=({kappa_in_H_A_used:.3e}, {kappa_in_V_A_used:.3e}), "
-            f"gamma_sigma(+/-)=({gamma_sigma_plus_A:.3e}, {gamma_sigma_minus_A:.3e}), "
-            f"delta_c(H/V)=({delta_c_H_A:.3e}, {delta_c_V_A:.3e})"
+            f"      polarized: kappa_ex(H/V)=({kappa_ex_H_A_used:.3e}, {kappa_ex_V_A_used:.3e}) 1/s, "
+            f"kappa_in(H/V)=({kappa_in_H_A_used:.3e}, {kappa_in_V_A_used:.3e}) 1/s, "
+            f"gamma_sigma(+/-)=({gamma_sigma_plus_A:.3e}, {gamma_sigma_minus_A:.3e}) 1/s, "
+            f"delta_c(H/V)=({delta_c_H_A:.3e}, {delta_c_V_A:.3e}) rad/s"
         )
         print(
-            f"  B臂: g={g_B:.3e}, kappa_ex={kappa_ex_B:.3e}, kappa_in={kappa_in_B:.3e}, "
-            f"delta_u={delta_u_B:.3e}, delta_e={delta_e_B:.3e}"
+            f"  B臂: g={g_B:.3e} rad/s, kappa_ex={kappa_ex_B:.3e} 1/s, kappa_in={kappa_in_B:.3e} 1/s, "
+            f"delta_u={delta_u_B:.3e} rad/s, delta_e={delta_e_B:.3e} rad/s"
         )
         print(
-            f"      polarized: kappa_ex(H/V)=({kappa_ex_H_B_used:.3e}, {kappa_ex_V_B_used:.3e}), "
-            f"kappa_in(H/V)=({kappa_in_H_B_used:.3e}, {kappa_in_V_B_used:.3e}), "
-            f"gamma_sigma(+/-)=({gamma_sigma_plus_B:.3e}, {gamma_sigma_minus_B:.3e}), "
-            f"delta_c(H/V)=({delta_c_H_B:.3e}, {delta_c_V_B:.3e})"
+            f"      polarized: kappa_ex(H/V)=({kappa_ex_H_B_used:.3e}, {kappa_ex_V_B_used:.3e}) 1/s, "
+            f"kappa_in(H/V)=({kappa_in_H_B_used:.3e}, {kappa_in_V_B_used:.3e}) 1/s, "
+            f"gamma_sigma(+/-)=({gamma_sigma_plus_B:.3e}, {gamma_sigma_minus_B:.3e}) 1/s, "
+            f"delta_c(H/V)=({delta_c_H_B:.3e}, {delta_c_V_B:.3e}) rad/s"
         )
         if delay_jitter_ns > 0.0:
             print(

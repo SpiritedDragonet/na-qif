@@ -220,37 +220,49 @@ def _parse_run_params(argv):
                 help=f"{channel_tag} 通道{label} (Hz)；未指定则用 --{opt_prefix}",
             )
     parser.add_argument("--detector-gate-ns", dest="detector_gate_ns", type=float, help="探测门宽 (ns)，用于将噪声概率从门宽映射到仿真 bin")
-    parser.add_argument("--omega-peak-a", dest="omega_peak_a", type=float, help="A 臂驱动脉冲峰值 Ω_peak_A (rad/s)")
-    parser.add_argument("--omega-peak-b", dest="omega_peak_b", type=float, help="B 臂驱动脉冲峰值 Ω_peak_B (rad/s)")
+    parser.add_argument("--omega-peak-a", dest="omega_peak_a", type=float, help="A 臂驱动脉冲峰值 Ω_peak_A（单位由 --hamiltonian-rate-unit 决定，默认 rad/s）")
+    parser.add_argument("--omega-peak-b", dest="omega_peak_b", type=float, help="B 臂驱动脉冲峰值 Ω_peak_B（单位由 --hamiltonian-rate-unit 决定，默认 rad/s）")
     parser.add_argument("--drive-waveform-a", dest="drive_waveform_a", choices=["gaussian", "sech", "square"], help="A 臂驱动包络类型")
     parser.add_argument("--drive-waveform-b", dest="drive_waveform_b", choices=["gaussian", "sech", "square"], help="B 臂驱动包络类型")
+    parser.add_argument(
+        "--hamiltonian-rate-unit",
+        dest="hamiltonian_rate_unit",
+        choices=["rad_s", "hz"],
+        help="发射哈密顿量参数单位（omega/g/delta_*）：rad_s 或 hz（默认 rad_s）",
+    )
+    parser.add_argument(
+        "--dissipation-rate-unit",
+        dest="dissipation_rate_unit",
+        choices=["hz", "rad_s"],
+        help="发射耗散参数单位（kappa_*/gamma_*）：hz(=1/s) 或 rad_s（默认 hz）",
+    )
     for option, dest, help_text in (
-        ("--g-a", "g_a", "A 臂原子-腔耦合强度 g_A (rad/s)"),
-        ("--g-b", "g_b", "B 臂原子-腔耦合强度 g_B (rad/s)"),
-        ("--kappa-ex-a", "kappa_ex_a", "A 臂腔外耦合衰减率 kappa_ex_A (rad/s)"),
-        ("--kappa-ex-b", "kappa_ex_b", "B 臂腔外耦合衰减率 kappa_ex_B (rad/s)"),
-        ("--kappa-in-a", "kappa_in_a", "A 臂腔内损耗衰减率 kappa_in_A (rad/s)"),
-        ("--kappa-in-b", "kappa_in_b", "B 臂腔内损耗衰减率 kappa_in_B (rad/s)"),
-        ("--kappa-ex-h-a", "kappa_ex_h_a", "A 臂 H 偏振外耦合衰减率 kappa_ex_H_A (rad/s)"),
-        ("--kappa-ex-v-a", "kappa_ex_v_a", "A 臂 V 偏振外耦合衰减率 kappa_ex_V_A (rad/s)"),
-        ("--kappa-in-h-a", "kappa_in_h_a", "A 臂 H 偏振内损耗衰减率 kappa_in_H_A (rad/s)"),
-        ("--kappa-in-v-a", "kappa_in_v_a", "A 臂 V 偏振内损耗衰减率 kappa_in_V_A (rad/s)"),
-        ("--kappa-ex-h-b", "kappa_ex_h_b", "B 臂 H 偏振外耦合衰减率 kappa_ex_H_B (rad/s)"),
-        ("--kappa-ex-v-b", "kappa_ex_v_b", "B 臂 V 偏振外耦合衰减率 kappa_ex_V_B (rad/s)"),
-        ("--kappa-in-h-b", "kappa_in_h_b", "B 臂 H 偏振内损耗衰减率 kappa_in_H_B (rad/s)"),
-        ("--kappa-in-v-b", "kappa_in_v_b", "B 臂 V 偏振内损耗衰减率 kappa_in_V_B (rad/s)"),
-        ("--delta-u-a", "delta_u_a", "A 臂 |u> 态失谐 delta_u_A (rad/s)"),
-        ("--delta-u-b", "delta_u_b", "B 臂 |u> 态失谐 delta_u_B (rad/s)"),
-        ("--delta-e-a", "delta_e_a", "A 臂 |e> 态失谐 delta_e_A (rad/s)"),
-        ("--delta-e-b", "delta_e_b", "B 臂 |e> 态失谐 delta_e_B (rad/s)"),
-        ("--gamma-sigma-plus-a", "gamma_sigma_plus_a", "A 臂 |e>->|0> 自发辐射率 gamma_sigma_plus_A (1/s)"),
-        ("--gamma-sigma-minus-a", "gamma_sigma_minus_a", "A 臂 |e>->|1> 自发辐射率 gamma_sigma_minus_A (1/s)"),
-        ("--gamma-sigma-plus-b", "gamma_sigma_plus_b", "B 臂 |e>->|0> 自发辐射率 gamma_sigma_plus_B (1/s)"),
-        ("--gamma-sigma-minus-b", "gamma_sigma_minus_b", "B 臂 |e>->|1> 自发辐射率 gamma_sigma_minus_B (1/s)"),
-        ("--delta-c-h-a", "delta_c_h_a", "A 臂 H 腔模失谐 delta_c_H_A (rad/s)"),
-        ("--delta-c-v-a", "delta_c_v_a", "A 臂 V 腔模失谐 delta_c_V_A (rad/s)"),
-        ("--delta-c-h-b", "delta_c_h_b", "B 臂 H 腔模失谐 delta_c_H_B (rad/s)"),
-        ("--delta-c-v-b", "delta_c_v_b", "B 臂 V 腔模失谐 delta_c_V_B (rad/s)"),
+        ("--g-a", "g_a", "A 臂原子-腔耦合强度 g_A（单位由 --hamiltonian-rate-unit 决定，默认 rad/s）"),
+        ("--g-b", "g_b", "B 臂原子-腔耦合强度 g_B（单位由 --hamiltonian-rate-unit 决定，默认 rad/s）"),
+        ("--kappa-ex-a", "kappa_ex_a", "A 臂腔外耦合衰减率 kappa_ex_A（单位由 --dissipation-rate-unit 决定，默认 1/s）"),
+        ("--kappa-ex-b", "kappa_ex_b", "B 臂腔外耦合衰减率 kappa_ex_B（单位由 --dissipation-rate-unit 决定，默认 1/s）"),
+        ("--kappa-in-a", "kappa_in_a", "A 臂腔内损耗衰减率 kappa_in_A（单位由 --dissipation-rate-unit 决定，默认 1/s）"),
+        ("--kappa-in-b", "kappa_in_b", "B 臂腔内损耗衰减率 kappa_in_B（单位由 --dissipation-rate-unit 决定，默认 1/s）"),
+        ("--kappa-ex-h-a", "kappa_ex_h_a", "A 臂 H 偏振外耦合衰减率 kappa_ex_H_A（单位由 --dissipation-rate-unit 决定，默认 1/s）"),
+        ("--kappa-ex-v-a", "kappa_ex_v_a", "A 臂 V 偏振外耦合衰减率 kappa_ex_V_A（单位由 --dissipation-rate-unit 决定，默认 1/s）"),
+        ("--kappa-in-h-a", "kappa_in_h_a", "A 臂 H 偏振内损耗衰减率 kappa_in_H_A（单位由 --dissipation-rate-unit 决定，默认 1/s）"),
+        ("--kappa-in-v-a", "kappa_in_v_a", "A 臂 V 偏振内损耗衰减率 kappa_in_V_A（单位由 --dissipation-rate-unit 决定，默认 1/s）"),
+        ("--kappa-ex-h-b", "kappa_ex_h_b", "B 臂 H 偏振外耦合衰减率 kappa_ex_H_B（单位由 --dissipation-rate-unit 决定，默认 1/s）"),
+        ("--kappa-ex-v-b", "kappa_ex_v_b", "B 臂 V 偏振外耦合衰减率 kappa_ex_V_B（单位由 --dissipation-rate-unit 决定，默认 1/s）"),
+        ("--kappa-in-h-b", "kappa_in_h_b", "B 臂 H 偏振内损耗衰减率 kappa_in_H_B（单位由 --dissipation-rate-unit 决定，默认 1/s）"),
+        ("--kappa-in-v-b", "kappa_in_v_b", "B 臂 V 偏振内损耗衰减率 kappa_in_V_B（单位由 --dissipation-rate-unit 决定，默认 1/s）"),
+        ("--delta-u-a", "delta_u_a", "A 臂 |u> 态失谐 delta_u_A（单位由 --hamiltonian-rate-unit 决定，默认 rad/s）"),
+        ("--delta-u-b", "delta_u_b", "B 臂 |u> 态失谐 delta_u_B（单位由 --hamiltonian-rate-unit 决定，默认 rad/s）"),
+        ("--delta-e-a", "delta_e_a", "A 臂 |e> 态失谐 delta_e_A（单位由 --hamiltonian-rate-unit 决定，默认 rad/s）"),
+        ("--delta-e-b", "delta_e_b", "B 臂 |e> 态失谐 delta_e_B（单位由 --hamiltonian-rate-unit 决定，默认 rad/s）"),
+        ("--gamma-sigma-plus-a", "gamma_sigma_plus_a", "A 臂 |e>->|0> 自发辐射率 gamma_sigma_plus_A（单位由 --dissipation-rate-unit 决定，默认 1/s）"),
+        ("--gamma-sigma-minus-a", "gamma_sigma_minus_a", "A 臂 |e>->|1> 自发辐射率 gamma_sigma_minus_A（单位由 --dissipation-rate-unit 决定，默认 1/s）"),
+        ("--gamma-sigma-plus-b", "gamma_sigma_plus_b", "B 臂 |e>->|0> 自发辐射率 gamma_sigma_plus_B（单位由 --dissipation-rate-unit 决定，默认 1/s）"),
+        ("--gamma-sigma-minus-b", "gamma_sigma_minus_b", "B 臂 |e>->|1> 自发辐射率 gamma_sigma_minus_B（单位由 --dissipation-rate-unit 决定，默认 1/s）"),
+        ("--delta-c-h-a", "delta_c_h_a", "A 臂 H 腔模失谐 delta_c_H_A（单位由 --hamiltonian-rate-unit 决定，默认 rad/s）"),
+        ("--delta-c-v-a", "delta_c_v_a", "A 臂 V 腔模失谐 delta_c_V_A（单位由 --hamiltonian-rate-unit 决定，默认 rad/s）"),
+        ("--delta-c-h-b", "delta_c_h_b", "B 臂 H 腔模失谐 delta_c_H_B（单位由 --hamiltonian-rate-unit 决定，默认 rad/s）"),
+        ("--delta-c-v-b", "delta_c_v_b", "B 臂 V 腔模失谐 delta_c_V_B（单位由 --hamiltonian-rate-unit 决定，默认 rad/s）"),
     ):
         parser.add_argument(option, dest=dest, type=float, help=help_text)
     parser.add_argument("--qfc-theta-h", dest="qfc_theta_h", type=float, help="QFC H转换角 theta_H (rad)")
@@ -337,6 +349,8 @@ def _parse_run_params(argv):
         ("omega_peak_b", config.emission.arm_B, "omega_peak", float),
         ("drive_waveform_a", config.emission, "drive_waveform_A", lambda value: str(value).strip().lower()),
         ("drive_waveform_b", config.emission, "drive_waveform_B", lambda value: str(value).strip().lower()),
+        ("hamiltonian_rate_unit", config.emission, "hamiltonian_rate_unit", lambda value: str(value).strip().lower()),
+        ("dissipation_rate_unit", config.emission, "dissipation_rate_unit", lambda value: str(value).strip().lower()),
         ("g_a", config.emission.arm_A, "g", float),
         ("g_b", config.emission.arm_B, "g", float),
         ("kappa_ex_a", config.emission.arm_A, "kappa_ex", float),

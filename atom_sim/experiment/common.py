@@ -21,7 +21,10 @@ DEFAULT_BG_RATE_STD_HZ = float(np.sqrt(5.0))
 DEFAULT_QFC_EFFICIENCY = 0.57
 DEFAULT_QFC_THETA_RAD = float(np.arcsin(np.sqrt(DEFAULT_QFC_EFFICIENCY)))
 DEFAULT_QFC_NOISE_SD_CPS_PER_MHZ = 41.1
-DEFAULT_EMISSION_SIGMA_NS = 8.9
+DEFAULT_EMISSION_SIGMA_NS = 9.5
+DEFAULT_EMISSION_T0_NS = 30.0
+DEFAULT_EMISSION_OMEGA_PEAK_RAD_S = float(2.0 * np.pi * 20e6 * 0.68)
+DEFAULT_EMISSION_G_RAD_S = float(2.0 * np.pi * 20e6 * 0.08)
 DEFAULT_DELAY_JITTER_NS = 0.3
 DEFAULT_T2_US = 330.0
 DETECTOR_CHANNELS = ("H1", "V1", "H2", "V2")
@@ -48,10 +51,13 @@ def write_click_records(raw_dir: Path, click_records: Any) -> None:
 @dataclass
 class AtomArmParams:
     """单臂发射参数（A/B 可独立设置）。"""
-    omega_peak: float = 2 * np.pi * 20e6
-    g: float = 2 * np.pi * 20e6
-    kappa_ex: float = 2 * np.pi * 20e6
-    kappa_in: float = 2 * np.pi * 1e6
+    # 约定：
+    # - Hamiltonian 参数（omega/g/delta_*）默认以 rad/s 给出；
+    # - Dissipation 参数（kappa_*/gamma_*）默认以 1/s(Hz) 给出。
+    omega_peak: float = DEFAULT_EMISSION_OMEGA_PEAK_RAD_S
+    g: float = DEFAULT_EMISSION_G_RAD_S
+    kappa_ex: float = 20e6
+    kappa_in: float = 1e6
     kappa_ex_H: Optional[float] = None
     kappa_ex_V: Optional[float] = None
     kappa_in_H: Optional[float] = None
@@ -75,12 +81,19 @@ class AtomArmParams:
 class EmissionParams:
     """发射阶段参数（可复用的最小物理输入）。"""
     n_bins: int = 100
-    dt_ns: float = 0.5
+    dt_ns: float = 1.0
     chi_max: int = 50
     sigma: float = DEFAULT_EMISSION_SIGMA_NS
+    t0_A_ns: Optional[float] = DEFAULT_EMISSION_T0_NS
+    t0_B_ns: Optional[float] = DEFAULT_EMISSION_T0_NS
     # 驱动包络类型（默认高斯）；支持: gaussian / sech / square
     drive_waveform_A: str = "gaussian"
     drive_waveform_B: str = "gaussian"
+    # 频率/速率单位口径（避免 2π 混淆）：
+    # - Hamiltonian 参数: omega/g/delta_*（内部统一转 rad/s）
+    # - Dissipation 参数: kappa_*/gamma_*（内部统一转 1/s）
+    hamiltonian_rate_unit: str = "rad_s"
+    dissipation_rate_unit: str = "hz"
     arm_A: AtomArmParams = field(default_factory=AtomArmParams)
     arm_B: AtomArmParams = field(default_factory=AtomArmParams)
     delay_ns: Optional[float] = None
@@ -275,6 +288,132 @@ def _resolve_emission_delay(
     if delay_jitter_ns is None:
         delay_jitter_ns = float(emission.delay_jitter_ns)
     return float(delay_ns), float(delay_jitter_ns)
+
+
+def _normalize_rate_unit(raw: str, *, field_name: str, allowed: Tuple[str, ...]) -> str:
+    normalized = str(raw).strip().lower().replace("/", "_")
+    aliases = {
+        "rad_s": "rad_s",
+        "radsec": "rad_s",
+        "radpersec": "rad_s",
+        "hz": "hz",
+        "s-1": "hz",
+        "1_s": "hz",
+        "1sec": "hz",
+    }
+    unit = aliases.get(normalized, normalized)
+    if unit not in allowed:
+        raise ValueError(f"{field_name}={raw!r} 非法，允许值: {allowed}")
+    return unit
+
+
+def _to_rad_per_s(value: float, unit: str) -> float:
+    v = float(value)
+    if unit == "rad_s":
+        return v
+    if unit == "hz":
+        return float(2.0 * np.pi * v)
+    raise ValueError(f"未知 Hamiltonian 单位: {unit}")
+
+
+def _to_decay_per_s(value: float, unit: str) -> float:
+    v = float(value)
+    if unit == "hz":
+        return v
+    if unit == "rad_s":
+        return float(v / (2.0 * np.pi))
+    raise ValueError(f"未知 Dissipation 单位: {unit}")
+
+
+def build_emission_kernel_kwargs(emission: EmissionParams) -> dict:
+    """
+    将 EmissionParams 统一转换为 run_dual_atom_emission 的入参字典。
+
+    口径：
+    - Hamiltonian 参数统一转 rad/s
+    - Dissipation 参数统一转 1/s
+    """
+    h_unit = _normalize_rate_unit(
+        emission.hamiltonian_rate_unit,
+        field_name="emission.hamiltonian_rate_unit",
+        allowed=("rad_s", "hz"),
+    )
+    d_unit = _normalize_rate_unit(
+        emission.dissipation_rate_unit,
+        field_name="emission.dissipation_rate_unit",
+        allowed=("hz", "rad_s"),
+    )
+
+    def _h(value: float) -> float:
+        return _to_rad_per_s(value, h_unit)
+
+    def _d(value: float) -> float:
+        return _to_decay_per_s(value, d_unit)
+
+    def _d_opt(value: Optional[float]) -> Optional[float]:
+        return None if value is None else _d(value)
+
+    return {
+        "n_bins": int(emission.n_bins),
+        "dt_ns": float(emission.dt_ns),
+        "chi_max": int(emission.chi_max),
+        "Alpha_A": _alpha_matrix(emission.arm_A),
+        "Alpha_B": _alpha_matrix(emission.arm_B),
+        "omega_peak_A": _h(emission.arm_A.omega_peak),
+        "omega_peak_B": _h(emission.arm_B.omega_peak),
+        "drive_waveform_A": emission.drive_waveform_A,
+        "drive_waveform_B": emission.drive_waveform_B,
+        "t0_A": emission.t0_A_ns,
+        "t0_B": emission.t0_B_ns,
+        "sigma": float(emission.sigma),
+        "g_A": _h(emission.arm_A.g),
+        "g_B": _h(emission.arm_B.g),
+        "kappa_ex_A": _d(emission.arm_A.kappa_ex),
+        "kappa_ex_B": _d(emission.arm_B.kappa_ex),
+        "kappa_in_A": _d(emission.arm_A.kappa_in),
+        "kappa_in_B": _d(emission.arm_B.kappa_in),
+        "kappa_ex_H_A": _d_opt(emission.arm_A.kappa_ex_H),
+        "kappa_ex_V_A": _d_opt(emission.arm_A.kappa_ex_V),
+        "kappa_in_H_A": _d_opt(emission.arm_A.kappa_in_H),
+        "kappa_in_V_A": _d_opt(emission.arm_A.kappa_in_V),
+        "kappa_ex_H_B": _d_opt(emission.arm_B.kappa_ex_H),
+        "kappa_ex_V_B": _d_opt(emission.arm_B.kappa_ex_V),
+        "kappa_in_H_B": _d_opt(emission.arm_B.kappa_in_H),
+        "kappa_in_V_B": _d_opt(emission.arm_B.kappa_in_V),
+        "gamma_sigma_plus_A": _d(emission.arm_A.gamma_sigma_plus),
+        "gamma_sigma_minus_A": _d(emission.arm_A.gamma_sigma_minus),
+        "gamma_sigma_plus_B": _d(emission.arm_B.gamma_sigma_plus),
+        "gamma_sigma_minus_B": _d(emission.arm_B.gamma_sigma_minus),
+        "delta_u_A": _h(emission.arm_A.delta_u),
+        "delta_u_B": _h(emission.arm_B.delta_u),
+        "delta_e_A": _h(emission.arm_A.delta_e),
+        "delta_e_B": _h(emission.arm_B.delta_e),
+        "delta_c_H_A": _h(emission.arm_A.delta_c_H),
+        "delta_c_V_A": _h(emission.arm_A.delta_c_V),
+        "delta_c_H_B": _h(emission.arm_B.delta_c_H),
+        "delta_c_V_B": _h(emission.arm_B.delta_c_V),
+    }
+
+
+def build_hom_self_check_setup(base_emission: EmissionParams) -> tuple[EmissionParams, int, float]:
+    """
+    返回 HOM 自检专用发射配置与采样参数。
+
+    Returns
+    -------
+    tuple
+        (emission_cfg, n_samples, tau_far_ns)
+    """
+    emission_cfg = replace(
+        base_emission,
+        n_bins=10,
+        dt_ns=0.5,
+        chi_max=20,
+        sigma=3.0,
+        t0_A_ns=None,
+        t0_B_ns=None,
+    )
+    return emission_cfg, 36, 20.0
 
 
 def _build_fiber_params(cfg: FiberParams) -> FiberChannelParams:
@@ -540,89 +679,6 @@ def _build_run_parameter_store(
         window_bins=window_bins,
         noise_budget=noise_budget,
     )
-
-
-def _build_parameter_snapshot(config: SimConfig, store: RunParameterStore) -> dict:
-    emission = config.emission
-    arm_a = emission.arm_A
-    arm_b = emission.arm_B
-    budget = store.noise_budget
-    return {
-        "n_bins": emission.n_bins,
-        "dt_ns": emission.dt_ns,
-        "sigma_ns": emission.sigma,
-        "drive_waveform_A": emission.drive_waveform_A,
-        "drive_waveform_B": emission.drive_waveform_B,
-        "omega_peak_A": arm_a.omega_peak,
-        "omega_peak_B": arm_b.omega_peak,
-        "g_A": arm_a.g,
-        "g_B": arm_b.g,
-        "kappa_ex_A": arm_a.kappa_ex,
-        "kappa_ex_B": arm_b.kappa_ex,
-        "kappa_in_A": arm_a.kappa_in,
-        "kappa_in_B": arm_b.kappa_in,
-        "kappa_ex_H_A": arm_a.kappa_ex_H,
-        "kappa_ex_V_A": arm_a.kappa_ex_V,
-        "kappa_in_H_A": arm_a.kappa_in_H,
-        "kappa_in_V_A": arm_a.kappa_in_V,
-        "kappa_ex_H_B": arm_b.kappa_ex_H,
-        "kappa_ex_V_B": arm_b.kappa_ex_V,
-        "kappa_in_H_B": arm_b.kappa_in_H,
-        "kappa_in_V_B": arm_b.kappa_in_V,
-        "gamma_sigma_plus_A": arm_a.gamma_sigma_plus,
-        "gamma_sigma_minus_A": arm_a.gamma_sigma_minus,
-        "gamma_sigma_plus_B": arm_b.gamma_sigma_plus,
-        "gamma_sigma_minus_B": arm_b.gamma_sigma_minus,
-        "delta_u_A": arm_a.delta_u,
-        "delta_u_B": arm_b.delta_u,
-        "delta_e_A": arm_a.delta_e,
-        "delta_e_B": arm_b.delta_e,
-        "delta_c_H_A": arm_a.delta_c_H,
-        "delta_c_V_A": arm_a.delta_c_V,
-        "delta_c_H_B": arm_b.delta_c_H,
-        "delta_c_V_B": arm_b.delta_c_V,
-        "alpha_A": [
-            [float(arm_a.alpha_h_plus), float(arm_a.alpha_h_minus)],
-            [float(arm_a.alpha_v_plus), float(arm_a.alpha_v_minus)],
-        ],
-        "alpha_B": [
-            [float(arm_b.alpha_h_plus), float(arm_b.alpha_h_minus)],
-            [float(arm_b.alpha_v_plus), float(arm_b.alpha_v_minus)],
-        ],
-        "qfc_theta_H": config.qfc.theta_H,
-        "qfc_theta_V": config.qfc.theta_V,
-        "qfc_phi_H": config.qfc.phi_H,
-        "qfc_phi_V": config.qfc.phi_V,
-        "qfc_noise_sd_cps_per_mhz_A": config.qfc.qfc_noise_sd_cps_per_mhz_A,
-        "qfc_noise_sd_cps_per_mhz_B": config.qfc.qfc_noise_sd_cps_per_mhz_B,
-        "filter_cavity_fwhm_mhz": config.qfc.filter_cavity.fwhm_mhz,
-        "filter_cavity_detuning_mhz_A": config.qfc.filter_cavity.detuning_mhz_A,
-        "filter_cavity_detuning_mhz_B": config.qfc.filter_cavity.detuning_mhz_B,
-        "filter_cavity_eta_peak_A": config.qfc.filter_cavity.eta_peak_A,
-        "filter_cavity_eta_peak_B": config.qfc.filter_cavity.eta_peak_B,
-        "eta_det": store.eta_det,
-        "eta_det_map": dict(store.eta_det_map),
-        "v_res": store.v_res,
-        "window_ns": store.window_ns,
-        "window_bins": store.window_bins,
-        "fiber_group_velocity_mps": config.run.fiber_group_velocity_mps,
-        "t_wait_overhead_us": config.run.t_wait_overhead_us,
-        "t_wait_length_scale": config.run.t_wait_length_scale,
-        "detector_gate_ns": budget.detection_gate_ns,
-        "bins_per_gate": budget.bins_per_gate,
-        "dark_rate_intrinsic_hz": budget.dark_rate_intrinsic_hz,
-        "bg_rate_mean_hz": budget.bg_rate_mean_hz,
-        "bg_rate_std_hz": budget.bg_rate_std_hz,
-        "dark_rate_bg_hz": budget.dark_rate_bg_hz,
-        "p_dark_intrinsic_gate": budget.p_dark_intrinsic_gate,
-        "p_bg_gate": budget.p_bg_gate,
-        "p_noise_gate": budget.p_noise_gate,
-        "p_dark_intrinsic_bin": budget.p_dark_intrinsic_bin,
-        "p_bg_bin": budget.p_bg_bin,
-        "p_noise_bin": budget.p_noise_bin,
-        "p_dark_intrinsic_bin_map": dict(store.p_dark_intrinsic_bin_map),
-        "p_bg_bin_map": dict(store.p_bg_bin_map),
-    }
 
 
 def _compute_effective_attempt_rate_hz(attempt_rate_hz: float, attempt_overhead_us: float = 0.0) -> float:
@@ -965,6 +1021,7 @@ def run_emission_to_bs(
     delay_ns, delay_jitter_ns = _resolve_emission_delay(
         emission, rng, delay_ns, delay_jitter_ns
     )
+    emission_kernel_kwargs = build_emission_kernel_kwargs(emission)
 
     def _call_stage(label: str) -> None:
         if hooks.on_stage is not None:
@@ -975,44 +1032,9 @@ def run_emission_to_bs(
     _call_stage("发射")
     t0 = time.perf_counter() if timings is not None else None
     emission = run_dual_atom_emission(
-        n_bins=emission.n_bins,
-        dt_ns=emission.dt_ns,
-        chi_max=emission.chi_max,
-        Alpha_A=_alpha_matrix(emission.arm_A),
-        Alpha_B=_alpha_matrix(emission.arm_B),
-        omega_peak_A=emission.arm_A.omega_peak,
-        omega_peak_B=emission.arm_B.omega_peak,
-        drive_waveform_A=emission.drive_waveform_A,
-        drive_waveform_B=emission.drive_waveform_B,
-        sigma=emission.sigma,
+        **emission_kernel_kwargs,
         delay_ns=delay_ns,
         delay_jitter_ns=delay_jitter_ns,
-        g_A=emission.arm_A.g,
-        g_B=emission.arm_B.g,
-        kappa_ex_A=emission.arm_A.kappa_ex,
-        kappa_ex_B=emission.arm_B.kappa_ex,
-        kappa_in_A=emission.arm_A.kappa_in,
-        kappa_in_B=emission.arm_B.kappa_in,
-        kappa_ex_H_A=emission.arm_A.kappa_ex_H,
-        kappa_ex_V_A=emission.arm_A.kappa_ex_V,
-        kappa_in_H_A=emission.arm_A.kappa_in_H,
-        kappa_in_V_A=emission.arm_A.kappa_in_V,
-        kappa_ex_H_B=emission.arm_B.kappa_ex_H,
-        kappa_ex_V_B=emission.arm_B.kappa_ex_V,
-        kappa_in_H_B=emission.arm_B.kappa_in_H,
-        kappa_in_V_B=emission.arm_B.kappa_in_V,
-        gamma_sigma_plus_A=emission.arm_A.gamma_sigma_plus,
-        gamma_sigma_minus_A=emission.arm_A.gamma_sigma_minus,
-        gamma_sigma_plus_B=emission.arm_B.gamma_sigma_plus,
-        gamma_sigma_minus_B=emission.arm_B.gamma_sigma_minus,
-        delta_u_A=emission.arm_A.delta_u,
-        delta_u_B=emission.arm_B.delta_u,
-        delta_e_A=emission.arm_A.delta_e,
-        delta_e_B=emission.arm_B.delta_e,
-        delta_c_H_A=emission.arm_A.delta_c_H,
-        delta_c_V_A=emission.arm_A.delta_c_V,
-        delta_c_H_B=emission.arm_B.delta_c_H,
-        delta_c_V_B=emission.arm_B.delta_c_V,
         rng=rng,
         verbose=verbose,
         diagnostics=emission_diagnostics,
