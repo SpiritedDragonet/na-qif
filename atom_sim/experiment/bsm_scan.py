@@ -14,6 +14,7 @@ from ..simulation import compute_pauli_correlators_and_chsh
 from .common import (
     SimConfig,
     run_trial_detection_core,
+    write_click_records,
 )
 
 
@@ -85,8 +86,8 @@ def run_bsm_scan_task(
     raw_dir: Path,
     plots_dir: Path,
     task_id: str,
-) -> tuple[dict, dict]:
-    _ = raw_dir, plots_dir, task_id
+) -> dict:
+    _ = plots_dir, task_id
 
     seed = task.get("seed")
     seed = int(seed) if seed is not None else None
@@ -188,10 +189,12 @@ def run_bsm_scan_task(
         entry[pattern_key] = count
         entry[f"{pattern_key}_rate"] = (float(count) / float(shots_total)) if shots_total > 0 else 0.0
 
-    return {
+    metrics = {
         "run_index": run_index,
         "bs_thetas": [entry],
-    }, {f"{float(bs_theta):.9f}": click_records}
+    }
+    write_click_records(raw_dir, {f"{float(bs_theta):.9f}": click_records})
+    return metrics
 
 
 def iter_bsm_scan_core_tasks(config: SimConfig) -> Iterator[dict]:

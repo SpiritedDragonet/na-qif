@@ -343,6 +343,7 @@ def _accumulate_success_and_fidelity(
     effects_by_bin: List[dict],
     patterns: List[Tuple[str, Tuple[str, str]]],
     window_bins: Optional[int],
+    include_fidelity: bool = True,
 ) -> Tuple[float, float]:
     """在给定 effect 集合上累计成功率与 Bell 保真度加权和。"""
     p_success = 0.0
@@ -353,13 +354,24 @@ def _accumulate_success_and_fidelity(
         key_b = _order_two_port_detectors([det_b])
 
         weight_same = engine.sum_same_bin(engine.left_envs_identity, effects_by_bin, key_pair)
-        weight_diff = engine.sum_diff_bins(engine.left_envs_identity, effects_by_bin, key_a, key_b, window_bins)
-        weight_diff += engine.sum_diff_bins(engine.left_envs_identity, effects_by_bin, key_b, key_a, window_bins)
+        weight_diff = engine.sum_diff_bins_bidirectional(
+            engine.left_envs_identity,
+            effects_by_bin,
+            key_a,
+            key_b,
+            window_bins,
+        )
         p_success += weight_same + weight_diff
 
-        fidelity_weighted += engine.sum_same_bin(left_envs_bell[bell_state], effects_by_bin, key_pair)
-        fidelity_weighted += engine.sum_diff_bins(left_envs_bell[bell_state], effects_by_bin, key_a, key_b, window_bins)
-        fidelity_weighted += engine.sum_diff_bins(left_envs_bell[bell_state], effects_by_bin, key_b, key_a, window_bins)
+        if include_fidelity:
+            fidelity_weighted += engine.sum_same_bin(left_envs_bell[bell_state], effects_by_bin, key_pair)
+            fidelity_weighted += engine.sum_diff_bins_bidirectional(
+                left_envs_bell[bell_state],
+                effects_by_bin,
+                key_a,
+                key_b,
+                window_bins,
+            )
     return float(max(0.0, p_success)), float(max(0.0, fidelity_weighted))
 
 
@@ -636,9 +648,9 @@ def run_detection_pipeline(
         p_success_true = 0.0
         fidelity_weighted_all = 0.0
         fidelity_weighted_true = 0.0
-        for idx, (bell_state, (det_a, det_b)) in enumerate(patterns, start=1):
-            if verbose:
-                print(f"  POVM累加: {bell_state} ({idx}/{len(patterns)})")
+        if verbose:
+            print(f"  POVM枚举模式数: {len(patterns)}")
+            print("  POVM枚举阶段: 1/3 (all, success+fidelity)")
 
         p_success_all, fidelity_weighted_all = _accumulate_success_and_fidelity(
             engine,
@@ -646,24 +658,41 @@ def run_detection_pipeline(
             effects_all_by_bin,
             patterns,
             window_bins,
+            include_fidelity=True,
         )
+        if verbose:
+            elapsed = time.perf_counter() - t0
+            print(f"  POVM枚举阶段完成: 1/3 | elapsed={elapsed:.2f}s")
+
+        if verbose:
+            print("  POVM枚举阶段: 2/3 (true_signal, success+fidelity)")
         p_success_true, fidelity_weighted_true = _accumulate_success_and_fidelity(
             engine,
             left_envs_bell,
             effects_true_sig_by_bin,
             patterns,
             window_bins,
+            include_fidelity=True,
         )
+        if verbose:
+            elapsed = time.perf_counter() - t0
+            print(f"  POVM枚举阶段完成: 2/3 | elapsed={elapsed:.2f}s")
         # false 定义：相对“纯真实点击(true)”的差额，包含本征暗计数与背景辅助两部分。
         p_success_false = float(max(0.0, p_success_all - p_success_true))
 
+        if verbose:
+            print("  POVM枚举阶段: 3/3 (all_signal_only, success only)")
         p_success_sig_total, _ = _accumulate_success_and_fidelity(
             engine,
             left_envs_bell,
             effects_all_sig_by_bin,
             patterns,
             window_bins,
+            include_fidelity=False,
         )
+        if verbose:
+            elapsed = time.perf_counter() - t0
+            print(f"  POVM枚举阶段完成: 3/3 | elapsed={elapsed:.2f}s")
         # effects_true_sig_by_bin 与上面的 p_success_true 使用同一 effect 集合，
         # 无需重复做一次完全相同的收缩。
         p_success_sig_true = p_success_true

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Optional, Callable, Any, Tuple
 from dataclasses import dataclass, field, replace
+from pathlib import Path
+import json
 import time
 import numpy as np
 
@@ -23,6 +25,24 @@ DEFAULT_EMISSION_SIGMA_NS = 8.9
 DEFAULT_DELAY_JITTER_NS = 0.3
 DEFAULT_T2_US = 330.0
 DETECTOR_CHANNELS = ("H1", "V1", "H2", "V2")
+
+
+def write_click_records(raw_dir: Path, click_records: Any) -> None:
+    """
+    写入 raw/clicks.json（task 级独占文件）。
+
+    说明：
+    - 每个 task 的 clicks 文件路径独立，无跨 worker 共享写入；
+    - 仍使用原子替换，避免中断时读到半写入 JSON。
+    """
+    if click_records is None:
+        return
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    path = raw_dir / "clicks.json"
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"clicks": click_records}, f, ensure_ascii=False)
+    tmp.replace(path)
 
 
 @dataclass

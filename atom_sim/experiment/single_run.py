@@ -24,6 +24,7 @@ from .common import (
     PipelineHooks,
     run_trial_physics_core,
     run_detection_core_from_pipe,
+    write_click_records,
     _build_parameter_snapshot,
     _build_run_parameter_store,
 )
@@ -61,6 +62,7 @@ def save_debug_info(
     output_dir: Path,
     step_index: int,
     run_tag: Optional[str] = None,
+    stage_context: Optional[dict] = None,
 ):
     """
     保存调试信息到文件。
@@ -85,6 +87,19 @@ def save_debug_info(
     info = {}
     info['stage'] = stage
     info['step'] = step_index
+    stage_lower = str(stage).strip().lower()
+    stage_note = None
+    if "after fiber" in stage_lower:
+        stage_note = (
+            "注: 光纤在当前实现中仅采样 Heisenberg 端参数，不直接改写态端 MPS；"
+            "因此态快照可与上一阶段一致，但最终测量统计会变化。"
+        )
+    elif "after bs" in stage_lower:
+        stage_note = (
+            "注: BS 已并入测量端，不直接作用于态；"
+            "该快照主要反映退相干后态。若本次轨迹未采到相位翻转，"
+            "与 After Fiber 可近似一致，但探测端口统计仍会受 BS 参数影响。"
+        )
 
     # MPS维度信息
     chi_list = mps._mps.chi
@@ -117,6 +132,18 @@ def save_debug_info(
     with open(info_file, 'w', encoding='utf-8') as f:
         f.write(f'调试信息 - {stage}\n')
         f.write('='*60 + '\n\n')
+        if stage_note:
+            f.write(stage_note + '\n\n')
+        if stage_context:
+            f.write('阶段口径/参数:\n')
+            for key in sorted(stage_context.keys()):
+                value = stage_context[key]
+                if isinstance(value, float):
+                    value_str = f"{value:.6e}"
+                else:
+                    value_str = str(value)
+                f.write(f'  {key}: {value_str}\n')
+            f.write('\n')
         f.write('MPS维度信息:\n')
         f.write(f'  n_sites = {info["n_sites"]}\n')
         f.write(f'  n_bins = {info["n_bins"]}\n')
@@ -412,6 +439,32 @@ def _run_single_simulation_core(
                 kwargs["fiber_sample"] = fiber_sample
                 plot_dual_arm_heatmap(target, **kwargs)
             if DEBUG_MODE:
+                stage_context = {
+                    "representation": (
+                        "heisenberg"
+                        if "heisenberg" in debug_stage.strip().lower()
+                        else "state_side"
+                    ),
+                    "acts_on_state": (
+                        False if "heisenberg" in debug_stage.strip().lower() else True
+                    ),
+                }
+                if qfc_params is not None and len(qfc_params) >= 2:
+                    stage_context["qfc_theta_H"] = float(qfc_params[0])
+                    stage_context["qfc_theta_V"] = float(qfc_params[1])
+                if fiber_sample is not None and len(fiber_sample) >= 9:
+                    _, _, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std = fiber_sample
+                    stage_context["fiber_eta_H_A"] = float(eta_H_A)
+                    stage_context["fiber_eta_V_A"] = float(eta_V_A)
+                    stage_context["fiber_eta_H_B"] = float(eta_H_B)
+                    stage_context["fiber_eta_V_B"] = float(eta_V_B)
+                    stage_context["fiber_phase_drift_rad"] = float(phase)
+                    stage_context["fiber_phase_slope_rad_per_bin"] = float(phase_slope)
+                    stage_context["fiber_phase_jitter_std_rad"] = float(phase_jitter_std)
+                if bs_unitary is not None:
+                    bs_theta = float(config.detector.bs_theta)
+                    stage_context["bs_theta_rad"] = bs_theta
+                    stage_context["bs_split_ratio"] = float(np.sin(bs_theta) ** 2)
                 save_debug_info(
                     mps=emission.mps,
                     n_bins=emission.get_n_bins(),
@@ -419,6 +472,7 @@ def _run_single_simulation_core(
                     output_dir=output_dir,
                     step_index=step_index,
                     run_tag=run_tag,
+                    stage_context=stage_context,
                 )
         return _hook
 
@@ -748,6 +802,9 @@ def _run_single_simulation_core(
             with open(det_file, 'w', encoding='utf-8') as file:
                 file.write('探测结果\n')
                 file.write('='*60 + '\n\n')
+                file.write('口径说明:\n')
+                file.write('  1) 该文件展示单次抽样得到的条件态（未归一化）。\n')
+                file.write('  2) success_metrics 来自全枚举统计，口径不同且不受本文件格式影响。\n\n')
                 file.write(f'成功: {det_result.success}\n')
                 file.write(f'Bell态: {det_result.bell_state}\n')
                 file.write(f'点击次数: {len(det_result.clicks)}\n')
@@ -760,20 +817,39 @@ def _run_single_simulation_core(
 
                     file.write('\n量子比特密度矩阵:\n')
                     rho = det_result.qubit_state
+                    trace_rho = float(np.trace(rho).real)
                     file.write('  基: |00>, |01>, |10>, |11>\n')
+                    file.write(f'  Tr(rho) = {trace_rho:.6e}\n')
+                    wrote_any = False
                     for i in range(4):
                         for j in range(4):
                             val = rho[i, j]
-                            if abs(val) > 1e-10:
-                                file.write(f'  rho[{i},{j}] = {val:.4f}\n')
+                            if abs(val) > 1e-14:
+                                file.write(
+                                    f'  rho[{i},{j}] = {val.real:.6e}{val.imag:+.6e}j\n'
+                                )
+                                wrote_any = True
+                    if not wrote_any:
+                        file.write('  (所有矩阵元绝对值均 < 1e-14)\n')
 
-                    file.write(f'\n纯度: {np.trace(rho @ rho).real:.4f}\n')
+                    purity_raw = float(np.trace(rho @ rho).real)
+                    file.write(f'\n纯度(未归一化): {purity_raw:.6e}\n')
+                    if trace_rho > 1e-15:
+                        rho_cond = rho / trace_rho
+                        purity_cond = float(np.trace(rho_cond @ rho_cond).real)
+                        file.write(f'纯度(条件化): {purity_cond:.6f}\n')
+                    else:
+                        file.write('纯度(条件化): N/A (Tr(rho)≈0)\n')
 
                     file.write('\nBell态保真度:\n')
                     for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
-                        fid = compute_fidelity_with_bell(rho, bell)
+                        fid_full = compute_fidelity_with_bell(rho, bell)
+                        fid_cond = (fid_full / trace_rho) if trace_rho > 1e-15 else 0.0
                         marker = " <-- 探测到的" if bell == det_result.bell_state else ""
-                        file.write(f'  F({bell}) = {fid:.4f}{marker}\n')
+                        file.write(
+                            f'  F_full({bell}) = {fid_full:.6e}, '
+                            f'F_cond = {fid_cond:.6f}{marker}\n'
+                        )
 
             print(f"  调试信息已保存: {det_file.name}")
 
@@ -884,7 +960,7 @@ def run_sim_task(
     raw_dir: Path,
     plots_dir: Path,
     task_id: str,
-) -> tuple[dict, Optional[list]]:
+) -> dict:
     seed_raw = task.get("seed")
     seed = int(seed_raw) if seed_raw is not None else None
     run_index = int(task.get("run_index", 1))
@@ -897,5 +973,6 @@ def run_sim_task(
         run_tag=task_id,
         seed=seed,
     )
+    write_click_records(raw_dir, click_records)
     metrics = build_sim_task_metrics(run_stats, run_index, success_metrics)
-    return metrics, click_records
+    return metrics

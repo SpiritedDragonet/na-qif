@@ -14,6 +14,7 @@ from .common import (
     SimConfig,
     run_trial_detection_core,
     _compute_effective_attempt_rate_hz,
+    write_click_records,
 )
 
 
@@ -55,8 +56,8 @@ def run_length_scan_task(
     raw_dir: Path,
     plots_dir: Path,
     task_id: str,
-) -> tuple[dict, dict]:
-    _ = raw_dir, plots_dir, task_id
+) -> dict:
+    _ = plots_dir, task_id
 
     seed = task.get("seed")
     seed = int(seed) if seed is not None else None
@@ -161,10 +162,12 @@ def run_length_scan_task(
         "chsh_s_max": float(np.mean(chsh_vals)) if chsh_vals else 0.0,
     }
 
-    return {
+    metrics = {
         "run_index": run_index,
         "lengths": [entry],
-    }, {f"{float(length_km):.9f}": click_records}
+    }
+    write_click_records(raw_dir, {f"{float(length_km):.9f}": click_records})
+    return metrics
 
 
 def iter_length_scan_core_tasks(config: SimConfig) -> Iterator[dict]:

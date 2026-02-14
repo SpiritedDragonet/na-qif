@@ -695,6 +695,76 @@ class DetectionContractionEngine:
                     )
         return total
 
+    def sum_diff_bins_bidirectional(
+        self,
+        left_envs: List[np.ndarray],
+        effects_by_bin: List[dict],
+        key_a: Tuple[str, ...],
+        key_b: Tuple[str, ...],
+        window_bins: Optional[int],
+    ) -> float:
+        """
+        双向累计不同 bin 双点击：A->B 与 B->A 在一次遍历中同时完成。
+
+        等价于：
+            sum_diff_bins(..., key_a, key_b, ...) + sum_diff_bins(..., key_b, key_a, ...)
+        """
+        total = 0.0
+        for first_site in range(1, self.n_bins):
+            op_first_ab = effects_by_bin[first_site - 1].get(key_a, self.zero_effect)
+            op_first_ba = effects_by_bin[first_site - 1].get(key_b, self.zero_effect)
+
+            env_mid_ab = self._apply_env_left(
+                self.b_list[first_site],
+                self.bc_list[first_site],
+                op_first_ab,
+                left_envs[first_site],
+            )
+            env_mid_ba = self._apply_env_left(
+                self.b_list[first_site],
+                self.bc_list[first_site],
+                op_first_ba,
+                left_envs[first_site],
+            )
+
+            j_end = self.n_bins
+            if window_bins is not None:
+                j_end = min(self.n_bins, first_site + window_bins)
+
+            for second_site in range(first_site + 1, j_end + 1):
+                op_second_ab = effects_by_bin[second_site - 1].get(key_b, self.zero_effect)
+                op_second_ba = effects_by_bin[second_site - 1].get(key_a, self.zero_effect)
+
+                env_j_ab = self._apply_env_left(
+                    self.b_list[second_site],
+                    self.bc_list[second_site],
+                    op_second_ab,
+                    env_mid_ab,
+                )
+                env_j_ba = self._apply_env_left(
+                    self.b_list[second_site],
+                    self.bc_list[second_site],
+                    op_second_ba,
+                    env_mid_ba,
+                )
+                total += float(np.einsum('ij,ij->', env_j_ab, self.right_envs[second_site + 1]).real)
+                total += float(np.einsum('ij,ij->', env_j_ba, self.right_envs[second_site + 1]).real)
+
+                if second_site < j_end:
+                    env_mid_ab = self._apply_env_left(
+                        self.b_list[second_site],
+                        self.bc_list[second_site],
+                        self.e_no_list[second_site - 1],
+                        env_mid_ab,
+                    )
+                    env_mid_ba = self._apply_env_left(
+                        self.b_list[second_site],
+                        self.bc_list[second_site],
+                        self.e_no_list[second_site - 1],
+                        env_mid_ba,
+                    )
+        return total
+
     def collect_same_bin_records(
         self,
         effects_by_bin: List[dict],

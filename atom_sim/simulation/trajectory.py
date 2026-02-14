@@ -260,7 +260,16 @@ def apply_qfc_filter_memory_chain(
     在态端对发射后 MPS 施加 QFC + 滤波腔显式记忆链。
 
     站点布局约定（输入）：atomA, atomB, A1, B1, ..., AN, BN
-    输出布局：atomA, atomB, A1, B1, ..., AN, BN, memA, memB
+
+    输出布局（取决于 filter_dynamics_enabled）：
+    - False（快速路径，默认）：仅逐 bin QFC + 插损，不引入显式记忆模；
+      输出仍为 atomA, atomB, A1, B1, ..., AN, BN。
+    - True（显式记忆路径）：在链尾追加两条 3D 记忆模；
+      输出为 atomA, atomB, A1, B1, ..., AN, BN, memA, memB。
+
+    物理口径：
+    - 跨 bin 关联由滤波腔记忆模携带（A/B 各一条）。
+    - 这两条“关联核”不附着在 atomA/atomB 上，而是独立尾部站点 memA/memB。
     """
     _print_header("QFC + Filter Memory (state-side)", verbose)
 
@@ -305,7 +314,7 @@ def apply_qfc_filter_memory_chain(
         _print_footer(mps_fast, verbose, stage="QFC + Filter Memory")
         return mps_fast
 
-    # 记忆路径：在链尾添加两条记忆模（A/B），不展开全波函数。
+    # 记忆路径：在链尾添加两条记忆模（A/B），并通过 bin<->mem 邻接门产生跨 bin 关联。
     local_dims = mps.d.copy() + [3, 3]
     mem_site = BosonSite(2, None)
     mem_a = TeNPyMPS.from_product_state([mem_site], ['0'], bc='finite', form='B', unit_cell_width=1)

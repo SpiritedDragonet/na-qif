@@ -14,6 +14,7 @@ from .common import (
     SimConfig,
     run_trial_physics_core,
     run_detection_core_from_pipe,
+    write_click_records,
 )
 
 DEFAULT_TAU_RANDOM_RANGE_NS = (-10.0, 10.0)
@@ -276,8 +277,8 @@ def run_hom_task(
     raw_dir: Path,
     plots_dir: Path,
     task_id: str,
-) -> tuple[dict, Optional[list]]:
-    _ = raw_dir, plots_dir, task_id
+) -> dict:
+    _ = plots_dir, task_id
     seed_raw = task.get("seed")
     seed = int(seed_raw) if seed_raw is not None else None
     run_index = int(task.get("run_index", 0) or 0)
@@ -304,4 +305,5 @@ def run_hom_task(
         "p_arrive": p_arrive,
         "coinc": coincid,
     }
-    return metrics, click_records
+    write_click_records(raw_dir, click_records)
+    return metrics

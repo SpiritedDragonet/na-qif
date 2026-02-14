@@ -16,6 +16,7 @@ from ..simulation import (
 from .common import (
     SimConfig,
     run_trial_detection_core,
+    write_click_records,
 )
 
 WINDOW_SCAN_METRIC_KEYS = (
@@ -73,8 +74,8 @@ def run_window_scan_task(
     raw_dir: Path,
     plots_dir: Path,
     task_id: str,
-) -> tuple[dict, dict]:
-    _ = raw_dir, plots_dir, task_id
+) -> dict:
+    _ = plots_dir, task_id
 
     seed = task.get("seed")
     seed = int(seed) if seed is not None else None
@@ -225,10 +226,12 @@ def run_window_scan_task(
         for shot in shot_records
     ]
 
-    return {
+    metrics = {
         "run_index": run_index,
         "window_scan": entry,
-    }, click_records
+    }
+    write_click_records(raw_dir, click_records)
+    return metrics
 
 
 def iter_window_scan_core_tasks(config: SimConfig) -> Iterator[dict]:

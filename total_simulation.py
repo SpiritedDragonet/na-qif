@@ -1125,7 +1125,7 @@ def _run_worker_loop(
 
         now = time.time()
         if now - last_heartbeat > 60:
-            if heartbeat_path is not None:
+            if heartbeat_path is not None and heartbeat_path.parent.exists():
                 heartbeat_path.write_text(str(int(now)), encoding="utf-8")
             last_heartbeat = now
         _recover_stale_tasks(paths)
@@ -1184,6 +1184,8 @@ def _run_worker_loop(
         def _heartbeat_loop() -> None:
             while not stop_flag.is_set():
                 ts = int(time.time())
+                if heartbeat_path is None or not heartbeat_path.parent.exists():
+                    break
                 heartbeat_path.write_text(str(ts), encoding="utf-8")
                 # touch task_path：避免被回收为 stale
                 if task_path.exists():
@@ -1228,15 +1230,13 @@ def _run_worker_loop(
                     raise ValueError(
                         f"SCHEMA_ERROR: 无法分发 CORE_TRIAL，experiment={task_experiment or '缺失'}"
                     )
-                metrics, click_records = runner(
+                metrics = runner(
                     task=task,
                     config=config,
                     raw_dir=raw_dir,
                     plots_dir=plots_dir,
                     task_id=task_id,
                 )
-                if click_records is not None:
-                    _write_json_atomic(raw_dir / "clicks.json", {"clicks": click_records})
             else:
                 raise ValueError(
                     f"SCHEMA_ERROR: 无法分发 task，mode={task_mode or '缺失'} "
