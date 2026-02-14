@@ -285,45 +285,6 @@ def _parse_fiber_sample(fiber_sample: Optional[tuple]) -> Tuple[np.ndarray, np.n
     )
 
 
-def _scale_source_background_map(
-    p_bg_source_map: dict,
-    eta_H_A: float,
-    eta_V_A: float,
-    eta_H_B: float,
-    eta_V_B: float,
-    bs_theta: float,
-) -> dict:
-    """
-    将“源端背景概率（每 bin）”映射为探测端 OR-map。
-
-    近似模型：
-    1) 源端背景在 A/B 臂产生后，先乘对应臂传输系数。
-    2) 在中心站 BS 处按 cos^2(theta)/sin^2(theta) 分流到两个端口。
-    3) 每个端口的背景在 H/V 探测器间按 1/2 均分。
-
-    该映射保留了关键物理尺度：源端背景会随链路透过率衰减。
-    """
-    eta_arm_a = float(np.clip(0.5 * (eta_H_A + eta_V_A), 0.0, 1.0))
-    eta_arm_b = float(np.clip(0.5 * (eta_H_B + eta_V_B), 0.0, 1.0))
-
-    p_src_a = float(np.clip(0.5 * (p_bg_source_map["H1"] + p_bg_source_map["V1"]), 0.0, 1.0))
-    p_src_b = float(np.clip(0.5 * (p_bg_source_map["H2"] + p_bg_source_map["V2"]), 0.0, 1.0))
-
-    theta = float(np.clip(bs_theta, 0.0, np.pi / 2.0))
-    c2 = float(np.cos(theta) ** 2)
-    s2 = float(np.sin(theta) ** 2)
-
-    p_port_1 = float(np.clip(p_src_a * eta_arm_a * c2 + p_src_b * eta_arm_b * s2, 0.0, 1.0))
-    p_port_2 = float(np.clip(p_src_a * eta_arm_a * s2 + p_src_b * eta_arm_b * c2, 0.0, 1.0))
-
-    return {
-        "H1": float(np.clip(0.5 * p_port_1, 0.0, 1.0)),
-        "V1": float(np.clip(0.5 * p_port_1, 0.0, 1.0)),
-        "H2": float(np.clip(0.5 * p_port_2, 0.0, 1.0)),
-        "V2": float(np.clip(0.5 * p_port_2, 0.0, 1.0)),
-    }
-
-
 def _build_empty_samples(n_samples: int) -> List[TwoPhotonDetectionResult]:
     """构造空点击占位结果（用于短路返回）。"""
     return [
@@ -397,7 +358,7 @@ def run_detection_pipeline(
     n_bins: int,
     eta_det: float | dict = 0.85,
     p_dark_intrinsic: float | dict = 0.0,
-    p_bg_source: float | dict = 0.0,
+    p_bg_detector: float | dict = 0.0,
     window_bins: Optional[int] = None,
     rng: Optional[np.random.Generator] = None,
     verbose: bool = True,
@@ -421,6 +382,8 @@ def run_detection_pipeline(
     - 本函数不再承载底层算符生成和张量收缩细节；
     - v_res 仅表示“残差可区分度”，用于未显式建模因素的剩余项。
     - 当原子站点是 12D emitter（atom×cavity）时，Bell 与 qubit 读出采用“腔偏迹口径”。
+    - `p_bg_detector` 语义为“探测器端每 bin 背景点击概率映射(H1/V1/H2/V2)”，
+      本函数不会再做链路/BS 二次映射。
     """
     if rng is None:
         rng = np.random.default_rng()
@@ -445,7 +408,7 @@ def run_detection_pipeline(
 
     eta_det_map = _resolve_detector_map(eta_det, "eta_det")
     p_dark_intrinsic_map = _resolve_detector_map(p_dark_intrinsic, "p_dark_intrinsic")
-    p_bg_source_map = _resolve_detector_map(p_bg_source, "p_bg_source")
+    p_bg_map = _resolve_detector_map(p_bg_detector, "p_bg_detector")
     p_dark_intrinsic_scalar = max(p_dark_intrinsic_map.values())
 
     mps = mps.copy()
@@ -461,14 +424,6 @@ def run_detection_pipeline(
 
     bs_unitary_6d = _validate_bs_unitary(bs_unitary)
     U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase_slope, phase_jitter_std = _parse_fiber_sample(fiber_sample)
-    p_bg_map = _scale_source_background_map(
-        p_bg_source_map,
-        eta_H_A=eta_H_A,
-        eta_V_A=eta_V_A,
-        eta_H_B=eta_H_B,
-        eta_V_B=eta_V_B,
-        bs_theta=bs_theta,
-    )
     p_bg_scalar = max(p_bg_map.values())
 
     if verbose and n_samples > 0:
@@ -1073,7 +1028,7 @@ def run_detection_self_checks(verbose: bool = True) -> None:
         for mask, effect in map_dist.items():
             _assert_close(f"v_res=0(mask) key={key} mask={mask}", map_v0[mask], effect)
 
-    # E2: 极限 sanity（eta=1, p_dark_intrinsic=0, p_bg_source=0, 理想链路）
+    # E2: 极限 sanity（eta=1, p_dark_intrinsic=0, p_bg_detector=0, 理想链路）
     local_dims = [12, 12] + [5, 5]
     state_ideal = MPSState(local_dims=local_dims, init_state=[1, 1, 0, 0], max_bond=8)
     run_ideal = run_detection_pipeline(
@@ -1081,7 +1036,7 @@ def run_detection_self_checks(verbose: bool = True) -> None:
         n_bins=1,
         eta_det=1.0,
         p_dark_intrinsic=0.0,
-        p_bg_source=0.0,
+        p_bg_detector=0.0,
         window_bins=0,
         rng=np.random.default_rng(42),
         verbose=False,
@@ -1109,7 +1064,7 @@ def run_detection_self_checks(verbose: bool = True) -> None:
         n_bins=1,
         eta_det=0.85,
         p_dark_intrinsic=2.3e-6,
-        p_bg_source=0.0,
+        p_bg_detector=0.0,
         window_bins=0,
         rng=np.random.default_rng(123),
         verbose=False,
@@ -1172,7 +1127,7 @@ def run_detection_self_checks(verbose: bool = True) -> None:
             n_bins=emission.get_n_bins(),
             eta_det=1.0,
             p_dark_intrinsic=0.0,
-            p_bg_source=0.0,
+            p_bg_detector=0.0,
             window_bins=0,
             rng=rng,
             verbose=False,

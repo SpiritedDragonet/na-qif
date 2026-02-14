@@ -813,7 +813,7 @@ def run_detection_core_from_pipe(
     window_bins=_WINDOW_BINS_UNSET,
     param_store: Optional[RunParameterStore] = None,
     p_dark_intrinsic_map: Optional[dict] = None,
-    p_bg_source_map: Optional[dict] = None,
+    p_bg_detector_map: Optional[dict] = None,
 ):
     """
     基于已生成的单次物理链路态，执行统一探测 core。
@@ -855,13 +855,13 @@ def run_detection_core_from_pipe(
     )
     bg_map = (
         dict(param_store.p_bg_bin_map)
-        if p_bg_source_map is None
-        else dict(p_bg_source_map)
+        if p_bg_detector_map is None
+        else dict(p_bg_detector_map)
     )
     pipeline = run_detection_pipeline(
         **detect_common,
         p_dark_intrinsic=dark_map,
-        p_bg_source=bg_map,
+        p_bg_detector=bg_map,
         n_samples=int(shots_per_run),
         compute_metrics=bool(compute_metrics),
     )
@@ -884,7 +884,7 @@ def run_trial_detection_core(
     bs_theta: Optional[float] = None,
     window_bins=_WINDOW_BINS_UNSET,
     p_dark_intrinsic_map: Optional[dict] = None,
-    p_bg_source_map: Optional[dict] = None,
+    p_bg_detector_map: Optional[dict] = None,
 ):
     """
     统一 trial+detect 入口：先跑物理链路，再跑探测统计。
@@ -913,7 +913,7 @@ def run_trial_detection_core(
         bs_theta=bs_theta,
         window_bins=window_bins,
         p_dark_intrinsic_map=p_dark_intrinsic_map,
-        p_bg_source_map=p_bg_source_map,
+        p_bg_detector_map=p_bg_detector_map,
     )
     return pipe, param_store, pipeline
 

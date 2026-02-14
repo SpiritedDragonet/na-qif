@@ -736,6 +736,26 @@ def run_dual_atom_emission(
     atom_A_evolution = []
     atom_B_evolution = []
 
+    def _assert_emission_layout(n_idx: int) -> None:
+        """发射循环布局不变量：原子在右、对应 bin 在左。"""
+        if mps.d[site_atomA] != DIM_EMITTER or mps.d[site_atomB] != DIM_EMITTER:
+            raise RuntimeError(
+                f"发射布局错误(n={n_idx}): atom维度异常, "
+                f"d[{site_atomA}]={mps.d[site_atomA]}, d[{site_atomB}]={mps.d[site_atomB]}, "
+                f"期望 {DIM_EMITTER}"
+            )
+        if site_atomA <= 0 or site_atomB <= 0:
+            raise RuntimeError(
+                f"发射布局错误(n={n_idx}): atom站点无左邻bin, "
+                f"site_atomA={site_atomA}, site_atomB={site_atomB}"
+            )
+        if mps.d[site_atomA - 1] != DIM_BIN or mps.d[site_atomB - 1] != DIM_BIN:
+            raise RuntimeError(
+                f"发射布局错误(n={n_idx}): atom左邻不是bin, "
+                f"d[{site_atomA - 1}]={mps.d[site_atomA - 1]}, d[{site_atomB - 1}]={mps.d[site_atomB - 1]}, "
+                f"期望 {DIM_BIN}"
+            )
+
     def _bin_to_time_index(bin_index: int) -> int:
         """
         时间索引映射：
@@ -745,6 +765,7 @@ def run_dual_atom_emission(
         return (n_bins - 1) - bin_index
 
     for n in range(n_bins-1, -1, -1):  # 从 n_bins-1 到 0（空间索引）
+        _assert_emission_layout(n)
         # --------------------------------------------------------------
         # 这里用“反向遍历”来对齐物理时间顺序：
         #   - 空间索引 n 大的 bin 对应更早的发射时间
@@ -892,6 +913,10 @@ def run_dual_atom_emission(
         print(f"  原子位置: atomA@{site_atomA}, atomB@{site_atomB}")
         print(f"  最终键维度: max={max(mps.get_bond_dimensions())}")
         print(f"  最终态归一化: {mps.norm():.6f}")
+    if site_atomA != 0 or site_atomB != 1:
+        raise RuntimeError(
+            f"发射结束布局错误: site_atomA={site_atomA}, site_atomB={site_atomB}, 期望 atomA@0, atomB@1"
+        )
 
     # ========================================================================
     # 计算每个仓的发射概率

@@ -557,7 +557,7 @@ def _run_single_simulation_core(
     eta_det = param_store.eta_det
     eta_det_map = param_store.eta_det_map
     p_dark_intrinsic_map = param_store.p_dark_intrinsic_bin_map
-    p_bg_source_map = param_store.p_bg_bin_map
+    p_bg_detector_map = param_store.p_bg_bin_map
     print(
         f"\n探测器本底暗计数率: {budget.dark_rate_intrinsic_hz:.3f} Hz -> "
         f"p_dark_gate={budget.p_dark_intrinsic_gate:.3e}, p_dark_bin={budget.p_dark_intrinsic_bin:.3e}"
@@ -576,7 +576,7 @@ def _run_single_simulation_core(
     )
     print(f"探测器效率映射 eta_det_map: {eta_det_map}")
     print(f"暗计数/bin 映射 p_dark_intrinsic_map: {p_dark_intrinsic_map}")
-    print(f"背景/bin 映射 p_bg_map: {p_bg_source_map}")
+    print(f"背景/bin 映射 p_bg_map: {p_bg_detector_map}")
 
     parameter_snapshot = _build_parameter_snapshot(config, param_store)
 
@@ -609,7 +609,7 @@ def _run_single_simulation_core(
             bs_theta=float(config.detector.bs_theta),
             param_store=param_store,
             p_dark_intrinsic_map={det: 0.0 for det in p_dark_intrinsic_map},
-            p_bg_source_map={det: 0.0 for det in p_bg_source_map},
+            p_bg_detector_map={det: 0.0 for det in p_bg_detector_map},
         )
         enum_no_dark = pipeline.metrics
         enum_main = enum_no_dark
@@ -633,7 +633,7 @@ def _run_single_simulation_core(
                 bs_theta=float(config.detector.bs_theta),
                 param_store=param_store,
                 p_dark_intrinsic_map={det: 0.0 for det in p_dark_intrinsic_map},
-                p_bg_source_map={det: 0.0 for det in p_bg_source_map},
+                p_bg_detector_map={det: 0.0 for det in p_bg_detector_map},
             )
             enum_no_dark = enum_pipeline.metrics
             if DEBUG_MODE and timings is not None and enum_pipeline.timings:
@@ -654,7 +654,7 @@ def _run_single_simulation_core(
             bs_theta=float(config.detector.bs_theta),
             param_store=param_store,
             p_dark_intrinsic_map=p_dark_intrinsic_map,
-            p_bg_source_map=p_bg_source_map,
+            p_bg_detector_map=p_bg_detector_map,
         )
         enum_main = pipeline.metrics
         samples = pipeline.samples
@@ -693,7 +693,7 @@ def _run_single_simulation_core(
         "p_dark_intrinsic": budget.p_dark_intrinsic_bin,
         "p_dark_intrinsic_map": p_dark_intrinsic_map,
         "p_bg": budget.p_bg_bin,
-        "p_bg_map": p_bg_source_map,
+        "p_bg_map": p_bg_detector_map,
         "p_noise": budget.p_noise_bin,
         "t_wait_us": t_wait_us,
         "t2_us": t2_us,
