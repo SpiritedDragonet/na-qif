@@ -110,6 +110,38 @@ class MPSState:
             raise ValueError(f"Invalid init_state: {type(init_state)}")
 
         self._mps.chi_max = self.max_bond
+        self._truncation_stats = {
+            "svd_calls": 0,
+            "svd_eps_total": 0.0,
+            "svd_eps_max": 0.0,
+            "svd_ov_err_total": 0.0,
+            "swap_calls": 0,
+            "swap_eps_total": 0.0,
+            "swap_eps_max": 0.0,
+            "swap_ov_err_total": 0.0,
+        }
+
+    def _accumulate_truncation_error(self, err, channel: str) -> None:
+        """累计 TeNPy TruncationError 统计。"""
+        if err is None:
+            return
+        eps = float(max(0.0, getattr(err, "eps", 0.0)))
+        ov_err = float(max(0.0, getattr(err, "ov_err", 0.0)))
+        if channel == "svd":
+            self._truncation_stats["svd_calls"] += 1
+            self._truncation_stats["svd_eps_total"] += eps
+            self._truncation_stats["svd_ov_err_total"] += ov_err
+            if eps > self._truncation_stats["svd_eps_max"]:
+                self._truncation_stats["svd_eps_max"] = eps
+            return
+        if channel == "swap":
+            self._truncation_stats["swap_calls"] += 1
+            self._truncation_stats["swap_eps_total"] += eps
+            self._truncation_stats["swap_ov_err_total"] += ov_err
+            if eps > self._truncation_stats["swap_eps_max"]:
+                self._truncation_stats["swap_eps_max"] = eps
+            return
+        raise ValueError(f"未知 truncation channel: {channel}")
 
     # ========================================================================
     # 底层局域更新（避免 canonical_form 扫描）
@@ -173,7 +205,8 @@ class MPSState:
             trunc_params = {'chi_max': self.max_bond, 'svd_min': 1e-13}
 
         # 通过SVD写回
-        self._mps.set_svd_theta(i, theta_combined, trunc_par=trunc_params)
+        trunc_err = self._mps.set_svd_theta(i, theta_combined, trunc_par=trunc_params)
+        self._accumulate_truncation_error(trunc_err, channel="svd")
 
         # 若需要则归一化（用于Kraus分支结果）
         if normalize:
@@ -324,7 +357,8 @@ class MPSState:
         #   - 若不同步 self.d，会导致后续门的维度错配。
         # ------------------------------------------------------------------
         trunc_params = {'chi_max': self.max_bond, 'svd_min': 1e-13}
-        self._mps.swap_sites(i, trunc_par=trunc_params)
+        trunc_err = self._mps.swap_sites(i, trunc_par=trunc_params)
+        self._accumulate_truncation_error(trunc_err, channel="swap")
 
         # 关键修复：同时更新self.d数组，交换两个位置的局域维度
         # 这是apply_bond_op正确计算维度所必需的
@@ -367,7 +401,22 @@ class MPSState:
         """创建深拷贝。"""
         new_state = MPSState(self.d.copy(), max_bond=self.max_bond)
         new_state._mps = self._mps.copy()
+        new_state._truncation_stats = self.get_truncation_stats()
         return new_state
+
+    def reset_truncation_stats(self) -> None:
+        """重置累计截断误差统计。"""
+        for key in list(self._truncation_stats.keys()):
+            self._truncation_stats[key] = 0 if key.endswith("_calls") else 0.0
+
+    def get_truncation_stats(self) -> Dict[str, float]:
+        """获取累计截断误差统计。"""
+        stats = dict(self._truncation_stats)
+        stats["total_calls"] = int(stats["svd_calls"] + stats["swap_calls"])
+        stats["total_eps"] = float(stats["svd_eps_total"] + stats["swap_eps_total"])
+        stats["total_eps_max"] = float(max(stats["svd_eps_max"], stats["swap_eps_max"]))
+        stats["total_ov_err"] = float(stats["svd_ov_err_total"] + stats["swap_ov_err_total"])
+        return stats
 
     def __repr__(self) -> str:
         """字符串表示。"""
@@ -657,6 +706,24 @@ class DetectionContractionEngine:
             total += float(np.einsum('ij,ij->', env_mid, self.right_envs[site + 1]).real)
         return total
 
+    def sum_same_bin_complex(
+        self,
+        left_envs: List[np.ndarray],
+        effects_by_bin: List[dict],
+        key_pair: Tuple[str, ...],
+    ) -> complex:
+        total = 0.0 + 0.0j
+        for site in range(1, self.n_bins + 1):
+            op_pair = effects_by_bin[site - 1].get(key_pair, self.zero_effect)
+            env_mid = self._apply_env_left(
+                self.b_list[site],
+                self.bc_list[site],
+                op_pair,
+                left_envs[site],
+            )
+            total += np.einsum('ij,ij->', env_mid, self.right_envs[site + 1])
+        return total
+
     def sum_diff_bins(
         self,
         left_envs: List[np.ndarray],
@@ -749,6 +816,70 @@ class DetectionContractionEngine:
                 )
                 total += float(np.einsum('ij,ij->', env_j_ab, self.right_envs[second_site + 1]).real)
                 total += float(np.einsum('ij,ij->', env_j_ba, self.right_envs[second_site + 1]).real)
+
+                if second_site < j_end:
+                    env_mid_ab = self._apply_env_left(
+                        self.b_list[second_site],
+                        self.bc_list[second_site],
+                        self.e_no_list[second_site - 1],
+                        env_mid_ab,
+                    )
+                    env_mid_ba = self._apply_env_left(
+                        self.b_list[second_site],
+                        self.bc_list[second_site],
+                        self.e_no_list[second_site - 1],
+                        env_mid_ba,
+                    )
+        return total
+
+    def sum_diff_bins_bidirectional_complex(
+        self,
+        left_envs: List[np.ndarray],
+        effects_by_bin: List[dict],
+        key_a: Tuple[str, ...],
+        key_b: Tuple[str, ...],
+        window_bins: Optional[int],
+    ) -> complex:
+        total = 0.0 + 0.0j
+        for first_site in range(1, self.n_bins):
+            op_first_ab = effects_by_bin[first_site - 1].get(key_a, self.zero_effect)
+            op_first_ba = effects_by_bin[first_site - 1].get(key_b, self.zero_effect)
+
+            env_mid_ab = self._apply_env_left(
+                self.b_list[first_site],
+                self.bc_list[first_site],
+                op_first_ab,
+                left_envs[first_site],
+            )
+            env_mid_ba = self._apply_env_left(
+                self.b_list[first_site],
+                self.bc_list[first_site],
+                op_first_ba,
+                left_envs[first_site],
+            )
+
+            j_end = self.n_bins
+            if window_bins is not None:
+                j_end = min(self.n_bins, first_site + window_bins)
+
+            for second_site in range(first_site + 1, j_end + 1):
+                op_second_ab = effects_by_bin[second_site - 1].get(key_b, self.zero_effect)
+                op_second_ba = effects_by_bin[second_site - 1].get(key_a, self.zero_effect)
+
+                env_j_ab = self._apply_env_left(
+                    self.b_list[second_site],
+                    self.bc_list[second_site],
+                    op_second_ab,
+                    env_mid_ab,
+                )
+                env_j_ba = self._apply_env_left(
+                    self.b_list[second_site],
+                    self.bc_list[second_site],
+                    op_second_ba,
+                    env_mid_ba,
+                )
+                total += np.einsum('ij,ij->', env_j_ab, self.right_envs[second_site + 1])
+                total += np.einsum('ij,ij->', env_j_ba, self.right_envs[second_site + 1])
 
                 if second_site < j_end:
                     env_mid_ab = self._apply_env_left(
@@ -893,6 +1024,36 @@ class DetectionContractionEngine:
         for i in range(4):
             for j in range(4):
                 self._left_envs_qubit[i][j] = self.build_left_envs(self.qubit_pair_ops[i][j])
+
+    def accumulate_success_qubit_sigma(
+        self,
+        effects_by_bin: List[dict],
+        patterns: List[Tuple[str, Tuple[str, str]]],
+        window_bins: Optional[int],
+    ) -> np.ndarray:
+        """
+        枚举累计成功事件对应的双量子比特未归一化密度矩阵 sigma (4x4)。
+        """
+        self._ensure_left_envs_qubit()
+        sigma = np.zeros((4, 4), dtype=complex)
+        for i in range(4):
+            for j in range(4):
+                left_envs = self._left_envs_qubit[i][j]
+                value = 0.0 + 0.0j
+                for _bell_state, (det_a, det_b) in patterns:
+                    key_pair = self.order_detectors([det_a, det_b])
+                    key_a = self.order_detectors([det_a])
+                    key_b = self.order_detectors([det_b])
+                    value += self.sum_same_bin_complex(left_envs, effects_by_bin, key_pair)
+                    value += self.sum_diff_bins_bidirectional_complex(
+                        left_envs,
+                        effects_by_bin,
+                        key_a,
+                        key_b,
+                        window_bins,
+                    )
+                sigma[i, j] = value
+        return sigma
 
     def compute_record_qubit_state(
         self,

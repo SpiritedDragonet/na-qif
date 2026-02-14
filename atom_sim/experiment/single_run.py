@@ -15,7 +15,6 @@ import numpy as np
 
 from ..simulation import (
     compute_fidelity_with_bell,
-    compute_pauli_correlators_and_chsh,
 )
 from ..visualization import plot_dual_arm_heatmap
 from ..physics.gates import bs_gate_6d
@@ -51,6 +50,12 @@ SIM_TASK_METRIC_KEYS = (
     "corr_eyy",
     "corr_ezz",
     "chsh_s_max",
+    "mps_chi_min",
+    "mps_chi_mean",
+    "mps_chi_max",
+    "mps_trunc_total_calls",
+    "mps_trunc_total_eps",
+    "mps_trunc_total_eps_max",
     "p_success_intrinsic_dark_assisted",
     "p_success_bg_assisted",
 )
@@ -104,10 +109,14 @@ def save_debug_info(
     # MPS维度信息
     chi_list = mps._mps.chi
     d_list = mps.d
+    trunc_stats = mps.get_truncation_stats()
     info['n_sites'] = len(d_list)
     info['n_bins'] = n_bins
     info['bond_dimensions'] = f'chi_min={min(chi_list)}, chi_max={max(chi_list)}, chi_mean={np.mean(chi_list):.1f}'
     info['local_dimensions'] = f'first_5={d_list[:5]}, last_5={d_list[-5:]}'
+    info['trunc_total_calls'] = int(trunc_stats["total_calls"])
+    info['trunc_total_eps'] = float(trunc_stats["total_eps"])
+    info['trunc_total_eps_max'] = float(trunc_stats["total_eps_max"])
 
     # 原子态信息
     qubit_state, p_qubit = extract_qubit_state(mps)
@@ -149,6 +158,10 @@ def save_debug_info(
         f.write(f'  n_bins = {info["n_bins"]}\n')
         f.write(f'  {info["bond_dimensions"]}\n')
         f.write(f'  {info["local_dimensions"]}\n\n')
+        f.write('数值可信度:\n')
+        f.write(f'  trunc_total_calls = {info["trunc_total_calls"]}\n')
+        f.write(f'  trunc_total_eps = {info["trunc_total_eps"]:.6e}\n')
+        f.write(f'  trunc_total_eps_max = {info["trunc_total_eps_max"]:.6e}\n\n')
         f.write('原子态信息:\n')
         f.write(f'  对角元: {info["qubit_state_diag"]}\n')
         f.write(f'  p_qubit: {info["p_qubit"]:.4f}\n')
@@ -360,6 +373,30 @@ def _run_single_simulation_core(
                 file.write(f"chsh_s_max = {metrics['chsh_s_max']:.6f}\n")
             else:
                 file.write("chsh_s_max = N/A\n")
+            if metrics.get("mps_chi_min") is not None:
+                file.write(f"mps_chi_min = {int(metrics['mps_chi_min'])}\n")
+            else:
+                file.write("mps_chi_min = N/A\n")
+            if metrics.get("mps_chi_mean") is not None:
+                file.write(f"mps_chi_mean = {metrics['mps_chi_mean']:.6f}\n")
+            else:
+                file.write("mps_chi_mean = N/A\n")
+            if metrics.get("mps_chi_max") is not None:
+                file.write(f"mps_chi_max = {int(metrics['mps_chi_max'])}\n")
+            else:
+                file.write("mps_chi_max = N/A\n")
+            if metrics.get("mps_trunc_total_calls") is not None:
+                file.write(f"mps_trunc_total_calls = {int(metrics['mps_trunc_total_calls'])}\n")
+            else:
+                file.write("mps_trunc_total_calls = N/A\n")
+            if metrics.get("mps_trunc_total_eps") is not None:
+                file.write(f"mps_trunc_total_eps = {metrics['mps_trunc_total_eps']:.6e}\n")
+            else:
+                file.write("mps_trunc_total_eps = N/A\n")
+            if metrics.get("mps_trunc_total_eps_max") is not None:
+                file.write(f"mps_trunc_total_eps_max = {metrics['mps_trunc_total_eps_max']:.6e}\n")
+            else:
+                file.write("mps_trunc_total_eps_max = N/A\n")
         return output_path
 
     # 目的：绘图占位与清理逻辑集中，避免散落多个函数。
@@ -664,18 +701,8 @@ def _run_single_simulation_core(
             timings["povm_sampling"] = pipeline.timings.get("povm_sampling", 0.0)
             timings["detection_total"] = pipeline.timings.get("detection_total", 0.0)
 
-    corr_exx_vals = []
-    corr_eyy_vals = []
-    corr_ezz_vals = []
-    chsh_vals = []
-    for det_result in samples:
-        if not det_result.success:
-            continue
-        corr = compute_pauli_correlators_and_chsh(det_result.qubit_state)
-        corr_exx_vals.append(float(corr["corr_exx"]))
-        corr_eyy_vals.append(float(corr["corr_eyy"]))
-        corr_ezz_vals.append(float(corr["corr_ezz"]))
-        chsh_vals.append(float(corr["chsh_s_max"]))
+    chi_list = result.mps.get_bond_dimensions()
+    trunc_stats = result.mps.get_truncation_stats()
 
     # 汇总统计量（跨 shots）
     success_metrics = {
@@ -722,10 +749,16 @@ def _run_single_simulation_core(
         "fidelity_false": enum_main.fidelity_false,
         "p_success_no_dark_abs": enum_no_dark.p_success if enum_no_dark is not None else None,
         "fidelity_no_dark": enum_no_dark.fidelity_declared if enum_no_dark is not None else None,
-        "corr_exx": float(np.mean(corr_exx_vals)) if corr_exx_vals else 0.0,
-        "corr_eyy": float(np.mean(corr_eyy_vals)) if corr_eyy_vals else 0.0,
-        "corr_ezz": float(np.mean(corr_ezz_vals)) if corr_ezz_vals else 0.0,
-        "chsh_s_max": float(np.mean(chsh_vals)) if chsh_vals else 0.0,
+        "corr_exx": enum_main.corr_exx,
+        "corr_eyy": enum_main.corr_eyy,
+        "corr_ezz": enum_main.corr_ezz,
+        "chsh_s_max": enum_main.chsh_s_max,
+        "mps_chi_min": int(min(chi_list)) if chi_list else 0,
+        "mps_chi_mean": float(np.mean(chi_list)) if chi_list else 0.0,
+        "mps_chi_max": int(max(chi_list)) if chi_list else 0,
+        "mps_trunc_total_calls": int(trunc_stats["total_calls"]),
+        "mps_trunc_total_eps": float(trunc_stats["total_eps"]),
+        "mps_trunc_total_eps_max": float(trunc_stats["total_eps_max"]),
         "parameter_snapshot": parameter_snapshot,
         "fiber_length_km": config.fiber.length_km,
         "fiber_attenuation_db_per_km": config.fiber.attenuation_db_per_km,

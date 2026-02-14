@@ -859,8 +859,6 @@ def run_dual_atom_emission(
             mps.apply_kraus_one_site(site_atomA, loss_kraus_A, rng=rng)
         if loss_kraus_B:
             mps.apply_kraus_one_site(site_atomB, loss_kraus_B, rng=rng)
-        if loss_kraus_A or loss_kraus_B:
-            mps.canonicalize(renormalize=True)
 
         # ====================================================================
         # 步骤3：移动原子（使用 swap_sites 方法）
@@ -907,6 +905,9 @@ def run_dual_atom_emission(
                 f"|L_B|={np.linalg.norm(l_out_B_H) + np.linalg.norm(l_out_B_V):.3e}, "
                 f"atomA@{site_atomA}, atomB@{site_atomB}, chi_max={max(chi)}"
             )
+
+    # 关键优化：将发射循环内的全链规范化下沉到循环外，只做一次。
+    mps.canonicalize(renormalize=True)
 
     if verbose:
         print("\n发射完成!")

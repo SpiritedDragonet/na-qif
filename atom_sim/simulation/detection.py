@@ -129,6 +129,10 @@ class SuccessEnumerationResult:
     p_success_same_arm_approx: float = 0.0
     p_success_intrinsic_dark_assisted: float = 0.0
     p_success_bg_assisted: float = 0.0
+    corr_exx: float = 0.0
+    corr_eyy: float = 0.0
+    corr_ezz: float = 0.0
+    chsh_s_max: float = 0.0
 
 
 @dataclass
@@ -603,6 +607,10 @@ def run_detection_pipeline(
         p_success_true = 0.0
         fidelity_weighted_all = 0.0
         fidelity_weighted_true = 0.0
+        corr_exx = 0.0
+        corr_eyy = 0.0
+        corr_ezz = 0.0
+        chsh_s_max = 0.0
         if verbose:
             print(f"  POVM枚举模式数: {len(patterns)}")
             print("  POVM枚举阶段: 1/3 (all, success+fidelity)")
@@ -654,6 +662,22 @@ def run_detection_pipeline(
         p_success_bg_assisted = float(max(0.0, p_success_all - p_success_sig_total))
         p_success_intrinsic_dark_assisted = float(max(0.0, p_success_sig_total - p_success_sig_true))
 
+        if verbose:
+            print("  POVM枚举阶段: 4/4 (all, declared corr/chsh)")
+        sigma_declared = engine.accumulate_success_qubit_sigma(
+            effects_by_bin=effects_all_by_bin,
+            patterns=patterns,
+            window_bins=window_bins,
+        )
+        corr_metrics = compute_pauli_correlators_and_chsh(sigma_declared)
+        corr_exx = float(corr_metrics["corr_exx"])
+        corr_eyy = float(corr_metrics["corr_eyy"])
+        corr_ezz = float(corr_metrics["corr_ezz"])
+        chsh_s_max = float(corr_metrics["chsh_s_max"])
+        if verbose:
+            elapsed = time.perf_counter() - t0
+            print(f"  POVM枚举阶段完成: 4/4 | elapsed={elapsed:.2f}s")
+
         fidelity_declared = (fidelity_weighted_all / p_success_all) if p_success_all > 0 else 0.0
         fidelity_true = (fidelity_weighted_true / p_success_true) if p_success_true > 0 else 0.0
         fidelity_false = (
@@ -687,6 +711,10 @@ def run_detection_pipeline(
             p_success_same_arm_approx=p_success_true * frac_same,
             p_success_intrinsic_dark_assisted=p_success_intrinsic_dark_assisted,
             p_success_bg_assisted=p_success_bg_assisted,
+            corr_exx=corr_exx,
+            corr_eyy=corr_eyy,
+            corr_ezz=corr_ezz,
+            chsh_s_max=chsh_s_max,
         )
         timings["povm_enumeration"] = time.perf_counter() - t0
 
