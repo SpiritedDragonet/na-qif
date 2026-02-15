@@ -4,6 +4,12 @@
 
 \section{实验对照口径与参数锚点}[Experiment-Aligned Metrics and Anchored Parameters]
 
+\subsection{指标口径、参数锚点与分层标定}[Metrics, parameter anchors, and layered calibration]
+
+本子节首先固定“看什么”的统计口径，再说明“如何定参数”的标定路径。这样做的原因是：若先做参数拟合而不先统一指标定义，不同数据层之间的误差会互相补偿，导致看似拟合良好但缺乏可解释性的结果。相反，先以事件概率与条件态指标建立统一输出，再按中间可观测量逐层收敛，可显著降低参数退化并提高可复现实验对照的一致性。
+
+从方法论上，这一策略等价于把“逆问题”拆成一组条件更好的子问题：先锁定与源端和链路直接相关的中间量，再约束末端任务量。这样做不仅提升拟合稳定性，还能在参数漂移出现时快速定位漂移来源，避免每次都回到全量参数做高成本重拟合。
+
 端到端评估采用
 \begin{align}
 p_a &: \text{两光子到达概率（含同臂项）},\\
@@ -61,6 +67,8 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & \cite{vanleent2022e
 
 这一节不把图当作并列证据，而把它们放入同一因果链：源端脉冲决定时间结构，时间结构与窗口共同决定有效到达事件，事件统计再通过 HOM 与 BSM 约束可分辨性，最终落到条件态质量与可用纠缠速率。因此图谱的阅读顺序必须与物理链路顺序一致，否则很容易把“数值截断效应”“窗口效应”和“真实干涉退化”混为一谈。
 
+\subsection{结果图谱的联合诊断链}[Joint diagnostic chain of result atlas]
+
 \paragraph{源端时域结构与数值截断}
 
 图 \ref{fig:wavepacket} 与图 \ref{fig:bond_dim} 联合报告源端信息。前者给出双臂波包主瓣、相对时移与尾部衰减；后者给出对应键维轨迹。两图必须同时满足“物理宽度正确、键维截断可控”两项约束，否则单看波包形状无法区分物理退相干与数值截断误差。
@@ -71,6 +79,7 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & \cite{vanleent2022e
 \caption{双臂波包时域结构与主窗口位置。}
 \label{fig:wavepacket}
 \end{figure}
+图 \ref{fig:wavepacket} 的解释重点不在“是否有脉冲峰”，而在主瓣位置、上升沿斜率与尾部衰减是否同时合理。若只匹配峰值而忽略尾部，窗口扫描阶段会系统性高估有效事件率；若尾部过宽而主瓣偏窄，则往往意味着驱动与耗散比例失配，后续 HOM 可见度也会被动下降。
 
 \begin{figure}[htbp]
 \centering
@@ -78,6 +87,7 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & \cite{vanleent2022e
 \caption{发射阶段 MPS 键维演化。}
 \label{fig:bond_dim}
 \end{figure}
+图 \ref{fig:bond_dim} 用于区分“物理复杂度上升”与“数值不稳定”。当键维峰值与波包主窗口同相位出现时，通常对应真实的纠缠增长；若在无明显物理事件的区间出现尖峰，则更可能是局域分解条件数恶化，需要回查时间步长或截断阈值。
 
 \paragraph{窗口、HOM 与 BSM 的联合诊断}
 
@@ -95,6 +105,7 @@ HOM 与 BSM 负责验证两光子干涉链路是否可信。图 \ref{fig:hom} �
 \caption{点击时间分布与接受窗口。}
 \label{fig:accept_hist}
 \end{figure}
+图 \ref{fig:accept_hist} 的主要作用是确定“信号主密度区间”与“背景主密度区间”的交叠程度。窗口边界不应只按最大计数点对称截取，而应优先覆盖真成功密度高、假成功密度低的时段，这也是后续窗口优化中使用多指标而非单指标的原因。
 
 \begin{figure}[htbp]
 \centering
@@ -102,6 +113,7 @@ HOM 与 BSM 负责验证两光子干涉链路是否可信。图 \ref{fig:hom} �
 \caption{窗口扫描下的速率、条件保真度与假成功占比。}
 \label{fig:window_tradeoff}
 \end{figure}
+图 \ref{fig:window_tradeoff} 显示的不是单调“越宽越好”或“越窄越好”关系，而是多目标前沿。工程上应选取拐点附近作为默认工作点：继续扩窗带来的速率收益已经明显低于假成功增量，而继续缩窗则开始显著损失真成功通道。
 
 \begin{figure}[htbp]
 \centering
@@ -109,6 +121,7 @@ HOM 与 BSM 负责验证两光子干涉链路是否可信。图 \ref{fig:hom} �
 \caption{HOM 曲线及可见度约束。}
 \label{fig:hom}
 \end{figure}
+图 \ref{fig:hom} 的谷深与谷宽共同约束可分辨性参数。仅拟合谷底深度会把时间抖动与频谱失配混淆；同时拟合宽度后，才能将“源端波包不匹配”与“链路相位噪声”在参数上分离。
 
 \begin{figure}[htbp]
 \centering
@@ -116,6 +129,7 @@ HOM 与 BSM 负责验证两光子干涉链路是否可信。图 \ref{fig:hom} �
 \caption{BSM 模式概率与真假分量分解。}
 \label{fig:bsm_patterns}
 \end{figure}
+图 \ref{fig:bsm_patterns} 用于检查成功事件组成是否健康。若总成功率升高而真假分解中假成功占比同步抬升，则说明提升来自噪声触发而非干涉质量改善，这一情形在暗计数或背景偏高时尤为常见。
 
 \paragraph{端到端可用纠缠质量}
 
@@ -129,10 +143,19 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 
 \begin{figure}[htbp]
 \centering
+\includegraphics[width=0.95\linewidth]{fig_bell_density_3d}
+\caption{宣告成功条件下 Bell 后验态密度矩阵的实部/虚部三维柱状图。}
+\label{fig:bell_density_3d}
+\end{figure}
+图 \ref{fig:bell_density_3d} 从态空间层面补充了标量指标的可解释性。实部主对角集中在 $|01\rangle$ 与 $|10\rangle$，且两者之间出现显著负相关非对角元；虚部整体较小，说明相位噪声处于受控范围。该图与后续 CHSH 曲线配合使用时，可以同时回答“态是否接近目标 Bell 结构”与“是否保持可观测非定域性”两个问题。
+
+\begin{figure}[htbp]
+\centering
 \includegraphics[width=0.82\linewidth]{fig_chsh}
 \caption{CHSH 参数趋势（虚线为经典界 $S=2$）。}
 \label{fig:chsh}
 \end{figure}
+图 \ref{fig:chsh} 直接回答“纠缠是否仍具非经典可用性”。与单一保真度不同，$S$ 对测量基选择和相关矩阵结构更敏感，因此常能提前暴露“保真度看似可接受但非定域关联已退化”的情形。
 
 \begin{figure}[htbp]
 \centering
@@ -140,6 +163,7 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \caption{成功率与保真度随链路长度变化。}
 \label{fig:distance}
 \end{figure}
+图 \ref{fig:distance} 体现了距离扩展中的双重退化机制：成功率主要受指数损耗控制，而条件态质量更多受噪声相对占比控制。两条曲线的斜率不一致，正是分层误差预算必要性的经验证据。
 
 \begin{figure}[htbp]
 \centering
@@ -147,13 +171,15 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \caption{QFC 背景噪声对事件率与保真度的影响。}
 \label{fig:qfc_noise}
 \end{figure}
+图 \ref{fig:qfc_noise} 给出了 QFC 背景从“次要扰动”转为“主导污染”的阈值区。该阈值并非常数，会随窗口策略和探测效率变化，因此在工艺优化中应把 QFC 背景与窗口参数联合调节，而非孤立调一个器件指标。
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.9\linewidth]{fig_detector_eff}
-\caption{探测效率变化对端到端性能的影响。}
+\caption{探测效率-背景联合扫描下的保真度热图与成功率切片。}
 \label{fig:detector_eff}
 \end{figure}
+图 \ref{fig:detector_eff} 将“探测效率影响”写成二维工作平面：左侧热图给出不同背景计数下的条件保真度地形，右侧给出对应成功率切片。该表示直接揭示了效率增益的边际规律：在高背景区，效率继续提高对保真度的改善受限更早，而成功率仍可能上升，因此工程上需要同步压低背景而非单独追求更高探测效率。
 
 \begin{figure}[htbp]
 \centering
@@ -161,8 +187,11 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \caption{速率-保真度工作点前沿。}
 \label{fig:rate_fidelity}
 \end{figure}
+图 \ref{fig:rate_fidelity} 给出可直接用于部署决策的 Pareto 前沿。实际运行中应先由任务需求确定最低可接受保真度，再在此前提下选择速率最大的工作点，而不是反过来用速率最大点倒推可用性。
 
 \section{误差预算与真假事件分解}[Error Budget and True/False Herald Decomposition]
+
+\paragraph{误差归因与部署判据}
 
 误差预算采用分组边际法。设 $g$ 表示噪声组（源端、QFC+滤波、光纤、探测），定义
 \begin{equation}
@@ -171,18 +200,48 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \end{equation}
 与“全开”运行联合分析，可判断瓶颈是否发生迁移，例如从源端退相干主导迁移到暗计数主导。真假成功分解的价值在于：若 $p_s$ 上升同时 $F_t$ 稳定而 $p_f/p_s$ 抬升，则主要问题是误触发；若 $p_f$ 低而 $F_t$ 下降，则主要问题在真实干涉质量（不可分辨性、相位与偏振链路）。
 
+在工程使用层面，这一分解可转化为两阶段诊断流程。第一阶段只看事件分解比值，判断“问题在触发还是在干涉”；第二阶段再进入对应子链路做参数扫描，前者优先检查背景、暗计数与窗口，后者优先检查波包匹配、相位稳定与偏振补偿。该流程的优势是避免在全参数空间盲目搜索，从而把每轮实验-仿真闭环的调参轮次控制在可接受范围。
+
 \section{计算成本与部署判据}[Computational Cost and Deployment Criteria]
 
-当前链路已将主要线性光学与损耗推回 effect 端，态端开销显著降低，但默认规模下墙钟仍受 POVM 枚举主导。运行时同时记录
+测试硬件为 Intel(R) Xeon(R) E-2176M CPU，标称主频 $2.70$ GHz（系统可见 12 逻辑线程）；本次单跑按单核、单并发任务执行（1 个工作线程）。在基线参数 $N=100,\ \Delta t=1$ ns，窗口 $70$ ns，$\chi_{\max}=50$，单次任务（1 shot）下，时间量定义与代表性运行结果统一列于表 \ref{tab:timing-breakdown}。
+
+\begin{table}[htbp]
+\centering
+\caption{时间量定义与代表性运行结果}
+\label{tab:timing-breakdown}
+\begin{tabularx}{0.98\linewidth}{l X r}
+\hline
+符号 & 含义 & 时间（s）\\
+\hline
+$T_{\rm em}$ & 发射阶段 & 6.29 \\
+$T_{\rm qm}$ & QFC+滤波记忆阶段 & 5.01 \\
+$T_{\rm fib}$ & 光纤阶段 & 0.04 \\
+$T_{\rm dep}$ & 退相干阶段 & 0.59 \\
+$T_{\rm det}$ & 探测阶段总计（含构建、枚举与抽样） & 2108.99 \\
+$T_{\rm aux}$ & 辅助开销（检查、快照、写盘等） & 0.10 \\
+$T_{\rm res}$ & 未显式记账残差 & 0.18 \\
+$T_w$ & 总墙钟时间 & 2121.20 \\
+\hline
+\end{tabularx}
+\end{table}
+
+总墙钟满足
 \begin{equation}
-T_e,\;T_q,\;T_f,\;T_d,\;T_b,\;T_n,\;T_m,
-\end{equation}
-并检查闭合关系
-\begin{equation}
-T_w\approx T_e+T_q+T_f+T_d+T_b+T_n+T_m+T_r,
+T_w = T_{\rm em}+T_{\rm qm}+T_{\rm fib}+T_{\rm dep}+T_{\rm det}+T_{\rm aux}+T_{\rm res}.
 \label{eq:timing-closure}
 \end{equation}
-其中 $T_r$ 为调度与写盘残差。式 \eqref{eq:timing-closure} 用于识别隐藏开销，避免把系统开销误判为物理求解复杂度。
+据此有
+\begin{equation}
+\frac{T_{\rm det}}{T_w}=99.42\%,
+\end{equation}
+即当前瓶颈明确位于探测阶段，而非态端动力学阶段。
+
+部署判据因此采用两层规则：先满足硬约束
+\begin{equation}
+\mathcal{C}_{\rm hard}=\{F_t\ge F_{\min},\ S\ge S_{\min},\ T_w\le T_{\max}\},
+\end{equation}
+再在 $\mathcal{C}_{\rm hard}$ 内优化软目标（如单位墙钟真成功数）。该顺序可避免“仅压缩墙钟却牺牲可用纠缠质量”的误优化。
 
 \section{本章小结}[Chapter Summary]
 

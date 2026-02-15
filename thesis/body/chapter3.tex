@@ -4,6 +4,10 @@
 
 \section{从 QED 到四能级原子-腔有效模型}[From QED to the Four-Level Atom-Cavity Effective Model]
 
+\subsection{发射模型与时间离散化门构造}[Emission model and time-discretized gate construction]
+
+本子节按“4 维原子块 $\rightarrow$ 12 维发射体 $\rightarrow$ 60 维两站点门”的顺序展开，把相干项、辐射项与禁阻项分别落在明确的算符上，避免将不同物理过程混写为单一经验参数。
+
 以量子电动力学拉氏量为起点：
 \begin{equation}
 \mathcal{L}=\bar{\psi}\left(i\gamma^\mu\partial_\mu-m\right)\psi-eA_\mu\bar{\psi}\gamma^\mu\psi-\frac{1}{4}F_{\mu\nu}F^{\mu\nu}.
@@ -17,7 +21,7 @@ H_{\mathrm{JC}}=\frac{\omega_{ab}}{2}\sigma_z+\omega_c\left(a^\dagger a+\frac{1}
 \begin{equation}
 \{|0\rangle,|1\rangle,|e\rangle,|u\rangle\},
 \end{equation}
-其中 $|0\rangle,|1\rangle$ 为计算基，$|u\rangle$ 为受控激发前的辅助基态，$|e\rangle$ 为光学激发态。本文原子基顺序固定为 $(|0\rangle,|1\rangle,|e\rangle,|u\rangle)$。驱动仅耦合 $|u\rangle\leftrightarrow|e\rangle$，原子哈密顿量写为
+其中 $|0\rangle,|1\rangle$ 为存储态，$|u\rangle$ 为驱动态，$|e\rangle$ 为光学激发态。本文原子基顺序固定为 $(|0\rangle,|1\rangle,|e\rangle,|u\rangle)$。在旋转参考系下，驱动仅耦合 $|u\rangle\leftrightarrow|e\rangle$，原子哈密顿量写为
 \begin{equation}
 H_{\mathrm{atom}}(t)=
 \begin{bmatrix}
@@ -28,10 +32,29 @@ H_{\mathrm{atom}}(t)=
 \end{bmatrix}.
 \label{eq:h-atom-4level}
 \end{equation}
+\eqref{eq:h-atom-4level} 不直接写入 $|e\rangle\rightarrow|0\rangle,|1\rangle$ 辐射过程；该过程通过原子-腔耦合项与塌缩通道进入动力学，而非原子内部相干块。
 
 偏振选择定则由两个跃迁算符表示：
 \begin{equation}
 S_+=|0\rangle\langle e|,\qquad S_-=|1\rangle\langle e|.
+\end{equation}
+其矩阵形式为
+\begin{equation}
+S_+=
+\begin{bmatrix}
+0&0&1&0\\
+0&0&0&0\\
+0&0&0&0\\
+0&0&0&0
+\end{bmatrix},\qquad
+S_-=
+\begin{bmatrix}
+0&0&0&0\\
+0&0&1&0\\
+0&0&0&0\\
+0&0&0&0
+\end{bmatrix}.
+\label{eq:splus-sminus-matrix}
 \end{equation}
 将 Clebsch-Gordan 系数和偏振映射吸收入矩阵 $\boldsymbol{\alpha}\in\mathbb{C}^{2\times 2}$，定义
 \begin{equation}
@@ -40,7 +63,25 @@ S_+=|0\rangle\langle e|,\qquad S_-=|1\rangle\langle e|.
 \sigma_V=\alpha_{V,+}S_+ + \alpha_{V,-}S_- .
 \label{eq:sigma-hv}
 \end{equation}
-这一步把“物理跃迁系数”与“数值门算符”直接对接，避免后续通过经验缩放调参。
+即
+\begin{equation}
+\sigma_H=
+\begin{bmatrix}
+0&0&\alpha_{H,+}&0\\
+0&0&\alpha_{H,-}&0\\
+0&0&0&0\\
+0&0&0&0
+\end{bmatrix},\qquad
+\sigma_V=
+\begin{bmatrix}
+0&0&\alpha_{V,+}&0\\
+0&0&\alpha_{V,-}&0\\
+0&0&0&0\\
+0&0&0&0
+\end{bmatrix}.
+\label{eq:sigma-hv-matrix}
+\end{equation}
+当某通道在选择定则下禁阻时，对应 $\alpha_{\mu,\pm}$ 或塌缩率 $\gamma_\pm$ 取零（或实验标定极小值），该通道在门构造中自动抑制。
 
 腔体采用三维截断基 $\{|{\rm vac}\rangle,|H\rangle,|V\rangle\}$，其湮灭算符为
 \begin{equation}
@@ -59,7 +100,13 @@ a_V=
 \end{bmatrix}.
 \label{eq:cavity-annihilation-3d}
 \end{equation}
-于是 12 维发射体（atom4D $\otimes$ cavity3D）哈密顿量为
+定义 12 维发射体基序
+\begin{equation}
+\mathcal{B}_{12}=
+\{|0,{\rm vac}\rangle,|0,H\rangle,|0,V\rangle,\ldots,|u,{\rm vac}\rangle,|u,H\rangle,|u,V\rangle\},
+\label{eq:basis-12d-emitter}
+\end{equation}
+即 atom-major 的 $4\otimes 3$ 编码。于是 12 维发射体（atom4D $\otimes$ cavity3D）哈密顿量为
 \begin{align}
 H_{\mathrm{em}}(t)=&
 H_{\mathrm{atom}}(t)\otimes I_3 + I_4\otimes \mathrm{diag}(0,\delta_{c,H},\delta_{c,V})\notag\\
@@ -69,7 +116,7 @@ H_{\mathrm{atom}}(t)\otimes I_3 + I_4\otimes \mathrm{diag}(0,\delta_{c,H},\delta
 \Bigr).
 \label{eq:emitter-hamiltonian-12d}
 \end{align}
-可见输出通道与不可见塌缩通道分别写成
+第一项给出原子内部失谐与驱动，第二项给出腔模失谐，第三项给出 $|e\rangle\leftrightarrow|0/1\rangle$ 与腔内偏振模的相干交换。可见输出通道与不可见塌缩通道分别写成
 \begin{equation}
 L_{{\rm out},H}=\sqrt{\kappa_{{\rm ex},H}}\,I_4\otimes a_H,\quad
 L_{{\rm out},V}=\sqrt{\kappa_{{\rm ex},V}}\,I_4\otimes a_V,
@@ -82,8 +129,24 @@ L_{{\rm out},V}=\sqrt{\kappa_{{\rm ex},V}}\,I_4\otimes a_V,
 \sqrt{\gamma_-}\,S_-\otimes I_3
 \right\}.
 \end{equation}
+为直观展示 $12\times 12$ 结构，可在等价的 cavity-major 重排基序
+\begin{equation}
+\tilde{\mathcal{B}}_{12}=
+\{|{\rm vac}\rangle\!\otimes\!|0\rangle,|{\rm vac}\rangle\!\otimes\!|1\rangle,|{\rm vac}\rangle\!\otimes\!|e\rangle,|{\rm vac}\rangle\!\otimes\!|u\rangle,\ldots,|V\rangle\!\otimes\!|u\rangle\}
+\end{equation}
+下，把同一哈密顿量写成 $3\times 3$ 个 $4\times 4$ 块：
+\begin{equation}
+\tilde H_{\mathrm{em}}(t)=
+\begin{bmatrix}
+H_{\mathrm{atom}}(t) & g\,\sigma_H^\dagger & g\,\sigma_V^\dagger\\
+g\,\sigma_H & H_{\mathrm{atom}}(t)+\delta_{c,H}I_4 & 0\\
+g\,\sigma_V & 0 & H_{\mathrm{atom}}(t)+\delta_{c,V}I_4
+\end{bmatrix},
+\label{eq:hem-12d-block4}
+\end{equation}
+其中 $\tilde H_{\mathrm{em}}=P\,H_{\mathrm{em}}\,P^\dagger$，$P$ 为 atom-major 与 cavity-major 间的置换矩阵。该写法明确显示：对角块是“原子本征演化+腔失谐”，非对角块是“真空与单光子腔模间的受激交换”。
 
-\section{连续输出场到时间 bin 发射门}[From Continuous Output Field to Time-Bin Emission Gates]
+\subsection{连续输出场到时间 bin 发射门}[From Continuous Output Field to Time-Bin Emission Gates]
 
 接口输出场满足输入输出框架 \cite{GardinerCollett1985}。对每个偏振 $\mu\in\{H,V\}$，定义连续场算符 $b_\mu(t)$ 并离散为
 \begin{equation}
@@ -91,27 +154,86 @@ b_{\mu,n}=\frac{1}{\sqrt{\Delta t}}\int_{t_n}^{t_n+\Delta t}b_\mu(t)\,dt,\qquad
 [b_{\mu,m},b_{\nu,n}^\dagger]=\delta_{\mu\nu}\delta_{mn}.
 \end{equation}
 
-在短时步长 $\Delta t$ 下，发射门可写为
+将单个 780 子空间写成 $\{|{\rm vac}\rangle,|H_{780}\rangle,|V_{780}\rangle\}$，并定义
 \begin{equation}
-U_{\mathrm{emit}}^{(n)}
-=\exp\left[
+b_H^\dagger=|H_{780}\rangle\langle {\rm vac}|,\qquad
+b_V^\dagger=|V_{780}\rangle\langle {\rm vac}|.
+\end{equation}
+在短时步长 $\Delta t$ 下，先在 $(12\times 3)=36$ 维子空间构造生成元
+\begin{equation}
+G_{36}^{(n)}=
 \sqrt{\Delta t}\sum_{\mu=H,V}
 \left(L_{{\rm out},\mu}\otimes b_{\mu,n}^\dagger
 -L_{{\rm out},\mu}^\dagger\otimes b_{\mu,n}\right)
--i\Delta t\,H_{\mathrm{em}}(t_n)\otimes I
-\right].
-\label{eq:emit-gate-continuous}
+-i\Delta t\,H_{\mathrm{em}}(t_n)\otimes I_3,
+\label{eq:g36-emission}
+\end{equation}
+\begin{equation}
+U_{36}^{(n)}=\exp\!\bigl(G_{36}^{(n)}\bigr).
+\label{eq:u36-emission}
 \end{equation}
 
 工程实现中，每个时间站点采用 5 维 bin 基序
 \begin{equation}
 \{|{\rm vac}\rangle,\;|H_{780}\rangle,\;|V_{780}\rangle,\;|H_{1517}\rangle,\;|V_{1517}\rangle\}.
 \end{equation}
-因此 \eqref{eq:emit-gate-continuous} 先在 $(\mathrm{emitter12D}\otimes 780\mathrm{-subspace3D})$ 构造，再嵌入 bin 的 5D 空间，1517 子块保持单位，保证发射阶段只向 780 通道注入光子振幅。
+对两站点 $(\mathrm{emitter12D}\otimes\mathrm{bin5D})$，门维度为 $12\times 5=60$。在基序按
+\begin{equation}
+(\mathcal{B}_{12}\otimes\{|{\rm vac}\rangle,|H_{780}\rangle,|V_{780}\rangle,|H_{1517}\rangle,|V_{1517}\rangle\})
+\end{equation}
+排序时，发射门写成块对角形式
+\begin{equation}
+U_{\mathrm{emit}}^{(n)}=
+\begin{bmatrix}
+U_{36}^{(n)} & 0\\
+0 & I_{24}
+\end{bmatrix},
+\label{eq:u60-embed}
+\end{equation}
+即仅更新 780 三维子块，1517 分量保持恒等。
 
-为兼顾真实性与计算成本，本工作把“可见发射”保持在态端演化，而把后续线性光学与损耗映射到测量端；发射阶段仍保留不可见塌缩通道（内损与自由空间泄漏）以反映真实发射概率。这一分工与 time-bin MPS 的碰撞模型表述一致 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems}。
+单个时间步 $t_n\rightarrow t_{n+1}$ 的更新可写为
+\begin{equation}
+\rho_{n+\frac12}=U_{\mathrm{emit}}^{(n)}\,\rho_n\,U_{\mathrm{emit}}^{(n)\dagger},
+\end{equation}
+\begin{equation}
+\rho_{n+1}=\sum_{k\in\mathcal{K}} C_k\,\rho_{n+\frac12}\,C_k^\dagger ,
+\label{eq:step-update-emission}
+\end{equation}
+其中 $\mathcal{K}$ 由 $\mathcal{C}$ 生成。MPS 调度中，每个 $\Delta t$ 只对“当前 bin 与 12 维发射体”这一个键作用一次 $U_{\mathrm{emit}}^{(n)}$，随后把发射体交换到下一对相邻 bin，直至扫完整条时间链，因此“一个 $\Delta t$ 对应一个 bin”在物理与数值层面完全对齐。
+
+发射阶段的链式调度可显式写为。记相邻交换算符为 $\mathsf{S}_j$（交换第 $j$ 与 $j\!+\!1$ 站点），发射前链序
+\begin{equation}
+\mathcal{L}_0=
+({\rm A_1,B_1,\ldots,A_N,B_N,atomA,atomB}),
+\end{equation}
+先执行一次预交换
+\begin{equation}
+\mathcal{L}_0^+=\mathsf{S}_{2N-1}\mathcal{L}_0
+=({\rm A_1,B_1,\ldots,A_N,atomA,B_N,atomB}).
+\end{equation}
+对 $n=N,N-1,\ldots,1$，先在 $(A_n,atomA)$ 与 $(B_n,atomB)$ 上施加发射门，再做位置更新：
+\begin{equation}
+\mathcal{T}_n=
+\begin{cases}
+\mathsf{S}_{p_A-1}\mathsf{S}_{p_A-2}\,\mathsf{S}_{p_B-1}\mathsf{S}_{p_B-2}, & n>1,\\
+\mathsf{S}_{p_A-1}\,\mathsf{S}_{p_B-1}\mathsf{S}_{p_B-2}, & n=1,
+\end{cases}
+\label{eq:emission-swap-schedule}
+\end{equation}
+其中 $p_A,p_B$ 为该轮操作前 atomA、atomB 的站点索引。式 \eqref{eq:emission-swap-schedule} 的末轮特例保证最终链序精确落在
+\begin{equation}
+({\rm atomA,atomB,A_1,B_1,\ldots,A_N,B_N}).
+\label{eq:emission-final-layout}
+\end{equation}
+
+为兼顾真实性与计算成本，本工作把可见发射保持在态端演化，把后续线性光学与探测端器件推回 POVM；但发射阶段保留内损与自由空间泄漏塌缩通道以反映真实发射概率。这一分工与 time-bin MPS 的碰撞模型表述一致 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems}。
 
 \section{QFC 与滤波记忆核的显式张量门}[Explicit Tensor Gates for QFC and Filter Memory Kernel]
+
+\paragraph{QFC 与滤波记忆核的张量门}
+
+当发射阶段结束后，链路中的主导物理过程从“原子-场耦合”转为“频率转换与有限带宽记忆”。因此这一子节不再引入新的原子自由度，而是围绕 bin 与记忆模之间的局域幺正更新，给出可直接收缩的门表达。该表达同时保留 QFC 效率、滤波带宽与跨 bin 相关三类信息，是后续 BSM 条件态质量分析的必要输入。
 
 \paragraph{QFC 的 5D 局域门}
 
@@ -201,9 +323,38 @@ QFC+滤波阶段引入两臂记忆模，逐 bin 相邻作用后收拢为唯一�
 {\rm atomA,\ atomB,\ memA,\ memB,\ A1,\ B1,\ldots, AN,\ BN}.
 \label{eq:final-chain-layout}
 \end{equation}
+其 SWAP 调度同样可写成显式形式。先在链尾追加记忆模：
+\begin{equation}
+\mathcal{L}_{\mathrm{q},0}=
+({\rm atomA,atomB,A_1,B_1,\ldots,A_N,B_N,memA,memB}).
+\end{equation}
+对 $n=N,N-1,\ldots,1$，先做 QFC 与单站点滤波，再把记忆模移动到当前 bin 右侧：
+\begin{equation}
+p_{\mathrm{memA}}\rightarrow p_{A_n}+1,\qquad
+p_{\mathrm{memB}}\rightarrow p_{B_n}+1,
+\label{eq:mem-adjacent-target}
+\end{equation}
+该移动由相邻交换链
+\begin{equation}
+\overleftarrow{\prod}_{j=p_{A_n}+1}^{\,p_{\mathrm{memA}}-1}\mathsf{S}_j,\qquad
+\overleftarrow{\prod}_{j=p_{B_n}+1}^{\,p_{\mathrm{memB}}-1}\mathsf{S}_j
+\label{eq:mem-swap-chain}
+\end{equation}
+实现（按从右到左的顺序执行）。随后分别在 $(A_n,\mathrm{memA})$、$(B_n,\mathrm{memB})$ 上施加 $U_{\mathrm{step}}$。扫描结束后再收拢
+\begin{equation}
+p_{\mathrm{memA}}\rightarrow 2,\qquad p_{\mathrm{memB}}\rightarrow 3,
+\end{equation}
+得到式 \eqref{eq:final-chain-layout}，即固定前缀
+\begin{equation}
+({\rm atomA,atomB,memA,memB}).
+\end{equation}
 该布局直接服务后续收缩：原子与记忆核在链首，时间 bin 区域结构规则，降低索引管理与 SWAP 调度复杂度。
 
 \section{光纤与 BSM 的 Heisenberg-POVM 统一建模}[Unified Heisenberg-POVM Modeling for Fiber and BSM]
+
+\subsection{Heisenberg-POVM 推回、成功判据与复杂度口径}[Heisenberg-POVM pushback, success criteria, and complexity conventions]
+
+这一子节把“测量端定义”与“计算端口径”同时说明。前者回答如何从探测点击记录构造可分辨性混合的 effect 并推回输入端，后者回答如何在固定物理单位口径下解释 wall-clock 开销来源。将二者合并陈述的原因是：在本模型里，运行时间的主导项恰好与测量枚举空间大小耦合，算法复杂度与物理判据并非独立问题。
 
 \paragraph{探测端 effect 构造与可分辨性混合}
 
