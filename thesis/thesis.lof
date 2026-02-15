@@ -1,21 +1,19 @@
 \addvspace {10.0pt}
 \contentsline {figure}{\numberline {1-1}{\ignorespaces 跨尺度噪声迁移的可视化：信号光子计数率（蓝色）随光纤距离按指数衰减，而 QFC 拉曼背景（橙色）与探测器暗计数（绿色）几乎不随距离变化。在短距离端信号主导，长距离端噪声主导，两者交叉点附近是系统从"效率受限"向"噪声受限"过渡的临界区域。图片来源：Zhou et al., arXiv:2308.08892 (2023), Fig.~8。}}{7}{figure.1.1}%
 \contentsline {figure}{\numberline {1-2}{\ignorespaces 面向中性原子处理节点的光子—原子量子接口典型链路示意：两端各有一个被光镊囚禁的单个 $^{87}$Rb 原子，通过受激拉曼绝热过程（STIRAP）产生原子—光子纠缠；$780\,\mathrm {nm}$ 光子经量子频率转换（QFC）转换到电信波段（$1517\,\mathrm {nm}$）后进入长光纤链路，在中继站进行两光子干涉与贝尔态测量；符合点击作为"宣告信号"将远程原子寄存器投影到纠缠态。}}{8}{figure.1.2}%
-\contentsline {figure}{\numberline {1-3}{\ignorespaces 时间 bin 离散化与矩阵乘积态（MPS）更新的示意图：系统 $S$ 与连续输出光场的相互作用被离散化为与一系列时间 bin（$B_1, B_2, \ldots $）的逐步耦合；每一步相互作用可以表示为系统与当前 bin 之间的局域幺正门，随后对已离开相互作用区的 bin 进行测量或迹掉。这种"逐 bin 更新"的结构天然适合用 MPS/TEBD 算法高效表示和演化，使得包含长时间序列光场自由度的量子态计算变得可行。\cite {Wang2017MPSCascadedQuantumSystems}}}{10}{figure.1.3}%
-\addvspace {10.0pt}
-\contentsline {figure}{\numberline {2-1}{\ignorespaces 一维量子链的 MPS 结构示意}}{12}{figure.2.1}%
-\contentsline {figure}{\numberline {2-2}{\ignorespaces TEBD 奇偶键交替更新示意}}{16}{figure.2.2}%
+\contentsline {figure}{\numberline {1-3}{\ignorespaces 时间 bin 离散化与矩阵乘积态（MPS）更新的示意图：系统 $S$ 与连续输出光场的相互作用被离散化为与一系列时间 bin（$B_1, B_2, \ldots $）的逐步耦合；每一步相互作用可以表示为系统与当前 bin 之间的局域幺正门，随后对已离开相互作用区的 bin 进行测量或迹掉。这种"逐 bin 更新"的结构天然适合用 MPS/TEBD 算法高效表示和演化，使得包含长时间序列光场自由度的量子态计算变得可行。\cite {Wang2017MPSCascadedQuantumSystems}}}{9}{figure.1.3}%
 \addvspace {10.0pt}
 \addvspace {10.0pt}
-\contentsline {figure}{\numberline {4-1}{\ignorespaces 发射波包时间结构}}{28}{figure.4.1}%
-\contentsline {figure}{\numberline {4-2}{\ignorespaces 发射过程中 MPS 键维度的演化}}{28}{figure.4.2}%
-\contentsline {figure}{\numberline {4-3}{\ignorespaces 单臂点击时间直方图与接受窗口示意（含背景噪声）。}}{29}{figure.4.3}%
-\contentsline {figure}{\numberline {4-4}{\ignorespaces 接受窗口宽度扫描：接受率、SBR、$F_{\mathrm {true}}$ 与假成功占比的权衡示意。}}{29}{figure.4.4}%
-\contentsline {figure}{\numberline {4-5}{\ignorespaces HOM 干涉曲线}}{30}{figure.4.5}%
-\contentsline {figure}{\numberline {4-6}{\ignorespaces 中心站双击模式分布与暗计数拆分示意。}}{31}{figure.4.6}%
-\contentsline {figure}{\numberline {4-7}{\ignorespaces CHSH 量 $S$ 随链路长度变化的示意曲线（虚线为经典上界 $S=2$）。}}{31}{figure.4.7}%
-\contentsline {figure}{\numberline {4-8}{\ignorespaces 保真度随噪声率变化}}{32}{figure.4.8}%
-\contentsline {figure}{\numberline {4-9}{\ignorespaces 成功率与保真度随光纤长度变化}}{33}{figure.4.9}%
-\contentsline {figure}{\numberline {4-10}{\ignorespaces 探测器效率对成功率与保真度的影响}}{33}{figure.4.10}%
-\contentsline {figure}{\numberline {4-11}{\ignorespaces 事件率–保真度前沿示意（不同工作点的权衡曲线）。}}{34}{figure.4.11}%
+\addvspace {10.0pt}
+\contentsline {figure}{\numberline {4-1}{\ignorespaces 双臂波包时域结构与主窗口位置。}}{24}{figure.4.1}%
+\contentsline {figure}{\numberline {4-2}{\ignorespaces 发射阶段 MPS 键维演化。}}{24}{figure.4.2}%
+\contentsline {figure}{\numberline {4-3}{\ignorespaces 点击时间分布与接受窗口。}}{25}{figure.4.3}%
+\contentsline {figure}{\numberline {4-4}{\ignorespaces 窗口扫描下的速率、条件保真度与假成功占比。}}{25}{figure.4.4}%
+\contentsline {figure}{\numberline {4-5}{\ignorespaces HOM 曲线及可见度约束。}}{26}{figure.4.5}%
+\contentsline {figure}{\numberline {4-6}{\ignorespaces BSM 模式概率与真假分量分解。}}{26}{figure.4.6}%
+\contentsline {figure}{\numberline {4-7}{\ignorespaces CHSH 参数趋势（虚线为经典界 $S=2$）。}}{27}{figure.4.7}%
+\contentsline {figure}{\numberline {4-8}{\ignorespaces 成功率与保真度随链路长度变化。}}{27}{figure.4.8}%
+\contentsline {figure}{\numberline {4-9}{\ignorespaces QFC 背景噪声对事件率与保真度的影响。}}{28}{figure.4.9}%
+\contentsline {figure}{\numberline {4-10}{\ignorespaces 探测效率变化对端到端性能的影响。}}{28}{figure.4.10}%
+\contentsline {figure}{\numberline {4-11}{\ignorespaces 速率-保真度工作点前沿。}}{28}{figure.4.11}%
 \addvspace {10.0pt}

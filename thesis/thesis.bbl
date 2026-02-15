@@ -1,4 +1,4 @@
-\begin{thebibliography}{17}
+\begin{thebibliography}{23}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{#1}
 \expandafter\ifx\csname urlstyle\endcsname\relax\else
@@ -10,13 +10,6 @@
   \def\doi#1{\href{https://doi.org/#1}{\nolinkurl{#1}}}
   \let\eprint\href
 \fi
-
-\bibitem[Wang et~al.(2017)Wang and Clerk]{Wang2017MPSCascadedQuantumSystems}
-WANG C, CLERK A~A.
-\newblock Quantum theory of driven-dissipative cascaded quantum systems:
-  Application to photon-mediated entanglement generation\allowbreak[J/OL].
-\newblock New Journal of Physics, 2017, 19: 113021.
-\newblock DOI: \doi{10.1088/1367-2630/aa8f09}.
 
 \bibitem[Wehner et~al.(2018)Wehner, Elkouss, and
   Hanson]{Wehner2018QuantumInternetVision}
@@ -86,6 +79,15 @@ CHIU N~C, TRAPP E~C, GUO J, et~al.
 \newblock Nature, 2025, 646: 1075-1080.
 \newblock DOI: \doi{10.1038/s41586-025-09596-6}.
 
+\bibitem[Li et~al.(2025)Li, Fu, Hu, Zhang, Zhu, Zhu, Han, Wang, Zhang, Chen,
+  Wang, Zhang, Lin, Jiang, Yan, Wang, Du, Hu, and
+  Peng]{Li2025FiberArrayArchitectureAtomQC}
+LI L, FU W, HU W, et~al.
+\newblock Parallel coherent manipulation of atomic qubits in a scalable optical
+  fiber array architecture\allowbreak[J/OL].
+\newblock Nature Communications, 2025, 16: 9769.
+\newblock DOI: \doi{10.1038/s41467-025-64094-x}.
+
 \bibitem[Sinclair et~al.(2025)Sinclair, Liang, Lv, Liu, Lee, Yao, Sipahigil,
   and Lukin]{Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
 SINCLAIR N~J, LIANG Y, LV D, et~al.
@@ -139,5 +141,50 @@ YANAGIMOTO R, OTHERS.
 Proceedings of SPIE.
 \newblock SPIE, 2021.
 \newblock DOI: \doi{10.1117/12.2576098}.
+
+\bibitem[Wang et~al.(2017)Wang and Clerk]{Wang2017MPSCascadedQuantumSystems}
+WANG C, CLERK A~A.
+\newblock Quantum theory of driven-dissipative cascaded quantum systems:
+  Application to photon-mediated entanglement generation\allowbreak[J/OL].
+\newblock New Journal of Physics, 2017, 19: 113021.
+\newblock DOI: \doi{10.1088/1367-2630/aa8f09}.
+
+\bibitem[Jaynes et~al.(1963)Jaynes and Cummings]{JaynesCummings1963}
+JAYNES E~T, CUMMINGS F~W.
+\newblock Comparison of quantum and semiclassical radiation theories with
+  application to the beam maser\allowbreak[J/OL].
+\newblock Proceedings of the IEEE, 1963, 51\allowbreak (1): 89-109.
+\newblock DOI: \doi{10.1109/PROC.1963.1664}.
+
+\bibitem[Gardiner et~al.(1985)Gardiner and Collett]{GardinerCollett1985}
+GARDINER C~W, COLLETT M~J.
+\newblock Input and output in damped quantum systems: Quantum stochastic
+  differential equations and the master equation\allowbreak[J/OL].
+\newblock Physical Review A, 1985, 31\allowbreak (6): 3761-3774.
+\newblock DOI: \doi{10.1103/PhysRevA.31.3761}.
+
+\bibitem[Ikuta et~al.(2018)Ikuta, Kobayashi, Kawakami, Miki, Yamashita, Terai,
+  Yamamoto, Koashi, and Imoto]{Ikuta2018PolarizationInsensitiveQFC}
+IKUTA R, KOBAYASHI T, KAWAKAMI R, et~al.
+\newblock Polarization insensitive frequency conversion for an atom-photon
+  entanglement distribution via a telecom network\allowbreak[J/OL].
+\newblock Nature Communications, 2018, 9: 1997.
+\newblock DOI: \doi{10.1038/s41467-018-04338-x}.
+
+\bibitem[Arranz~Regidor et~al.(2021)Arranz~Regidor, Crowder, Carmichael, and
+  Hughes]{ArranzRegidor2021WaveguideQED}
+ARRANZ~REGIDOR S, CROWDER G, CARMICHAEL H, et~al.
+\newblock Modeling quantum light-matter interactions in waveguide qed with
+  retardation, nonlinear interactions, and a time-delayed feedback: Matrix
+  product states versus a space-discretized waveguide model\allowbreak[J/OL].
+\newblock Physical Review Research, 2021, 3\allowbreak (2): 023030.
+\newblock DOI: \doi{10.1103/PhysRevResearch.3.023030}.
+
+\bibitem[Garraway(1997)]{Garraway1997DecayStrongReservoir}
+GARRAWAY B~M.
+\newblock Nonperturbative decay of an atomic system in a
+  cavity\allowbreak[J/OL].
+\newblock Physical Review A, 1997, 55\allowbreak (3): 2290-2303.
+\newblock DOI: \doi{10.1103/PhysRevA.55.2290}.
 
 \end{thebibliography}

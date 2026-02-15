@@ -47,6 +47,220 @@ def _safe_num(value):
         return None
 
 
+_DETECTOR_ORDER = ("H1", "V1", "H2", "V2")
+_DETECTOR_ORDER_INDEX = {detector: idx for idx, detector in enumerate(_DETECTOR_ORDER)}
+
+
+def _sort_group_value_key(value):
+    if isinstance(value, (int, float, np.floating)):
+        return (0, float(value))
+    if value is None:
+        return (2, "")
+    return (1, str(value))
+
+
+def _analysis_group_key(value) -> str:
+    if isinstance(value, (int, float, np.floating)):
+        return f"{float(value):.9f}"
+    if value is None:
+        return "none"
+    return str(value)
+
+
+def _ensure_click_analysis_group(groups: dict, group_value):
+    key = _analysis_group_key(group_value)
+    state = groups.get(key)
+    if state is not None:
+        return state
+    state = {
+        "group_value": group_value,
+        "success_delta": {},
+        "true_delta": {},
+        "false_delta": {},
+        "heatmap": {},
+    }
+    groups[key] = state
+    return state
+
+
+def _accumulate_bucket_weight(bucket: dict, delta_bin: int, weight: float) -> None:
+    key = int(delta_bin)
+    bucket[key] = float(bucket.get(key, 0.0) + float(weight))
+
+
+def _parse_click_events(raw_clicks, task_name: str) -> list[SimpleNamespace]:
+    if not isinstance(raw_clicks, list):
+        raise ValueError(f"{task_name} clicks 必须为 list")
+    events = []
+    for click in raw_clicks:
+        if not isinstance(click, (list, tuple)) or len(click) < 4:
+            raise ValueError(f"{task_name} clicks 必须为 (det, bin, is_dark, source) 四元组")
+        detector = click[0]
+        if detector is None:
+            raise ValueError(f"{task_name} clicks 的 detector 不能为空")
+        bin_index = click[1]
+        is_dark = bool(click[2])
+        source = str(click[3])
+        try:
+            bin_value = int(bin_index)
+        except Exception as exc:
+            raise ValueError(f"{task_name} clicks 的 bin 必须可转为 int: {bin_index}") from exc
+        events.append(
+            SimpleNamespace(
+                detector=str(detector),
+                bin_index=bin_value,
+                is_dark=bool(is_dark),
+                source=source,
+            )
+        )
+    return events
+
+
+def _build_click_channel_maps(events: list[SimpleNamespace]):
+    bins = {detector: "" for detector in _DETECTOR_ORDER}
+    darks = {detector: "" for detector in _DETECTOR_ORDER}
+    sources = {detector: "" for detector in _DETECTOR_ORDER}
+    for event in events:
+        detector = str(event.detector)
+        if detector not in bins:
+            continue
+        bin_text = str(int(event.bin_index))
+        bins[detector] = bin_text if bins[detector] == "" else f"{bins[detector]};{bin_text}"
+        dark_text = "1" if bool(event.is_dark) else "0"
+        darks[detector] = dark_text if darks[detector] == "" else f"{darks[detector]};{dark_text}"
+        source_text = str(event.source)
+        sources[detector] = source_text if sources[detector] == "" else f"{sources[detector]};{source_text}"
+    return bins, darks, sources
+
+
+def _format_pair_key(detector_a: str, detector_b: str) -> str:
+    ordered = sorted(
+        (str(detector_a), str(detector_b)),
+        key=lambda item: (_DETECTOR_ORDER_INDEX.get(item, 99), item),
+    )
+    return f"{ordered[0]}+{ordered[1]}"
+
+
+def _extract_record_pair_delta(events: list[SimpleNamespace]):
+    if len(events) < 2:
+        return "", None
+    best = None
+    for idx_a in range(len(events)):
+        event_a = events[idx_a]
+        for idx_b in range(idx_a + 1, len(events)):
+            event_b = events[idx_b]
+            delta_bin = abs(int(event_a.bin_index) - int(event_b.bin_index))
+            pair_key = _format_pair_key(event_a.detector, event_b.detector)
+            candidate = (int(delta_bin), pair_key, idx_a, idx_b)
+            if best is None or candidate < best[0]:
+                best = (candidate, pair_key, int(delta_bin))
+    if best is None:
+        return "", None
+    return best[1], best[2]
+
+
+def _resolve_record_true_false_weights(record: dict, events: list[SimpleNamespace]):
+    p_true = None
+    if isinstance(record, dict):
+        p_true = _safe_num(record.get("p_true_given_record"))
+    if p_true is None:
+        p_true = 0.0 if any(bool(event.is_dark) for event in events) else 1.0
+    p_true = float(np.clip(float(p_true), 0.0, 1.0))
+    return p_true, float(1.0 - p_true)
+
+
+def _accumulate_click_analysis(
+    groups: dict,
+    group_value,
+    record: dict,
+    events: list[SimpleNamespace],
+    success: bool,
+) -> None:
+    if not bool(success):
+        return
+    pair_key, delta_bin = _extract_record_pair_delta(events)
+    if delta_bin is None or pair_key == "":
+        return
+    group = _ensure_click_analysis_group(groups, group_value)
+    _accumulate_bucket_weight(group["success_delta"], int(delta_bin), 1.0)
+    true_weight, false_weight = _resolve_record_true_false_weights(record, events)
+    _accumulate_bucket_weight(group["true_delta"], int(delta_bin), true_weight)
+    _accumulate_bucket_weight(group["false_delta"], int(delta_bin), false_weight)
+    cell_key = (pair_key, int(delta_bin))
+    cell = group["heatmap"].setdefault(
+        cell_key,
+        {"records": 0, "true_weight": 0.0, "false_weight": 0.0},
+    )
+    cell["records"] = int(cell["records"]) + 1
+    cell["true_weight"] = float(cell["true_weight"]) + float(true_weight)
+    cell["false_weight"] = float(cell["false_weight"]) + float(false_weight)
+
+
+def _write_click_analysis_outputs(summary_dir, prefix: str, group_column: str, groups: dict) -> None:
+    delta_path = summary_dir / f"{prefix}_delta_bin_distribution.csv"
+    heatmap_path = summary_dir / f"{prefix}_record_reliability_heatmap.csv"
+    sorted_groups = sorted(groups.values(), key=lambda state: _sort_group_value_key(state.get("group_value")))
+
+    with open(delta_path, "w", encoding="utf-8", newline="") as delta_file:
+        delta_writer = csv.writer(delta_file)
+        delta_writer.writerow([
+            group_column,
+            "bucket",
+            "delta_bin",
+            "weight",
+            "probability",
+            "total_weight",
+        ])
+        for state in sorted_groups:
+            group_value = state.get("group_value")
+            for bucket_name, bucket_data in (
+                ("success", state.get("success_delta", {})),
+                ("true", state.get("true_delta", {})),
+                ("false", state.get("false_delta", {})),
+            ):
+                total_weight = float(sum(float(weight) for weight in bucket_data.values()))
+                for delta_bin in sorted(bucket_data.keys()):
+                    weight = float(bucket_data[delta_bin])
+                    probability = (weight / total_weight) if total_weight > 0.0 else 0.0
+                    delta_writer.writerow([
+                        group_value,
+                        bucket_name,
+                        int(delta_bin),
+                        weight,
+                        probability,
+                        total_weight,
+                    ])
+
+    with open(heatmap_path, "w", encoding="utf-8", newline="") as heatmap_file:
+        heatmap_writer = csv.writer(heatmap_file)
+        heatmap_writer.writerow([
+            group_column,
+            "pair",
+            "delta_bin",
+            "p_true_given_record_avg",
+            "records",
+            "true_weight",
+            "false_weight",
+        ])
+        for state in sorted_groups:
+            group_value = state.get("group_value")
+            heatmap = state.get("heatmap", {})
+            for (pair_key, delta_bin), cell in sorted(heatmap.items(), key=lambda item: (item[0][0], item[0][1])):
+                records = int(cell.get("records", 0) or 0)
+                true_weight = float(cell.get("true_weight", 0.0) or 0.0)
+                false_weight = float(cell.get("false_weight", 0.0) or 0.0)
+                p_true_avg = (true_weight / float(records)) if records > 0 else 0.0
+                heatmap_writer.writerow([
+                    group_value,
+                    pair_key,
+                    int(delta_bin),
+                    p_true_avg,
+                    records,
+                    true_weight,
+                    false_weight,
+                ])
+
+
 def _finalize_group_summary(group: dict) -> dict:
     runs_total = int(group["runs_total"])
     shots_total = int(group["shots_total"])
@@ -148,6 +362,7 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
     summary_path = summary_dir / "window_scan_summary.csv"
 
     groups = {}
+    click_analysis_groups = {}
 
     with open(trials_path, "w", encoding="utf-8", newline="") as trials_file, open(
         runs_path, "w", encoding="utf-8", newline=""
@@ -546,18 +761,15 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                     accepted_by_window = record.get("accepted_by_window")
                     p_true_given_record = _safe_num(record.get("p_true_given_record"))
                     shot_clicks = record.get("clicks", [])
-                    bins = {"H1": "", "V1": "", "H2": "", "V2": ""}
-                    darks = {"H1": "", "V1": "", "H2": "", "V2": ""}
-                    for click in shot_clicks:
-                        if len(click) < 3:
-                            raise ValueError("WINDOW_SCAN clicks 至少包含 (det, bin, is_dark)")
-                        det = click[0]
-                        bin_idx = click[1]
-                        is_dark = bool(click[2])
-                        if det in bins:
-                            bins[det] = f"{bin_idx}" if bins[det] == "" else f"{bins[det]};{bin_idx}"
-                            flag = "1" if is_dark else "0"
-                            darks[det] = flag if darks[det] == "" else f"{darks[det]};{flag}"
+                    events = _parse_click_events(shot_clicks, "WINDOW_SCAN")
+                    bins, darks, _ = _build_click_channel_maps(events)
+                    _accumulate_click_analysis(
+                        click_analysis_groups,
+                        window_ns,
+                        record,
+                        events,
+                        bool(shot_success),
+                    )
 
                     trials_writer.writerow([
                         window_ns,
@@ -661,6 +873,8 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                 acceptance_fraction,
             ])
 
+    _write_click_analysis_outputs(summary_dir, "window_scan", "window_ns", click_analysis_groups)
+
 
 def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
     results_dir = paths["results"]
@@ -672,6 +886,7 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
     summary_path = summary_dir / "length_scan_summary.csv"
 
     groups = {}
+    click_analysis_groups = {}
 
     with open(trials_path, "w", encoding="utf-8", newline="") as trials_file, open(
         runs_path, "w", encoding="utf-8", newline=""
@@ -907,18 +1122,15 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
                     shot_success = record.get("success")
                     bell = record.get("bell")
                     shot_clicks = record.get("clicks", [])
-                    bins = {"H1": "", "V1": "", "H2": "", "V2": ""}
-                    darks = {"H1": "", "V1": "", "H2": "", "V2": ""}
-                    for click in shot_clicks:
-                        if len(click) < 3:
-                            raise ValueError("LENGTH_SCAN clicks 至少包含 (det, bin, is_dark)")
-                        det = click[0]
-                        bin_idx = click[1]
-                        is_dark = bool(click[2])
-                        if det in bins:
-                            bins[det] = f"{bin_idx}" if bins[det] == "" else f"{bins[det]};{bin_idx}"
-                            flag = "1" if is_dark else "0"
-                            darks[det] = flag if darks[det] == "" else f"{darks[det]};{flag}"
+                    events = _parse_click_events(shot_clicks, "LENGTH_SCAN")
+                    bins, darks, _ = _build_click_channel_maps(events)
+                    _accumulate_click_analysis(
+                        click_analysis_groups,
+                        length_km,
+                        record,
+                        events,
+                        bool(shot_success),
+                    )
 
                     trials_writer.writerow([
                         length_km,
@@ -1072,6 +1284,8 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
                 row["sbr_true_false"],
             ])
 
+    _write_click_analysis_outputs(summary_dir, "length_scan", "length_km", click_analysis_groups)
+
 
 def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
     results_dir = paths["results"]
@@ -1083,6 +1297,7 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
     summary_path = summary_dir / "bsm_scan_summary.csv"
 
     groups = {}
+    click_analysis_groups = {}
 
     with open(trials_path, "w", encoding="utf-8", newline="") as trials_file, open(
         runs_path, "w", encoding="utf-8", newline=""
@@ -1339,21 +1554,15 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
                     bell = record.get("bell")
                     pattern = record.get("pattern")
                     shot_clicks = record.get("clicks", [])
-                    bins = {"H1": "", "V1": "", "H2": "", "V2": ""}
-                    darks = {"H1": "", "V1": "", "H2": "", "V2": ""}
-                    sources = {"H1": "", "V1": "", "H2": "", "V2": ""}
-                    for click in shot_clicks:
-                        if len(click) < 3:
-                            raise ValueError("BSM_SCAN clicks 至少包含 (det, bin, is_dark)")
-                        det = click[0]
-                        bin_idx = click[1]
-                        is_dark = bool(click[2])
-                        source = str(click[3]) if len(click) >= 4 else "signal"
-                        if det in bins:
-                            bins[det] = f"{bin_idx}" if bins[det] == "" else f"{bins[det]};{bin_idx}"
-                            flag = "1" if is_dark else "0"
-                            darks[det] = flag if darks[det] == "" else f"{darks[det]};{flag}"
-                            sources[det] = source if sources[det] == "" else f"{sources[det]};{source}"
+                    events = _parse_click_events(shot_clicks, "BSM_SCAN")
+                    bins, darks, sources = _build_click_channel_maps(events)
+                    _accumulate_click_analysis(
+                        click_analysis_groups,
+                        bs_theta,
+                        record,
+                        events,
+                        bool(shot_success),
+                    )
 
                     row = [
                         bs_theta,
@@ -1526,6 +1735,8 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
                 output_row.append(row[f"{pattern_key}_rate"])
             summary_writer.writerow(output_row)
 
+    _write_click_analysis_outputs(summary_dir, "bsm_scan", "bs_theta", click_analysis_groups)
+
 
 def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
     # ------------------------------------------------------------------
@@ -1547,6 +1758,7 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
             )
         trials_path = summary_dir / "hom_trials.csv"
         tau_path = summary_dir / "hom_summary.csv"
+        click_analysis_groups = {}
         # hom_trials：逐 run × shot 的明细（含点击 bin）
         with open(trials_path, "w", encoding="utf-8", newline="") as trials_file:
             trials_writer = csv.writer(trials_file)
@@ -1632,25 +1844,21 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 else:
                     # 每个 shot 一行，点击 bin 以分号拼接
                     for shot_idx, shot_clicks in enumerate(clicks):
-                        bins = {"H1": "", "V1": "", "H2": "", "V2": ""}
-                        darks = {"H1": "", "V1": "", "H2": "", "V2": ""}
-                        events = []
-                        for click in shot_clicks:
-                            if len(click) < 3:
-                                raise ValueError("HOM clicks 至少包含 (det, bin, is_dark)")
-                            det = click[0]
-                            bin_idx = click[1]
-                            is_dark = bool(click[2])
-                            events.append(SimpleNamespace(detector=det, bin_index=bin_idx, is_dark=is_dark))
-                            if det in bins:
-                                bins[det] = f"{bin_idx}" if bins[det] == "" else f"{bins[det]};{bin_idx}"
-                                flag = "1" if is_dark else "0"
-                                darks[det] = flag if darks[det] == "" else f"{darks[det]};{flag}"
+                        events = _parse_click_events(shot_clicks, "HOM")
+                        bins, darks, _ = _build_click_channel_maps(events)
 
                         dark_clicks = sum(1 for e in events if e.is_dark)
                         state["dark_clicks_total"] += dark_clicks
                         state["clicks_total"] += len(events)
-                        if events and _is_port_samepol_coincidence(events, window_bins):
+                        is_success = bool(events and _is_port_samepol_coincidence(events, window_bins))
+                        _accumulate_click_analysis(
+                            click_analysis_groups,
+                            tau_ns,
+                            {},
+                            events,
+                            is_success,
+                        )
+                        if is_success:
                             if dark_clicks == 0:
                                 state["coinc_true"] += 1
                             else:
@@ -1729,6 +1937,7 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                     f"{dark_click_rate:.8f}",
                     f"{dark_click_rate_per_det:.8f}",
                 ])
+        _write_click_analysis_outputs(summary_dir, "hom", "tau_ns", click_analysis_groups)
         return
     if task_type == "WINDOW_SCAN":
         _write_window_scan_summary(paths=paths, config=config)
@@ -1742,6 +1951,7 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
 
     if task_type == "SIM":
         trials_path = summary_dir / "sim_trials.csv"
+        click_analysis_groups = {}
         with open(trials_path, "w", encoding="utf-8", newline="") as trials_file:
             trials_writer = csv.writer(trials_file)
             trials_writer.writerow([
@@ -1853,18 +2063,18 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                     success = record.get("success")
                     bell = record.get("bell")
                     shot_clicks = record.get("clicks", [])
-                    bins = {"H1": "", "V1": "", "H2": "", "V2": ""}
-                    darks = {"H1": "", "V1": "", "H2": "", "V2": ""}
-                    for click in shot_clicks:
-                        if len(click) < 3:
-                            raise ValueError("SIM clicks 至少包含 (det, bin, is_dark)")
-                        det = click[0]
-                        bin_idx = click[1]
-                        is_dark = bool(click[2])
-                        if det in bins:
-                            bins[det] = f"{bin_idx}" if bins[det] == "" else f"{bins[det]};{bin_idx}"
-                            flag = "1" if is_dark else "0"
-                            darks[det] = flag if darks[det] == "" else f"{darks[det]};{flag}"
+                    events = _parse_click_events(shot_clicks, "SIM")
+                    bins, darks, _ = _build_click_channel_maps(events)
+                    group_window_ns = _safe_num(window_ns)
+                    if group_window_ns is None:
+                        raise ValueError("SIM summary 需要 metrics.window_ns")
+                    _accumulate_click_analysis(
+                        click_analysis_groups,
+                        group_window_ns,
+                        record,
+                        events,
+                        bool(success),
+                    )
                     trials_writer.writerow([
                         task_mode,
                         window_ns,
@@ -1898,6 +2108,7 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                         darks["H2"],
                         darks["V2"],
                     ])
+        _write_click_analysis_outputs(summary_dir, "sim", "window_ns", click_analysis_groups)
     summary_path = summary_dir / f"{task_type.lower()}_summary.csv"
     with open(summary_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)

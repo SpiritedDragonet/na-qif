@@ -27,46 +27,44 @@ Reallocating 'singl_function' (item size: 4) to 100 items.
 Reallocating 'singl_function' (item size: 4) to 100 items.
 Reallocating 'singl_function' (item size: 4) to 100 items.
 Database file #1: reference.bib
-Warning--I didn't find a database entry for "Li2025FiberArrayArchitectureAtomQC"
-You've used 17 entries,
+You've used 23 entries,
             5265 wiz_defined-function locations,
-            1183 strings with 12630 characters,
-and the built_in function-call counts, 174829 in all, are:
-= -- 3970
-> -- 19869
-< -- 24786
-+ -- 6848
-- -- 1291
-* -- 1357
-:= -- 24467
-add.period$ -- 67
-call.type$ -- 17
-change.case$ -- 127
-chr.to.int$ -- 6085
-cite$ -- 17
-duplicate$ -- 440
-empty$ -- 2001
-format.name$ -- 579
-if$ -- 45211
+            1227 strings with 14463 characters,
+and the built_in function-call counts, 247387 in all, are:
+= -- 5426
+> -- 28277
+< -- 35325
++ -- 9723
+- -- 1791
+* -- 1868
+:= -- 34560
+add.period$ -- 91
+call.type$ -- 23
+change.case$ -- 170
+chr.to.int$ -- 8679
+cite$ -- 23
+duplicate$ -- 595
+empty$ -- 2725
+format.name$ -- 792
+if$ -- 63955
 int.to.chr$ -- 1
-int.to.str$ -- 18
+int.to.str$ -- 24
 missing$ -- 0
-newline$ -- 116
-num.names$ -- 51
-pop$ -- 8841
+newline$ -- 152
+num.names$ -- 69
+pop$ -- 12580
 preamble$ -- 1
-purify$ -- 17
+purify$ -- 23
 quote$ -- 0
-skip$ -- 18372
+skip$ -- 26060
 stack$ -- 0
-substring$ -- 8937
-swap$ -- 17
-text.length$ -- 408
+substring$ -- 12625
+swap$ -- 23
+text.length$ -- 557
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 187
+type$ -- 253
 warning$ -- 0
-while$ -- 446
+while$ -- 611
 width$ -- 0
-write$ -- 285
-(There was 1 warning)
+write$ -- 385

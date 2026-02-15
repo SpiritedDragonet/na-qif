@@ -1,252 +1,189 @@
 \chapter{仿真结果与参数依赖性分析}[Simulation Results and Parameter Dependence Analysis]
 
-本章以“可对照实验的指标体系”为主线，给出端到端仿真的评估口径与数据组织方式。由于完整实验计划仍在迭代，本章强调“如何计算、如何验证、如何解释趋势”，具体数值结果将在后续批量实验中补齐。
+本章采用“分层可观测量”的报告框架：先给出可独立标定的中间量，再给出端到端任务量。这样做的核心是把参数识别和性能评估拆开处理，避免把所有误差都压缩到一个末端保真度数字。对应本工作的物理链路，结果解释按“源端发射与波包、链路传输与干涉、BSM 宣告与条件态”三层展开，并在同一统计口径下统一输出成功率、真假成功分量、条件保真度和 CHSH 指标。
 
-\section{参数与实验设置}[Parameter Sets and Experimental Setup]
+\section{实验对照口径与参数锚点}[Experiment-Aligned Metrics and Anchored Parameters]
 
-为便于后续对比与参数扫描，本节给出参考参数与可调范围。除原子谱线等物理常量外，其余参数均视为设计量，重点在于变化趋势而非单点数值。
-
-\paragraph{原子系统参数}
-
-\begin{table}[htbp]
-\centering
-\caption{$^{87}$Rb 原子系统参数}
-\begin{tabular}{lcc}
-\hline
-参数 & 符号 & 数值 \\
-\hline
-跃迁波长 & $\lambda$ & 780 nm \\
-自发辐射率 & $\gamma/2\pi$ & 6.07 MHz \\
-自发辐射寿命 & $\tau = 1/\gamma$ & 26.2 ns \\
-基态超精细分裂 & $\Delta_{\mathrm{hfs}}$ & 6.83 GHz \\
-量子比特态 & $|0\rangle$, $|1\rangle$ & $|F=1, m_F=0\rangle$, $|F=2, m_F=0\rangle$ \\
-\hline
-\end{tabular}
-\end{table}
-
-该表用于标定发射的时间尺度与能级结构，是后续波包尺度与失谐设定的参考基准。
-
-\paragraph{光学链路参数}
-
-\begin{table}[htbp]
-\centering
-\caption{光学链路参考参数（可调）}
-\begin{tabular}{lcc}
-\hline
-参数 & 符号 & 参考值 \\
-\hline
-QFC 转换效率 & $\eta_{\mathrm{QFC}}$ & 0.5 \\
-QFC 噪声光子率 & $\mu_{\mathrm{noise}}$ & $10^{-3}$/bin \\
-光纤损耗系数 & $\alpha$ & 0.2 dB/km \\
-光纤长度（单臂） & $L$ & 25 km \\
-光纤透过率 & $\eta_{\mathrm{fiber}}$ & 0.316 ($-5$ dB) \\
-滤波器带宽 & $\Delta\nu_{\mathrm{filter}}$ & 1 GHz \\
-\hline
-\end{tabular}
-\end{table}
-
-这些参数用于刻画链路的主要损耗与噪声量级，参考相关实验报告与器件性能水平（如文献~\cite{vanleent2022entangling}），仿真中以此为基准进行趋势扫描。
-
-\paragraph{探测器参数}
-
-\begin{table}[htbp]
-\centering
-\caption{SNSPD 探测器参考参数（可调）}
-\begin{tabular}{lcc}
-\hline
-参数 & 符号 & 参考值 \\
-\hline
-探测效率 & $\eta_d$ & 0.9 \\
-暗计数率 & $R_{\mathrm{dark}}$ & 10 Hz \\
-时间抖动 & $\sigma_t$ & 50 ps \\
-死时间 & $\tau_{\mathrm{dead}}$ & 50 ns \\
-\hline
-\end{tabular}
-\end{table}
-
-探测器指标取自高性能 SNSPD 的典型范围，噪声部分在模型中统一并入有效噪声率，以便与实际计数率对应。
-
-\paragraph{数值仿真参数}
-
-\begin{table}[htbp]
-\centering
-\caption{数值仿真参数范围（可调）}
-\begin{tabular}{lcc}
-\hline
-参数 & 符号 & 参考范围 \\
-\hline
-时间 bin 宽度 & $\Delta t$ & 0.5--1 ns \\
-总 bin 数 & $N$ & 100--200 \\
-Fock 空间截断 & $n_{\max}$ & 2--3 \\
-MPS 键维度 & $\chi_{\max}$ & 50--64 \\
-POVM 抽样次数 & $N_{\mathrm{shot}}$ & $10^2$--$10^5$ \\
-\hline
-\end{tabular}
-\end{table}
-
-该范围是精度与算力之间的折中：$\Delta t$ 决定时间分辨率，$N$ 决定波包覆盖范围，$n_{\max}$ 与 $\chi_{\max}$ 控制高光子数与纠缠截断误差。
-
-\section{核心指标与验证}[Core Metrics and Verification]
-
-端到端评估采用三类核心指标：两光子到达概率 $p_{\mathrm{arrive}}$、成功率的绝对与条件分解，以及成功样本的条件保真度 $F_{\mathrm{true}}$。具体而言，
+端到端评估采用
 \begin{align}
-p_{\mathrm{success}}^{\mathrm{abs}} &= \sum_{m\in\mathcal{S}}\mathrm{Tr}(E_m\rho),\\
-p_{\mathrm{success}}^{\mathrm{true}} &= \sum_{m\in\mathcal{S}}\mathrm{Tr}(E_m^{\mathrm{true}}\rho),\\
-p_{\mathrm{success}}^{\mathrm{false}} &= p_{\mathrm{success}}^{\mathrm{abs}}-p_{\mathrm{success}}^{\mathrm{true}},\\
-p_{\mathrm{success}}^{\mathrm{true}\mid\mathrm{arrive}} &= p_{\mathrm{success}}^{\mathrm{true}}/p_{\mathrm{arrive}}.
+p_a &: \text{两光子到达概率（含同臂项）},\\
+p_{11} &: \text{两臂各到达一个光子的概率},\\
+p_s &: \text{宣告成功概率},\qquad
+p_t : \text{真成功概率},\qquad
+p_f=p_s-p_t,\\
+p_{t|11} &= \frac{p_t}{p_{11}},\\
+F_d &: \text{宣告口径条件保真度},\qquad
+F_t : \text{真成功口径条件保真度}.
 \end{align}
-$p_{\mathrm{arrive}}$ 反映通道与器件的总损耗，$p_{\mathrm{success}}^{\mathrm{abs}}$ 给出每次尝试的实验可观测成功率，$p_{\mathrm{success}}^{\mathrm{false}}$ 刻画暗计数/背景导致的假成功占比，而 $F_{\mathrm{true}}$ 直接回答纠缠质量是否跨过经典极限。该口径与实验中“符合门控后统计”一致，也便于把“到达损失”和“测量误判”分开讨论。
+其中 $p_f$ 继续分解为本征暗计数分量与背景分量
+\begin{equation}
+p_f=p_{\mathrm{id}}+p_{\mathrm{bg}},
+\end{equation}
+该分解直接对应实验中的误触发来源区分。
 
-\paragraph{单臂发射验证}
-发射波包由驱动脉冲 $\Omega(t)$ 与腔参数给出的有效耦合率 $\gamma_{\mathrm{eff}}$ 共同决定，离散门通过 $H_{\mathrm{sys}}(t_n)$ 与 $L_\mu$ 直接生成波包。这里主要检查三件事：波包形状是否随驱动改变而合理移动/展宽，按 bin 统计的非真空概率之和是否与预期发射概率一致，以及 $\langle \hat{n}(t_n) \rangle$ 的形状是否与驱动包络吻合。图 \ref{fig:wavepacket} 给出示例。为控制数值成本与精度，进一步观察 MPS 键维度随时间变化（图 \ref{fig:bond_dim}），并据此选择 $\chi_{\max}$。
+为避免“只拟合末端指标”，参数先锚定到文献中可独立测量量，再进入仿真。表 \ref{tab:param-anchor} 给出本章主用锚点；这些量与后续窗口扫描、HOM 拟合和误差预算一一对应。
+
+\begin{table}[htbp]
+\centering
+\caption{基线参数锚点与文献来源}
+\label{tab:param-anchor}
+\begin{tabular}{llll}
+\hline
+符号 & 物理含义 & 基线值 & 参考来源 \\
+\hline
+$\tau_e$ & 激发态寿命标度 & $26.2\,\mathrm{ns}$ & \cite{vanleent2022entangling} \\
+$\eta_q$ & QFC 外部效率 & $0.57$ & \cite{vanleent2022entangling,Ikuta2018PolarizationInsensitiveQFC} \\
+$\Delta \nu_f$ & 滤波腔带宽 & $27\,\mathrm{MHz}$ & \cite{vanleent2022entangling} \\
+$\Delta t_w$ & 数据接受窗口 & $70\,\mathrm{ns}$ & \cite{vanleent2022entangling} \\
+$\Delta t_h$ & 硬件符合窗口 & $208\,\mathrm{ns}$ & \cite{vanleent2022entangling} \\
+$R_d$ & SNSPD 本征暗计数率 & $<65\,\mathrm{s^{-1}}$ & \cite{vanleent2022entangling} \\
+$R_b$ & 中心站背景计数率 & $\sim 160$--$170\,\mathrm{s^{-1}}$ & \cite{vanleent2022entangling} \\
+$T_2$ & 长链路原子相干时间 & $\sim 330\,\mathrm{\mu s}$ & \cite{vanleent2022entangling} \\
+$\alpha_f$ & 光纤衰减系数（1517 nm） & $\sim 0.2\,\mathrm{dB/km}$ & \cite{vanleent2022entangling} \\
+$v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & \cite{vanleent2022entangling} \\
+\hline
+\end{tabular}
+\end{table}
+
+离散侧固定 $N=100$，并使用统一单位口径：哈密顿量参数采用 $\mathrm{rad/s}$，耗散参数采用 $\mathrm{1/s}$。这一口径保证在改变 $\Delta t$ 时，连续模型的无量纲组合（如 $g\sqrt{\Delta t}$、$\kappa \Delta t$、$\gamma \Delta t$）保持一致，从而避免离散化引入的伪时间尺度漂移。
+
+\section{分层标定路径}[Layered Calibration Pipeline]
+
+标定顺序采用“先中间量后终态量”。首先用单臂波包拟合约束 $(\Omega(t),g,\kappa)$，使波包主瓣宽度与尾部时间常数同时落入实验区间；其次用双臂到达直方图与窗口扫描确定 $\Delta t_w$；随后用 HOM 曲线识别可分辨性与相位噪声参数；最后才进入 BSM 模式统计与条件态指标评估。该顺序将参数识别问题写成分层约束：
+\begin{equation}
+\min_{\boldsymbol{\theta}}
+\sum_r w_r\,\|y_r^{\mathrm{sim}}(\boldsymbol{\theta})-y_r^{\mathrm{exp}}\|_2^2,
+\label{eq:calibration-objective}
+\end{equation}
+其中 $r$ 依次对应波包、窗口、HOM、BSM 与 Bell 指标层。与一次性端到端拟合相比，式 \eqref{eq:calibration-objective} 可显著降低参数退化，并提供可审计的误差来源。
+
+\section{结果图谱与物理解释}[Result Atlas and Physical Interpretation]
+
+这一节不把图当作并列证据，而把它们放入同一因果链：源端脉冲决定时间结构，时间结构与窗口共同决定有效到达事件，事件统计再通过 HOM 与 BSM 约束可分辨性，最终落到条件态质量与可用纠缠速率。因此图谱的阅读顺序必须与物理链路顺序一致，否则很容易把“数值截断效应”“窗口效应”和“真实干涉退化”混为一谈。
+
+\paragraph{源端时域结构与数值截断}
+
+图 \ref{fig:wavepacket} 与图 \ref{fig:bond_dim} 联合报告源端信息。前者给出双臂波包主瓣、相对时移与尾部衰减；后者给出对应键维轨迹。两图必须同时满足“物理宽度正确、键维截断可控”两项约束，否则单看波包形状无法区分物理退相干与数值截断误差。
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.85\linewidth]{fig_wavepacket}
-\caption{发射波包时间结构}
+\includegraphics[width=0.92\linewidth]{fig_wavepacket}
+\caption{双臂波包时域结构与主窗口位置。}
 \label{fig:wavepacket}
 \end{figure}
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.85\linewidth]{fig_bond_dim}
-\caption{发射过程中 MPS 键维度的演化}
+\includegraphics[width=0.86\linewidth]{fig_bond_dim}
+\caption{发射阶段 MPS 键维演化。}
 \label{fig:bond_dim}
 \end{figure}
 
-\paragraph{单光子到达时间直方图与接受窗优化}
-实验上最直接的标定量之一是“到达时间直方图 + 接受窗口”。在仿真中以点击记录的 bin 分布构造单臂时间直方图，并在其上叠加接受窗口宽度 $\Delta t_{\mathrm{win}}$。对每个窗口宽度扫描输出：
-单臂/双臂的信噪比（SBR）、窗口接受率（接受事件占比）、$p_{\mathrm{success}}^{\mathrm{abs}}$ 与 $F_{\mathrm{true}}$ 的变化趋势。该扫描给出“速率—保真度”在窗口选择上的直接权衡，是对实验调参最具指导意义的图之一。
+\paragraph{窗口、HOM 与 BSM 的联合诊断}
+
+窗口宽度是实验最直接的调节量。图 \ref{fig:accept_hist} 给出点击时间分布，图 \ref{fig:window_tradeoff} 给出窗口扫描下的速率-质量折中。与传统二维折中图不同，本章同时关注
+\begin{equation}
+\Xi(\Delta t_w)=\left(p_s,\;F_t,\;\frac{p_f}{p_s},\;p_{t|11}\right),
+\end{equation}
+它把“速率提升是否由假成功驱动”显式区分出来。
+
+HOM 与 BSM 负责验证两光子干涉链路是否可信。图 \ref{fig:hom} 约束不可分辨性与时延噪声，图 \ref{fig:bsm_patterns} 检查点击模式及真假来源分解。二者共同决定条件态的可解释性，末端保真度仅提供最终压缩指标。
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.85\linewidth]{fig_accept_hist}
-\caption{单臂点击时间直方图与接受窗口示意（含背景噪声）。}
+\includegraphics[width=0.88\linewidth]{fig_accept_hist}
+\caption{点击时间分布与接受窗口。}
 \label{fig:accept_hist}
 \end{figure}
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.85\linewidth]{fig_window_tradeoff}
-\caption{接受窗口宽度扫描：接受率、SBR、$F_{\mathrm{true}}$ 与假成功占比的权衡示意。}
+\includegraphics[width=0.95\linewidth]{fig_window_tradeoff}
+\caption{窗口扫描下的速率、条件保真度与假成功占比。}
 \label{fig:window_tradeoff}
 \end{figure}
 
-\paragraph{双臂纠缠与 HOM 验证}
-理想情况下，BSM 成功概率为
-\begin{equation}
-P_{\mathrm{success}}^{\mathrm{ideal}} = \frac{1}{2}|\langle\phi_A|\phi_B\rangle|^2,
-\end{equation}
-其中 $1/2$ 来自线性光学 BSM 的本征效率限制。实际链路中需同时报告 $p_{\mathrm{arrive}}$ 与 $F_{\mathrm{true}}$，以区分损耗与误判。HOM 干涉通过扫描两臂到达时延得到
-\begin{equation}
-P_{\mathrm{coinc}}(\delta t) = \frac{1}{2}\left[1 - V \cdot e^{-|\delta t|/\tau_c}\right],
-\end{equation}
-图 \ref{fig:hom} 给出示例曲线（通常以 wrong coincidences 归一化计数表示）。若 dip 的宽度或中心位置与单臂波包统计不一致，通常意味着时延标定、相位漂移或偏振失配未被充分补偿；可见度下降则主要来自背景噪声、时间抖动与模式不匹配。
-
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.85\linewidth]{fig_hom}
-\caption{HOM 干涉曲线}
+\includegraphics[width=0.88\linewidth]{fig_hom}
+\caption{HOM 曲线及可见度约束。}
 \label{fig:hom}
 \end{figure}
 
-\paragraph{BSM 点击模式与真假事件拆分}
-中心站四探测器的点击模式统计是检验模型可信度的关键。仿真中输出每个双击模式的概率分布（成功模式与失败模式分开），并用暗计数拆分给出
-\begin{equation}
-f_{\mathrm{false}}=\frac{p_{\mathrm{success}}^{\mathrm{false}}}{p_{\mathrm{success}}^{\mathrm{abs}}},
-\end{equation}
-从而直接评估“成功事件里有多少是暗计数/背景伪造”。该统计可随链路长度、接受窗口与背景噪声扫描，形成对实验最直观的误判预算。
-
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.85\linewidth]{fig_bsm_patterns}
-\caption{中心站双击模式分布与暗计数拆分示意。}
+\includegraphics[width=0.9\linewidth]{fig_bsm_patterns}
+\caption{BSM 模式概率与真假分量分解。}
 \label{fig:bsm_patterns}
 \end{figure}
 
-\paragraph{原子关联曲线与 CHSH 指标}
-对纠缠质量的实验表述通常采用三基相关曲线（X/Y/Z）或 CHSH 不等式。仿真中可对后验原子态计算相关函数 $E(\theta_A,\theta_B)$ 并给出
+\paragraph{端到端可用纠缠质量}
+
+端到端指标同时报告 Bell 条件保真度与 CHSH。图 \ref{fig:chsh} 给出 $S$ 参数趋势；图 \ref{fig:distance}、图 \ref{fig:qfc_noise}、图 \ref{fig:detector_eff} 与图 \ref{fig:rate_fidelity} 给出链路尺度、QFC 噪声、探测效率和工作点前沿。在两臂等长 $L$ 且单臂衰减系数为 $\alpha_f$ 时，成功率满足
 \begin{equation}
-S = E(\theta_A,\theta_B)-E(\theta_A,\theta_B')+E(\theta_A',\theta_B)+E(\theta_A',\theta_B'),
+p_s(L)\propto 10^{-\alpha_f L/5},
 \end{equation}
-以量化纠缠是否超出经典界 $S>2$。在存在泄漏态或读出误差时，可同时给出“物理态 fidelity”与“可观测 fidelity”的分离结果，为实验读出提供对照。
+该关系解释了长链路下“速率先退化、保真度后退化”的常见实验现象。
+
+需要强调的是，图 \ref{fig:distance} 与图 \ref{fig:rate_fidelity} 的关系并非简单重绘。前者固定物理链路长度，观察同一配置在空间尺度上的性能迁移；后者固定链路条件，观察参数调节下可达到的 Pareto 前沿。二者合并后可以回答两个不同层面的设计问题：给定部署距离时可达到何种纠缠质量，以及给定质量门槛时可以承受多大速率损失。这种“双坐标系”解释对于工程决策比单一保真度曲线更直接。
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.85\linewidth]{fig_chsh}
-\caption{CHSH 量 $S$ 随链路长度变化的示意曲线（虚线为经典上界 $S=2$）。}
+\includegraphics[width=0.82\linewidth]{fig_chsh}
+\caption{CHSH 参数趋势（虚线为经典界 $S=2$）。}
 \label{fig:chsh}
 \end{figure}
 
-\section{参数依赖与误差来源}[Parameter Dependence and Error Sources]
-
-参数扫描以“趋势判断”为主：改变某一物理量并观察 $p_{\mathrm{arrive}}$、$P(\mathrm{success}\,|\,\mathrm{arrive})$ 与 $F_{\mathrm{true}}$ 的系统性变化，同时用误差预算框架定位主导来源。
-
-\paragraph{QFC 噪声}
-保真度随噪声率 $\mu_{\mathrm{noise}}$ 单调下降，低噪声区间近似线性退化：
-\begin{equation}
-F(\mu_{\mathrm{noise}}) \approx F_0 - \alpha_{\mathrm{noise}}\mu_{\mathrm{noise}}.
-\end{equation}
-图 \ref{fig:qfc_noise} 给出趋势示例。该趋势反映了“假成功事件”占比上升对条件态的直接污染。
-在这一过程中，$p_{\mathrm{arrive}}$ 主要由链路损耗决定，变化不大；下降更明显的是 $p_{\mathrm{success}}^{\mathrm{true}\mid\mathrm{arrive}}$ 与 $F_{\mathrm{true}}$，而 $f_{\mathrm{false}}$（假成功占比）随噪声显著上升，直接反映噪声对宣告成功的稀释效应。
-
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.85\linewidth]{fig_qfc_noise}
-\caption{保真度随噪声率变化}
-\label{fig:qfc_noise}
-\end{figure}
-
-\paragraph{光纤长度}
-成功率随距离指数衰减：
-\begin{equation}
-p_{\mathrm{success}}^{\mathrm{abs}}(L) = p_{\mathrm{success}}^{\mathrm{abs}}(0)\times 10^{-\alpha L/5}.
-\end{equation}
-图 \ref{fig:distance} 展示成功率与保真度随距离的变化。远距离下噪声占比上升，保真度出现拐点，这是链路极限的主要判据之一。
-从指标分解上看，$p_{\mathrm{arrive}}$ 会随距离快速下降，而 $F_{\mathrm{true}}$ 在中短距离内相对稳定，直到噪声与信号可比时才明显下降；此时 $f_{\mathrm{false}}$ 的上升成为性能转折的主要信号。
-
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=0.85\linewidth]{fig_distance}
-\caption{成功率与保真度随光纤长度变化}
+\includegraphics[width=0.9\linewidth]{fig_distance}
+\caption{成功率与保真度随链路长度变化。}
 \label{fig:distance}
 \end{figure}
 
-\paragraph{探测器效率与时间分辨}
-探测效率提升使成功率近似按 $\eta_d^2$ 增长，同时改善信噪比；时间 bin 宽度过大将削弱时间分辨与 HOM 可见度，过小则提高噪声占比与计算成本。图 \ref{fig:detector_eff} 给出探测效率的趋势示例。
-实际设置中，需要同时考虑“时间窗覆盖波包”与“噪声积分窗口”的平衡：窗口越窄越利于保真度，但会牺牲成功率。
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\linewidth]{fig_qfc_noise}
+\caption{QFC 背景噪声对事件率与保真度的影响。}
+\label{fig:qfc_noise}
+\end{figure}
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.85\linewidth]{fig_detector_eff}
-\caption{探测器效率对成功率与保真度的影响}
+\includegraphics[width=0.9\linewidth]{fig_detector_eff}
+\caption{探测效率变化对端到端性能的影响。}
 \label{fig:detector_eff}
 \end{figure}
 
-\paragraph{误差预算与损耗分解}
-保真度损失可写为
-\begin{equation}
-1 - F = \epsilon_{\mathrm{QFC}} + \epsilon_{\mathrm{dark}} + \epsilon_{\mathrm{PMD}} + \epsilon_{\mathrm{mismatch}} + \epsilon_{\mathrm{other}},
-\end{equation}
-成功率损失可分解为
-\begin{equation}
-\frac{p_{\mathrm{success}}^{\mathrm{abs}}}{p_{\mathrm{success}}^{\mathrm{ideal}}} = \eta_{\mathrm{QFC}}^2 \times \eta_{\mathrm{fiber}}^2 \times \eta_d^2 \times \eta_{\mathrm{other}}.
-\end{equation}
-通过逐一关闭或单独开启噪声源并比较 $\Delta F$ 与 $f_{\mathrm{false}}$，即可建立误差预算并识别主导瓶颈。
-
-\section{优化策略与取舍}[Optimization and Trade-offs]
-
-提升保真度的关键路径是降低背景噪声（QFC 噪声与暗计数）、缩小符合窗口并提升偏振/相位稳定性；提升成功率则依赖高效率 QFC、低损耗光纤与复用策略。二者间的取舍主要由窗口选择与实验目标决定：宽窗口提高成功率但引入噪声，窄窗口提升保真度但牺牲速率。实际应用中可用“rate–fidelity 前沿曲线”来选工作点：横轴为事件率（$p_{\mathrm{success}}^{\mathrm{abs}}\times$重复频率），纵轴为 $F_{\mathrm{true}}$ 或 CHSH $S$。
-
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.85\linewidth]{fig_rate_fidelity}
-\caption{事件率–保真度前沿示意（不同工作点的权衡曲线）。}
+\includegraphics[width=0.9\linewidth]{fig_rate_fidelity}
+\caption{速率-保真度工作点前沿。}
 \label{fig:rate_fidelity}
 \end{figure}
 
-更实际的做法是先判断系统处于“损耗主导”还是“噪声主导”：若 $p_{\mathrm{arrive}}$ 极低且 $f_{\mathrm{false}}$ 仍小，则应优先提高收集与传输效率；若 $f_{\mathrm{false}}$ 已接近或超过信号，则应优先压噪并收紧判据。该判断可直接从 $p_{\mathrm{arrive}}$、$p_{\mathrm{success}}^{\mathrm{true}\mid\mathrm{arrive}}$ 与 $F_{\mathrm{true}}$ 的相对变化中读出。
+\section{误差预算与真假事件分解}[Error Budget and True/False Herald Decomposition]
+
+误差预算采用分组边际法。设 $g$ 表示噪声组（源端、QFC+滤波、光纤、探测），定义
+\begin{equation}
+\Delta F_g=F_{\mathrm{ideal}}-F_{g\ \mathrm{only}},\qquad
+\Delta p_g=p_{\mathrm{ideal}}-p_{g\ \mathrm{only}}.
+\end{equation}
+与“全开”运行联合分析，可判断瓶颈是否发生迁移，例如从源端退相干主导迁移到暗计数主导。真假成功分解的价值在于：若 $p_s$ 上升同时 $F_t$ 稳定而 $p_f/p_s$ 抬升，则主要问题是误触发；若 $p_f$ 低而 $F_t$ 下降，则主要问题在真实干涉质量（不可分辨性、相位与偏振链路）。
+
+\section{计算成本与部署判据}[Computational Cost and Deployment Criteria]
+
+当前链路已将主要线性光学与损耗推回 effect 端，态端开销显著降低，但默认规模下墙钟仍受 POVM 枚举主导。运行时同时记录
+\begin{equation}
+T_e,\;T_q,\;T_f,\;T_d,\;T_b,\;T_n,\;T_m,
+\end{equation}
+并检查闭合关系
+\begin{equation}
+T_w\approx T_e+T_q+T_f+T_d+T_b+T_n+T_m+T_r,
+\label{eq:timing-closure}
+\end{equation}
+其中 $T_r$ 为调度与写盘残差。式 \eqref{eq:timing-closure} 用于识别隐藏开销，避免把系统开销误判为物理求解复杂度。
 
 \section{本章小结}[Chapter Summary]
 
-本章给出端到端仿真的指标体系与实验设计思路，强调以有效事件归一化的统计口径来分离“到达损失”和“测量判据”的影响。通过参数趋势与误差预算，可在尚未固定最终实验参数时识别关键瓶颈与优化方向。后续将结合批量实验数据补充定量曲线与对照表格，使分析与实验需求直接对齐。
+本章给出与实验流程一致的结果组织方式：参数先由可独立测量量锚定，再由分层标定路径进入端到端评估。核心输出扩展为 $\{p_s,p_t,p_f,F_t,S\}$ 与中间可观测量的统一集合。该结构使模型具备两类能力：其一是与实验逐项对照的可解释性，其二是面向下一轮装置优化的可操作误差预算能力。

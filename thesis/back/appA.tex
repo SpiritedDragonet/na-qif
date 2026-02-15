@@ -2,42 +2,305 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \chapter{补充数学推导}[Supplementary Mathematical Derivations]
 
-本附录给出正文中省略的详细数学推导。
+本附录补齐正文中压缩处理的推导细节，并给出与当前实现一致的矩阵表达。记号遵循正文：原子基序为 $(|0\rangle,|1\rangle,|e\rangle,|u\rangle)$，腔基序为 $(|{\rm vac}\rangle,|H\rangle,|V\rangle)$，bin 基序为 $(|{\rm vac}\rangle,|H_{780}\rangle,|V_{780}\rangle,|H_{1517}\rangle,|V_{1517}\rangle)$。
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{时间 bin 离散化与量子门构造}[Time-Bin Discretization and Quantum Gate Construction]
+\section{从 QED 拉氏量到四能级有效哈密顿量}[From QED Lagrangian to the Four-Level Effective Hamiltonian]
 
-\textbf{光场离散化.} 连续时间湮灭算符 $\hat{a}(t)$ 满足 $[\hat{a}(t), \hat{a}^\dagger(t')] = \delta(t - t')$。定义时间 bin 算符
+\paragraph{近似链条与目标有效模型}
+
+从
 \begin{equation}
-\hat{a}_n = \frac{1}{\sqrt{\Delta t}} \int_{t_n}^{t_n + \Delta t} \hat{a}(t) \, \mathrm{d}t, \quad [\hat{a}_m, \hat{a}_n^\dagger] = \delta_{mn}.
+\mathcal{L}=\bar{\psi}(i\gamma^\mu\partial_\mu-m)\psi-eA_\mu\bar{\psi}\gamma^\mu\psi-\frac{1}{4}F_{\mu\nu}F^{\mu\nu}
+\end{equation}
+出发，在弱速、弱场和近共振条件下依次采用低能非相对论近似、原子内外自由度分离与绝热消元、长波偶极近似 $e^{i\mathbf{k}\cdot\mathbf{r}}\approx 1$、有限能级截断以及旋转波近似，可得有效哈密顿量
+\begin{equation}
+H_{\mathrm{eff}}(t)=H_{\mathrm{atom}}(t)+H_{\mathrm{cavity}}+H_{\mathrm{int}}+H_{\mathrm{diss}}.
 \end{equation}
 
-\textbf{发射门.} $\Lambda$ 型三能级原子（基态 $|0\rangle$, $|1\rangle$，激发态 $|e\rangle$）的跃迁算符为 $\hat{S}_+ = |0\rangle\langle e|$, $\hat{S}_- = |1\rangle\langle e|$。设偏振映射矩阵 $\boldsymbol{\alpha}$，Lindblad 算符为
-\begin{equation}
-\hat{L}_{H/V} = \sqrt{\gamma} (\alpha_{H/V,+} \hat{S}_+ + \alpha_{H/V,-} \hat{S}_-).
-\end{equation}
-发射门 $\hat{U}_{\mathrm{emit}} = \exp[\sqrt{\Delta t}(\hat{L}_H \otimes \hat{b}_H^\dagger + \hat{L}_V \otimes \hat{b}_V^\dagger - \mathrm{h.c.})]$ 产生原子—光子纠缠。
+\paragraph{二能级极限与 Jaynes-Cummings 形式}
 
-\textbf{QFC 门.} 量子频率转换的幺正演化为
+若先仅保留一条跃迁与一条腔模，则
 \begin{equation}
-\hat{U}_{\mathrm{QFC}} = \exp[\theta_H (\hat{b}_H \hat{c}_H^\dagger - \hat{b}_H^\dagger \hat{c}_H) + \theta_V (\hat{b}_V \hat{c}_V^\dagger - \hat{b}_V^\dagger \hat{c}_V)],
+H_{\mathrm{JC}}
+=\frac{\omega_{ab}}{2}\sigma_z+\omega_c\left(a^\dagger a+\frac{1}{2}\right)
++g\left(\sigma^+a+\sigma^-a^\dagger\right).
 \end{equation}
-其中 $\hat{b}$, $\hat{c}$ 分别为 780 nm 和 1517 nm 模式算符，转换效率 $\eta = \sin^2\theta$。
+该式是四能级模型在“单激发、单偏振、单通道”极限下的退化情形，便于解释耦合常数 $g$ 与谱失谐参数的物理含义。
 
-\textbf{分束器门.} 50/50 分束器 $\hat{U}_{\mathrm{BS}} = \exp[\frac{\pi}{4}(\hat{a}_A^\dagger \hat{a}_B - \hat{a}_A \hat{a}_B^\dagger)]$ 实现
+\paragraph{四能级原子矩阵与偏振跃迁算符}
+
+驱动哈密顿量在基序 $(|0\rangle,|1\rangle,|e\rangle,|u\rangle)$ 下写为
 \begin{equation}
-\hat{a}_A \to \frac{1}{\sqrt{2}}(\hat{a}_A + \hat{a}_B), \quad \hat{a}_B \to \frac{1}{\sqrt{2}}(\hat{a}_A - \hat{a}_B).
+H_{\mathrm{atom}}(t)=
+\begin{bmatrix}
+0&0&0&0\\
+0&0&0&0\\
+0&0&\Delta_e&\Omega(t)\\
+0&0&\Omega^*(t)&\Delta_u
+\end{bmatrix}.
+\label{eq:app-hatom}
 \end{equation}
-Hong-Ou-Mandel 效应：$\hat{U}_{\mathrm{BS}} |1\rangle_A |1\rangle_B = \frac{1}{2}(|2\rangle_A |0\rangle_B - |0\rangle_A |2\rangle_B)$。
+偏振选择定则由
+\begin{equation}
+S_+=|0\rangle\langle e|=
+\begin{bmatrix}
+0&0&1&0\\
+0&0&0&0\\
+0&0&0&0\\
+0&0&0&0
+\end{bmatrix},
+\quad
+S_-=|1\rangle\langle e|=
+\begin{bmatrix}
+0&0&0&0\\
+0&0&1&0\\
+0&0&0&0\\
+0&0&0&0
+\end{bmatrix}
+\end{equation}
+给出。引入偏振映射矩阵
+\begin{equation}
+\boldsymbol{\alpha}=
+\begin{bmatrix}
+\alpha_{H,+} & \alpha_{H,-}\\
+\alpha_{V,+} & \alpha_{V,-}
+\end{bmatrix},
+\end{equation}
+则
+\begin{equation}
+\sigma_H=\alpha_{H,+}S_++\alpha_{H,-}S_-,
+\qquad
+\sigma_V=\alpha_{V,+}S_++\alpha_{V,-}S_-.
+\end{equation}
 
-\textbf{琼斯门.} 光纤偏振演化用 $\mathbf{U} \in \mathrm{SU}(2)$ 描述，对单光子 $|H/V\rangle \to u_{00/01}|H\rangle + u_{10/11}|V\rangle$，对双光子按 $\mathbf{U} \otimes \mathbf{U}$ 作用。
+\paragraph{三维腔模与 12 维发射体哈密顿量}
+
+腔湮灭算符为
+\begin{equation}
+a_H=
+\begin{bmatrix}
+0&1&0\\
+0&0&0\\
+0&0&0
+\end{bmatrix},
+\qquad
+a_V=
+\begin{bmatrix}
+0&0&1\\
+0&0&0\\
+0&0&0
+\end{bmatrix}.
+\end{equation}
+于是
+\begin{align}
+H_{\mathrm{em}}(t)=&
+H_{\mathrm{atom}}(t)\otimes I_3+I_4\otimes
+\mathrm{diag}(0,\delta_{c,H},\delta_{c,V})\notag\\
+&+g\left(
+\sigma_H\otimes a_H^\dagger+\sigma_H^\dagger\otimes a_H
++\sigma_V\otimes a_V^\dagger+\sigma_V^\dagger\otimes a_V
+\right).
+\label{eq:app-hem}
+\end{align}
+可见输出算符为
+\begin{equation}
+L_{{\rm out},H}=\sqrt{\kappa_{{\rm ex},H}}\,I_4\otimes a_H,\quad
+L_{{\rm out},V}=\sqrt{\kappa_{{\rm ex},V}}\,I_4\otimes a_V.
+\end{equation}
+不可见塌缩算符集合
+\begin{equation}
+\mathcal{C}=\left\{
+\sqrt{\kappa_{{\rm in},H}}I_4\!\otimes\!a_H,\;
+\sqrt{\kappa_{{\rm in},V}}I_4\!\otimes\!a_V,\;
+\sqrt{\gamma_+}S_+\!\otimes\!I_3,\;
+\sqrt{\gamma_-}S_-\!\otimes\!I_3
+\right\}.
+\end{equation}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{Kraus 算符与 MPS 截断}[Kraus Operators and MPS Truncation]
+\section{时间 bin 离散与发射门构造}[Time-Bin Discretization and Emission-Gate Construction]
 
-\textbf{探测器 Kraus 算符.} 效率 $\eta$ 的桶式探测器：无点击 $\hat{K}_0 = \sum_n (1-\eta)^{n/2} |n\rangle\langle n|$，有点击 $\hat{K}_1 = \sum_n \sqrt{1-(1-\eta)^n} |0\rangle\langle n|$，满足 $\sum_\mu \hat{K}_\mu^\dagger \hat{K}_\mu = \hat{I}$。双偏振双端口系统共 64 个联合 Kraus 算符 $\hat{K}_{ij} = \hat{K}_i^{(A)} \otimes \hat{K}_j^{(B)}$。BSM 成功判据：同一 bin 内恰好两次点击，$|\Psi^-\rangle$ 对应 $\{H_1,V_2\}$ 或 $\{V_1,H_2\}$，$|\Psi^+\rangle$ 对应 $\{H_1,V_1\}$ 或 $\{H_2,V_2\}$。
+\paragraph{连续场到离散场算符}
 
-\textbf{损耗信道.} 透过率 $\eta$ 的振幅阻尼：$\hat{K}_0 = \sum_n \eta^{n/2}|n\rangle\langle n|$，$\hat{K}_k = \sum_{n\geq k} \sqrt{\binom{n}{k}} \eta^{(n-k)/2}(1-\eta)^{k/2}|n-k\rangle\langle n|$。双模独立损耗取张量积 $\hat{K}_{k_H,k_V} = \hat{K}_{k_H}^{(H)} \otimes \hat{K}_{k_V}^{(V)}$。
+定义
+\begin{equation}
+b_{\mu,n}=\frac{1}{\sqrt{\Delta t}}\int_{t_n}^{t_n+\Delta t}b_\mu(t)\,dt,\qquad \mu\in\{H,V\},
+\end{equation}
+满足
+\begin{equation}
+[b_{\mu,m},b_{\nu,n}^\dagger]=\delta_{\mu\nu}\delta_{mn}.
+\end{equation}
+在短时展开下，单步幺正近似为
+\begin{equation}
+U_n=\exp\!\left[
+\sqrt{\Delta t}\sum_{\mu}
+\left(L_{{\rm out},\mu}\otimes b_{\mu,n}^\dagger-L_{{\rm out},\mu}^\dagger\otimes b_{\mu,n}\right)
+-i\Delta t\,H_{\mathrm{em}}(t_n)\otimes I
+\right].
+\end{equation}
 
-\textbf{MPS 截断.} 两格点张量 SVD：$\Theta^{s_i s_{i+1}}_{\alpha\beta} = \sum_\gamma U^{s_i}_{\alpha\gamma} \lambda_\gamma V^{s_{i+1}}_{\gamma\beta}$，截断误差 $\epsilon = \sqrt{\sum_{\gamma>\chi_{\max}} \lambda_\gamma^2}$。纠缠熵 $S = -\sum_\gamma \lambda_\gamma^2 \log \lambda_\gamma^2$ 决定所需键维度。时间 bin 链中纠缠局域化，$\chi$ 不随 bin 数指数增长，典型值 $\chi \lesssim 100$。收敛性检验：增大 $\chi_{\max}$ 观察物理量稳定性，监控累积截断误差 $< 10^{-10}$。
+\paragraph{36 维子门嵌入 60 维 bin 门}
 
+发射门先在 $(12\mathrm{D\ emitter}\otimes3\mathrm{D}_{780})$ 构造得到 $U_{36}$，再嵌入 $(12\mathrm{D}\otimes5\mathrm{D\ bin})$：
+\begin{equation}
+U_{60}=
+\begin{bmatrix}
+U_{36} & 0\\
+0 & I_{24}
+\end{bmatrix},
+\end{equation}
+其中 $I_{24}$ 对应 1517 子块保持单位。该结构保证“发射”不直接生成 1517 光子；1517 分量仅由后续 QFC 产生。
+
+\paragraph{Kraus 轨迹更新与局域截断}
+
+对不可见塌缩集合 $\mathcal{C}$，每步可写
+\begin{equation}
+\rho\mapsto\sum_j K_j\rho K_j^\dagger,\qquad \sum_j K_j^\dagger K_j=I.
+\end{equation}
+实现时采用单轨迹抽样并在 MPS 局域重分解，以维持计算复杂度可控。与全密度矩阵演化相比，该方案在保持物理口径一致的条件下显著降低内存与时间复杂度。
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{QFC 与滤波记忆模的张量表达}[Tensor Representation of QFC and Filter Memory Modes]
+
+\paragraph{QFC 的 5 维矩阵形式}
+
+QFC 在 bin 基序下的显式矩阵为
+\begin{equation}
+U_{\mathrm{QFC}}=
+\begin{bmatrix}
+1 & 0 & 0 & 0 & 0\\
+0 & c_H & 0 & -e^{-i\phi_H}s_H & 0\\
+0 & 0 & c_V & 0 & -e^{-i\phi_V}s_V\\
+0 & e^{i\phi_H}s_H & 0 & c_H & 0\\
+0 & 0 & e^{i\phi_V}s_V & 0 & c_V
+\end{bmatrix},
+\end{equation}
+其中 $c_\mu=\cos\theta_\mu,\ s_\mu=\sin\theta_\mu,\ \eta_\mu=\sin^2\theta_\mu$。
+
+\paragraph{滤波腔离散系数与步进幺正}
+
+一阶滤波腔离散参数
+\begin{equation}
+r=\exp\!\left[-(\pi\Delta\nu+i2\pi\delta)\Delta t\right],\qquad
+t=\sqrt{1-|r|^2}
+\end{equation}
+满足能量守恒约束 $|r|^2+t^2=1$。
+
+在 $(\mathrm{bin5D}\otimes\mathrm{mem3D})$ 的 $15$ 维空间中，除两个偏振子块外其余分量均为单位。定义
+\begin{equation}
+|h_1\rangle=|H_{1517},{\rm vac}_{\rm mem}\rangle,\quad
+|h_2\rangle=|{\rm vac}_{\rm bin},H_{\rm mem}\rangle,
+\end{equation}
+\begin{equation}
+|v_1\rangle=|V_{1517},{\rm vac}_{\rm mem}\rangle,\quad
+|v_2\rangle=|{\rm vac}_{\rm bin},V_{\rm mem}\rangle.
+\end{equation}
+则
+\begin{equation}
+U_{\mathrm{step}}|_{\{h_1,h_2\}}=
+\begin{bmatrix}
+r&-t\\
+t&r^*
+\end{bmatrix},
+\qquad
+U_{\mathrm{step}}|_{\{v_1,v_2\}}=
+\begin{bmatrix}
+r&-t\\
+t&r^*
+\end{bmatrix}.
+\label{eq:app-filter-sub}
+\end{equation}
+
+\paragraph{记忆链与最终布局}
+
+每臂追加一个 mem 站点，扫描所有 bin 后收拢到链首得到固定布局
+\begin{equation}
+{\rm atomA,\ atomB,\ memA,\ memB,\ A1,\ B1,\ldots, AN,\ BN}.
+\end{equation}
+后续推导均基于该显式记忆路径，不再引入并行链路表示。
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Heisenberg-POVM 推回与统计量推导}[Heisenberg-POVM Pushback and Metric Derivations]
+
+\paragraph{对偶映射恒等式}
+
+对任意信道 $\Lambda(\rho)=\sum_kK_k\rho K_k^\dagger$ 与 effect $E$，
+\begin{align}
+\mathrm{Tr}\!\left[\Lambda(\rho)E\right]
+&=\sum_k\mathrm{Tr}\!\left(K_k\rho K_k^\dagger E\right)\notag\\
+&=\sum_k\mathrm{Tr}\!\left(\rho K_k^\dagger E K_k\right)\notag\\
+&=\mathrm{Tr}\!\left[\rho\,\Lambda^\dagger(E)\right],
+\end{align}
+其中
+\begin{equation}
+\Lambda^\dagger(E)=\sum_k K_k^\dagger E K_k.
+\label{eq:app-adjoint}
+\end{equation}
+因此可把光纤损耗、偏振旋转、相位噪声、探测效率与暗计数都推回到 effect，不必在态端引入混态膨胀。
+
+\paragraph{可分辨性混合与背景 OR 映射}
+
+记不可分辨与可分辨 effect 分别为 $E_{\mathrm{int}},E_{\mathrm{dist}}$，则
+\begin{equation}
+E=v_{\mathrm{res}}E_{\mathrm{int}}+(1-v_{\mathrm{res}})E_{\mathrm{dist}}.
+\end{equation}
+背景点击作为独立“OR”过程处理：若 $A$ 为信号点击集合、$B$ 为背景点击集合，观测集合 $S=A\vee B$，则
+\begin{equation}
+E_{\mathrm{obs}}[S]=\sum_A P(S|A)\,E_{\mathrm{sig}}[A].
+\end{equation}
+该式即“信号点击与背景点击独立 OR 合并”的一般表达。
+
+\paragraph{成功概率、条件态与 Bell 保真度}
+
+设成功记录集合为 $\mathcal{S}$，则
+\begin{equation}
+p_s=\sum_{m\in\mathcal{S}}\mathrm{Tr}(E_m\rho).
+\end{equation}
+条件态写为
+\begin{equation}
+\rho_{\mathrm{cond}}=
+\frac{1}{p_s}
+\sum_{m\in\mathcal{S}} M_m\rho M_m^\dagger.
+\end{equation}
+对目标 Bell 态 $|\Psi_{\rm tgt}\rangle$，条件保真度
+\begin{equation}
+F_{\mathrm{cond}}=\langle\Psi_{\rm tgt}|\rho_{\mathrm{cond}}|\Psi_{\rm tgt}\rangle.
+\end{equation}
+同时报告未归一化保真度
+\begin{equation}
+F_{\mathrm{full}}=\mathrm{Tr}\!\left(\rho_{\mathrm{cond}}\right)F_{\mathrm{cond}},
+\end{equation}
+用于反映成功概率与态质量的联合权重。
+
+\paragraph{CHSH 最大值计算}
+
+对两比特态 $\rho$，相关矩阵
+\begin{equation}
+T_{ij}=\mathrm{Tr}\!\left[\rho\left(\sigma_i\otimes\sigma_j\right)\right],\qquad i,j\in\{x,y,z\}.
+\end{equation}
+令 $U=T^{\mathsf T}T$，其最大两本征值为 $u_1,u_2$，则
+\begin{equation}
+S_{\max}=2\sqrt{u_1+u_2}.
+\end{equation}
+该式用于由收缩结果直接给出 CHSH 上界，不依赖额外抽样重构。
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{单位口径与离散化一致性}[Unit Conventions and Discretization Consistency]
+
+\paragraph{统一口径}
+
+为避免“数值正确但物理时标错误”，统一规定：
+\begin{equation}
+\Omega,\ g,\ \Delta \ \text{采用}\ \mathrm{rad/s},\qquad
+\kappa,\ \gamma \ \text{采用}\ \mathrm{1/s}.
+\end{equation}
+所有参数在进入发射内核前一次性换算，不允许在子模块重复隐式变换。
+
+\paragraph{$\Delta t$ 变化下的不变量}
+
+当离散步长 $\Delta t$ 调整时，连续模型中与时间积分相关的无量纲组合应保持一致，例如
+\begin{equation}
+g\sqrt{\Delta t},\quad \kappa\Delta t,\quad \gamma\Delta t,
+\end{equation}
+从而确保“改 dt 不改物理”的数值一致性。此原则是后续参数扫描与跨配置比较的基础。

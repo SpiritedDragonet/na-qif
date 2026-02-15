@@ -868,6 +868,7 @@ def run_detection_pipeline(
     samples: List[TwoPhotonDetectionResult] = []
     record_weight_cache: dict[int, Tuple[float, float]] = {}
     record_mask_cache: dict[int, Tuple[List[Tuple[str, ...]], Optional[np.ndarray], float]] = {}
+    record_qubit_state_cache: dict[int, np.ndarray] = {}
     t0 = time.perf_counter()
     for sample_index in range(1, n_samples + 1):
         record_index = int(rng.choice(len(records), p=probs))
@@ -957,13 +958,16 @@ def run_detection_pipeline(
             success = True
             bell_state = "Psi+"
 
-        qubit_state = engine.compute_record_qubit_state(
-            effects_by_bin=effects_all_by_bin,
-            det_a=record.detector_a,
-            det_b=record.detector_b,
-            bin_a=record.bin_a,
-            bin_b=record.bin_b,
-        )
+        qubit_state = record_qubit_state_cache.get(record_index)
+        if qubit_state is None:
+            qubit_state = engine.compute_record_qubit_state(
+                effects_by_bin=effects_all_by_bin,
+                det_a=record.detector_a,
+                det_b=record.detector_b,
+                bin_a=record.bin_a,
+                bin_b=record.bin_b,
+            )
+            record_qubit_state_cache[record_index] = qubit_state
 
         if verbose:
             if n_samples > 1:
