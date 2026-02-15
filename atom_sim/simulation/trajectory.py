@@ -260,12 +260,13 @@ def apply_qfc_filter_memory_chain(
     站点布局约定（输入）：atomA, atomB, A1, B1, ..., AN, BN
 
     输出布局（唯一路径）：
-    - 在链尾追加两条 3D 记忆模；
-      输出为 atomA, atomB, A1, B1, ..., AN, BN, memA, memB。
+    - 动态追加两条 3D 记忆模并沿 bins 扫描；
+    - 扫描结束后收拢到原子后方，形成固定布局：
+      atomA, atomB, memA, memB, A1, B1, ..., AN, BN。
 
     物理口径：
     - 跨 bin 关联由滤波腔记忆模携带（A/B 各一条）。
-    - 这两条“关联核”不附着在 atomA/atomB 上，而是独立尾部站点 memA/memB。
+    - memA/memB 与 bins 逐步相邻作用，不附着在 atomA/atomB 内部自由度。
     """
     _print_header("QFC + Filter Memory (state-side)", verbose)
 
@@ -337,6 +338,8 @@ def apply_qfc_filter_memory_chain(
         pos[left_label], pos[right_label] = right_index, left_index
 
     # 2) 从右向左扫描 time bins（与发射阶段时间顺序一致）
+    #    扫描策略与发射阶段一致：让“系统体(memA/memB)”沿链移动并依次作用当前 bin，
+    #    避免每个 bin 都做全局重排。
     for n in range(n_bins - 1, -1, -1):
         label_a = f"A{n}"
         label_b = f"B{n}"
@@ -358,22 +361,21 @@ def apply_qfc_filter_memory_chain(
         mps_aug.apply_bond_op(pos[label_a], u_step_a)
         mps_aug.apply_bond_op(pos[label_b], u_step_b)
 
-    # 3) 将记忆模移回链尾，作为尾部隐状态保留（供后续收缩自动吸收）。
-    #    先推 memB 到最右端，再推 memA 到倒数第二位，
-    #    防止 memB 右移时把 memA 从尾部挤回中间。
-    while pos["memB"] < mps_aug.L - 1:
-        _swap_and_track(pos["memB"])
-    while pos["memA"] < mps_aug.L - 2:
-        _swap_and_track(pos["memA"])
+    # 3) 收拢到固定主链布局：
+    #    atomA, atomB, memA, memB, A1, B1, ..., AN, BN
+    #    这样后续检查与可视化可以一眼看懂链结构。
+    while pos["memA"] > 2:
+        _swap_and_track(pos["memA"] - 1)
+    while pos["memB"] > 3:
+        _swap_and_track(pos["memB"] - 1)
 
-    # 4) 硬校验：bin 区必须保持 5D，尾部必须是两个 3D 记忆模。
-    expected_tail = [3, 3]
-    tail_dims = [int(mps_aug.d[-2]), int(mps_aug.d[-1])]
-    if tail_dims != expected_tail:
+    # 4) 硬校验：前缀必须是 [atomA, atomB, memA, memB]，后续 bin 区保持 5D。
+    mem_prefix_dims = [int(mps_aug.d[2]), int(mps_aug.d[3])]
+    if mem_prefix_dims != [3, 3]:
         raise RuntimeError(
-            f"记忆模归位失败: tail_dims={tail_dims}, last_5={mps_aug.d[-5:]}"
+            f"记忆模归位失败: mem_prefix_dims={mem_prefix_dims}, first_8={mps_aug.d[:8]}"
         )
-    bin_region = mps_aug.d[2: 2 + 2 * n_bins]
+    bin_region = mps_aug.d[4: 4 + 2 * n_bins]
     if any(int(dim) != 5 for dim in bin_region):
         raise RuntimeError(
             f"bin区域维度损坏: first_10={bin_region[:10]}, last_10={bin_region[-10:]}"

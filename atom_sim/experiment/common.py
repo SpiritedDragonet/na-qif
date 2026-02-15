@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
-from typing import Optional, Callable, Any, Tuple
+from contextlib import contextmanager
+from numbers import Real
+from typing import Optional, Callable, Any, Tuple, Mapping, Iterator
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 import json
@@ -21,10 +23,12 @@ DEFAULT_BG_RATE_STD_HZ = float(np.sqrt(5.0))
 DEFAULT_QFC_EFFICIENCY = 0.57
 DEFAULT_QFC_THETA_RAD = float(np.arcsin(np.sqrt(DEFAULT_QFC_EFFICIENCY)))
 DEFAULT_QFC_NOISE_SD_CPS_PER_MHZ = 41.1
-DEFAULT_EMISSION_SIGMA_NS = 9.5
-DEFAULT_EMISSION_T0_NS = 30.0
-DEFAULT_EMISSION_OMEGA_PEAK_RAD_S = float(2.0 * np.pi * 20e6 * 0.68)
-DEFAULT_EMISSION_G_RAD_S = float(2.0 * np.pi * 20e6 * 0.08)
+DEFAULT_EMISSION_SIGMA_NS = 16.8
+DEFAULT_EMISSION_T0_NS = 37.0
+DEFAULT_EMISSION_OMEGA_PEAK_RAD_S = float(2.0 * np.pi * 20e6 * 0.65)
+DEFAULT_EMISSION_G_RAD_S = float(2.0 * np.pi * 20e6 * 0.165)
+DEFAULT_EMISSION_KAPPA_EX_HZ = 20e6 * 2.2
+DEFAULT_EMISSION_KAPPA_IN_HZ = 1e6 * 2.2
 DEFAULT_DELAY_JITTER_NS = 0.3
 DEFAULT_T2_US = 330.0
 DETECTOR_CHANNELS = ("H1", "V1", "H2", "V2")
@@ -49,6 +53,76 @@ def write_click_records(raw_dir: Path, click_records: Any) -> None:
 
 
 @dataclass
+class TimingTracer:
+    """统一计时器：支持打点累计、分段合并与上下文计时。"""
+
+    enabled: bool = False
+    _timings: dict = field(default_factory=dict)
+
+    def _accept(self, value: Any) -> Optional[float]:
+        if not isinstance(value, Real):
+            return None
+        x = float(value)
+        if not np.isfinite(x):
+            return None
+        if x < 0.0:
+            return 0.0
+        return x
+
+    def add(self, key: str, seconds: Any) -> None:
+        if not self.enabled:
+            return
+        x = self._accept(seconds)
+        if x is None:
+            return
+        self._timings[key] = float(self._timings.get(key, 0.0)) + x
+
+    def set(self, key: str, seconds: Any) -> None:
+        if not self.enabled:
+            return
+        x = self._accept(seconds)
+        if x is None:
+            return
+        self._timings[key] = x
+
+    @contextmanager
+    def span(self, key: str) -> Iterator[None]:
+        if not self.enabled:
+            yield
+            return
+        t0 = time.perf_counter()
+        try:
+            yield
+        finally:
+            self.add(key, time.perf_counter() - t0)
+
+    def merge_timing_map(
+        self,
+        timing_map: Optional[Mapping[str, Any]],
+        *,
+        prefix: str = "",
+        key_alias: Optional[Mapping[str, str]] = None,
+    ) -> None:
+        if not self.enabled or not timing_map:
+            return
+        for raw_key, raw_value in timing_map.items():
+            key = str(raw_key)
+            if key_alias is not None:
+                key = str(key_alias.get(key, key))
+            self.add(f"{prefix}{key}" if prefix else key, raw_value)
+
+    def get(self, key: str, default: float = 0.0) -> float:
+        value = self._timings.get(key, default)
+        try:
+            return float(value)
+        except Exception:
+            return float(default)
+
+    def snapshot(self) -> dict:
+        return {str(k): float(v) for k, v in self._timings.items()}
+
+
+@dataclass
 class AtomArmParams:
     """单臂发射参数（A/B 可独立设置）。"""
     # 约定：
@@ -56,8 +130,8 @@ class AtomArmParams:
     # - Dissipation 参数（kappa_*/gamma_*）默认以 1/s(Hz) 给出。
     omega_peak: float = DEFAULT_EMISSION_OMEGA_PEAK_RAD_S
     g: float = DEFAULT_EMISSION_G_RAD_S
-    kappa_ex: float = 20e6
-    kappa_in: float = 1e6
+    kappa_ex: float = DEFAULT_EMISSION_KAPPA_EX_HZ
+    kappa_in: float = DEFAULT_EMISSION_KAPPA_IN_HZ
     kappa_ex_H: Optional[float] = None
     kappa_ex_V: Optional[float] = None
     kappa_in_H: Optional[float] = None
@@ -198,8 +272,11 @@ class FiberParams:
     eta_std: float = 0.02
     pdl_sigma: float = 0.02
     phase_drift_std: float = 0.2
+    # 基准口径：以 dt=1ns 时的“每bin标准差”录入，内部会按 dt 自动折算。
     phase_slope_std: float = 0.05
     phase_jitter_std: float = 0.0
+    # 说明：当前不单独建模“fiber 额外时延/bins shift”参数；
+    # 时延口径统一由 emission.delay_ns / emission.delay_jitter_ns 提供。
 
 
 @dataclass
@@ -416,8 +493,18 @@ def build_hom_self_check_setup(base_emission: EmissionParams) -> tuple[EmissionP
     return emission_cfg, 36, 20.0
 
 
-def _build_fiber_params(cfg: FiberParams) -> FiberChannelParams:
+def _build_fiber_params(cfg: FiberParams, emission_dt_ns: float) -> FiberChannelParams:
     # 将实验配置转换成 FiberChannelParams（用于采样每次光纤漂移）
+    # 相位相关参数按 dt 做解析换算：
+    #   - phase_slope_std 配置口径：rad/bin @ dt=1ns（历史兼容）
+    #     有效值：phase_slope_std_eff = phase_slope_std * (dt_ns / 1ns)
+    #   - phase_jitter_std 配置口径：单bin相位抖动 std @ dt=1ns（白噪声近似）
+    #     有效值：phase_jitter_std_eff = phase_jitter_std * sqrt(dt_ns / 1ns)
+    # 这样在改 dt 时可尽量保持对应的物理时间尺度不变。
+    dt_ns = max(float(emission_dt_ns), 0.0)
+    dt_scale = dt_ns / 1.0
+    phase_slope_std_eff = float(cfg.phase_slope_std) * dt_scale
+    phase_jitter_std_eff = float(cfg.phase_jitter_std) * np.sqrt(dt_scale)
     eta_mean = 10.0 ** (-float(cfg.attenuation_db_per_km) * float(cfg.length_km) / 10.0)
     if not cfg.noise_enabled:
         return FiberChannelParams(
@@ -437,8 +524,8 @@ def _build_fiber_params(cfg: FiberParams) -> FiberChannelParams:
         eta_std=cfg.eta_std,
         pdl_sigma=cfg.pdl_sigma,
         phase_drift_std=cfg.phase_drift_std,
-        phase_slope_std=cfg.phase_slope_std,
-        phase_jitter_std=cfg.phase_jitter_std,
+        phase_slope_std=phase_slope_std_eff,
+        phase_jitter_std=phase_jitter_std_eff,
     )
 
 
@@ -1017,7 +1104,7 @@ def run_emission_to_bs(
     if qfc is None:
         qfc = QfcParams()
     emission_chi_max = int(emission.chi_max)
-    fiber_params = _build_fiber_params(fiber)
+    fiber_params = _build_fiber_params(fiber, emission.dt_ns)
     delay_ns, delay_jitter_ns = _resolve_emission_delay(
         emission, rng, delay_ns, delay_jitter_ns
     )
@@ -1028,6 +1115,19 @@ def run_emission_to_bs(
             hooks.on_stage(label)
 
     timings = {} if record_timings else None
+
+    def _debug_mps_sanity(stage_label: str, state: Any) -> None:
+        if not record_timings or state is None:
+            return
+        t0_local = time.perf_counter() if timings is not None else None
+        try:
+            state.test_sanity()
+        except Exception as exc:
+            raise RuntimeError(f"MPS sanity check failed at stage: {stage_label}") from exc
+        if timings is not None and t0_local is not None:
+            timings["sanity_checks"] = float(timings.get("sanity_checks", 0.0)) + (
+                time.perf_counter() - t0_local
+            )
 
     _call_stage("发射")
     t0 = time.perf_counter() if timings is not None else None
@@ -1042,6 +1142,7 @@ def run_emission_to_bs(
     if timings is not None and t0 is not None:
         timings["emission"] = time.perf_counter() - t0
     mps = emission.mps
+    _debug_mps_sanity("After Emission", mps)
     _, p_qubit_emit = extract_qubit_state(mps)
     if hooks.after_emission is not None:
         hooks.after_emission(emission)
@@ -1070,6 +1171,7 @@ def run_emission_to_bs(
         verbose=verbose,
     )
     emission.mps = mps
+    _debug_mps_sanity("After QFC+Filter", mps)
     if timings is not None and t0 is not None:
         timings["qfc_filter_memory"] = time.perf_counter() - t0
     if hooks.after_qfc_filter is not None:
@@ -1089,6 +1191,7 @@ def run_emission_to_bs(
         rng=rng,
         verbose=verbose,
     )
+    _debug_mps_sanity("After Fiber", mps)
     if timings is not None and t0 is not None:
         timings["fiber"] = time.perf_counter() - t0
     if hooks.after_fiber is not None:
@@ -1108,6 +1211,7 @@ def run_emission_to_bs(
         print(f"\n原子等待退相干: T_wait={t_wait_us:.1f} us, T2={t2_us:.1f} us, p={p_dephase:.4e}")
     t0 = time.perf_counter() if timings is not None else None
     _apply_atomic_dephasing(mps, p_dephase, rng=rng, verbose=verbose)
+    _debug_mps_sanity("After Dephase", mps)
     if timings is not None and t0 is not None:
         timings["dephase"] = time.perf_counter() - t0
 

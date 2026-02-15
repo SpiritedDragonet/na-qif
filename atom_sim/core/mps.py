@@ -397,6 +397,14 @@ class MPSState:
         """获取所有键维度列表，等价于 self.chi。"""
         return self.chi
 
+    def test_sanity(self) -> None:
+        """
+        调用 TeNPy 内置一致性检查。
+
+        仅用于调试/验真阶段，运行成本相对较高。
+        """
+        self._mps.test_sanity()
+
     def copy(self) -> 'MPSState':
         """创建深拷贝。"""
         new_state = MPSState(self.d.copy(), max_bond=self.max_bond)
@@ -522,8 +530,9 @@ class DetectionContractionEngine:
     """
     双点击 POVM 收缩引擎。
 
-    将按 (atomA,atomB),(A1,B1),... 分组后的 MPS 收缩逻辑集中到核心层，
+    将按 (atomA,atomB),(pair1),(pair2),... 分组后的 MPS 收缩逻辑集中到核心层，
     避免在中层 `detection.py` 中堆叠大量张量收缩细节。
+    其中 pair 可为 mem 对或 bin 对，具体由 bin_offset 指定“首个 bin 对”的分组位置。
     """
 
     b_list: List[np.ndarray]
@@ -532,6 +541,10 @@ class DetectionContractionEngine:
     zero_effect: np.ndarray
     detector_order_fn: Callable[[List[str]], Tuple[str, ...]]
     n_bins: int
+    # grouped-site 偏移：
+    # - 标准布局 atomA,atomB,A1,B1,... 时为 1
+    # - 若插入 memA,memB 在 bins 前，则为 2
+    bin_offset: int
     dim_atom: int
     single_dim: int
     right_envs: List[np.ndarray]
@@ -582,11 +595,18 @@ class DetectionContractionEngine:
         zero_effect: np.ndarray,
         detector_order_fn: Callable[[List[str]], Tuple[str, ...]],
         qubit_levels: Tuple[int, int] = (0, 1),
+        bin_offset: int = 1,
     ) -> 'DetectionContractionEngine':
         b_list, bc_list = cls._prepare_grouped_pairs(state)
         grouped_bins = len(b_list) - 1
         if grouped_bins < n_bins:
             raise ValueError(f"n_bins={n_bins} 超出分组后bin数量 {grouped_bins}")
+        if bin_offset < 1:
+            raise ValueError(f"bin_offset 必须 >=1，得到 {bin_offset}")
+        if grouped_bins - bin_offset + 1 < n_bins:
+            raise ValueError(
+                f"bin_offset={bin_offset} 下可用 bins 不足: grouped_bins={grouped_bins}, n_bins={n_bins}"
+            )
         if len(e_no_list) != grouped_bins:
             raise ValueError(
                 f"e_no_list 长度 {len(e_no_list)} 与分组后bin数量 {grouped_bins} 不一致"
@@ -640,6 +660,7 @@ class DetectionContractionEngine:
             zero_effect=zero_effect,
             detector_order_fn=detector_order_fn,
             n_bins=n_bins,
+            bin_offset=bin_offset,
             dim_atom=dim_atom,
             single_dim=single_dim,
             right_envs=[],
@@ -695,8 +716,9 @@ class DetectionContractionEngine:
         key_pair: Tuple[str, ...],
     ) -> float:
         total = 0.0
-        for site in range(1, self.n_bins + 1):
-            op_pair = effects_by_bin[site - 1].get(key_pair, self.zero_effect)
+        for bin_idx in range(self.n_bins):
+            site = self.bin_offset + bin_idx
+            op_pair = effects_by_bin[bin_idx].get(key_pair, self.zero_effect)
             env_mid = self._apply_env_left(
                 self.b_list[site],
                 self.bc_list[site],
@@ -713,8 +735,9 @@ class DetectionContractionEngine:
         key_pair: Tuple[str, ...],
     ) -> complex:
         total = 0.0 + 0.0j
-        for site in range(1, self.n_bins + 1):
-            op_pair = effects_by_bin[site - 1].get(key_pair, self.zero_effect)
+        for bin_idx in range(self.n_bins):
+            site = self.bin_offset + bin_idx
+            op_pair = effects_by_bin[bin_idx].get(key_pair, self.zero_effect)
             env_mid = self._apply_env_left(
                 self.b_list[site],
                 self.bc_list[site],
@@ -733,19 +756,21 @@ class DetectionContractionEngine:
         window_bins: Optional[int],
     ) -> float:
         total = 0.0
-        for first_site in range(1, self.n_bins):
-            op_first = effects_by_bin[first_site - 1].get(key_first, self.zero_effect)
+        for first_bin in range(self.n_bins - 1):
+            first_site = self.bin_offset + first_bin
+            op_first = effects_by_bin[first_bin].get(key_first, self.zero_effect)
             env_mid = self._apply_env_left(
                 self.b_list[first_site],
                 self.bc_list[first_site],
                 op_first,
                 left_envs[first_site],
             )
-            j_end = self.n_bins
+            j_end_bin = self.n_bins - 1
             if window_bins is not None:
-                j_end = min(self.n_bins, first_site + window_bins)
-            for second_site in range(first_site + 1, j_end + 1):
-                op_second = effects_by_bin[second_site - 1].get(key_second, self.zero_effect)
+                j_end_bin = min(self.n_bins - 1, first_bin + window_bins)
+            for second_bin in range(first_bin + 1, j_end_bin + 1):
+                second_site = self.bin_offset + second_bin
+                op_second = effects_by_bin[second_bin].get(key_second, self.zero_effect)
                 env_j = self._apply_env_left(
                     self.b_list[second_site],
                     self.bc_list[second_site],
@@ -753,7 +778,7 @@ class DetectionContractionEngine:
                     env_mid,
                 )
                 total += float(np.einsum('ij,ij->', env_j, self.right_envs[second_site + 1]).real)
-                if second_site < j_end:
+                if second_bin < j_end_bin:
                     env_mid = self._apply_env_left(
                         self.b_list[second_site],
                         self.bc_list[second_site],
@@ -777,9 +802,10 @@ class DetectionContractionEngine:
             sum_diff_bins(..., key_a, key_b, ...) + sum_diff_bins(..., key_b, key_a, ...)
         """
         total = 0.0
-        for first_site in range(1, self.n_bins):
-            op_first_ab = effects_by_bin[first_site - 1].get(key_a, self.zero_effect)
-            op_first_ba = effects_by_bin[first_site - 1].get(key_b, self.zero_effect)
+        for first_bin in range(self.n_bins - 1):
+            first_site = self.bin_offset + first_bin
+            op_first_ab = effects_by_bin[first_bin].get(key_a, self.zero_effect)
+            op_first_ba = effects_by_bin[first_bin].get(key_b, self.zero_effect)
 
             env_mid_ab = self._apply_env_left(
                 self.b_list[first_site],
@@ -794,13 +820,14 @@ class DetectionContractionEngine:
                 left_envs[first_site],
             )
 
-            j_end = self.n_bins
+            j_end_bin = self.n_bins - 1
             if window_bins is not None:
-                j_end = min(self.n_bins, first_site + window_bins)
+                j_end_bin = min(self.n_bins - 1, first_bin + window_bins)
 
-            for second_site in range(first_site + 1, j_end + 1):
-                op_second_ab = effects_by_bin[second_site - 1].get(key_b, self.zero_effect)
-                op_second_ba = effects_by_bin[second_site - 1].get(key_a, self.zero_effect)
+            for second_bin in range(first_bin + 1, j_end_bin + 1):
+                second_site = self.bin_offset + second_bin
+                op_second_ab = effects_by_bin[second_bin].get(key_b, self.zero_effect)
+                op_second_ba = effects_by_bin[second_bin].get(key_a, self.zero_effect)
 
                 env_j_ab = self._apply_env_left(
                     self.b_list[second_site],
@@ -817,7 +844,7 @@ class DetectionContractionEngine:
                 total += float(np.einsum('ij,ij->', env_j_ab, self.right_envs[second_site + 1]).real)
                 total += float(np.einsum('ij,ij->', env_j_ba, self.right_envs[second_site + 1]).real)
 
-                if second_site < j_end:
+                if second_bin < j_end_bin:
                     env_mid_ab = self._apply_env_left(
                         self.b_list[second_site],
                         self.bc_list[second_site],
@@ -841,9 +868,10 @@ class DetectionContractionEngine:
         window_bins: Optional[int],
     ) -> complex:
         total = 0.0 + 0.0j
-        for first_site in range(1, self.n_bins):
-            op_first_ab = effects_by_bin[first_site - 1].get(key_a, self.zero_effect)
-            op_first_ba = effects_by_bin[first_site - 1].get(key_b, self.zero_effect)
+        for first_bin in range(self.n_bins - 1):
+            first_site = self.bin_offset + first_bin
+            op_first_ab = effects_by_bin[first_bin].get(key_a, self.zero_effect)
+            op_first_ba = effects_by_bin[first_bin].get(key_b, self.zero_effect)
 
             env_mid_ab = self._apply_env_left(
                 self.b_list[first_site],
@@ -858,13 +886,14 @@ class DetectionContractionEngine:
                 left_envs[first_site],
             )
 
-            j_end = self.n_bins
+            j_end_bin = self.n_bins - 1
             if window_bins is not None:
-                j_end = min(self.n_bins, first_site + window_bins)
+                j_end_bin = min(self.n_bins - 1, first_bin + window_bins)
 
-            for second_site in range(first_site + 1, j_end + 1):
-                op_second_ab = effects_by_bin[second_site - 1].get(key_b, self.zero_effect)
-                op_second_ba = effects_by_bin[second_site - 1].get(key_a, self.zero_effect)
+            for second_bin in range(first_bin + 1, j_end_bin + 1):
+                second_site = self.bin_offset + second_bin
+                op_second_ab = effects_by_bin[second_bin].get(key_b, self.zero_effect)
+                op_second_ba = effects_by_bin[second_bin].get(key_a, self.zero_effect)
 
                 env_j_ab = self._apply_env_left(
                     self.b_list[second_site],
@@ -881,7 +910,7 @@ class DetectionContractionEngine:
                 total += np.einsum('ij,ij->', env_j_ab, self.right_envs[second_site + 1])
                 total += np.einsum('ij,ij->', env_j_ba, self.right_envs[second_site + 1])
 
-                if second_site < j_end:
+                if second_bin < j_end_bin:
                     env_mid_ab = self._apply_env_left(
                         self.b_list[second_site],
                         self.bc_list[second_site],
@@ -905,8 +934,9 @@ class DetectionContractionEngine:
     ) -> List[Tuple[str, str, int, int, float]]:
         key_pair = self.order_detectors([det_a, det_b])
         records = []
-        for site in range(1, self.n_bins + 1):
-            op_pair = effects_by_bin[site - 1].get(key_pair, self.zero_effect)
+        for bin_idx in range(self.n_bins):
+            site = self.bin_offset + bin_idx
+            op_pair = effects_by_bin[bin_idx].get(key_pair, self.zero_effect)
             env_mid = self._apply_env_left(
                 self.b_list[site],
                 self.bc_list[site],
@@ -915,7 +945,7 @@ class DetectionContractionEngine:
             )
             weight = float(np.einsum('ij,ij->', env_mid, self.right_envs[site + 1]).real)
             if weight > weight_eps:
-                records.append((det_a, det_b, site - 1, site - 1, weight))
+                records.append((det_a, det_b, bin_idx, bin_idx, weight))
         return records
 
     def collect_diff_bin_records(
@@ -929,19 +959,21 @@ class DetectionContractionEngine:
         key_first = self.order_detectors([det_first])
         key_second = self.order_detectors([det_second])
         records = []
-        for first_site in range(1, self.n_bins):
-            op_first = effects_by_bin[first_site - 1].get(key_first, self.zero_effect)
+        for first_bin in range(self.n_bins - 1):
+            first_site = self.bin_offset + first_bin
+            op_first = effects_by_bin[first_bin].get(key_first, self.zero_effect)
             env_mid = self._apply_env_left(
                 self.b_list[first_site],
                 self.bc_list[first_site],
                 op_first,
                 self.left_envs_identity[first_site],
             )
-            j_end = self.n_bins
+            j_end_bin = self.n_bins - 1
             if window_bins is not None:
-                j_end = min(self.n_bins, first_site + window_bins)
-            for second_site in range(first_site + 1, j_end + 1):
-                op_second = effects_by_bin[second_site - 1].get(key_second, self.zero_effect)
+                j_end_bin = min(self.n_bins - 1, first_bin + window_bins)
+            for second_bin in range(first_bin + 1, j_end_bin + 1):
+                second_site = self.bin_offset + second_bin
+                op_second = effects_by_bin[second_bin].get(key_second, self.zero_effect)
                 env_j = self._apply_env_left(
                     self.b_list[second_site],
                     self.bc_list[second_site],
@@ -950,8 +982,8 @@ class DetectionContractionEngine:
                 )
                 weight = float(np.einsum('ij,ij->', env_j, self.right_envs[second_site + 1]).real)
                 if weight > weight_eps:
-                    records.append((det_first, det_second, first_site - 1, second_site - 1, weight))
-                if second_site < j_end:
+                    records.append((det_first, det_second, first_bin, second_bin, weight))
+                if second_bin < j_end_bin:
                     env_mid = self._apply_env_left(
                         self.b_list[second_site],
                         self.bc_list[second_site],
@@ -970,7 +1002,7 @@ class DetectionContractionEngine:
         bin_b: int,
     ) -> complex:
         if bin_a == bin_b:
-            site = bin_a + 1
+            site = self.bin_offset + bin_a
             key_pair = self.order_detectors([det_a, det_b])
             op_pair = effects_by_bin[bin_a].get(key_pair, self.zero_effect)
             env_mid = self._apply_env_left(
@@ -982,15 +1014,15 @@ class DetectionContractionEngine:
             return np.einsum('ij,ij->', env_mid, self.right_envs[site + 1])
 
         if bin_a < bin_b:
-            first_site = bin_a + 1
-            second_site = bin_b + 1
+            first_site = self.bin_offset + bin_a
+            second_site = self.bin_offset + bin_b
             key_first = self.order_detectors([det_a])
             key_second = self.order_detectors([det_b])
             op_first = effects_by_bin[bin_a].get(key_first, self.zero_effect)
             op_second = effects_by_bin[bin_b].get(key_second, self.zero_effect)
         else:
-            first_site = bin_b + 1
-            second_site = bin_a + 1
+            first_site = self.bin_offset + bin_b
+            second_site = self.bin_offset + bin_a
             key_first = self.order_detectors([det_b])
             key_second = self.order_detectors([det_a])
             op_first = effects_by_bin[bin_b].get(key_first, self.zero_effect)
@@ -1034,17 +1066,36 @@ class DetectionContractionEngine:
         """
         枚举累计成功事件对应的双量子比特未归一化密度矩阵 sigma (4x4)。
         """
-        self._ensure_left_envs_qubit()
+        sigma_by_label = self.accumulate_success_qubit_sigma_by_label(
+            effects_by_bin=effects_by_bin,
+            patterns=patterns,
+            window_bins=window_bins,
+        )
         sigma = np.zeros((4, 4), dtype=complex)
+        for sigma_part in sigma_by_label.values():
+            sigma += sigma_part
+        return sigma
+
+    def accumulate_success_qubit_sigma_by_label(
+        self,
+        effects_by_bin: List[dict],
+        patterns: List[Tuple[str, Tuple[str, str]]],
+        window_bins: Optional[int],
+    ) -> Dict[str, np.ndarray]:
+        """
+        按宣告标签分组累计成功事件的未归一化双量子比特态。
+        """
+        self._ensure_left_envs_qubit()
+        labels = list(dict.fromkeys(str(label) for label, _ in patterns))
+        sigma_by_label = {label: np.zeros((4, 4), dtype=complex) for label in labels}
         for i in range(4):
             for j in range(4):
                 left_envs = self._left_envs_qubit[i][j]
-                value = 0.0 + 0.0j
-                for _bell_state, (det_a, det_b) in patterns:
+                for label, (det_a, det_b) in patterns:
                     key_pair = self.order_detectors([det_a, det_b])
                     key_a = self.order_detectors([det_a])
                     key_b = self.order_detectors([det_b])
-                    value += self.sum_same_bin_complex(left_envs, effects_by_bin, key_pair)
+                    value = self.sum_same_bin_complex(left_envs, effects_by_bin, key_pair)
                     value += self.sum_diff_bins_bidirectional_complex(
                         left_envs,
                         effects_by_bin,
@@ -1052,8 +1103,8 @@ class DetectionContractionEngine:
                         key_b,
                         window_bins,
                     )
-                sigma[i, j] = value
-        return sigma
+                    sigma_by_label[str(label)][i, j] += value
+        return sigma_by_label
 
     def compute_record_qubit_state(
         self,
@@ -1090,7 +1141,7 @@ class DetectionContractionEngine:
     ) -> float:
         mask_set = set(dark_mask)
         if bin_a == bin_b:
-            site = bin_a + 1
+            site = self.bin_offset + bin_a
             key_pair = self.order_detectors([det_a, det_b])
             op_pair = effects_mask_by_bin[bin_a].get(key_pair, {}).get(dark_mask, self.zero_effect)
             env_mid = self._apply_env_left(
@@ -1102,15 +1153,15 @@ class DetectionContractionEngine:
             return float(np.einsum('ij,ij->', env_mid, self.right_envs[site + 1]).real)
 
         if bin_a < bin_b:
-            first_site = bin_a + 1
-            second_site = bin_b + 1
+            first_site = self.bin_offset + bin_a
+            second_site = self.bin_offset + bin_b
             det_first = det_a
             det_second = det_b
             first_bin = bin_a
             second_bin = bin_b
         else:
-            first_site = bin_b + 1
-            second_site = bin_a + 1
+            first_site = self.bin_offset + bin_b
+            second_site = self.bin_offset + bin_a
             det_first = det_b
             det_second = det_a
             first_bin = bin_b

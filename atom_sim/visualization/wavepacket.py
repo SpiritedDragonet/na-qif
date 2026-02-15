@@ -144,9 +144,17 @@ def _apply_kraus_state_pair(rho: np.ndarray, K_list_A: List[np.ndarray], K_list_
 
 
 def _infer_first_bin_site(mps: MPSState) -> int:
-    """Infer the first bin site index based on emitter-like leading sites."""
-    if len(mps.d) >= 4 and mps.d[2] == 5 and mps.d[3] == 5:
-        return 2
+    """
+    Infer the first bin site index.
+
+    支持：
+    - atomA, atomB, A1, B1, ...
+    - atomA, atomB, memA, memB, A1, B1, ...
+    - A1, B1, ...（纯光场）
+    """
+    for start in range(0, max(0, mps.L - 1), 2):
+        if int(mps.d[start]) == 5 and int(mps.d[start + 1]) == 5:
+            return start
     return 0
 
 
@@ -289,11 +297,17 @@ def plot_dual_arm_heatmap(
     else:  # MPSState
         mps = result
         first_bin_site = _infer_first_bin_site(mps)
-        # 显式记忆路径：链尾 [memA, memB] = [3D, 3D]，不计入时间仓。
-        tail_sites = 0
-        if (mps.L - first_bin_site) >= 4 and int(mps.d[-2]) == 3 and int(mps.d[-1]) == 3:
-            tail_sites = 2
-        n_bins = max(0, (mps.L - first_bin_site - tail_sites) // 2)
+        # 从 first_bin_site 开始按 (5D,5D) 连续配对计数 bins。
+        # 这样既兼容旧布局（尾部 mem），也兼容新布局（原子后 mem 前缀）。
+        n_bins = 0
+        while True:
+            site_a = first_bin_site + 2 * n_bins
+            site_b = site_a + 1
+            if site_b >= mps.L:
+                break
+            if int(mps.d[site_a]) != 5 or int(mps.d[site_b]) != 5:
+                break
+            n_bins += 1
         dt_s = _resolve_dt_s(time_grid, 1.0)
         has_atom_evol = False
     time_axis_s = np.arange(n_bins) * dt_s
@@ -302,8 +316,8 @@ def plot_dual_arm_heatmap(
     fig, axes = plt.subplots(1, 2, figsize=(14.4, 7.2))
     # 注意：subplots_adjust 将在确定 display_atomic 后设置
 
-    # 根据 first_bin_site 判断是否有前导原子站点
-    has_atomic_sites = bool(first_bin_site == 2)
+    # 只要首 bin 之前有至少一对非-bin站点，就视作存在原子前缀。
+    has_atomic_sites = bool(first_bin_site >= 2)
 
     if validate:
         _validate_bin_rho_traces(mps, n_bins, tol=trace_tol)
@@ -506,10 +520,11 @@ def plot_dual_arm_heatmap(
                 probs_A[n, :] = np.maximum(0.0, np.real(np.diag(rho_A)))
                 probs_B[n, :] = np.maximum(0.0, np.real(np.diag(rho_B)))
 
-    # Calculate vmax EXCLUDING (vac,vac) row (index 0)
-    vmax_A = max(0.01, probs_A[:, 1:].max() * vmax_scale_factor)
-    vmax_B = max(0.01, probs_B[:, 1:].max() * vmax_scale_factor)
-    vmax = max(vmax_A, vmax_B)
+    # Calculate vmax EXCLUDING (vac,vac) row (index 0), fully data-adaptive.
+    photon_max_A = float(np.max(probs_A[:, 1:])) if probs_A.shape[1] > 1 else 0.0
+    photon_max_B = float(np.max(probs_B[:, 1:])) if probs_B.shape[1] > 1 else 0.0
+    photon_max = max(photon_max_A, photon_max_B)
+    vmax = float(photon_max * vmax_scale_factor) if photon_max > 0.0 else 1.0
 
     # Create combined data matrices
     if display_atomic:

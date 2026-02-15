@@ -39,6 +39,20 @@ from ..physics.gates import (
     order_two_port_detectors,
 )
 
+# 成功宣告模式：键为宣告 Bell，值为探测器双点击组合。
+SUCCESS_PATTERNS: Tuple[Tuple[str, Tuple[str, str]], ...] = (
+    ("Psi-", ("H1", "V2")),
+    ("Psi-", ("V1", "H2")),
+    ("Psi+", ("H1", "V1")),
+    ("Psi+", ("H2", "V2")),
+)
+
+# 抽样记录模式：成功模式 + 两类典型失败模式（同偏振跨端口）。
+RECORD_PATTERNS: Tuple[Tuple[str, Tuple[str, str]], ...] = SUCCESS_PATTERNS + (
+    ("", ("H1", "H2")),
+    ("", ("V1", "V2")),
+)
+
 
 def _is_port_samepol_coincidence(clicks: List[DetectionEvent], window_bins: Optional[int]) -> bool:
     """判定同偏振跨端口符合：H1-H2 或 V1-V2。"""
@@ -133,6 +147,10 @@ class SuccessEnumerationResult:
     corr_eyy: float = 0.0
     corr_ezz: float = 0.0
     chsh_s_max: float = 0.0
+    corr_exx_ff: float = 0.0
+    corr_eyy_ff: float = 0.0
+    corr_ezz_ff: float = 0.0
+    chsh_s_max_ff: float = 0.0
 
 
 @dataclass
@@ -185,6 +203,20 @@ def compute_pauli_correlators_and_chsh(qubit_state: np.ndarray) -> dict:
         "corr_ezz": float(corr[2, 2]),
         "chsh_s_max": chsh_s_max,
     }
+
+
+def _build_feedforward_op_for_bell(bell_state: str) -> np.ndarray:
+    """
+    返回将声明 Bell 态映射到统一口径(默认 Psi+)的单比特校正。
+
+    当前仅用到 Psi+/Psi-：
+    - Psi+ : I
+    - Psi- : Z_A（或 Z_B 等价，差全局相位）
+    """
+    sigma_z = np.array([[1.0, 0.0], [0.0, -1.0]], dtype=complex)
+    if bell_state == "Psi-":
+        return np.kron(sigma_z, np.eye(2, dtype=complex))
+    return np.eye(4, dtype=complex)
 
 
 P_ARRIVE_EPS = 1e-8
@@ -286,6 +318,41 @@ def _parse_fiber_sample(fiber_sample: Optional[tuple]) -> Tuple[np.ndarray, np.n
         float(eta_V_B),
         float(phase_slope),
         float(phase_jitter_std),
+    )
+
+
+def _infer_bin_start_site(local_dims: List[int], n_bins: int) -> int:
+    """
+    根据局域维度推断首个 bin 站点。
+
+    支持：
+    - atomA, atomB, A1, B1, ...
+    - atomA, atomB, memA, memB, A1, B1, ...
+    - A1, B1, ...（纯光场输入）
+
+    要求从首 bin 开始连续存在 n_bins 组 (5D, 5D)。
+    """
+    if n_bins <= 0:
+        raise ValueError(f"n_bins 必须为正整数，得到 {n_bins}")
+    length = len(local_dims)
+    for start in range(0, max(0, length - 1), 2):
+        if int(local_dims[start]) != 5 or int(local_dims[start + 1]) != 5:
+            continue
+        is_valid = True
+        for n in range(n_bins):
+            site_a = start + 2 * n
+            site_b = site_a + 1
+            if site_b >= length:
+                is_valid = False
+                break
+            if int(local_dims[site_a]) != 5 or int(local_dims[site_b]) != 5:
+                is_valid = False
+                break
+        if is_valid:
+            return start
+    raise ValueError(
+        "无法识别连续 bin 区间。"
+        f" n_bins={n_bins}, L={length}, d_head={local_dims[:12]}, d_tail={local_dims[-12:]}"
     )
 
 
@@ -418,10 +485,11 @@ def run_detection_pipeline(
     mps = mps.copy()
     v_res = min(max(float(v_res), 0.0), 1.0)
 
-    # 支持“原子位点维度可变”场景：
-    # - 常规布局：atomA, atomB, A1, B1, ... -> bin_start=2
-    # - 纯光场输入：A1, B1, ... -> bin_start=0
-    bin_start = 2 if (len(mps.d) >= 4 and mps.d[2] == 5 and mps.d[3] == 5) else 0
+    # 支持“bins 前插入记忆对”的布局：
+    # - atomA, atomB, A1, B1, ...
+    # - atomA, atomB, memA, memB, A1, B1, ...
+    # - A1, B1, ...（纯光场输入）
+    bin_start = _infer_bin_start_site(mps.d, n_bins)
     bin_dim = mps.d[bin_start]
     if bin_dim != 5:
         raise ValueError(f"Unexpected bin dimension: {bin_dim}. Expected 5.")
@@ -554,14 +622,25 @@ def run_detection_pipeline(
     if len(mps.d) % 2 != 0:
         raise ValueError(f"MPS站点数必须为偶数，当前 L={len(mps.d)}")
     grouped_bins = len(mps.d) // 2 - 1
-    if grouped_bins < n_bins:
-        raise ValueError(f"grouped_bins={grouped_bins} 小于 n_bins={n_bins}")
+    # grouped site 编号中：0 对应 (atomA, atomB)，其后为可观测 pair。
+    # 若 bins 前插入了 (memA, memB)，则首 bin grouped site 会后移。
+    if bin_start % 2 != 0:
+        raise ValueError(f"bin_start 必须为偶数，得到 {bin_start}")
+    bin_offset = max(1, bin_start // 2)
+    available_bins = grouped_bins - bin_offset + 1
+    if available_bins < n_bins:
+        raise ValueError(
+            f"可用分组bin不足: grouped_bins={grouped_bins}, bin_offset={bin_offset}, n_bins={n_bins}"
+        )
     e_no_list: List[np.ndarray] = []
     for grouped_index in range(grouped_bins):
-        if grouped_index < n_bins:
-            e_no_list.append(effects_all_by_bin[grouped_index].get(empty_key, zero_effect))
+        grouped_site = grouped_index + 1
+        logical_bin = grouped_site - bin_offset
+        if 0 <= logical_bin < n_bins:
+            # 固定口径：其余 bin 采用 no-click effect。
+            e_no_list.append(effects_all_by_bin[logical_bin].get(empty_key, zero_effect))
             continue
-        site_a = 2 + 2 * grouped_index
+        site_a = 2 * grouped_site
         site_b = site_a + 1
         if site_b >= len(mps.d):
             raise ValueError(f"尾部分组索引越界: grouped_index={grouped_index}")
@@ -575,6 +654,7 @@ def run_detection_pipeline(
         zero_effect=zero_effect,
         detector_order_fn=order_two_port_detectors,
         qubit_levels=qubit_levels,
+        bin_offset=bin_offset,
     )
 
     metrics = None
@@ -596,12 +676,7 @@ def run_detection_pipeline(
             bell: engine.build_left_envs(projector)
             for bell, projector in bell_projectors.items()
         }
-        patterns = [
-            ("Psi-", ("H1", "V2")),
-            ("Psi-", ("V1", "H2")),
-            ("Psi+", ("H1", "V1")),
-            ("Psi+", ("H2", "V2")),
-        ]
+        patterns = list(SUCCESS_PATTERNS)
 
         p_success_all = 0.0
         p_success_true = 0.0
@@ -663,17 +738,29 @@ def run_detection_pipeline(
         p_success_intrinsic_dark_assisted = float(max(0.0, p_success_sig_total - p_success_sig_true))
 
         if verbose:
-            print("  POVM枚举阶段: 4/4 (all, declared corr/chsh)")
-        sigma_declared = engine.accumulate_success_qubit_sigma(
+            print("  POVM枚举阶段: 4/4 (all, declared corr/chsh raw+ff)")
+        sigma_by_bell = engine.accumulate_success_qubit_sigma_by_label(
             effects_by_bin=effects_all_by_bin,
             patterns=patterns,
             window_bins=window_bins,
         )
-        corr_metrics = compute_pauli_correlators_and_chsh(sigma_declared)
-        corr_exx = float(corr_metrics["corr_exx"])
-        corr_eyy = float(corr_metrics["corr_eyy"])
-        corr_ezz = float(corr_metrics["corr_ezz"])
-        chsh_s_max = float(corr_metrics["chsh_s_max"])
+        sigma_declared_raw = np.zeros((4, 4), dtype=complex)
+        sigma_declared_ff = np.zeros((4, 4), dtype=complex)
+        for bell_state, sigma_part in sigma_by_bell.items():
+            sigma_declared_raw += sigma_part
+            u_ff = _build_feedforward_op_for_bell(bell_state)
+            sigma_declared_ff += u_ff @ sigma_part @ u_ff.conj().T
+
+        corr_metrics_raw = compute_pauli_correlators_and_chsh(sigma_declared_raw)
+        corr_exx = float(corr_metrics_raw["corr_exx"])
+        corr_eyy = float(corr_metrics_raw["corr_eyy"])
+        corr_ezz = float(corr_metrics_raw["corr_ezz"])
+        chsh_s_max = float(corr_metrics_raw["chsh_s_max"])
+        corr_metrics_ff = compute_pauli_correlators_and_chsh(sigma_declared_ff)
+        corr_exx_ff = float(corr_metrics_ff["corr_exx"])
+        corr_eyy_ff = float(corr_metrics_ff["corr_eyy"])
+        corr_ezz_ff = float(corr_metrics_ff["corr_ezz"])
+        chsh_s_max_ff = float(corr_metrics_ff["chsh_s_max"])
         if verbose:
             elapsed = time.perf_counter() - t0
             print(f"  POVM枚举阶段完成: 4/4 | elapsed={elapsed:.2f}s")
@@ -715,6 +802,10 @@ def run_detection_pipeline(
             corr_eyy=corr_eyy,
             corr_ezz=corr_ezz,
             chsh_s_max=chsh_s_max,
+            corr_exx_ff=corr_exx_ff,
+            corr_eyy_ff=corr_eyy_ff,
+            corr_ezz_ff=corr_ezz_ff,
+            chsh_s_max_ff=chsh_s_max_ff,
         )
         timings["povm_enumeration"] = time.perf_counter() - t0
 
@@ -728,14 +819,7 @@ def run_detection_pipeline(
             timings=timings,
         )
 
-    patterns_records = [
-        ("Psi-", ("H1", "V2")),
-        ("Psi-", ("V1", "H2")),
-        ("Psi+", ("H1", "V1")),
-        ("Psi+", ("H2", "V2")),
-        ("", ("H1", "H2")),
-        ("", ("V1", "V2")),
-    ]
+    patterns_records = list(RECORD_PATTERNS)
     weight_eps = 1e-14
     records: List[TwoClickRecord] = []
     for _, (det_a, det_b) in patterns_records:

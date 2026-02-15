@@ -21,6 +21,7 @@ from ..physics.gates import bs_gate_6d
 from .common import (
     SimConfig,
     PipelineHooks,
+    TimingTracer,
     run_trial_physics_core,
     run_detection_core_from_pipe,
     write_click_records,
@@ -49,6 +50,14 @@ SIM_TASK_METRIC_KEYS = (
     "corr_eyy",
     "corr_ezz",
     "chsh_s_max",
+    "corr_exx_raw",
+    "corr_eyy_raw",
+    "corr_ezz_raw",
+    "chsh_s_max_raw",
+    "corr_exx_ff",
+    "corr_eyy_ff",
+    "corr_ezz_ff",
+    "chsh_s_max_ff",
     "mps_chi_min",
     "mps_chi_mean",
     "mps_chi_max",
@@ -208,6 +217,8 @@ def _run_single_simulation_core(
     seed: Optional[int] = None,
 ):
     run_wall_start = time.perf_counter()
+    trace_enabled = bool(DEBUG_MODE)
+    timer = TimingTracer(enabled=trace_enabled)
     run_cfg = config.run
     n_runs = run_cfg.runs
     shots_per_run = run_cfg.shots_per_run
@@ -372,6 +383,22 @@ def _run_single_simulation_core(
                 file.write(f"chsh_s_max = {metrics['chsh_s_max']:.6f}\n")
             else:
                 file.write("chsh_s_max = N/A\n")
+            if metrics.get("corr_exx_ff") is not None:
+                file.write(f"corr_exx_ff = {metrics['corr_exx_ff']:.6f}\n")
+            else:
+                file.write("corr_exx_ff = N/A\n")
+            if metrics.get("corr_eyy_ff") is not None:
+                file.write(f"corr_eyy_ff = {metrics['corr_eyy_ff']:.6f}\n")
+            else:
+                file.write("corr_eyy_ff = N/A\n")
+            if metrics.get("corr_ezz_ff") is not None:
+                file.write(f"corr_ezz_ff = {metrics['corr_ezz_ff']:.6f}\n")
+            else:
+                file.write("corr_ezz_ff = N/A\n")
+            if metrics.get("chsh_s_max_ff") is not None:
+                file.write(f"chsh_s_max_ff = {metrics['chsh_s_max_ff']:.6f}\n")
+            else:
+                file.write("chsh_s_max_ff = N/A\n")
             if metrics.get("mps_chi_min") is not None:
                 file.write(f"mps_chi_min = {int(metrics['mps_chi_min'])}\n")
             else:
@@ -434,6 +461,25 @@ def _run_single_simulation_core(
         idx = stage_map[label]
         print(f"[{run_tag} {ts}] [阶段 {idx}/{stage_total}] {label}")
 
+    def _merge_detection_timings(prefix: str, timing_map: Optional[dict]) -> None:
+        if not trace_enabled or not timing_map:
+            return
+        key_alias = {
+            "povm_effects": "povm_effects",
+            "povm_enumeration": "povm_enumeration",
+            "povm_sampling": "povm_sampling",
+            "detection_total": "detection_total",
+        }
+        timer.merge_timing_map(
+            timing_map,
+            prefix=f"{prefix}_",
+            key_alias=key_alias,
+        )
+        timer.add("povm_effects_total", timing_map.get("povm_effects", 0.0))
+        timer.add("povm_enumeration_total", timing_map.get("povm_enumeration", 0.0))
+        timer.add("povm_sampling_total", timing_map.get("povm_sampling", 0.0))
+        timer.add("detection_total_all", timing_map.get("detection_total", 0.0))
+
     # 目的：统一生成阶段可视化与调试快照，减少重复代码。
     def _make_plot_hook(
         stage_name: str,
@@ -458,58 +504,60 @@ def _run_single_simulation_core(
             *_args,
         ):
             if _plot_gate_allow():
-                print(f"\n生成{stage_name}的可视化图...")
-                plot_path = plot_dir / f"{run_tag}_{file_suffix}.png"
-                target = emission if use_emission_obj else emission.mps
-                kwargs = dict(
-                    save_path=str(plot_path),
-                    show_atomic=show_atomic,
-                    stage_name=stage_name,
-                    show=show_plots,
-                )
-                if use_time_grid:
-                    kwargs["time_grid"] = {"dt_s": emission.dt_s}
-                if bs_unitary is not None:
-                    kwargs["bs_unitary"] = bs_unitary
-                kwargs["qfc_params"] = qfc_params
-                kwargs["fiber_sample"] = fiber_sample
-                plot_dual_arm_heatmap(target, **kwargs)
-            if DEBUG_MODE:
-                stage_context = {
-                    "representation": (
-                        "heisenberg"
-                        if "heisenberg" in debug_stage.strip().lower()
-                        else "state_side"
-                    ),
-                    "acts_on_state": (
-                        False if "heisenberg" in debug_stage.strip().lower() else True
-                    ),
-                }
-                if qfc_params is not None and len(qfc_params) >= 2:
-                    stage_context["qfc_theta_H"] = float(qfc_params[0])
-                    stage_context["qfc_theta_V"] = float(qfc_params[1])
-                if fiber_sample is not None and len(fiber_sample) >= 9:
-                    _, _, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std = fiber_sample
-                    stage_context["fiber_eta_H_A"] = float(eta_H_A)
-                    stage_context["fiber_eta_V_A"] = float(eta_V_A)
-                    stage_context["fiber_eta_H_B"] = float(eta_H_B)
-                    stage_context["fiber_eta_V_B"] = float(eta_V_B)
-                    stage_context["fiber_phase_drift_rad"] = float(phase)
-                    stage_context["fiber_phase_slope_rad_per_bin"] = float(phase_slope)
-                    stage_context["fiber_phase_jitter_std_rad"] = float(phase_jitter_std)
-                if bs_unitary is not None:
-                    bs_theta = float(config.detector.bs_theta)
-                    stage_context["bs_theta_rad"] = bs_theta
-                    stage_context["bs_split_ratio"] = float(np.sin(bs_theta) ** 2)
-                save_debug_info(
-                    mps=emission.mps,
-                    n_bins=emission.get_n_bins(),
-                    stage=debug_stage,
-                    output_dir=output_dir,
-                    step_index=step_index,
-                    run_tag=run_tag,
-                    stage_context=stage_context,
-                )
+                with timer.span("hook_plot_total"):
+                    print(f"\n生成{stage_name}的可视化图...")
+                    plot_path = plot_dir / f"{run_tag}_{file_suffix}.png"
+                    target = emission if use_emission_obj else emission.mps
+                    kwargs = dict(
+                        save_path=str(plot_path),
+                        show_atomic=show_atomic,
+                        stage_name=stage_name,
+                        show=show_plots,
+                    )
+                    if use_time_grid:
+                        kwargs["time_grid"] = {"dt_s": emission.dt_s}
+                    if bs_unitary is not None:
+                        kwargs["bs_unitary"] = bs_unitary
+                    kwargs["qfc_params"] = qfc_params
+                    kwargs["fiber_sample"] = fiber_sample
+                    plot_dual_arm_heatmap(target, **kwargs)
+            if trace_enabled:
+                with timer.span("hook_debug_snapshot_total"):
+                    stage_context = {
+                        "representation": (
+                            "heisenberg"
+                            if "heisenberg" in debug_stage.strip().lower()
+                            else "state_side"
+                        ),
+                        "acts_on_state": (
+                            False if "heisenberg" in debug_stage.strip().lower() else True
+                        ),
+                    }
+                    if qfc_params is not None and len(qfc_params) >= 2:
+                        stage_context["qfc_theta_H"] = float(qfc_params[0])
+                        stage_context["qfc_theta_V"] = float(qfc_params[1])
+                    if fiber_sample is not None and len(fiber_sample) >= 9:
+                        _, _, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase, phase_slope, phase_jitter_std = fiber_sample
+                        stage_context["fiber_eta_H_A"] = float(eta_H_A)
+                        stage_context["fiber_eta_V_A"] = float(eta_V_A)
+                        stage_context["fiber_eta_H_B"] = float(eta_H_B)
+                        stage_context["fiber_eta_V_B"] = float(eta_V_B)
+                        stage_context["fiber_phase_drift_rad"] = float(phase)
+                        stage_context["fiber_phase_slope_rad_per_bin"] = float(phase_slope)
+                        stage_context["fiber_phase_jitter_std_rad"] = float(phase_jitter_std)
+                    if bs_unitary is not None:
+                        bs_theta = float(config.detector.bs_theta)
+                        stage_context["bs_theta_rad"] = bs_theta
+                        stage_context["bs_split_ratio"] = float(np.sin(bs_theta) ** 2)
+                    save_debug_info(
+                        mps=emission.mps,
+                        n_bins=emission.get_n_bins(),
+                        stage=debug_stage,
+                        output_dir=output_dir,
+                        step_index=step_index,
+                        run_tag=run_tag,
+                        stage_context=stage_context,
+                    )
         return _hook
 
     _after_emission = _make_plot_hook(
@@ -550,7 +598,6 @@ def _run_single_simulation_core(
         bs_unitary=bs_gate_6d(config.detector.bs_theta),
     )
 
-    timings = {} if DEBUG_MODE else None
     pipe = _run_single_trial(
         rng=run_rng,
         config=config,
@@ -567,8 +614,8 @@ def _run_single_simulation_core(
             after_bs=_after_bs,
         ),
     )
-    if DEBUG_MODE and pipe.timings:
-        timings.update(pipe.timings)
+    if pipe.timings:
+        timer.merge_timing_map(pipe.timings)
 
     result = pipe.emission
     p_qubit_emit = pipe.p_qubit_emit
@@ -583,12 +630,13 @@ def _run_single_simulation_core(
     # 符合窗口：默认采用论文中数据分析窗口 70 ns
     coincidence_window_ns = float(config.run.window_ns)
     bin_dt_s = result.dt_s
-    param_store = _build_run_parameter_store(
-        config=config,
-        emission_bin_dt_s=bin_dt_s,
-        coincidence_window_ns=coincidence_window_ns,
-        rng=run_rng,
-    )
+    with timer.span("build_param_store"):
+        param_store = _build_run_parameter_store(
+            config=config,
+            emission_bin_dt_s=bin_dt_s,
+            coincidence_window_ns=coincidence_window_ns,
+            rng=run_rng,
+        )
     budget = param_store.noise_budget
     eta_det = param_store.eta_det
     eta_det_map = param_store.eta_det_map
@@ -631,7 +679,6 @@ def _run_single_simulation_core(
         print("\n枚举成功事件（无暗计数）...")
         _on_stage("POVM抽样")
         print("\n运行探测和BSM（POVM抽样）...")
-        detect_start = time.perf_counter() if DEBUG_MODE else None
         _, pipeline = run_detection_core_from_pipe(
             pipe=pipe,
             config=config,
@@ -648,11 +695,7 @@ def _run_single_simulation_core(
         enum_no_dark = pipeline.metrics
         enum_main = enum_no_dark
         samples = pipeline.samples
-        if DEBUG_MODE and timings is not None and pipeline.timings:
-            timings["povm_effects"] = pipeline.timings.get("povm_effects", 0.0)
-            timings["povm_enumeration"] = pipeline.timings.get("povm_enumeration", 0.0)
-            timings["povm_sampling"] = pipeline.timings.get("povm_sampling", 0.0)
-            timings["detection_total"] = pipeline.timings.get("detection_total", 0.0)
+        _merge_detection_timings("main", pipeline.timings)
     else:
         if enum_mode == "both":
             print("\n枚举成功事件（无暗计数基线）...")
@@ -670,13 +713,10 @@ def _run_single_simulation_core(
                 p_bg_detector_map={det: 0.0 for det in p_bg_detector_map},
             )
             enum_no_dark = enum_pipeline.metrics
-            if DEBUG_MODE and timings is not None and enum_pipeline.timings:
-                timings["povm_effects"] = enum_pipeline.timings.get("povm_effects", 0.0)
-                timings["povm_enumeration"] = enum_pipeline.timings.get("povm_enumeration", 0.0)
+            _merge_detection_timings("baseline", enum_pipeline.timings)
         print("\n枚举成功事件（含暗计数）...")
         _on_stage("POVM抽样")
         print("\n运行探测和BSM（POVM抽样）...")
-        detect_start = time.perf_counter() if DEBUG_MODE else None
         _, pipeline = run_detection_core_from_pipe(
             pipe=pipe,
             config=config,
@@ -692,245 +732,267 @@ def _run_single_simulation_core(
         )
         enum_main = pipeline.metrics
         samples = pipeline.samples
-        if DEBUG_MODE and timings is not None and pipeline.timings:
-            timings["povm_effects"] = pipeline.timings.get("povm_effects", 0.0)
-            timings["povm_enumeration"] = pipeline.timings.get("povm_enumeration", 0.0)
-            timings["povm_sampling"] = pipeline.timings.get("povm_sampling", 0.0)
-            timings["detection_total"] = pipeline.timings.get("detection_total", 0.0)
+        _merge_detection_timings("main", pipeline.timings)
 
-    chi_list = result.mps.get_bond_dimensions()
-    trunc_stats = result.mps.get_truncation_stats()
+    with timer.span("metrics_assemble"):
+        chi_list = result.mps.get_bond_dimensions()
+        trunc_stats = result.mps.get_truncation_stats()
 
-    # 汇总统计量（跨 shots）
-    success_metrics = {
-        "eta_det": eta_det,
-        "eta_det_map": eta_det_map,
-        "window_bins": param_store.window_bins,
-        "window_ns": coincidence_window_ns,
-        "detector_gate_ns": budget.detection_gate_ns,
-        "bins_per_gate": budget.bins_per_gate,
-        "dark_rate_intrinsic_hz": budget.dark_rate_intrinsic_hz,
-        "dark_rate_bg_hz": budget.dark_rate_bg_hz,
-        "p_dark_intrinsic_gate": budget.p_dark_intrinsic_gate,
-        "p_bg_gate": budget.p_bg_gate,
-        "p_noise_gate": budget.p_noise_gate,
-        "p_dark_intrinsic": budget.p_dark_intrinsic_bin,
-        "p_dark_intrinsic_map": p_dark_intrinsic_map,
-        "p_bg": budget.p_bg_bin,
-        "p_bg_map": p_bg_detector_map,
-        "p_noise": budget.p_noise_bin,
-        "t_wait_us": t_wait_us,
-        "t2_us": t2_us,
-        "p_dephase": p_dephase,
-        "p_qubit_emit": p_qubit_emit,
-        "v_res": float(param_store.v_res),
-        "bs_theta": float(config.detector.bs_theta),
-        "bs_split_ratio": float(np.sin(config.detector.bs_theta) ** 2),
-        "qfc_theta_H": pipe.qfc_theta_H,
-        "qfc_theta_V": pipe.qfc_theta_V,
-        "p_arrive": enum_main.p_arrive,
-        "p_arrive_11": enum_main.p_arrive_11,
-        "p_arrive_20": enum_main.p_arrive_20,
-        "p_arrive_02": enum_main.p_arrive_02,
-        "p_arrive_same_arm": enum_main.p_arrive_same_arm,
-        "p_success_abs": enum_main.p_success,
-        "p_success_true_abs": enum_main.p_success_true,
-        "p_success_false_abs": enum_main.p_success_false,
-        "p_success_signal_approx": enum_main.p_success_signal_approx,
-        "p_success_same_arm_approx": enum_main.p_success_same_arm_approx,
-        "p_success_intrinsic_dark_assisted": enum_main.p_success_intrinsic_dark_assisted,
-        "p_success_bg_assisted": enum_main.p_success_bg_assisted,
-        "p_success_true_given_arrival": enum_main.p_success_given_arrival,
-        "fidelity_all": enum_main.fidelity_declared,
-        "fidelity_true": enum_main.fidelity_true,
-        "fidelity_false": enum_main.fidelity_false,
-        "p_success_no_dark_abs": enum_no_dark.p_success if enum_no_dark is not None else None,
-        "fidelity_no_dark": enum_no_dark.fidelity_declared if enum_no_dark is not None else None,
-        "corr_exx": enum_main.corr_exx,
-        "corr_eyy": enum_main.corr_eyy,
-        "corr_ezz": enum_main.corr_ezz,
-        "chsh_s_max": enum_main.chsh_s_max,
-        "mps_chi_min": int(min(chi_list)) if chi_list else 0,
-        "mps_chi_mean": float(np.mean(chi_list)) if chi_list else 0.0,
-        "mps_chi_max": int(max(chi_list)) if chi_list else 0,
-        "mps_trunc_total_calls": int(trunc_stats["total_calls"]),
-        "mps_trunc_total_eps": float(trunc_stats["total_eps"]),
-        "mps_trunc_total_eps_max": float(trunc_stats["total_eps_max"]),
-        "fiber_length_km": config.fiber.length_km,
-        "fiber_attenuation_db_per_km": config.fiber.attenuation_db_per_km,
-        "fiber_eta_std": config.fiber.eta_std,
-        "fiber_pdl_sigma": config.fiber.pdl_sigma,
-        "fiber_phase_drift_std": config.fiber.phase_drift_std,
-        "fiber_phase_slope_std": config.fiber.phase_slope_std,
-        "fiber_phase_jitter_std": config.fiber.phase_jitter_std,
-        "fiber_polarization_model": config.fiber.polarization_model,
-        "fiber_polarization_sigma": config.fiber.polarization_sigma,
-    }
-    # 误判占比：false / all
-    success_metrics["false_fraction"] = (
-        success_metrics["p_success_false_abs"] / success_metrics["p_success_abs"]
-        if success_metrics["p_success_abs"] > 0
-        else 0.0
-    )
-    if enum_no_dark is not None:
-        # 粗略估计：将暗计数引入的“额外成功”视为 false
-        success_metrics["p_false_approx"] = max(
-            0.0, success_metrics["p_success_abs"] - success_metrics["p_success_no_dark_abs"]
-        )
-        success_metrics["false_fraction_approx"] = (
-            success_metrics["p_false_approx"] / success_metrics["p_success_abs"]
+        # 汇总统计量（跨 shots）
+        success_metrics = {
+            "eta_det": eta_det,
+            "eta_det_map": eta_det_map,
+            "window_bins": param_store.window_bins,
+            "window_ns": coincidence_window_ns,
+            "detector_gate_ns": budget.detection_gate_ns,
+            "bins_per_gate": budget.bins_per_gate,
+            "dark_rate_intrinsic_hz": budget.dark_rate_intrinsic_hz,
+            "dark_rate_bg_hz": budget.dark_rate_bg_hz,
+            "p_dark_intrinsic_gate": budget.p_dark_intrinsic_gate,
+            "p_bg_gate": budget.p_bg_gate,
+            "p_noise_gate": budget.p_noise_gate,
+            "p_dark_intrinsic": budget.p_dark_intrinsic_bin,
+            "p_dark_intrinsic_map": p_dark_intrinsic_map,
+            "p_bg": budget.p_bg_bin,
+            "p_bg_map": p_bg_detector_map,
+            "p_noise": budget.p_noise_bin,
+            "t_wait_us": t_wait_us,
+            "t2_us": t2_us,
+            "p_dephase": p_dephase,
+            "p_qubit_emit": p_qubit_emit,
+            "v_res": float(param_store.v_res),
+            "bs_theta": float(config.detector.bs_theta),
+            "bs_split_ratio": float(np.sin(config.detector.bs_theta) ** 2),
+            "qfc_theta_H": pipe.qfc_theta_H,
+            "qfc_theta_V": pipe.qfc_theta_V,
+            "p_arrive": enum_main.p_arrive,
+            "p_arrive_11": enum_main.p_arrive_11,
+            "p_arrive_20": enum_main.p_arrive_20,
+            "p_arrive_02": enum_main.p_arrive_02,
+            "p_arrive_same_arm": enum_main.p_arrive_same_arm,
+            "p_success_abs": enum_main.p_success,
+            "p_success_true_abs": enum_main.p_success_true,
+            "p_success_false_abs": enum_main.p_success_false,
+            "p_success_signal_approx": enum_main.p_success_signal_approx,
+            "p_success_same_arm_approx": enum_main.p_success_same_arm_approx,
+            "p_success_intrinsic_dark_assisted": enum_main.p_success_intrinsic_dark_assisted,
+            "p_success_bg_assisted": enum_main.p_success_bg_assisted,
+            "p_success_true_given_arrival": enum_main.p_success_given_arrival,
+            "fidelity_all": enum_main.fidelity_declared,
+            "fidelity_true": enum_main.fidelity_true,
+            "fidelity_false": enum_main.fidelity_false,
+            "p_success_no_dark_abs": enum_no_dark.p_success if enum_no_dark is not None else None,
+            "fidelity_no_dark": enum_no_dark.fidelity_declared if enum_no_dark is not None else None,
+            "corr_exx": enum_main.corr_exx,
+            "corr_eyy": enum_main.corr_eyy,
+            "corr_ezz": enum_main.corr_ezz,
+            "chsh_s_max": enum_main.chsh_s_max,
+            "corr_exx_raw": enum_main.corr_exx,
+            "corr_eyy_raw": enum_main.corr_eyy,
+            "corr_ezz_raw": enum_main.corr_ezz,
+            "chsh_s_max_raw": enum_main.chsh_s_max,
+            "corr_exx_ff": enum_main.corr_exx_ff,
+            "corr_eyy_ff": enum_main.corr_eyy_ff,
+            "corr_ezz_ff": enum_main.corr_ezz_ff,
+            "chsh_s_max_ff": enum_main.chsh_s_max_ff,
+            "mps_chi_min": int(min(chi_list)) if chi_list else 0,
+            "mps_chi_mean": float(np.mean(chi_list)) if chi_list else 0.0,
+            "mps_chi_max": int(max(chi_list)) if chi_list else 0,
+            "mps_trunc_total_calls": int(trunc_stats["total_calls"]),
+            "mps_trunc_total_eps": float(trunc_stats["total_eps"]),
+            "mps_trunc_total_eps_max": float(trunc_stats["total_eps_max"]),
+            "fiber_length_km": config.fiber.length_km,
+            "fiber_attenuation_db_per_km": config.fiber.attenuation_db_per_km,
+            "fiber_eta_std": config.fiber.eta_std,
+            "fiber_pdl_sigma": config.fiber.pdl_sigma,
+            "fiber_phase_drift_std": config.fiber.phase_drift_std,
+            "fiber_phase_slope_std": config.fiber.phase_slope_std,
+            "fiber_phase_jitter_std": config.fiber.phase_jitter_std,
+            "fiber_polarization_model": config.fiber.polarization_model,
+            "fiber_polarization_sigma": config.fiber.polarization_sigma,
+        }
+        # 误判占比：false / all
+        success_metrics["false_fraction"] = (
+            success_metrics["p_success_false_abs"] / success_metrics["p_success_abs"]
             if success_metrics["p_success_abs"] > 0
             else 0.0
         )
-    else:
-        success_metrics["p_false_approx"] = None
-        success_metrics["false_fraction_approx"] = None
+        if enum_no_dark is not None:
+            # 粗略估计：将暗计数引入的“额外成功”视为 false
+            success_metrics["p_false_approx"] = max(
+                0.0, success_metrics["p_success_abs"] - success_metrics["p_success_no_dark_abs"]
+            )
+            success_metrics["false_fraction_approx"] = (
+                success_metrics["p_false_approx"] / success_metrics["p_success_abs"]
+                if success_metrics["p_success_abs"] > 0
+                else 0.0
+            )
+        else:
+            success_metrics["p_false_approx"] = None
+            success_metrics["false_fraction_approx"] = None
 
-    success_path = _write_success_metrics_detail(output_dir, run_tag, success_metrics)
+    with timer.span("io_success_metrics_write"):
+        success_path = _write_success_metrics_detail(output_dir, run_tag, success_metrics)
     print(f"  Success metrics saved: {success_path.name}")
 
-    for shot_index, det_result in enumerate(samples, start=1):
-        print(f"\n[shot {shot_index}/{shots_per_run}]")
+    with timer.span("samples_postprocess_total"):
+        for shot_index, det_result in enumerate(samples, start=1):
+            print(f"\n[shot {shot_index}/{shots_per_run}]")
 
-        # 打印结果
-        if det_result.success:
-            print("\n  BSM成功!")
-            print(f"  宣告的Bell态: {det_result.bell_state}")
+            # 打印结果
+            if det_result.success:
+                print("\n  BSM成功!")
+                print(f"  宣告的Bell态: {det_result.bell_state}")
 
-            # 计算与期望Bell态的保真度（未归一化）
-            fidelity_full = compute_fidelity_with_bell(det_result.qubit_state, det_result.bell_state)
-            rho = det_result.qubit_state
-            trace_rho = float(np.trace(rho).real)
-            fidelity_cond = (fidelity_full / trace_rho) if trace_rho > 0 else 0.0
-            print(f"  F_full(|{det_result.bell_state}>): {fidelity_full:.4e}")
-            print(f"  F_cond(|{det_result.bell_state}>): {fidelity_cond:.4f}")
+                # 计算与期望Bell态的保真度（未归一化）
+                fidelity_full = compute_fidelity_with_bell(det_result.qubit_state, det_result.bell_state)
+                rho = det_result.qubit_state
+                trace_rho = float(np.trace(rho).real)
+                fidelity_cond = (fidelity_full / trace_rho) if trace_rho > 0 else 0.0
+                print(f"  F_full(|{det_result.bell_state}>): {fidelity_full:.4e}")
+                print(f"  F_cond(|{det_result.bell_state}>): {fidelity_cond:.4f}")
 
-            # 计算与所有Bell态的保真度以供参考
-            print("\n  与所有Bell态的保真度:")
-            for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
-                f_full = compute_fidelity_with_bell(det_result.qubit_state, bell)
-                f_cond = (f_full / trace_rho) if trace_rho > 0 else 0.0
-                marker = " <-- 宣告的" if bell == det_result.bell_state else ""
-                print(f"    F_full(|{bell}>): {f_full:.4e}, F_cond: {f_cond:.4f}{marker}")
+                # 计算与所有Bell态的保真度以供参考
+                print("\n  与所有Bell态的保真度:")
+                for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
+                    f_full = compute_fidelity_with_bell(det_result.qubit_state, bell)
+                    f_cond = (f_full / trace_rho) if trace_rho > 0 else 0.0
+                    marker = " <-- 宣告的" if bell == det_result.bell_state else ""
+                    print(f"    F_full(|{bell}>): {f_full:.4e}, F_cond: {f_cond:.4f}{marker}")
 
-            # 打印量子比特态
-            print("\n  量子比特密度矩阵（量子比特子空间）:")
-            print(f"    Tr(rho) = {trace_rho:.4e}")
-            print(f"    纯度(未归一化) = {np.trace(rho @ rho).real:.4f}")
-        else:
-            print("\n  BSM失败 - 未找到成功模式")
-            print(f"  点击数量: {len(det_result.clicks)}")
-
-        # 保存探测后的调试信息
-        if DEBUG_MODE:
-            print("\n保存探测后调试信息...")
-            if shots_per_run == 1:
-                det_file = output_dir / f'{run_tag}_debug_detection_result.txt'
+                # 打印量子比特态
+                print("\n  量子比特密度矩阵（量子比特子空间）:")
+                print(f"    Tr(rho) = {trace_rho:.4e}")
+                print(f"    纯度(未归一化) = {np.trace(rho @ rho).real:.4f}")
             else:
-                det_file = output_dir / f'{run_tag}_shot{shot_index:03d}_debug_detection_result.txt'
-            with open(det_file, 'w', encoding='utf-8') as file:
-                file.write('探测结果\n')
-                file.write('='*60 + '\n\n')
-                file.write('口径说明:\n')
-                file.write('  1) 该文件展示单次抽样得到的条件态（未归一化）。\n')
-                file.write('  2) success_metrics 来自全枚举统计，口径不同且不受本文件格式影响。\n\n')
-                file.write(f'成功: {det_result.success}\n')
-                file.write(f'Bell态: {det_result.bell_state}\n')
-                file.write(f'点击次数: {len(det_result.clicks)}\n')
-                if det_result.clicks:
-                    file.write(
-                        "点击详情: "
-                        f"{[(c.detector, c.bin_index, bool(getattr(c, 'is_dark', False)), getattr(c, 'source', 'signal')) for c in det_result.clicks]}"
-                        "\n"
-                    )
+                print("\n  BSM失败 - 未找到成功模式")
+                print(f"  点击数量: {len(det_result.clicks)}")
 
-                    file.write('\n量子比特密度矩阵:\n')
-                    rho = det_result.qubit_state
-                    trace_rho = float(np.trace(rho).real)
-                    file.write('  基: |00>, |01>, |10>, |11>\n')
-                    file.write(f'  Tr(rho) = {trace_rho:.6e}\n')
-                    wrote_any = False
-                    for i in range(4):
-                        for j in range(4):
-                            val = rho[i, j]
-                            if abs(val) > 1e-14:
+            # 保存探测后的调试信息
+            if trace_enabled:
+                print("\n保存探测后调试信息...")
+                if shots_per_run == 1:
+                    det_file = output_dir / f'{run_tag}_debug_detection_result.txt'
+                else:
+                    det_file = output_dir / f'{run_tag}_shot{shot_index:03d}_debug_detection_result.txt'
+                with timer.span("io_detection_debug_write"):
+                    with open(det_file, 'w', encoding='utf-8') as file:
+                        file.write('探测结果\n')
+                        file.write('='*60 + '\n\n')
+                        file.write('口径说明:\n')
+                        file.write('  1) 该文件展示单次抽样得到的条件态（未归一化）。\n')
+                        file.write('  2) success_metrics 来自全枚举统计，口径不同且不受本文件格式影响。\n\n')
+                        file.write(f'成功: {det_result.success}\n')
+                        file.write(f'Bell态: {det_result.bell_state}\n')
+                        file.write(f'点击次数: {len(det_result.clicks)}\n')
+                        if det_result.clicks:
+                            file.write(
+                                "点击详情: "
+                                f"{[(c.detector, c.bin_index, bool(getattr(c, 'is_dark', False)), getattr(c, 'source', 'signal')) for c in det_result.clicks]}"
+                                "\n"
+                            )
+
+                            file.write('\n量子比特密度矩阵:\n')
+                            rho = det_result.qubit_state
+                            trace_rho = float(np.trace(rho).real)
+                            file.write('  基: |00>, |01>, |10>, |11>\n')
+                            file.write(f'  Tr(rho) = {trace_rho:.6e}\n')
+                            wrote_any = False
+                            for i in range(4):
+                                for j in range(4):
+                                    val = rho[i, j]
+                                    if abs(val) > 1e-14:
+                                        file.write(
+                                            f'  rho[{i},{j}] = {val.real:.6e}{val.imag:+.6e}j\n'
+                                        )
+                                        wrote_any = True
+                            if not wrote_any:
+                                file.write('  (所有矩阵元绝对值均 < 1e-14)\n')
+
+                            purity_raw = float(np.trace(rho @ rho).real)
+                            file.write(f'\n纯度(未归一化): {purity_raw:.6e}\n')
+                            if trace_rho > 1e-15:
+                                rho_cond = rho / trace_rho
+                                purity_cond = float(np.trace(rho_cond @ rho_cond).real)
+                                file.write(f'纯度(条件化): {purity_cond:.6f}\n')
+                            else:
+                                file.write('纯度(条件化): N/A (Tr(rho)≈0)\n')
+
+                            file.write('\nBell态保真度:\n')
+                            for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
+                                fid_full = compute_fidelity_with_bell(rho, bell)
+                                fid_cond = (fid_full / trace_rho) if trace_rho > 1e-15 else 0.0
+                                marker = " <-- 探测到的" if bell == det_result.bell_state else ""
                                 file.write(
-                                    f'  rho[{i},{j}] = {val.real:.6e}{val.imag:+.6e}j\n'
+                                    f'  F_full({bell}) = {fid_full:.6e}, '
+                                    f'F_cond = {fid_cond:.6f}{marker}\n'
                                 )
-                                wrote_any = True
-                    if not wrote_any:
-                        file.write('  (所有矩阵元绝对值均 < 1e-14)\n')
 
-                    purity_raw = float(np.trace(rho @ rho).real)
-                    file.write(f'\n纯度(未归一化): {purity_raw:.6e}\n')
-                    if trace_rho > 1e-15:
-                        rho_cond = rho / trace_rho
-                        purity_cond = float(np.trace(rho_cond @ rho_cond).real)
-                        file.write(f'纯度(条件化): {purity_cond:.6f}\n')
-                    else:
-                        file.write('纯度(条件化): N/A (Tr(rho)≈0)\n')
+                print(f"  调试信息已保存: {det_file.name}")
 
-                    file.write('\nBell态保真度:\n')
-                    for bell in ["Psi+", "Psi-", "Phi+", "Phi-"]:
-                        fid_full = compute_fidelity_with_bell(rho, bell)
-                        fid_cond = (fid_full / trace_rho) if trace_rho > 1e-15 else 0.0
-                        marker = " <-- 探测到的" if bell == det_result.bell_state else ""
-                        file.write(
-                            f'  F_full({bell}) = {fid_full:.6e}, '
-                            f'F_cond = {fid_cond:.6f}{marker}\n'
-                        )
-
-            print(f"  调试信息已保存: {det_file.name}")
-
-        click_pairs = [
-            (
-                c.detector,
-                c.bin_index,
-                bool(getattr(c, "is_dark", False)),
-                str(getattr(c, "source", "signal")),
+            click_pairs = [
+                (
+                    c.detector,
+                    c.bin_index,
+                    bool(getattr(c, "is_dark", False)),
+                    str(getattr(c, "source", "signal")),
+                )
+                for c in det_result.clicks
+            ]
+            click_records.append(
+                {
+                    "shot_index": shot_index - 1,
+                    "success": bool(det_result.success),
+                    "bell": det_result.bell_state,
+                    "clicks": click_pairs,
+                }
             )
-            for c in det_result.clicks
-        ]
-        click_records.append(
-            {
-                "shot_index": shot_index - 1,
-                "success": bool(det_result.success),
-                "bell": det_result.bell_state,
-                "clicks": click_pairs,
-            }
-        )
-        declared = det_result.bell_state if det_result.success else "失败"
-        if click_pairs:
-            print(f"  宣告结果: {declared} | 点击记录: {click_pairs}")
-        else:
-            print(f"  宣告结果: {declared} | 点击记录: 无")
+            declared = det_result.bell_state if det_result.success else "失败"
+            if click_pairs:
+                print(f"  宣告结果: {declared} | 点击记录: {click_pairs}")
+            else:
+                print(f"  宣告结果: {declared} | 点击记录: 无")
 
-        run_stats["shots"] += 1
-        run_stats["clicks"][len(det_result.clicks)] += 1
-        if det_result.success:
-            run_stats["success"] += 1
-            if det_result.bell_state:
-                run_stats["bell"][det_result.bell_state] += 1
+            run_stats["shots"] += 1
+            run_stats["clicks"][len(det_result.clicks)] += 1
+            if det_result.success:
+                run_stats["success"] += 1
+                if det_result.bell_state:
+                    run_stats["bell"][det_result.bell_state] += 1
 
-    if DEBUG_MODE and timings is not None and detect_start is not None:
-        timings["detection_total"] = time.perf_counter() - detect_start
-        if shots_per_run > 0:
-            timings["detection_per_shot"] = timings["detection_total"] / shots_per_run
-
-    if DEBUG_MODE and timings is not None:
-        timings["run_wall_total"] = time.perf_counter() - run_wall_start
+    if trace_enabled:
+        timer.set("run_wall_total", time.perf_counter() - run_wall_start)
 
     print(f"\n完成! 文件已保存至: {output_dir}/")
-    if DEBUG_MODE and timings:
+    if trace_enabled:
+        timings = timer.snapshot()
+        if shots_per_run > 0:
+            det_total = float(timings.get("main_detection_total", 0.0))
+            if det_total > 0.0:
+                timings["main_detection_per_shot"] = det_total / shots_per_run
+
         timing_order = [
             ("emission", "发射"),
             ("qfc_filter_memory", "QFC+滤波记忆"),
             ("fiber", "光纤"),
             ("dephase", "退相干"),
-            ("povm_effects", "POVM构建"),
-            ("povm_enumeration", "POVM枚举"),
-            ("povm_sampling", "POVM抽样"),
-            ("detection_total", "探测总计"),
+            ("sanity_checks", "Sanity检查"),
+            ("baseline_povm_effects", "POVM构建(基线)"),
+            ("baseline_povm_enumeration", "POVM枚举(基线)"),
+            ("baseline_povm_sampling", "POVM抽样(基线)"),
+            ("baseline_detection_total", "探测总计(基线)"),
+            ("main_povm_effects", "POVM构建(主流程)"),
+            ("main_povm_enumeration", "POVM枚举(主流程)"),
+            ("main_povm_sampling", "POVM抽样(主流程)"),
+            ("main_detection_total", "探测总计(主流程)"),
+            ("detection_total_all", "探测总计(合计)"),
+            ("hook_plot_total", "Hook绘图"),
+            ("hook_debug_snapshot_total", "Hook快照"),
+            ("build_param_store", "参数预算"),
+            ("metrics_assemble", "指标汇总"),
+            ("io_success_metrics_write", "指标写盘"),
+            ("io_detection_debug_write", "探测调试写盘"),
+            ("samples_postprocess_total", "样本后处理"),
         ]
         parts = []
         for key, label in timing_order:
@@ -942,19 +1004,26 @@ def _run_single_simulation_core(
         if "run_wall_total" in timings:
             core_base_keys = ("emission", "qfc_filter_memory", "fiber", "dephase")
             core_sum = sum(float(timings[k]) for k in core_base_keys if k in timings)
-            if "detection_total" in timings:
-                core_sum += float(timings["detection_total"])
-            else:
-                core_sum += sum(
-                    float(timings[k])
-                    for k in ("povm_effects", "povm_enumeration", "povm_sampling")
-                    if k in timings
-                )
+            core_sum += float(timings.get("baseline_detection_total", 0.0))
+            core_sum += float(timings.get("main_detection_total", 0.0))
             wall = float(timings["run_wall_total"])
-            overhead = max(0.0, wall - core_sum)
+            overhead_profiled_keys = (
+                "sanity_checks",
+                "hook_plot_total",
+                "hook_debug_snapshot_total",
+                "build_param_store",
+                "metrics_assemble",
+                "io_success_metrics_write",
+                "io_detection_debug_write",
+                "samples_postprocess_total",
+            )
+            overhead_profiled = sum(float(timings.get(k, 0.0)) for k in overhead_profiled_keys)
+            residual = max(0.0, wall - core_sum - overhead_profiled)
             print(
                 f"[调试总览] 核心阶段(去重)={core_sum:.2f}s | "
-                f"run墙钟={wall:.2f}s | 额外开销={overhead:.2f}s"
+                f"run墙钟={wall:.2f}s | "
+                f"额外开销(已计)={overhead_profiled:.2f}s | "
+                f"额外开销(残差)={residual:.2f}s"
             )
     return run_stats, success_metrics, click_records
 

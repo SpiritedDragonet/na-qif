@@ -9,37 +9,17 @@ from typing import Optional, Iterator
 
 import numpy as np
 
+from ..simulation.detection import _is_port_samepol_coincidence
 from .common import (
     HomConfig,
     SimConfig,
+    TimingTracer,
     run_trial_physics_core,
     run_detection_core_from_pipe,
     write_click_records,
 )
 
 DEFAULT_TAU_RANDOM_RANGE_NS = (-10.0, 10.0)
-
-
-def _is_port_samepol_coincidence(clicks, window_bins: Optional[int]) -> bool:
-    # 仅统计“同偏振跨端口符合”：H1-H2 或 V1-V2
-    # 物理含义：HOM 在同偏振时发生干涉，跨端口同时点击反映可见度。
-    h1_bins = [c.bin_index for c in clicks if c.detector == "H1"]
-    h2_bins = [c.bin_index for c in clicks if c.detector == "H2"]
-    v1_bins = [c.bin_index for c in clicks if c.detector == "V1"]
-    v2_bins = [c.bin_index for c in clicks if c.detector == "V2"]
-    if window_bins is None:
-        # 不限定时间窗：只要同偏振跨端口各出现一次就算符合
-        return (h1_bins and h2_bins) or (v1_bins and v2_bins)
-    # 限定时间窗：只统计 |bin_i - bin_j| <= window_bins 的符合
-    for b1 in h1_bins:
-        for b2 in h2_bins:
-            if abs(b1 - b2) <= window_bins:
-                return True
-    for b1 in v1_bins:
-        for b2 in v2_bins:
-            if abs(b1 - b2) <= window_bins:
-                return True
-    return False
 
 
 def _build_hom_tau_values(hom_cfg: HomConfig) -> list:
@@ -166,7 +146,8 @@ def _run_hom_run(
     # 固定随机种子：保证同一 τ 的重复性（便于比较）
     run_wall_start = time.perf_counter()
     run_rng = np.random.default_rng(rng_seed)
-    timings = {} if debug else None
+    trace_enabled = bool(debug)
+    timer = TimingTracer(enabled=trace_enabled)
     pipe = run_trial_physics_core(
         rng=run_rng,
         config=config,
@@ -177,8 +158,8 @@ def _run_hom_run(
         hooks=None,
         emission_diagnostics=False,
     )
-    if debug and pipe.timings:
-        timings.update(pipe.timings)
+    if pipe.timings:
+        timer.merge_timing_map(pipe.timings)
 
     param_store, pipeline = run_detection_core_from_pipe(
         pipe=pipe,
@@ -193,43 +174,54 @@ def _run_hom_run(
     window_bins = param_store.window_bins
     coincidences = 0
     click_records = []
-    detect_start = time.perf_counter() if debug else None
     # 抽样双点击记录（POVM）；BS 已并入测量端
-    if debug and timings is not None and pipeline.timings:
-        timings["povm_effects"] = pipeline.timings.get("povm_effects", 0.0)
-        timings["povm_sampling"] = pipeline.timings.get("povm_sampling", 0.0)
-        timings["detection_total"] = pipeline.timings.get("detection_total", 0.0)
+    if pipeline.timings:
+        timer.merge_timing_map(
+            pipeline.timings,
+            prefix="main_",
+            key_alias={
+                "povm_effects": "povm_effects",
+                "povm_sampling": "povm_sampling",
+                "detection_total": "detection_total",
+            },
+        )
+        timer.add("detection_total_all", pipeline.timings.get("detection_total", 0.0))
     p_arrive = pipeline.p_arrive
     # 逐 shot 统计符合与点击记录
-    for det_result in pipeline.samples:
-        click_records.append(
-            [
-                (
-                    c.detector,
-                    c.bin_index,
-                    bool(getattr(c, "is_dark", False)),
-                    str(getattr(c, "source", "signal")),
-                )
-                for c in det_result.clicks
-            ]
-        )
-        if _is_port_samepol_coincidence(det_result.clicks, window_bins):
-            coincidences += 1
+    with timer.span("samples_postprocess_total"):
+        for det_result in pipeline.samples:
+            click_records.append(
+                [
+                    (
+                        c.detector,
+                        c.bin_index,
+                        bool(getattr(c, "is_dark", False)),
+                        str(getattr(c, "source", "signal")),
+                    )
+                    for c in det_result.clicks
+                ]
+            )
+            if _is_port_samepol_coincidence(det_result.clicks, window_bins):
+                coincidences += 1
 
-    if debug and timings is not None and detect_start is not None:
-        if "detection_total" not in timings:
-            timings["detection_total"] = time.perf_counter() - detect_start
+    if trace_enabled:
+        timer.set("run_wall_total", time.perf_counter() - run_wall_start)
+        timings = timer.snapshot()
         if shots_per_run > 0:
-            timings["detection_per_shot"] = timings["detection_total"] / shots_per_run
-        timings["run_wall_total"] = time.perf_counter() - run_wall_start
+            det_total = float(timings.get("main_detection_total", 0.0))
+            if det_total > 0.0:
+                timings["main_detection_per_shot"] = det_total / shots_per_run
         timing_order = [
             ("emission", "发射"),
             ("qfc_filter_memory", "QFC+滤波记忆"),
             ("fiber", "光纤"),
             ("dephase", "退相干"),
-            ("povm_effects", "POVM构建"),
-            ("povm_sampling", "POVM抽样"),
-            ("detection_total", "探测总计"),
+            ("sanity_checks", "Sanity检查"),
+            ("main_povm_effects", "POVM构建(主流程)"),
+            ("main_povm_sampling", "POVM抽样(主流程)"),
+            ("main_detection_total", "探测总计(主流程)"),
+            ("detection_total_all", "探测总计(合计)"),
+            ("samples_postprocess_total", "样本后处理"),
         ]
         parts = []
         for key, label in timing_order:
@@ -240,15 +232,15 @@ def _run_hom_run(
             print(f"[HOM][调试耗时] tau={tau_ns:.3f} ns | " + " | ".join(parts))
         core_base_keys = ("emission", "qfc_filter_memory", "fiber", "dephase")
         core_sum = sum(float(timings[k]) for k in core_base_keys if k in timings)
-        if "detection_total" in timings:
-            core_sum += float(timings["detection_total"])
-        else:
-            core_sum += sum(float(timings[k]) for k in ("povm_effects", "povm_sampling") if k in timings)
+        core_sum += float(timings.get("main_detection_total", 0.0))
         wall = float(timings.get("run_wall_total", 0.0))
-        overhead = max(0.0, wall - core_sum)
+        overhead_profiled = float(timings.get("samples_postprocess_total", 0.0))
+        overhead_profiled += float(timings.get("sanity_checks", 0.0))
+        residual = max(0.0, wall - core_sum - overhead_profiled)
         print(
             f"[HOM][调试总览] tau={tau_ns:.3f} ns | "
-            f"核心阶段(去重)={core_sum:.2f}s | run墙钟={wall:.2f}s | 额外开销={overhead:.2f}s"
+            f"核心阶段(去重)={core_sum:.2f}s | run墙钟={wall:.2f}s | "
+            f"额外开销(已计)={overhead_profiled:.2f}s | 额外开销(残差)={residual:.2f}s"
         )
 
     return coincidences, p_arrive, click_records
