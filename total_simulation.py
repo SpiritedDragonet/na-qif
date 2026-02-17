@@ -160,7 +160,7 @@ def _parse_run_params(argv):
     parser.add_argument("--mode", "--trial-type", dest="mode", help="运行模式：SIM 或 HOM（默认 SIM）")
     parser.add_argument("--no-fiber-noise", dest="no_fiber_noise", action="store_true", help="关闭光纤噪声")
     for option, dest, cast, help_text in (
-        ("--fiber-length-km", "fiber_length_km", float, "光纤长度 (km)，用于计算平均透过率"),
+        ("--fiber-length-km", "fiber_length_km", float, "单臂到中继站的光纤长度 (km)，用于计算平均透过率"),
         ("--fiber-atten-db-per-km", "fiber_atten_db_per_km", float, "光纤衰减 (dB/km)"),
         ("--fiber-eta-std", "fiber_eta_std", float, "透过率随机波动标准差"),
         ("--fiber-pdl-sigma", "fiber_pdl_sigma", float, "PDL 相对差异标准差"),
@@ -170,7 +170,7 @@ def _parse_run_params(argv):
         ("--fiber-polarization-sigma", "fiber_polarization_sigma", float, "偏振小扰动模型标准差 (rad)"),
         ("--fiber-group-velocity-mps", "fiber_group_velocity_mps", float, "光纤群速度 (m/s)，用于自动计算 t_wait_us"),
         ("--t-wait-overhead-us", "t_wait_overhead_us", float, "等待时间固定开销 (us)，会加到 L/v_g 上"),
-        ("--t-wait-length-scale", "t_wait_length_scale", float, "等待时间线性系数：T_wait = scale*L/v_g + overhead"),
+        ("--t-wait-length-scale", "t_wait_length_scale", float, "等待时间线性系数：T_wait = scale*L/v_g + overhead（默认 2，单臂往返口径）"),
         ("--t2-us", "t2_us", float, "原子退相干时间 T2 (us)"),
         ("--tau", "tau", float, "(HOM) 单一延迟 τ (ns)"),
         ("--tau-start", "tau_start", float, "(HOM) τ 起点 (ns)"),

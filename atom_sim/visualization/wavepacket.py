@@ -7,7 +7,9 @@
 """
 
 from typing import Tuple, Optional, List, Union
+import csv
 import os
+from pathlib import Path
 import numpy as np
 import matplotlib
 
@@ -45,6 +47,61 @@ def _maybe_show(wait_s: float = 5.0, show: bool = True) -> None:
         return
     plt.show(block=False)
     plt.pause(wait_s)
+
+
+def _export_dual_arm_probabilities_csv(
+    export_csv_path: str,
+    stage_name: str,
+    stage_mode: str,
+    time_axis_s: np.ndarray,
+    bin_state_labels: List[str],
+    probs_A: np.ndarray,
+    probs_B: np.ndarray,
+) -> None:
+    """
+    导出双臂每个时间仓、每个状态的概率（长表格式）。
+
+    列说明：
+    - time_ns_increasing：按 bin_index 正序对应的时间（0, dt, 2dt, ...）
+    - time_ns_plot_axis：与热图 x 轴显示一致的时间（左到右递减）
+    """
+    export_path = Path(export_csv_path)
+    export_path.parent.mkdir(parents=True, exist_ok=True)
+
+    n_bins = int(probs_A.shape[0])
+    with open(export_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            [
+                "stage_name",
+                "stage_mode",
+                "arm",
+                "bin_index",
+                "time_ns_increasing",
+                "time_ns_plot_axis",
+                "state_index",
+                "state_label",
+                "probability",
+            ]
+        )
+        for arm_label, probs in (("A", probs_A), ("B", probs_B)):
+            for bin_index in range(n_bins):
+                time_inc_ns = float(time_axis_s[bin_index] * 1e9)
+                time_plot_ns = float(time_axis_s[(n_bins - 1) - bin_index] * 1e9)
+                for state_index, state_label in enumerate(bin_state_labels):
+                    writer.writerow(
+                        [
+                            stage_name,
+                            stage_mode,
+                            arm_label,
+                            int(bin_index),
+                            time_inc_ns,
+                            time_plot_ns,
+                            int(state_index),
+                            state_label,
+                            float(probs[bin_index, state_index]),
+                        ]
+                    )
 
 # ============================================================================
 # 仓状态热图可视化
@@ -202,6 +259,7 @@ def plot_dual_arm_heatmap(
     qfc_params: Optional[Tuple[float, float]] = None,
     fiber_sample: Optional[tuple] = None,
     arm_labels: Optional[Tuple[str, str]] = None,
+    export_csv_path: Optional[str] = None,
 ) -> None:
     """
     可视化双臂仓状态概率，可选显示原子状态。
@@ -254,6 +312,8 @@ def plot_dual_arm_heatmap(
     arm_labels : Tuple[str, str], optional
         自定义左右臂标题标签，默认使用 ("Arm A","Arm B")；
         若 bs_unitary 给出且未显式设置，则默认 ("Port 1","Port 2")。
+    export_csv_path : str, optional
+        若提供，则额外导出双臂状态概率长表 CSV。
     """
     # ------------------------------------------------------------------
     # 该热图可以工作在两种模式：
@@ -519,6 +579,17 @@ def plot_dual_arm_heatmap(
             else:
                 probs_A[n, :] = np.maximum(0.0, np.real(np.diag(rho_A)))
                 probs_B[n, :] = np.maximum(0.0, np.real(np.diag(rho_B)))
+
+    if export_csv_path:
+        _export_dual_arm_probabilities_csv(
+            export_csv_path=export_csv_path,
+            stage_name=stage_name,
+            stage_mode=stage_mode,
+            time_axis_s=time_axis_s,
+            bin_state_labels=bin_state_labels,
+            probs_A=probs_A,
+            probs_B=probs_B,
+        )
 
     # Calculate vmax EXCLUDING (vac,vac) row (index 0), fully data-adaptive.
     photon_max_A = float(np.max(probs_A[:, 1:])) if probs_A.shape[1] > 1 else 0.0

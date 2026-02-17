@@ -335,7 +335,8 @@ class RunConfig:
     fiber_group_velocity_mps: float = 2.0e8
     t_wait_overhead_us: float = 0.0
     # 等待时间线性系数：T_wait = scale * (L / v_g) + overhead。
-    t_wait_length_scale: float = 1.0
+    # 默认采用单臂往返口径（scale=2），更贴近宣告回传时序。
+    t_wait_length_scale: float = 2.0
     # 原子相干时间 T2（默认按文献基线设置）。
     t2_us: float = DEFAULT_T2_US
 
@@ -715,13 +716,28 @@ def _build_run_parameter_store(
             eta_filter_a = float(np.clip(config.qfc.filter_cavity.eta_peak_A, 0.0, 1.0))
             eta_filter_b = float(np.clip(config.qfc.filter_cavity.eta_peak_B, 0.0, 1.0))
 
+            # 默认口径：
+            # - qfc_noise_sd_* 解释为“每臂总谱密度(cps/MHz)”；
+            # - 先得到每臂滤波后总背景率，再经 BS 分光和 PBS 偏振均分映射到 4 探测器。
             sd_a = max(0.0, float(config.qfc.qfc_noise_sd_cps_per_mhz_A))
             sd_b = max(0.0, float(config.qfc.qfc_noise_sd_cps_per_mhz_B))
+            bg_arm_a = sd_a * filter_bw_mhz * eta_filter_a * eta_link_mean
+            bg_arm_b = sd_b * filter_bw_mhz * eta_filter_b * eta_link_mean
+
+            theta_bs = float(config.detector.bs_theta)
+            p_a_to_port1 = float(np.clip(np.cos(theta_bs) ** 2, 0.0, 1.0))
+            p_a_to_port2 = 1.0 - p_a_to_port1
+            p_b_to_port1 = float(np.clip(np.sin(theta_bs) ** 2, 0.0, 1.0))
+            p_b_to_port2 = 1.0 - p_b_to_port1
+            pol_split = 0.5
+
+            rate_port1 = bg_arm_a * p_a_to_port1 + bg_arm_b * p_b_to_port1
+            rate_port2 = bg_arm_a * p_a_to_port2 + bg_arm_b * p_b_to_port2
             bg_mean_map = {
-                "H1": sd_a * filter_bw_mhz * eta_filter_a * eta_link_mean * eta_det_map["H1"],
-                "V1": sd_a * filter_bw_mhz * eta_filter_a * eta_link_mean * eta_det_map["V1"],
-                "H2": sd_b * filter_bw_mhz * eta_filter_b * eta_link_mean * eta_det_map["H2"],
-                "V2": sd_b * filter_bw_mhz * eta_filter_b * eta_link_mean * eta_det_map["V2"],
+                "H1": pol_split * rate_port1 * eta_det_map["H1"],
+                "V1": pol_split * rate_port1 * eta_det_map["V1"],
+                "H2": pol_split * rate_port2 * eta_det_map["H2"],
+                "V2": pol_split * rate_port2 * eta_det_map["V2"],
             }
             if abs(float(config.noise.bg_rate_std_hz) - DEFAULT_BG_RATE_STD_HZ) < 1e-12 and not config.noise.bg_rate_std_hz_map:
                 # 默认情况下采用 Poisson 口径的 sqrt(rate) 作为每通道波动尺度。
@@ -798,18 +814,23 @@ def _build_run_parameter_store(
     )
 
 
-def _compute_effective_attempt_rate_hz(attempt_rate_hz: float, attempt_overhead_us: float = 0.0) -> float:
+def _compute_effective_attempt_rate_hz(
+    attempt_rate_hz: float,
+    attempt_overhead_us: float = 0.0,
+    wait_time_us: float = 0.0,
+) -> float:
     """
-    由“裸尝试率 + 单次额外开销”得到有效尝试率。
+    由“裸尝试率 + 单次额外开销 + 协议等待时间”得到有效尝试率。
 
     设裸周期为 T0=1/attempt_rate_hz，附加开销为 Toverhead，
-    则有效尝试率为 1/(T0+Toverhead)。
+    协议等待为 Twait，则有效尝试率为 1/(T0+Toverhead+Twait)。
     """
     base_rate = max(0.0, float(attempt_rate_hz))
     if base_rate <= 0.0:
         return 0.0
     overhead_s = max(0.0, float(attempt_overhead_us)) * 1e-6
-    cycle_s = (1.0 / base_rate) + overhead_s
+    wait_s = max(0.0, float(wait_time_us)) * 1e-6
+    cycle_s = (1.0 / base_rate) + overhead_s + wait_s
     if cycle_s <= 0.0:
         return 0.0
     return 1.0 / cycle_s
@@ -819,7 +840,7 @@ def _compute_t_wait_us_from_length(
     length_km: float,
     fiber_group_velocity_mps: float = 2.0e8,
     t_wait_overhead_us: float = 0.0,
-    t_wait_length_scale: float = 1.0,
+    t_wait_length_scale: float = 2.0,
 ) -> float:
     """
     由线性长度模型计算原子等待时间。

@@ -6,6 +6,7 @@ Single-run simulation workflow and summary helpers.
 from __future__ import annotations
 
 import time
+import csv
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Iterator
@@ -177,7 +178,34 @@ def save_debug_info(
         f.write(f'  Phi+ (full/cond) = {info["fidelity_Phip_full"]:.4f} / {info["fidelity_Phip_cond"]:.4f}\n')
         f.write(f'  Phi- (full/cond) = {info["fidelity_Phim_full"]:.4f} / {info["fidelity_Phim_cond"]:.4f}\n')
 
+    # 额外导出完整键维信息，便于论文图直接读取原始数值
+    bond_file = output_dir / f'{prefix}debug_step_{step_index:02d}_{stage.replace(" ", "_").lower()}_bond_dims.csv'
+    with open(bond_file, 'w', encoding='utf-8', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "bond_index",
+            "left_site",
+            "right_site",
+            "left_local_dim",
+            "right_local_dim",
+            "chi",
+        ])
+        for bond_index, chi in enumerate(chi_list):
+            left_site = int(bond_index)
+            right_site = int(bond_index + 1)
+            left_local_dim = int(d_list[left_site]) if left_site < len(d_list) else ""
+            right_local_dim = int(d_list[right_site]) if right_site < len(d_list) else ""
+            writer.writerow([
+                int(bond_index),
+                left_site,
+                right_site,
+                left_local_dim,
+                right_local_dim,
+                int(chi),
+            ])
+
     print(f'  调试信息已保存: {info_file.name}')
+    print(f'  键维数据已保存: {bond_file.name}')
 
 def _run_single_trial(
     rng: Optional[np.random.Generator],
@@ -504,12 +532,14 @@ def _run_single_simulation_core(
                 with timer.span("hook_plot_total"):
                     print(f"\n生成{stage_name}的可视化图...")
                     plot_path = plot_dir / f"{run_tag}_{file_suffix}.png"
+                    plot_data_path = output_dir / f"{run_tag}_{file_suffix}_states.csv"
                     target = emission if use_emission_obj else emission.mps
                     kwargs = dict(
                         save_path=str(plot_path),
                         show_atomic=show_atomic,
                         stage_name=stage_name,
                         show=show_plots,
+                        export_csv_path=str(plot_data_path),
                     )
                     if use_time_grid:
                         kwargs["time_grid"] = {"dt_s": emission.dt_s}

@@ -1173,6 +1173,7 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
                         "corr_eyy_sum": 0.0,
                         "corr_ezz_sum": 0.0,
                         "chsh_s_max_sum": 0.0,
+                        "attempt_rate_hz_sum": 0.0,
                         "event_rate_hz_sum": 0.0,
                     },
                 )
@@ -1195,6 +1196,7 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
                 group["corr_eyy_sum"] += corr_eyy or 0.0
                 group["corr_ezz_sum"] += corr_ezz or 0.0
                 group["chsh_s_max_sum"] += chsh_s_max or 0.0
+                group["attempt_rate_hz_sum"] += attempt_rate_hz or 0.0
                 group["event_rate_hz_sum"] += event_rate_hz or 0.0
 
                 records = clicks_by_length.get(length_key, [])
@@ -1339,11 +1341,8 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
             if p_success_false_abs_avg > 0
             else None
         )
-        attempt_rate_hz_eff = _compute_effective_attempt_rate_hz(
-            config.run.attempt_rate_hz,
-            config.run.attempt_overhead_us,
-        )
-        event_rate_hz_avg = herald_rate_abs * attempt_rate_hz_eff
+        attempt_rate_hz_avg = (group["attempt_rate_hz_sum"] / runs_total) if runs_total > 0 else 0.0
+        event_rate_hz_avg = (group["event_rate_hz_sum"] / runs_total) if runs_total > 0 else 0.0
         rows.append(
             {
                 "length_km": group["length_km"],
@@ -1351,7 +1350,7 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
                 "runs_total": runs_total,
                 "shots_total": shots_total,
                 "window_ns": config.run.window_ns,
-                "attempt_rate_hz": attempt_rate_hz_eff,
+                "attempt_rate_hz": attempt_rate_hz_avg,
                 "p_arrive_avg": p_arrive_avg,
                 "p_arrive_11_avg": p_arrive_11_avg,
                 "p_arrive_same_arm_avg": p_arrive_same_arm_avg,

@@ -14,6 +14,7 @@ from .common import (
     SimConfig,
     run_trial_detection_core,
     _compute_effective_attempt_rate_hz,
+    _compute_t_wait_us_from_length,
     write_click_records,
     write_declared_density_matrix,
 )
@@ -71,9 +72,16 @@ def run_length_scan_task(
     length_km = float(payload["length_km"])
 
     run_rng = np.random.default_rng(seed)
+    t_wait_us = _compute_t_wait_us_from_length(
+        length_km=length_km,
+        fiber_group_velocity_mps=config.run.fiber_group_velocity_mps,
+        t_wait_overhead_us=config.run.t_wait_overhead_us,
+        t_wait_length_scale=config.run.t_wait_length_scale,
+    )
     attempt_rate_hz_eff = _compute_effective_attempt_rate_hz(
         config.run.attempt_rate_hz,
         config.run.attempt_overhead_us,
+        wait_time_us=t_wait_us,
     )
 
     base_length_km = float(config.fiber.length_km)
