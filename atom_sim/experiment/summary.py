@@ -47,6 +47,23 @@ def _safe_num(value):
         return None
 
 
+def _require_record_probability(record: dict, key: str) -> float:
+    if not isinstance(record, dict):
+        raise ValueError(f"点击记录必须为 dict，缺少字段 {key}")
+    value = _safe_num(record.get(key))
+    if value is None:
+        shot_index = record.get("shot_index")
+        raise ValueError(f"点击记录缺少 {key} (shot_index={shot_index})")
+    return float(np.clip(value, 0.0, 1.0))
+
+
+def _resolve_record_component_weights(record: dict) -> tuple[float, float, float]:
+    p_true = _require_record_probability(record, "p_true_given_record")
+    p_bg = _require_record_probability(record, "p_bg_assist_given_record")
+    p_intrinsic = _require_record_probability(record, "p_intrinsic_dark_assist_given_record")
+    return p_true, p_bg, p_intrinsic
+
+
 _DETECTOR_ORDER = ("H1", "V1", "H2", "V2")
 _DETECTOR_ORDER_INDEX = {detector: idx for idx, detector in enumerate(_DETECTOR_ORDER)}
 
@@ -160,12 +177,8 @@ def _extract_record_pair_delta(events: list[SimpleNamespace]):
 
 
 def _resolve_record_true_false_weights(record: dict, events: list[SimpleNamespace]):
-    p_true = None
-    if isinstance(record, dict):
-        p_true = _safe_num(record.get("p_true_given_record"))
-    if p_true is None:
-        p_true = 0.0 if any(bool(event.is_dark) for event in events) else 1.0
-    p_true = float(np.clip(float(p_true), 0.0, 1.0))
+    _ = events
+    p_true = _require_record_probability(record, "p_true_given_record")
     return p_true, float(1.0 - p_true)
 
 
@@ -261,7 +274,7 @@ def _write_click_analysis_outputs(summary_dir, prefix: str, group_column: str, g
                 ])
 
 
-def _finalize_group_summary(group: dict) -> dict:
+def _finalize_group_summary(group: dict, attempt_rate_hz_eff: float) -> dict:
     runs_total = int(group["runs_total"])
     shots_total = int(group["shots_total"])
     accepted_total = int(group.get("accepted_total", 0))
@@ -288,13 +301,32 @@ def _finalize_group_summary(group: dict) -> dict:
     )
 
     p_arrive_avg = (group["p_arrive_sum"] / runs_total) if runs_total > 0 else 0.0
+    p_arrive_11_avg = (group["p_arrive_11_sum"] / runs_total) if runs_total > 0 else 0.0
+    p_arrive_same_arm_avg = (group["p_arrive_same_arm_sum"] / runs_total) if runs_total > 0 else 0.0
+    p_arrive_20_avg = (group["p_arrive_20_sum"] / runs_total) if runs_total > 0 else 0.0
+    p_arrive_02_avg = (group["p_arrive_02_sum"] / runs_total) if runs_total > 0 else 0.0
     p_success_abs_avg = (group["p_success_abs_sum"] / runs_total) if runs_total > 0 else 0.0
     p_success_true_abs_avg = (group["p_success_true_abs_sum"] / runs_total) if runs_total > 0 else 0.0
     p_success_false_abs_avg = (group["p_success_false_abs_sum"] / runs_total) if runs_total > 0 else 0.0
+    p_success_intrinsic_dark_assisted_abs_avg = (
+        (group["p_success_intrinsic_dark_assisted_abs_sum"] / runs_total)
+        if runs_total > 0
+        else 0.0
+    )
+    p_success_bg_assisted_abs_avg = (
+        (group["p_success_bg_assisted_abs_sum"] / runs_total)
+        if runs_total > 0
+        else 0.0
+    )
 
-    p_success_true_given_arrival_global = (
-        group["p_success_true_abs_sum"] / group["p_arrive_sum"]
-        if group["p_arrive_sum"] > 0
+    p_success_true_given_arrival11_global = (
+        group["p_success_true_abs_sum"] / group["p_arrive_11_sum"]
+        if group["p_arrive_11_sum"] > 0
+        else 0.0
+    )
+    p_success_true_given_arrival11_mean = (
+        (group["p_success_true_given_arrival11_sum"] / runs_total)
+        if runs_total > 0
         else 0.0
     )
     false_fraction_global = (
@@ -321,6 +353,7 @@ def _finalize_group_summary(group: dict) -> dict:
         if shots_total > 0
         else 0.0
     )
+    event_rate_hz_avg = p_success_abs_avg * float(attempt_rate_hz_eff)
 
     return {
         "window_ns": group["window_ns"],
@@ -335,10 +368,17 @@ def _finalize_group_summary(group: dict) -> dict:
         "success_true_cond_given_two_click_avg": success_true_cond_given_two_click_avg,
         "success_false_cond_given_two_click_avg": success_false_cond_given_two_click_avg,
         "p_arrive_avg": p_arrive_avg,
+        "p_arrive_11_avg": p_arrive_11_avg,
+        "p_arrive_same_arm_avg": p_arrive_same_arm_avg,
+        "p_arrive_20_avg": p_arrive_20_avg,
+        "p_arrive_02_avg": p_arrive_02_avg,
         "p_success_abs_avg": p_success_abs_avg,
         "p_success_true_abs_avg": p_success_true_abs_avg,
         "p_success_false_abs_avg": p_success_false_abs_avg,
-        "p_success_true_given_arrival_global": p_success_true_given_arrival_global,
+        "p_success_intrinsic_dark_assisted_abs_avg": p_success_intrinsic_dark_assisted_abs_avg,
+        "p_success_bg_assisted_abs_avg": p_success_bg_assisted_abs_avg,
+        "p_success_true_given_arrival11_global": p_success_true_given_arrival11_global,
+        "p_success_true_given_arrival11_mean": p_success_true_given_arrival11_mean,
         "false_fraction_global": false_fraction_global,
         "fidelity_all_avg": fidelity_all_avg,
         "fidelity_true_avg": fidelity_true_avg,
@@ -348,6 +388,8 @@ def _finalize_group_summary(group: dict) -> dict:
         "corr_ezz_avg": corr_ezz_avg,
         "chsh_s_max_avg": chsh_s_max_avg,
         "herald_rate_abs": herald_rate_abs,
+        "attempt_rate_hz_eff": float(attempt_rate_hz_eff),
+        "event_rate_hz_avg": event_rate_hz_avg,
         "sbr_true_false": sbr_true_false,
     }
 
@@ -379,6 +421,8 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
             "bell",
             "accepted_by_window",
             "p_true_given_record",
+            "p_bg_assist_given_record",
+            "p_intrinsic_dark_assist_given_record",
             "p_arrive",
             "p_arrive_11",
             "p_arrive_same_arm",
@@ -436,8 +480,8 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
             "corr_eyy",
             "corr_ezz",
             "chsh_s_max",
-            "p_success_intrinsic_dark_assisted",
-            "p_success_bg_assisted",
+            "p_success_intrinsic_dark_assisted_abs",
+            "p_success_bg_assisted_abs",
             "timestamp",
         ])
 
@@ -515,6 +559,8 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                 success = 0
                 success_true_sum = 0.0
                 success_false_sum = 0.0
+                success_bg_sum = 0.0
+                success_intrinsic_sum = 0.0
                 fidelity_all_vals = []
                 fidelity_true_num = 0.0
                 fidelity_false_num = 0.0
@@ -529,9 +575,11 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                     if not _record_success_by_window(record, window_bins):
                         continue
                     success += 1
-                    p_true = _safe_num(record.get("p_true_given_record")) or 0.0
+                    p_true, p_bg, p_intrinsic = _resolve_record_component_weights(record)
                     success_true_sum += p_true
                     success_false_sum += 1.0 - p_true
+                    success_bg_sum += p_bg
+                    success_intrinsic_sum += p_intrinsic
                     fidelity_declared = _safe_num(record.get("fidelity_declared")) or 0.0
                     corr_exx = _safe_num(record.get("corr_exx")) or 0.0
                     corr_eyy = _safe_num(record.get("corr_eyy")) or 0.0
@@ -554,6 +602,10 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                 p_success_abs = float(p_two_click_abs * success_cond_given_two_click)
                 p_success_true_abs = float(p_two_click_abs * success_true_cond_given_two_click)
                 p_success_false_abs = float(p_two_click_abs * success_false_cond_given_two_click)
+                p_success_bg_assisted_abs = float(p_two_click_abs * (success_bg_sum / shots_total))
+                p_success_intrinsic_dark_assisted_abs = float(
+                    p_two_click_abs * (success_intrinsic_sum / shots_total)
+                )
                 expanded_windows.append(
                     {
                         "window_ns": float(window_ns),
@@ -588,8 +640,8 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                         "corr_eyy": float(np.mean(corr_eyy_vals)) if corr_eyy_vals else 0.0,
                         "corr_ezz": float(np.mean(corr_ezz_vals)) if corr_ezz_vals else 0.0,
                         "chsh_s_max": float(np.mean(chsh_vals)) if chsh_vals else 0.0,
-                        "p_success_intrinsic_dark_assisted": _safe_num(base_entry.get("p_success_intrinsic_dark_assisted")),
-                        "p_success_bg_assisted": _safe_num(base_entry.get("p_success_bg_assisted")),
+                        "p_success_intrinsic_dark_assisted_abs": p_success_intrinsic_dark_assisted_abs,
+                        "p_success_bg_assisted_abs": p_success_bg_assisted_abs,
                     }
                 )
 
@@ -606,8 +658,10 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                 p_success_true_abs = _safe_num(entry.get("p_success_true_abs"))
                 p_success_false_abs = _safe_num(entry.get("p_success_false_abs"))
                 p_success_true_given_arrival = _safe_num(entry.get("p_success_true_given_arrival"))
-                p_success_intrinsic_dark_assisted = _safe_num(entry.get("p_success_intrinsic_dark_assisted"))
-                p_success_bg_assisted = _safe_num(entry.get("p_success_bg_assisted"))
+                p_success_intrinsic_dark_assisted_abs = _safe_num(
+                    entry.get("p_success_intrinsic_dark_assisted_abs")
+                )
+                p_success_bg_assisted_abs = _safe_num(entry.get("p_success_bg_assisted_abs"))
                 fidelity_all = _safe_num(entry.get("fidelity_all"))
                 fidelity_true = _safe_num(entry.get("fidelity_true"))
                 fidelity_false = _safe_num(entry.get("fidelity_false"))
@@ -656,8 +710,8 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                     corr_eyy,
                     corr_ezz,
                     chsh_s_max,
-                    p_success_intrinsic_dark_assisted,
-                    p_success_bg_assisted,
+                    p_success_intrinsic_dark_assisted_abs,
+                    p_success_bg_assisted_abs,
                     data.get("timestamp"),
                 ])
 
@@ -675,9 +729,16 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                         "success_true_cond_given_two_click_sum": 0.0,
                         "success_false_cond_given_two_click_sum": 0.0,
                         "p_arrive_sum": 0.0,
+                        "p_arrive_11_sum": 0.0,
+                        "p_arrive_same_arm_sum": 0.0,
+                        "p_arrive_20_sum": 0.0,
+                        "p_arrive_02_sum": 0.0,
                         "p_success_abs_sum": 0.0,
                         "p_success_true_abs_sum": 0.0,
                         "p_success_false_abs_sum": 0.0,
+                        "p_success_intrinsic_dark_assisted_abs_sum": 0.0,
+                        "p_success_bg_assisted_abs_sum": 0.0,
+                        "p_success_true_given_arrival11_sum": 0.0,
                         "fidelity_all_sum": 0.0,
                         "fidelity_true_sum": 0.0,
                         "fidelity_false_sum": 0.0,
@@ -697,9 +758,18 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                 group["success_true_cond_given_two_click_sum"] += success_true_cond_given_two_click or 0.0
                 group["success_false_cond_given_two_click_sum"] += success_false_cond_given_two_click or 0.0
                 group["p_arrive_sum"] += p_arrive or 0.0
+                group["p_arrive_11_sum"] += p_arrive_11 or 0.0
+                group["p_arrive_same_arm_sum"] += p_arrive_same_arm or 0.0
+                group["p_arrive_20_sum"] += p_arrive_20 or 0.0
+                group["p_arrive_02_sum"] += p_arrive_02 or 0.0
                 group["p_success_abs_sum"] += p_success_abs or 0.0
                 group["p_success_true_abs_sum"] += p_success_true_abs or 0.0
                 group["p_success_false_abs_sum"] += p_success_false_abs or 0.0
+                group["p_success_intrinsic_dark_assisted_abs_sum"] += (
+                    p_success_intrinsic_dark_assisted_abs or 0.0
+                )
+                group["p_success_bg_assisted_abs_sum"] += p_success_bg_assisted_abs or 0.0
+                group["p_success_true_given_arrival11_sum"] += p_success_true_given_arrival or 0.0
                 group["fidelity_all_sum"] += fidelity_all or 0.0
                 group["fidelity_true_sum"] += fidelity_true or 0.0
                 group["fidelity_false_sum"] += fidelity_false or 0.0
@@ -722,6 +792,8 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                         window_bins,
                         run_index,
                         -1,
+                        "",
+                        "",
                         "",
                         "",
                         "",
@@ -759,7 +831,11 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                     shot_success = record.get("success")
                     bell = record.get("bell")
                     accepted_by_window = record.get("accepted_by_window")
-                    p_true_given_record = _safe_num(record.get("p_true_given_record"))
+                    (
+                        p_true_given_record,
+                        p_bg_assist_given_record,
+                        p_intrinsic_dark_assist_given_record,
+                    ) = _resolve_record_component_weights(record)
                     shot_clicks = record.get("clicks", [])
                     events = _parse_click_events(shot_clicks, "WINDOW_SCAN")
                     bins, darks, _ = _build_click_channel_maps(events)
@@ -780,6 +856,8 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                         bell,
                         accepted_by_window,
                         p_true_given_record,
+                        p_bg_assist_given_record,
+                        p_intrinsic_dark_assist_given_record,
                         p_arrive,
                         p_arrive_11,
                         p_arrive_same_arm,
@@ -807,7 +885,14 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                         darks["V2"],
                     ])
 
-    rows = [_finalize_group_summary(groups[key]) for key in sorted(groups.keys(), key=lambda item: float(item))]
+    attempt_rate_hz_eff = _compute_effective_attempt_rate_hz(
+        config.run.attempt_rate_hz,
+        config.run.attempt_overhead_us,
+    )
+    rows = [
+        _finalize_group_summary(groups[key], attempt_rate_hz_eff)
+        for key in sorted(groups.keys(), key=lambda item: float(item))
+    ]
     max_herald = max((row["herald_rate_abs"] for row in rows), default=0.0)
 
     with open(summary_path, "w", encoding="utf-8", newline="") as summary_file:
@@ -825,10 +910,17 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
             "success_true_cond_given_two_click_avg",
             "success_false_cond_given_two_click_avg",
             "p_arrive_avg",
+            "p_arrive_11_avg",
+            "p_arrive_same_arm_avg",
+            "p_arrive_20_avg",
+            "p_arrive_02_avg",
             "p_success_abs_avg",
             "p_success_true_abs_avg",
             "p_success_false_abs_avg",
-            "p_success_true_given_arrival_global",
+            "p_success_intrinsic_dark_assisted_abs_avg",
+            "p_success_bg_assisted_abs_avg",
+            "p_success_true_given_arrival11_global",
+            "p_success_true_given_arrival11_mean",
             "false_fraction_global",
             "fidelity_all_avg",
             "fidelity_true_avg",
@@ -838,6 +930,8 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
             "corr_ezz_avg",
             "chsh_s_max_avg",
             "herald_rate_abs",
+            "attempt_rate_hz_eff",
+            "event_rate_hz_avg",
             "sbr_true_false",
             "acceptance_fraction_vs_max_window",
         ])
@@ -856,10 +950,17 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                 row["success_true_cond_given_two_click_avg"],
                 row["success_false_cond_given_two_click_avg"],
                 row["p_arrive_avg"],
+                row["p_arrive_11_avg"],
+                row["p_arrive_same_arm_avg"],
+                row["p_arrive_20_avg"],
+                row["p_arrive_02_avg"],
                 row["p_success_abs_avg"],
                 row["p_success_true_abs_avg"],
                 row["p_success_false_abs_avg"],
-                row["p_success_true_given_arrival_global"],
+                row["p_success_intrinsic_dark_assisted_abs_avg"],
+                row["p_success_bg_assisted_abs_avg"],
+                row["p_success_true_given_arrival11_global"],
+                row["p_success_true_given_arrival11_mean"],
                 row["false_fraction_global"],
                 row["fidelity_all_avg"],
                 row["fidelity_true_avg"],
@@ -869,6 +970,8 @@ def _write_window_scan_summary(paths: dict, config: SimConfig) -> None:
                 row["corr_ezz_avg"],
                 row["chsh_s_max_avg"],
                 row["herald_rate_abs"],
+                row["attempt_rate_hz_eff"],
+                row["event_rate_hz_avg"],
                 row["sbr_true_false"],
                 acceptance_fraction,
             ])
@@ -900,6 +1003,9 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
             "shot_index",
             "success",
             "bell",
+            "p_true_given_record",
+            "p_bg_assist_given_record",
+            "p_intrinsic_dark_assist_given_record",
             "window_ns",
             "attempt_rate_hz",
             "event_rate_hz",
@@ -936,6 +1042,7 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
             "run_index",
             "shots",
             "success",
+            "p_two_click_abs",
             "window_ns",
             "attempt_rate_hz",
             "event_rate_hz",
@@ -998,6 +1105,7 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
                 p_success_true_abs = _safe_num(entry.get("p_success_true_abs"))
                 p_success_false_abs = _safe_num(entry.get("p_success_false_abs"))
                 p_success_true_given_arrival = _safe_num(entry.get("p_success_true_given_arrival"))
+                p_two_click_abs = _safe_num(entry.get("p_two_click_abs"))
                 fidelity_all = _safe_num(entry.get("fidelity_all"))
                 fidelity_true = _safe_num(entry.get("fidelity_true"))
                 fidelity_false = _safe_num(entry.get("fidelity_false"))
@@ -1018,6 +1126,7 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
                     run_index,
                     shots,
                     success,
+                    p_two_click_abs,
                     window_ns,
                     attempt_rate_hz,
                     event_rate_hz,
@@ -1049,9 +1158,14 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
                         "runs_total": 0,
                         "shots_total": 0,
                         "p_arrive_sum": 0.0,
+                        "p_arrive_11_sum": 0.0,
+                        "p_arrive_same_arm_sum": 0.0,
+                        "p_arrive_20_sum": 0.0,
+                        "p_arrive_02_sum": 0.0,
                         "p_success_abs_sum": 0.0,
                         "p_success_true_abs_sum": 0.0,
                         "p_success_false_abs_sum": 0.0,
+                        "p_success_true_given_arrival11_sum": 0.0,
                         "fidelity_all_sum": 0.0,
                         "fidelity_true_sum": 0.0,
                         "fidelity_false_sum": 0.0,
@@ -1066,9 +1180,14 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
                 group["runs_total"] += 1
                 group["shots_total"] += shots
                 group["p_arrive_sum"] += p_arrive or 0.0
+                group["p_arrive_11_sum"] += p_arrive_11 or 0.0
+                group["p_arrive_same_arm_sum"] += p_arrive_same_arm or 0.0
+                group["p_arrive_20_sum"] += p_arrive_20 or 0.0
+                group["p_arrive_02_sum"] += p_arrive_02 or 0.0
                 group["p_success_abs_sum"] += p_success_abs or 0.0
                 group["p_success_true_abs_sum"] += p_success_true_abs or 0.0
                 group["p_success_false_abs_sum"] += p_success_false_abs or 0.0
+                group["p_success_true_given_arrival11_sum"] += p_success_true_given_arrival or 0.0
                 group["fidelity_all_sum"] += fidelity_all or 0.0
                 group["fidelity_true_sum"] += fidelity_true or 0.0
                 group["fidelity_false_sum"] += fidelity_false or 0.0
@@ -1084,6 +1203,9 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
                         length_km,
                         run_index,
                         -1,
+                        "",
+                        "",
+                        "",
                         "",
                         "",
                         window_ns,
@@ -1121,6 +1243,11 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
                     shot_idx = record.get("shot_index")
                     shot_success = record.get("success")
                     bell = record.get("bell")
+                    (
+                        p_true_given_record,
+                        p_bg_assist_given_record,
+                        p_intrinsic_dark_assist_given_record,
+                    ) = _resolve_record_component_weights(record)
                     shot_clicks = record.get("clicks", [])
                     events = _parse_click_events(shot_clicks, "LENGTH_SCAN")
                     bins, darks, _ = _build_click_channel_maps(events)
@@ -1138,6 +1265,9 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
                         shot_idx,
                         shot_success,
                         bell,
+                        p_true_given_record,
+                        p_bg_assist_given_record,
+                        p_intrinsic_dark_assist_given_record,
                         window_ns,
                         attempt_rate_hz,
                         event_rate_hz,
@@ -1174,12 +1304,21 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
         runs_total = int(group["runs_total"])
         shots_total = int(group["shots_total"])
         p_arrive_avg = (group["p_arrive_sum"] / runs_total) if runs_total > 0 else 0.0
+        p_arrive_11_avg = (group["p_arrive_11_sum"] / runs_total) if runs_total > 0 else 0.0
+        p_arrive_same_arm_avg = (group["p_arrive_same_arm_sum"] / runs_total) if runs_total > 0 else 0.0
+        p_arrive_20_avg = (group["p_arrive_20_sum"] / runs_total) if runs_total > 0 else 0.0
+        p_arrive_02_avg = (group["p_arrive_02_sum"] / runs_total) if runs_total > 0 else 0.0
         p_success_abs_avg = (group["p_success_abs_sum"] / runs_total) if runs_total > 0 else 0.0
         p_success_true_abs_avg = (group["p_success_true_abs_sum"] / runs_total) if runs_total > 0 else 0.0
         p_success_false_abs_avg = (group["p_success_false_abs_sum"] / runs_total) if runs_total > 0 else 0.0
-        p_success_true_given_arrival_global = (
-            group["p_success_true_abs_sum"] / group["p_arrive_sum"]
-            if group["p_arrive_sum"] > 0
+        p_success_true_given_arrival11_global = (
+            group["p_success_true_abs_sum"] / group["p_arrive_11_sum"]
+            if group["p_arrive_11_sum"] > 0
+            else 0.0
+        )
+        p_success_true_given_arrival11_mean = (
+            (group["p_success_true_given_arrival11_sum"] / runs_total)
+            if runs_total > 0
             else 0.0
         )
         false_fraction_global = (
@@ -1214,10 +1353,15 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
                 "window_ns": config.run.window_ns,
                 "attempt_rate_hz": attempt_rate_hz_eff,
                 "p_arrive_avg": p_arrive_avg,
+                "p_arrive_11_avg": p_arrive_11_avg,
+                "p_arrive_same_arm_avg": p_arrive_same_arm_avg,
+                "p_arrive_20_avg": p_arrive_20_avg,
+                "p_arrive_02_avg": p_arrive_02_avg,
                 "p_success_abs_avg": p_success_abs_avg,
                 "p_success_true_abs_avg": p_success_true_abs_avg,
                 "p_success_false_abs_avg": p_success_false_abs_avg,
-                "p_success_true_given_arrival_global": p_success_true_given_arrival_global,
+                "p_success_true_given_arrival11_global": p_success_true_given_arrival11_global,
+                "p_success_true_given_arrival11_mean": p_success_true_given_arrival11_mean,
                 "false_fraction_global": false_fraction_global,
                 "fidelity_all_avg": fidelity_all_avg,
                 "fidelity_true_avg": fidelity_true_avg,
@@ -1242,10 +1386,15 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
             "window_ns",
             "attempt_rate_hz",
             "p_arrive_avg",
+            "p_arrive_11_avg",
+            "p_arrive_same_arm_avg",
+            "p_arrive_20_avg",
+            "p_arrive_02_avg",
             "p_success_abs_avg",
             "p_success_true_abs_avg",
             "p_success_false_abs_avg",
-            "p_success_true_given_arrival_global",
+            "p_success_true_given_arrival11_global",
+            "p_success_true_given_arrival11_mean",
             "false_fraction_global",
             "fidelity_all_avg",
             "fidelity_true_avg",
@@ -1267,10 +1416,15 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
                 row["window_ns"],
                 row["attempt_rate_hz"],
                 row["p_arrive_avg"],
+                row["p_arrive_11_avg"],
+                row["p_arrive_same_arm_avg"],
+                row["p_arrive_20_avg"],
+                row["p_arrive_02_avg"],
                 row["p_success_abs_avg"],
                 row["p_success_true_abs_avg"],
                 row["p_success_false_abs_avg"],
-                row["p_success_true_given_arrival_global"],
+                row["p_success_true_given_arrival11_global"],
+                row["p_success_true_given_arrival11_mean"],
                 row["false_fraction_global"],
                 row["fidelity_all_avg"],
                 row["fidelity_true_avg"],
@@ -1313,6 +1467,9 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
             "success",
             "bell",
             "pattern",
+            "p_true_given_record",
+            "p_bg_assist_given_record",
+            "p_intrinsic_dark_assist_given_record",
             "p_arrive",
             "p_arrive_11",
             "p_arrive_same_arm",
@@ -1343,9 +1500,6 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
             "H2_src",
             "V2_src",
         ]
-        for pattern_key in BSM_PATTERN_KEYS:
-            trial_header.append(pattern_key)
-            trial_header.append(f"{pattern_key}_rate")
         trials_writer.writerow(trial_header)
 
         run_header = [
@@ -1355,6 +1509,7 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
             "run_index",
             "shots",
             "success",
+            "p_two_click_abs",
             "p_arrive",
             "p_arrive_11",
             "p_arrive_same_arm",
@@ -1376,6 +1531,8 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
         for pattern_key in BSM_PATTERN_KEYS:
             run_header.append(pattern_key)
             run_header.append(f"{pattern_key}_rate")
+            run_header.append(f"{pattern_key}_true_abs")
+            run_header.append(f"{pattern_key}_false_abs")
         run_header.append("timestamp")
         runs_writer.writerow(run_header)
 
@@ -1419,6 +1576,7 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
                 p_success_true_abs = _safe_num(entry.get("p_success_true_abs"))
                 p_success_false_abs = _safe_num(entry.get("p_success_false_abs"))
                 p_success_true_given_arrival = _safe_num(entry.get("p_success_true_given_arrival"))
+                p_two_click_abs = _safe_num(entry.get("p_two_click_abs"))
                 fidelity_all = _safe_num(entry.get("fidelity_all"))
                 fidelity_true = _safe_num(entry.get("fidelity_true"))
                 fidelity_false = _safe_num(entry.get("fidelity_false"))
@@ -1437,6 +1595,7 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
                     run_index,
                     shots,
                     success,
+                    p_two_click_abs,
                     p_arrive,
                     p_arrive_11,
                     p_arrive_same_arm,
@@ -1458,6 +1617,8 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
                 for pattern_key in BSM_PATTERN_KEYS:
                     run_row.append(int(entry.get(pattern_key, 0) or 0))
                     run_row.append(_safe_num(entry.get(f"{pattern_key}_rate")) or 0.0)
+                    run_row.append(_safe_num(entry.get(f"{pattern_key}_true_abs")) or 0.0)
+                    run_row.append(_safe_num(entry.get(f"{pattern_key}_false_abs")) or 0.0)
                 run_row.append(data.get("timestamp"))
                 runs_writer.writerow(run_row)
 
@@ -1471,9 +1632,14 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
                         "shots_total": 0,
                         "success_total": 0,
                         "p_arrive_sum": 0.0,
+                        "p_arrive_11_sum": 0.0,
+                        "p_arrive_same_arm_sum": 0.0,
+                        "p_arrive_20_sum": 0.0,
+                        "p_arrive_02_sum": 0.0,
                         "p_success_abs_sum": 0.0,
                         "p_success_true_abs_sum": 0.0,
                         "p_success_false_abs_sum": 0.0,
+                        "p_success_true_given_arrival11_sum": 0.0,
                         "fidelity_all_sum": 0.0,
                         "fidelity_true_sum": 0.0,
                         "fidelity_false_sum": 0.0,
@@ -1482,6 +1648,8 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
                         "corr_ezz_sum": 0.0,
                         "chsh_s_max_sum": 0.0,
                         "pattern_sums": {pattern_key: 0 for pattern_key in BSM_PATTERN_KEYS},
+                        "pattern_true_abs_sums": {pattern_key: 0.0 for pattern_key in BSM_PATTERN_KEYS},
+                        "pattern_false_abs_sums": {pattern_key: 0.0 for pattern_key in BSM_PATTERN_KEYS},
                     },
                 )
 
@@ -1489,9 +1657,14 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
                 group["shots_total"] += shots
                 group["success_total"] += success
                 group["p_arrive_sum"] += p_arrive or 0.0
+                group["p_arrive_11_sum"] += p_arrive_11 or 0.0
+                group["p_arrive_same_arm_sum"] += p_arrive_same_arm or 0.0
+                group["p_arrive_20_sum"] += p_arrive_20 or 0.0
+                group["p_arrive_02_sum"] += p_arrive_02 or 0.0
                 group["p_success_abs_sum"] += p_success_abs or 0.0
                 group["p_success_true_abs_sum"] += p_success_true_abs or 0.0
                 group["p_success_false_abs_sum"] += p_success_false_abs or 0.0
+                group["p_success_true_given_arrival11_sum"] += p_success_true_given_arrival or 0.0
                 group["fidelity_all_sum"] += fidelity_all or 0.0
                 group["fidelity_true_sum"] += fidelity_true or 0.0
                 group["fidelity_false_sum"] += fidelity_false or 0.0
@@ -1501,6 +1674,12 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
                 group["chsh_s_max_sum"] += chsh_s_max or 0.0
                 for pattern_key in BSM_PATTERN_KEYS:
                     group["pattern_sums"][pattern_key] += int(entry.get(pattern_key, 0) or 0)
+                    group["pattern_true_abs_sums"][pattern_key] += (
+                        _safe_num(entry.get(f"{pattern_key}_true_abs")) or 0.0
+                    )
+                    group["pattern_false_abs_sums"][pattern_key] += (
+                        _safe_num(entry.get(f"{pattern_key}_false_abs")) or 0.0
+                    )
 
                 records = clicks_by_theta.get(bs_key, [])
                 if not isinstance(records, list) or not records:
@@ -1509,6 +1688,9 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
                         bs_split_ratio,
                         run_index,
                         -1,
+                        "",
+                        "",
+                        "",
                         "",
                         "",
                         "",
@@ -1537,14 +1719,7 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
                         "",
                         "",
                         "",
-                        "",
-                        "",
-                        "",
-                        "",
                     ]
-                    for pattern_key in BSM_PATTERN_KEYS:
-                        row.append(int(entry.get(pattern_key, 0) or 0))
-                        row.append(_safe_num(entry.get(f"{pattern_key}_rate")) or 0.0)
                     trials_writer.writerow(row)
                     continue
 
@@ -1553,6 +1728,11 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
                     shot_success = record.get("success")
                     bell = record.get("bell")
                     pattern = record.get("pattern")
+                    (
+                        p_true_given_record,
+                        p_bg_assist_given_record,
+                        p_intrinsic_dark_assist_given_record,
+                    ) = _resolve_record_component_weights(record)
                     shot_clicks = record.get("clicks", [])
                     events = _parse_click_events(shot_clicks, "BSM_SCAN")
                     bins, darks, sources = _build_click_channel_maps(events)
@@ -1572,6 +1752,9 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
                         shot_success,
                         bell,
                         pattern,
+                        p_true_given_record,
+                        p_bg_assist_given_record,
+                        p_intrinsic_dark_assist_given_record,
                         p_arrive,
                         p_arrive_11,
                         p_arrive_same_arm,
@@ -1602,9 +1785,6 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
                         sources["H2"],
                         sources["V2"],
                     ]
-                    for pattern_key in BSM_PATTERN_KEYS:
-                        row.append(int(entry.get(pattern_key, 0) or 0))
-                        row.append(_safe_num(entry.get(f"{pattern_key}_rate")) or 0.0)
                     trials_writer.writerow(row)
 
     rows = []
@@ -1614,6 +1794,10 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
         shots_total = int(group["shots_total"])
 
         p_arrive_avg = (group["p_arrive_sum"] / runs_total) if runs_total > 0 else 0.0
+        p_arrive_11_avg = (group["p_arrive_11_sum"] / runs_total) if runs_total > 0 else 0.0
+        p_arrive_same_arm_avg = (group["p_arrive_same_arm_sum"] / runs_total) if runs_total > 0 else 0.0
+        p_arrive_20_avg = (group["p_arrive_20_sum"] / runs_total) if runs_total > 0 else 0.0
+        p_arrive_02_avg = (group["p_arrive_02_sum"] / runs_total) if runs_total > 0 else 0.0
         p_success_abs_avg = (group["p_success_abs_sum"] / runs_total) if runs_total > 0 else 0.0
         p_success_true_abs_avg = (
             (group["p_success_true_abs_sum"] / runs_total) if runs_total > 0 else 0.0
@@ -1621,9 +1805,14 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
         p_success_false_abs_avg = (
             (group["p_success_false_abs_sum"] / runs_total) if runs_total > 0 else 0.0
         )
-        p_success_true_given_arrival_global = (
-            group["p_success_true_abs_sum"] / group["p_arrive_sum"]
-            if group["p_arrive_sum"] > 0
+        p_success_true_given_arrival11_global = (
+            group["p_success_true_abs_sum"] / group["p_arrive_11_sum"]
+            if group["p_arrive_11_sum"] > 0
+            else 0.0
+        )
+        p_success_true_given_arrival11_mean = (
+            (group["p_success_true_given_arrival11_sum"] / runs_total)
+            if runs_total > 0
             else 0.0
         )
         false_fraction_global = (
@@ -1655,10 +1844,15 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
             "shots_total": shots_total,
             "success_total": int(group["success_total"]),
             "p_arrive_avg": p_arrive_avg,
+            "p_arrive_11_avg": p_arrive_11_avg,
+            "p_arrive_same_arm_avg": p_arrive_same_arm_avg,
+            "p_arrive_20_avg": p_arrive_20_avg,
+            "p_arrive_02_avg": p_arrive_02_avg,
             "p_success_abs_avg": p_success_abs_avg,
             "p_success_true_abs_avg": p_success_true_abs_avg,
             "p_success_false_abs_avg": p_success_false_abs_avg,
-            "p_success_true_given_arrival_global": p_success_true_given_arrival_global,
+            "p_success_true_given_arrival11_global": p_success_true_given_arrival11_global,
+            "p_success_true_given_arrival11_mean": p_success_true_given_arrival11_mean,
             "false_fraction_global": false_fraction_global,
             "fidelity_all_avg": fidelity_all_avg,
             "fidelity_true_avg": fidelity_true_avg,
@@ -1674,6 +1868,16 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
             count = int(group["pattern_sums"][pattern_key])
             row[pattern_key] = count
             row[f"{pattern_key}_rate"] = (float(count) / float(shots_total)) if shots_total > 0 else 0.0
+            row[f"{pattern_key}_true_abs"] = (
+                group["pattern_true_abs_sums"][pattern_key] / float(runs_total)
+                if runs_total > 0
+                else 0.0
+            )
+            row[f"{pattern_key}_false_abs"] = (
+                group["pattern_false_abs_sums"][pattern_key] / float(runs_total)
+                if runs_total > 0
+                else 0.0
+            )
         rows.append(row)
 
     with open(summary_path, "w", encoding="utf-8", newline="") as summary_file:
@@ -1686,10 +1890,15 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
             "shots_total",
             "success_total",
             "p_arrive_avg",
+            "p_arrive_11_avg",
+            "p_arrive_same_arm_avg",
+            "p_arrive_20_avg",
+            "p_arrive_02_avg",
             "p_success_abs_avg",
             "p_success_true_abs_avg",
             "p_success_false_abs_avg",
-            "p_success_true_given_arrival_global",
+            "p_success_true_given_arrival11_global",
+            "p_success_true_given_arrival11_mean",
             "false_fraction_global",
             "fidelity_all_avg",
             "fidelity_true_avg",
@@ -1704,6 +1913,8 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
         for pattern_key in BSM_PATTERN_KEYS:
             summary_header.append(pattern_key)
             summary_header.append(f"{pattern_key}_rate")
+            summary_header.append(f"{pattern_key}_true_abs")
+            summary_header.append(f"{pattern_key}_false_abs")
         summary_writer.writerow(summary_header)
 
         for row in rows:
@@ -1715,10 +1926,15 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
                 row["shots_total"],
                 row["success_total"],
                 row["p_arrive_avg"],
+                row["p_arrive_11_avg"],
+                row["p_arrive_same_arm_avg"],
+                row["p_arrive_20_avg"],
+                row["p_arrive_02_avg"],
                 row["p_success_abs_avg"],
                 row["p_success_true_abs_avg"],
                 row["p_success_false_abs_avg"],
-                row["p_success_true_given_arrival_global"],
+                row["p_success_true_given_arrival11_global"],
+                row["p_success_true_given_arrival11_mean"],
                 row["false_fraction_global"],
                 row["fidelity_all_avg"],
                 row["fidelity_true_avg"],
@@ -1733,6 +1949,8 @@ def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
             for pattern_key in BSM_PATTERN_KEYS:
                 output_row.append(row[pattern_key])
                 output_row.append(row[f"{pattern_key}_rate"])
+                output_row.append(row[f"{pattern_key}_true_abs"])
+                output_row.append(row[f"{pattern_key}_false_abs"])
             summary_writer.writerow(output_row)
 
     _write_click_analysis_outputs(summary_dir, "bsm_scan", "bs_theta", click_analysis_groups)
@@ -1766,6 +1984,9 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 "tau_ns",
                 "run_index",
                 "shot_index",
+                "p_true_given_record",
+                "p_bg_assist_given_record",
+                "p_intrinsic_dark_assist_given_record",
                 "p_arrive",
                 "H1_bin",
                 "V1_bin",
@@ -1831,6 +2052,9 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                         f"{tau_ns:.6f}",
                         run_index,
                         -1,
+                        "",
+                        "",
+                        "",
                         p_arrive,
                         "",
                         "",
@@ -1843,7 +2067,15 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                     ])
                 else:
                     # 每个 shot 一行，点击 bin 以分号拼接
-                    for shot_idx, shot_clicks in enumerate(clicks):
+                    for shot_idx, record in enumerate(clicks):
+                        if not isinstance(record, dict):
+                            raise ValueError("HOM clicks 记录必须为 dict")
+                        (
+                            p_true_given_record,
+                            p_bg_assist_given_record,
+                            p_intrinsic_dark_assist_given_record,
+                        ) = _resolve_record_component_weights(record)
+                        shot_clicks = record.get("clicks", [])
                         events = _parse_click_events(shot_clicks, "HOM")
                         bins, darks, _ = _build_click_channel_maps(events)
 
@@ -1854,7 +2086,7 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                         _accumulate_click_analysis(
                             click_analysis_groups,
                             tau_ns,
-                            {},
+                            record,
                             events,
                             is_success,
                         )
@@ -1871,6 +2103,9 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                             f"{tau_ns:.6f}",
                             run_index,
                             shot_idx,
+                            p_true_given_record,
+                            p_bg_assist_given_record,
+                            p_intrinsic_dark_assist_given_record,
                             p_arrive,
                             bins["H1"],
                             bins["V1"],
@@ -1961,6 +2196,9 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                 "shot_index",
                 "success",
                 "bell",
+                "p_true_given_record",
+                "p_bg_assist_given_record",
+                "p_intrinsic_dark_assist_given_record",
                 "p_arrive",
                 "p_arrive_11",
                 "p_arrive_same_arm",
@@ -2031,6 +2269,9 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                         -1,
                         "",
                         "",
+                        "",
+                        "",
+                        "",
                         p_arrive,
                         p_arrive_11,
                         p_arrive_same_arm,
@@ -2062,6 +2303,11 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                     shot_idx = record.get("shot_index")
                     success = record.get("success")
                     bell = record.get("bell")
+                    (
+                        p_true_given_record,
+                        p_bg_assist_given_record,
+                        p_intrinsic_dark_assist_given_record,
+                    ) = _resolve_record_component_weights(record)
                     shot_clicks = record.get("clicks", [])
                     events = _parse_click_events(shot_clicks, "SIM")
                     bins, darks, _ = _build_click_channel_maps(events)
@@ -2082,6 +2328,9 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
                         shot_idx,
                         success,
                         bell,
+                        p_true_given_record,
+                        p_bg_assist_given_record,
+                        p_intrinsic_dark_assist_given_record,
                         p_arrive,
                         p_arrive_11,
                         p_arrive_same_arm,

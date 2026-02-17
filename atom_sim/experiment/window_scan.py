@@ -17,6 +17,7 @@ from .common import (
     SimConfig,
     run_trial_detection_core,
     write_click_records,
+    write_declared_density_matrix,
 )
 
 WINDOW_SCAN_METRIC_KEYS = (
@@ -119,6 +120,16 @@ def run_window_scan_task(
             for c in sample.clicks
         ]
         p_true_given_record = float(np.clip(getattr(sample, "p_true_given_record", 0.0), 0.0, 1.0))
+        p_bg_assist_given_record = float(
+            np.clip(getattr(sample, "p_bg_assist_given_record", 0.0), 0.0, 1.0)
+        )
+        p_intrinsic_dark_assist_given_record = float(
+            np.clip(
+                getattr(sample, "p_intrinsic_dark_assist_given_record", 0.0),
+                0.0,
+                1.0,
+            )
+        )
         fidelity_declared = 0.0
         corr_exx = 0.0
         corr_eyy = 0.0
@@ -142,6 +153,8 @@ def run_window_scan_task(
                 "raw_bell": sample.bell_state,
                 "clicks": click_pairs,
                 "p_true_given_record": p_true_given_record,
+                "p_bg_assist_given_record": p_bg_assist_given_record,
+                "p_intrinsic_dark_assist_given_record": p_intrinsic_dark_assist_given_record,
                 "fidelity_declared": fidelity_declared,
                 "corr_exx": corr_exx,
                 "corr_eyy": corr_eyy,
@@ -217,6 +230,10 @@ def run_window_scan_task(
             "bell": shot["raw_bell"],
             "clicks": list(shot["clicks"]),
             "p_true_given_record": float(shot["p_true_given_record"]),
+            "p_bg_assist_given_record": float(shot["p_bg_assist_given_record"]),
+            "p_intrinsic_dark_assist_given_record": float(
+                shot["p_intrinsic_dark_assist_given_record"]
+            ),
             "fidelity_declared": float(shot["fidelity_declared"]),
             "corr_exx": float(shot["corr_exx"]),
             "corr_eyy": float(shot["corr_eyy"]),
@@ -231,6 +248,13 @@ def run_window_scan_task(
         "window_scan": entry,
     }
     write_click_records(raw_dir, click_records)
+    write_declared_density_matrix(
+        raw_dir,
+        rho_raw=getattr(enum_main, "rho_declared_raw", None),
+        rho_ff=getattr(enum_main, "rho_declared_ff", None),
+        trace_raw=float(getattr(enum_main, "trace_declared_raw", 0.0)),
+        trace_ff=float(getattr(enum_main, "trace_declared_ff", 0.0)),
+    )
     return metrics
 
 

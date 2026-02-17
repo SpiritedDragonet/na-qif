@@ -25,6 +25,7 @@ from .common import (
     run_trial_physics_core,
     run_detection_core_from_pipe,
     write_click_records,
+    write_declared_density_matrix,
     _build_run_parameter_store,
 )
 
@@ -50,10 +51,6 @@ SIM_TASK_METRIC_KEYS = (
     "corr_eyy",
     "corr_ezz",
     "chsh_s_max",
-    "corr_exx_raw",
-    "corr_eyy_raw",
-    "corr_ezz_raw",
-    "chsh_s_max_raw",
     "corr_exx_ff",
     "corr_eyy_ff",
     "corr_ezz_ff",
@@ -787,10 +784,6 @@ def _run_single_simulation_core(
             "corr_eyy": enum_main.corr_eyy,
             "corr_ezz": enum_main.corr_ezz,
             "chsh_s_max": enum_main.chsh_s_max,
-            "corr_exx_raw": enum_main.corr_exx,
-            "corr_eyy_raw": enum_main.corr_eyy,
-            "corr_ezz_raw": enum_main.corr_ezz,
-            "chsh_s_max_raw": enum_main.chsh_s_max,
             "corr_exx_ff": enum_main.corr_exx_ff,
             "corr_eyy_ff": enum_main.corr_eyy_ff,
             "corr_ezz_ff": enum_main.corr_ezz_ff,
@@ -945,6 +938,13 @@ def _run_single_simulation_core(
                     "success": bool(det_result.success),
                     "bell": det_result.bell_state,
                     "clicks": click_pairs,
+                    "p_true_given_record": float(getattr(det_result, "p_true_given_record", 0.0)),
+                    "p_bg_assist_given_record": float(
+                        getattr(det_result, "p_bg_assist_given_record", 0.0)
+                    ),
+                    "p_intrinsic_dark_assist_given_record": float(
+                        getattr(det_result, "p_intrinsic_dark_assist_given_record", 0.0)
+                    ),
                 }
             )
             declared = det_result.bell_state if det_result.success else "失败"
@@ -959,6 +959,15 @@ def _run_single_simulation_core(
                 run_stats["success"] += 1
                 if det_result.bell_state:
                     run_stats["bell"][det_result.bell_state] += 1
+
+    with timer.span("io_declared_density_write"):
+        write_declared_density_matrix(
+            output_dir,
+            rho_raw=getattr(enum_main, "rho_declared_raw", None),
+            rho_ff=getattr(enum_main, "rho_declared_ff", None),
+            trace_raw=float(getattr(enum_main, "trace_declared_raw", 0.0)),
+            trace_ff=float(getattr(enum_main, "trace_declared_ff", 0.0)),
+        )
 
     if trace_enabled:
         timer.set("run_wall_total", time.perf_counter() - run_wall_start)
@@ -991,6 +1000,7 @@ def _run_single_simulation_core(
             ("build_param_store", "参数预算"),
             ("metrics_assemble", "指标汇总"),
             ("io_success_metrics_write", "指标写盘"),
+            ("io_declared_density_write", "后验态写盘"),
             ("io_detection_debug_write", "探测调试写盘"),
             ("samples_postprocess_total", "样本后处理"),
         ]
@@ -1014,6 +1024,7 @@ def _run_single_simulation_core(
                 "build_param_store",
                 "metrics_assemble",
                 "io_success_metrics_write",
+                "io_declared_density_write",
                 "io_detection_debug_write",
                 "samples_postprocess_total",
             )

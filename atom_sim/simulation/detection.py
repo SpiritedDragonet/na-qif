@@ -110,6 +110,8 @@ class TwoPhotonDetectionResult:
     dark_detectors: List[str] = field(default_factory=list)
     dark_count: int = 0
     p_true_given_record: float = 0.0
+    p_bg_assist_given_record: float = 0.0
+    p_intrinsic_dark_assist_given_record: float = 0.0
 
 
 @dataclass
@@ -151,6 +153,10 @@ class SuccessEnumerationResult:
     corr_eyy_ff: float = 0.0
     corr_ezz_ff: float = 0.0
     chsh_s_max_ff: float = 0.0
+    rho_declared_raw: Optional[np.ndarray] = None
+    rho_declared_ff: Optional[np.ndarray] = None
+    trace_declared_raw: float = 0.0
+    trace_declared_ff: float = 0.0
 
 
 @dataclass
@@ -750,6 +756,16 @@ def run_detection_pipeline(
             sigma_declared_raw += sigma_part
             u_ff = _build_feedforward_op_for_bell(bell_state)
             sigma_declared_ff += u_ff @ sigma_part @ u_ff.conj().T
+        trace_declared_raw = float(np.trace(sigma_declared_raw).real)
+        trace_declared_ff = float(np.trace(sigma_declared_ff).real)
+        if trace_declared_raw > P_ARRIVE_EPS:
+            rho_declared_raw = sigma_declared_raw / trace_declared_raw
+        else:
+            rho_declared_raw = np.zeros((4, 4), dtype=complex)
+        if trace_declared_ff > P_ARRIVE_EPS:
+            rho_declared_ff = sigma_declared_ff / trace_declared_ff
+        else:
+            rho_declared_ff = np.zeros((4, 4), dtype=complex)
 
         corr_metrics_raw = compute_pauli_correlators_and_chsh(sigma_declared_raw)
         corr_exx = float(corr_metrics_raw["corr_exx"])
@@ -806,6 +822,10 @@ def run_detection_pipeline(
             corr_eyy_ff=corr_eyy_ff,
             corr_ezz_ff=corr_ezz_ff,
             chsh_s_max_ff=chsh_s_max_ff,
+            rho_declared_raw=rho_declared_raw,
+            rho_declared_ff=rho_declared_ff,
+            trace_declared_raw=trace_declared_raw,
+            trace_declared_ff=trace_declared_ff,
         )
         timings["povm_enumeration"] = time.perf_counter() - t0
 
@@ -924,6 +944,9 @@ def run_detection_pipeline(
         p_bg_assist_record = float(
             min(max((weight_obs_record - weight_sig_total_record) / weight_obs_record, 0.0), 1.0)
         )
+        p_intrinsic_dark_assist_record = float(
+            min(max(1.0 - p_true_given_record - p_bg_assist_record, 0.0), 1.0)
+        )
         bg_happened = bool(rng.random() < p_bg_assist_record)
         clicks = [
             DetectionEvent(
@@ -993,6 +1016,8 @@ def run_detection_pipeline(
                 dark_detectors=dark_detectors,
                 dark_count=len(dark_detectors),
                 p_true_given_record=float(p_true_given_record),
+                p_bg_assist_given_record=float(p_bg_assist_record),
+                p_intrinsic_dark_assist_given_record=float(p_intrinsic_dark_assist_record),
             )
         )
     timings["povm_sampling"] = time.perf_counter() - t0

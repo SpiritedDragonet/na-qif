@@ -34,38 +34,39 @@
 \contentsline {section}{\numberline {3.2}QFC 与滤波记忆核的显式张量门}{21}{section.3.2}%
 \contentsline {paragraph}{QFC 与滤波记忆核的张量门}{21}{paragraph*.24}%
 \contentsline {paragraph}{QFC 的 5D 局域门}{21}{paragraph*.25}%
-\contentsline {paragraph}{滤波腔记忆模与 5D$\times $3D 步进门}{21}{paragraph*.26}%
+\contentsline {paragraph}{滤波腔记忆模与 5D$\times $3D 步进门}{22}{paragraph*.26}%
 \contentsline {paragraph}{链布局与唯一路径实现}{22}{paragraph*.27}%
-\contentsline {section}{\numberline {3.3}光纤与 BSM 的 Heisenberg-POVM 统一建模}{23}{section.3.3}%
-\contentsline {subsection}{\numberline {3.3.1}Heisenberg-POVM 推回、成功判据与复杂度口径}{23}{subsection.3.3.1}%
+\contentsline {section}{\numberline {3.3}光纤 BSM Heisenberg-POVM 统一建模}{23}{section.3.3}%
+\contentsline {subsection}{\numberline {3.3.1}Heisenberg-POVM 推回及成功判据}{23}{subsection.3.3.1}%
 \contentsline {paragraph}{探测端 effect 构造与可分辨性混合}{23}{paragraph*.28}%
 \contentsline {paragraph}{光纤与相位噪声的对偶推回}{24}{paragraph*.29}%
 \contentsline {paragraph}{成功判据与核心指标}{24}{paragraph*.30}%
-\contentsline {section}{\numberline {3.4}实现口径、复杂度与可扩展性}{24}{section.3.4}%
-\contentsline {paragraph}{统一口径与复杂度瓶颈}{24}{paragraph*.31}%
+\contentsline {section}{\numberline {3.4}实现口径、复杂度与可扩展性}{25}{section.3.4}%
+\contentsline {paragraph}{统一口径与复杂度瓶颈}{25}{paragraph*.31}%
 \contentsline {section}{\numberline {3.5}本章小结}{25}{section.3.5}%
-\contentsline {chapter}{\numberline {第4章}仿真结果与参数依赖性分析}{26}{chapter.4}%
-\contentsline {section}{\numberline {4.1}实验对照口径与参数锚点}{26}{section.4.1}%
-\contentsline {subsection}{\numberline {4.1.1}指标口径、参数锚点与分层标定}{26}{subsection.4.1.1}%
-\contentsline {section}{\numberline {4.2}分层标定路径}{27}{section.4.2}%
-\contentsline {section}{\numberline {4.3}结果图谱与物理解释}{27}{section.4.3}%
-\contentsline {subsection}{\numberline {4.3.1}结果图谱的联合诊断链}{28}{subsection.4.3.1}%
-\contentsline {paragraph}{源端时域结构与数值截断}{28}{paragraph*.33}%
-\contentsline {paragraph}{窗口、HOM 与 BSM 的联合诊断}{28}{paragraph*.34}%
-\contentsline {paragraph}{端到端可用纠缠质量}{30}{paragraph*.35}%
-\contentsline {section}{\numberline {4.4}误差预算与真假事件分解}{34}{section.4.4}%
-\contentsline {paragraph}{误差归因与部署判据}{34}{paragraph*.36}%
-\contentsline {section}{\numberline {4.5}计算成本与部署判据}{35}{section.4.5}%
-\contentsline {section}{\numberline {4.6}本章小结}{35}{section.4.6}%
-\contentsline {chapter}{\heiti 结\hspace {\ccwd }论}{37}{section*.37}%
-\contentsline {chapter}{\heiti 参考文献}{38}{section*.40}%
-\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{41}{section*.42}%
-\contentsline {chapter}{\heiti 致\hspace {\ccwd }谢}{42}{section*.44}%
-\contentsline {chapter}{\numberline {附录 A}补充数学推导}{43}{appendix.A}%
-\contentsline {section}{\numberline {A.1}12维发射体的块结构与基序置换}{43}{section.A.1}%
-\contentsline {section}{\numberline {A.2}从 36 维子门到 60 维站点门的索引嵌入}{43}{section.A.2}%
-\contentsline {section}{\numberline {A.3}滤波记忆步进门的离散推导与幺正性}{44}{section.A.3}%
-\contentsline {section}{\numberline {A.4}交换调度的不变量与终态布局}{45}{section.A.4}%
-\contentsline {section}{\numberline {A.5}计时闭合关系与主导项判据}{45}{section.A.5}%
-\contentsline {chapter}{\heiti 攻读硕士学位期间发表的论文及其他成果}{47}{section*.47}%
-\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{48}{section*.49}%
+\contentsline {chapter}{\numberline {第4章}仿真结果与参数依赖性分析}{27}{chapter.4}%
+\contentsline {section}{\numberline {4.1}实验对照口径与参数锚点}{27}{section.4.1}%
+\contentsline {subsection}{\numberline {4.1.1}指标口径参数锚定}{27}{subsection.4.1.1}%
+\contentsline {section}{\numberline {4.2}分层标定流程}{28}{section.4.2}%
+\contentsline {section}{\numberline {4.3}结果图谱物理归因}{28}{section.4.3}%
+\contentsline {subsection}{\numberline {4.3.1}结果图谱联合诊断链}{29}{subsection.4.3.1}%
+\contentsline {paragraph}{源端时域结构与数值截断}{29}{paragraph*.33}%
+\contentsline {paragraph}{窗口选择与事件统计}{30}{paragraph*.34}%
+\contentsline {paragraph}{干涉质量与模式分解}{30}{paragraph*.35}%
+\contentsline {section}{\numberline {4.4}端到端性能误差预算}{32}{section.4.4}%
+\contentsline {paragraph}{条件态结构与端到端可用纠缠质量}{32}{paragraph*.36}%
+\contentsline {paragraph}{误差归因与部署判据}{36}{paragraph*.37}%
+\contentsline {section}{\numberline {4.5}计算成本与部署判据}{36}{section.4.5}%
+\contentsline {section}{\numberline {4.6}本章小结}{38}{section.4.6}%
+\contentsline {chapter}{\heiti 结\hspace {\ccwd }论}{40}{section*.38}%
+\contentsline {chapter}{\heiti 参考文献}{41}{section*.41}%
+\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{44}{section*.43}%
+\contentsline {chapter}{\heiti 致\hspace {\ccwd }谢}{45}{section*.45}%
+\contentsline {chapter}{\numberline {附录 A}补充数学推导}{46}{appendix.A}%
+\contentsline {section}{\numberline {A.1}12维发射体的块结构与基序置换}{46}{section.A.1}%
+\contentsline {section}{\numberline {A.2}从 36 维子门到 60 维站点门的索引嵌入}{46}{section.A.2}%
+\contentsline {section}{\numberline {A.3}滤波记忆步进门的离散推导与幺正性}{47}{section.A.3}%
+\contentsline {section}{\numberline {A.4}交换调度的不变量与终态布局}{48}{section.A.4}%
+\contentsline {section}{\numberline {A.5}计时闭合关系与主导项判据}{48}{section.A.5}%
+\contentsline {chapter}{\heiti 攻读硕士学位期间发表的论文及其他成果}{50}{section*.48}%
+\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{51}{section*.50}%

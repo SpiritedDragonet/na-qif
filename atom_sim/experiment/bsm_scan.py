@@ -15,6 +15,7 @@ from .common import (
     SimConfig,
     run_trial_detection_core,
     write_click_records,
+    write_declared_density_matrix,
 )
 
 
@@ -124,11 +125,26 @@ def run_bsm_scan_task(
     corr_ezz_vals = []
     chsh_vals = []
     pattern_counter = {pattern_key: 0 for pattern_key in BSM_PATTERN_KEYS}
+    pattern_true_mass = {pattern_key: 0.0 for pattern_key in BSM_PATTERN_KEYS}
+    pattern_false_mass = {pattern_key: 0.0 for pattern_key in BSM_PATTERN_KEYS}
     click_records = []
 
     for shot_index, sample in enumerate(pipeline.samples):
         pattern_key = _classify_bsm_pattern(sample)
         pattern_counter[pattern_key] += 1
+        p_true_given_record = float(np.clip(getattr(sample, "p_true_given_record", 0.0), 0.0, 1.0))
+        p_bg_assist_given_record = float(
+            np.clip(getattr(sample, "p_bg_assist_given_record", 0.0), 0.0, 1.0)
+        )
+        p_intrinsic_dark_assist_given_record = float(
+            np.clip(
+                getattr(sample, "p_intrinsic_dark_assist_given_record", 0.0),
+                0.0,
+                1.0,
+            )
+        )
+        pattern_true_mass[pattern_key] += p_true_given_record
+        pattern_false_mass[pattern_key] += (1.0 - p_true_given_record)
 
         click_pairs = [
             (
@@ -146,6 +162,9 @@ def run_bsm_scan_task(
                 "bell": sample.bell_state,
                 "pattern": pattern_key,
                 "clicks": click_pairs,
+                "p_true_given_record": p_true_given_record,
+                "p_bg_assist_given_record": p_bg_assist_given_record,
+                "p_intrinsic_dark_assist_given_record": p_intrinsic_dark_assist_given_record,
             }
         )
 
@@ -158,12 +177,14 @@ def run_bsm_scan_task(
 
     shots_total = len(pipeline.samples)
     success_total = int(sum(1 for sample in pipeline.samples if sample.success))
+    p_two_click_abs = float(np.clip(pipeline.p_records_total, 0.0, 1.0))
     entry = {
         "bs_theta": float(bs_theta),
         "bs_split_ratio": float(np.sin(float(bs_theta)) ** 2),
         "run_index": run_index,
         "shots": shots_total,
         "success": success_total,
+        "p_two_click_abs": p_two_click_abs,
         "p_arrive": enum_main.p_arrive,
         "p_arrive_11": enum_main.p_arrive_11,
         "p_arrive_same_arm": enum_main.p_arrive_same_arm,
@@ -188,12 +209,25 @@ def run_bsm_scan_task(
         count = int(pattern_counter[pattern_key])
         entry[pattern_key] = count
         entry[f"{pattern_key}_rate"] = (float(count) / float(shots_total)) if shots_total > 0 else 0.0
+        if shots_total > 0:
+            entry[f"{pattern_key}_true_abs"] = p_two_click_abs * (pattern_true_mass[pattern_key] / float(shots_total))
+            entry[f"{pattern_key}_false_abs"] = p_two_click_abs * (pattern_false_mass[pattern_key] / float(shots_total))
+        else:
+            entry[f"{pattern_key}_true_abs"] = 0.0
+            entry[f"{pattern_key}_false_abs"] = 0.0
 
     metrics = {
         "run_index": run_index,
         "bs_thetas": [entry],
     }
     write_click_records(raw_dir, {f"{float(bs_theta):.9f}": click_records})
+    write_declared_density_matrix(
+        raw_dir,
+        rho_raw=getattr(enum_main, "rho_declared_raw", None),
+        rho_ff=getattr(enum_main, "rho_declared_ff", None),
+        trace_raw=float(getattr(enum_main, "trace_declared_raw", 0.0)),
+        trace_ff=float(getattr(enum_main, "trace_declared_ff", 0.0)),
+    )
     return metrics
 
 

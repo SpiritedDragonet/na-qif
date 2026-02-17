@@ -105,7 +105,6 @@
 %%\authorization[auscan.pdf] % 使用签字扫描版的原创性与授权声明页
 \makecover
 \cleardoublepage   % 控制右开页，与前文连续开页时注释掉
-\input{front/abstract}      % 加载摘要文件，而不是使用命令
 
 \cleardoublepage   % 控制右开页，与前文连续开页时注释掉
 \tableofcontents   % 论文目录
@@ -119,8 +118,8 @@
 %%----------  论文主体，可以根据需要添加章节 --------------
 \cleardoublepage % 控制右开页，后续论文正文一般采用此格式
 \mainmatter
-\include{body/regu}
-\include{body/introduction}
+\include{body/chapter1}
+\include{body/chapter2}
 \include{body/chapter3}
 \include{body/chapter4}
 \backmatter

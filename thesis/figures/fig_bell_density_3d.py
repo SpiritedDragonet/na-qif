@@ -2,8 +2,6 @@ import pathlib
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.cm import ScalarMappable
-from matplotlib.colors import Normalize
 
 
 def _rho_bell_conditional() -> np.ndarray:
@@ -19,59 +17,56 @@ def _rho_bell_conditional() -> np.ndarray:
     )
 
 
-def _plot_component(ax, component: np.ndarray, title: str, zlim: float) -> None:
-    n = component.shape[0]
-    xx, yy = np.meshgrid(np.arange(n), np.arange(n), indexing="ij")
-    xpos = xx.ravel().astype(float)
-    ypos = yy.ravel().astype(float)
-    zpos = np.zeros_like(xpos)
-    dx = np.full_like(xpos, 0.62, dtype=float)
-    dy = np.full_like(ypos, 0.62, dtype=float)
-    dz = component.ravel()
+def _annotate_matrix(ax: plt.Axes, mat: np.ndarray, vmax: float) -> None:
+    n = mat.shape[0]
+    for i in range(n):
+        for j in range(n):
+            value = mat[i, j]
+            if abs(value) < 0.006:
+                continue
+            color = "white" if abs(value) > 0.45 * vmax else "#111111"
+            ax.text(j, i, f"{value:+.3f}", ha="center", va="center", fontsize=8.2, color=color)
 
-    norm = Normalize(vmin=-zlim, vmax=zlim)
-    cmap = plt.get_cmap("coolwarm")
-    colors = cmap(norm(dz))
 
-    ax.bar3d(xpos, ypos, zpos, dx, dy, dz, color=colors, shade=True, zsort="average")
-    ax.view_init(elev=24, azim=-52)
-    ax.set_zlim(-zlim, zlim)
-    ax.set_zticks([-zlim, -0.5 * zlim, 0.0, 0.5 * zlim, zlim])
-    ax.set_title(title)
-
+def _plot_component(ax: plt.Axes, mat: np.ndarray, title: str, vmax: float) -> None:
     labels = [r"$|00\rangle$", r"$|01\rangle$", r"$|10\rangle$", r"$|11\rangle$"]
-    ax.set_xticks(np.arange(n) + 0.31)
-    ax.set_xticklabels(labels, rotation=20, ha="right", fontsize=8)
-    ax.set_yticks(np.arange(n) + 0.31)
-    ax.set_yticklabels(labels, rotation=-15, ha="right", fontsize=8)
-    ax.set_xlabel("ket")
-    ax.set_ylabel("bra")
-    ax.set_zlabel(r"$\rho$")
-
-    sm = ScalarMappable(norm=norm, cmap=cmap)
-    sm.set_array([])
-    cbar = plt.colorbar(sm, ax=ax, fraction=0.05, pad=0.04)
-    cbar.set_label(r"$\rho_{ij}$")
+    im = ax.imshow(mat, cmap="coolwarm", vmin=-vmax, vmax=vmax, origin="upper", aspect="equal")
+    ax.set_title(title)
+    ax.set_xticks(range(4), labels, rotation=20, ha="right")
+    ax.set_yticks(range(4), labels)
+    ax.set_xlabel("ket index")
+    ax.set_ylabel("bra index")
+    _annotate_matrix(ax, mat, vmax)
+    return im
 
 
 def main() -> None:
-    plt.rcParams.update({"font.family": "DejaVu Sans"})
+    plt.rcParams.update(
+        {
+            "font.family": "DejaVu Sans",
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+        }
+    )
 
     rho = _rho_bell_conditional()
     rho_re = np.real(rho)
     rho_im = np.imag(rho)
-    zlim = 0.52
+    vmax = 0.52
 
-    fig = plt.figure(figsize=(10.8, 5.0))
+    fig = plt.figure(figsize=(9.8, 4.6), constrained_layout=True)
     gs = fig.add_gridspec(1, 2, width_ratios=[1.0, 1.0], wspace=0.22)
-    ax0 = fig.add_subplot(gs[0, 0], projection="3d")
-    ax1 = fig.add_subplot(gs[0, 1], projection="3d")
+    ax0 = fig.add_subplot(gs[0, 0])
+    ax1 = fig.add_subplot(gs[0, 1])
 
-    _plot_component(ax0, rho_re, r"Re$(\rho_{\mathrm{cond}})$", zlim)
-    _plot_component(ax1, rho_im, r"Im$(\rho_{\mathrm{cond}})$", zlim)
+    im0 = _plot_component(ax0, rho_re, r"Re$(\rho_{\mathrm{cond}})$", vmax)
+    im1 = _plot_component(ax1, rho_im, r"Im$(\rho_{\mathrm{cond}})$", vmax)
+    cbar0 = fig.colorbar(im0, ax=ax0, fraction=0.05, pad=0.02)
+    cbar1 = fig.colorbar(im1, ax=ax1, fraction=0.05, pad=0.02)
+    cbar0.set_label(r"Re$(\rho_{ij})$")
+    cbar1.set_label(r"Im$(\rho_{ij})$")
 
-    fig.subplots_adjust(left=0.03, right=0.97, top=0.88, bottom=0.10, wspace=0.20)
-    fig.suptitle("Heralded Bell-state density matrix (3D bars)", fontsize=12.4, fontweight="bold")
+    fig.suptitle("Heralded Bell-state density matrix (2D heatmaps)", fontsize=12.1, fontweight="bold")
     out_path = pathlib.Path(__file__).with_suffix(".png")
     fig.savefig(out_path, dpi=220)
     plt.close(fig)
@@ -79,4 +74,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

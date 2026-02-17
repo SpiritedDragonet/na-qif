@@ -189,17 +189,30 @@ def _run_hom_run(
     p_arrive = pipeline.p_arrive
     # 逐 shot 统计符合与点击记录
     with timer.span("samples_postprocess_total"):
-        for det_result in pipeline.samples:
+        for shot_index, det_result in enumerate(pipeline.samples):
+            click_pairs = [
+                (
+                    c.detector,
+                    c.bin_index,
+                    bool(getattr(c, "is_dark", False)),
+                    str(getattr(c, "source", "signal")),
+                )
+                for c in det_result.clicks
+            ]
             click_records.append(
-                [
-                    (
-                        c.detector,
-                        c.bin_index,
-                        bool(getattr(c, "is_dark", False)),
-                        str(getattr(c, "source", "signal")),
-                    )
-                    for c in det_result.clicks
-                ]
+                {
+                    "shot_index": int(shot_index),
+                    "success": bool(det_result.success),
+                    "bell": det_result.bell_state,
+                    "clicks": click_pairs,
+                    "p_true_given_record": float(getattr(det_result, "p_true_given_record", 0.0)),
+                    "p_bg_assist_given_record": float(
+                        getattr(det_result, "p_bg_assist_given_record", 0.0)
+                    ),
+                    "p_intrinsic_dark_assist_given_record": float(
+                        getattr(det_result, "p_intrinsic_dark_assist_given_record", 0.0)
+                    ),
+                }
             )
             if _is_port_samepol_coincidence(det_result.clicks, window_bins):
                 coincidences += 1

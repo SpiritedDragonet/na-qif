@@ -4,6 +4,8 @@
 
 \section{从 QED 到四能级原子-腔有效模型}[From QED to the Four-Level Atom-Cavity Effective Model]
 
+本节先给出从场论描述到可计算离散模型的映射主线，再进入具体门构造。核心目标是把连续时间、开放系统的原子-光场耦合问题，压缩为可在时间 bin 链上逐步施加的局域更新：先由 QED 拉氏量经过低能与偶极近似、有限能级截断和旋转波近似，得到四能级原子与偏振腔模的有效哈密顿量；再把相干项与耗散项分离，分别对应幺正更新与塌缩通道；最终在离散时间步长 $\Delta t$ 下形成可直接进入 MPS/TEBD 的门算符。本节的输出对象按维度依次为 4 维原子相干块、12 维发射体哈密顿量与 60 维发射体-单 bin 两站点门，它们共同构成后续 QFC、光纤与 POVM 推回建模的统一起点。
+
 \subsection{发射模型与时间离散化门构造}[Emission model and time-discretized gate construction]
 
 本子节按“4 维原子块 $\rightarrow$ 12 维发射体 $\rightarrow$ 60 维两站点门”的顺序展开，把相干项、辐射项与禁阻项分别落在明确的算符上，避免将不同物理过程混写为单一经验参数。
@@ -233,7 +235,7 @@ U_{36}^{(n)} & 0\\
 
 \paragraph{QFC 与滤波记忆核的张量门}
 
-当发射阶段结束后，链路中的主导物理过程从“原子-场耦合”转为“频率转换与有限带宽记忆”。因此这一子节不再引入新的原子自由度，而是围绕 bin 与记忆模之间的局域幺正更新，给出可直接收缩的门表达。该表达同时保留 QFC 效率、滤波带宽与跨 bin 相关三类信息，是后续 BSM 条件态质量分析的必要输入。
+当发射阶段结束后，链路中的主导物理过程从“原子-场耦合”转为“频率转换与有限带宽记忆”。因此，本子节围绕 bin 与记忆模之间的局域幺正更新给出可直接收缩的门表达，并保持原子自由度集合不扩张。该表达同时保留 QFC 效率、滤波带宽与跨 bin 相关三类信息，是后续 BSM 条件态质量分析的必要输入。
 
 \paragraph{QFC 的 5D 局域门}
 
@@ -350,11 +352,11 @@ p_{\mathrm{memA}}\rightarrow 2,\qquad p_{\mathrm{memB}}\rightarrow 3,
 \end{equation}
 该布局直接服务后续收缩：原子与记忆核在链首，时间 bin 区域结构规则，降低索引管理与 SWAP 调度复杂度。
 
-\section{光纤与 BSM 的 Heisenberg-POVM 统一建模}[Unified Heisenberg-POVM Modeling for Fiber and BSM]
+\section{光纤 BSM Heisenberg-POVM 统一建模}[Unified Heisenberg-POVM Modeling for Fiber BSM]
 
-\subsection{Heisenberg-POVM 推回、成功判据与复杂度口径}[Heisenberg-POVM pushback, success criteria, and complexity conventions]
+\subsection{Heisenberg-POVM 推回及成功判据}[Heisenberg-POVM pushback and success criteria]
 
-这一子节把“测量端定义”与“计算端口径”同时说明。前者回答如何从探测点击记录构造可分辨性混合的 effect 并推回输入端，后者回答如何在固定物理单位口径下解释 wall-clock 开销来源。将二者合并陈述的原因是：在本模型里，运行时间的主导项恰好与测量枚举空间大小耦合，算法复杂度与物理判据并非独立问题。
+本子节聚焦测量端定义：从探测点击记录构造可分辨性混合 effect，经由对偶映射推回输入端，并据此给出成功事件集合与核心统计量。复杂度口径与 wall-clock 开销解释在第 3.4 节统一讨论。
 
 \paragraph{探测端 effect 构造与可分辨性混合}
 
@@ -442,6 +444,14 @@ T_n\propto O\!\left(N\cdot W\cdot C(\chi)\right),
 \end{equation}
 $W$ 为窗口宽度对应的 bin 数，$C(\chi)$ 表示给定键维下的单次收缩成本。该结构解释了“参数几乎不变但窗口或枚举口径改变时墙钟显著变化”的现象。进一步地，若把状态更新、effect 推回与最终枚举看成三层管线，则 wall-clock 的主导项在不同任务类型下会迁移：参数扫描任务通常受 $T_n$ 主导，而单次高精度结构分析则更受 $C(\chi)$ 的局域高秩峰值主导。这一分解直接指导第四章中的性能诊断与优化优先级设定。
 
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.96\linewidth]{fig_sim_pipeline}
+\caption{端到端单次任务仿真流程图：从参数与离散设置输入，经发射 TEBD、QFC+记忆门、光纤与 BSM 对偶推回、POVM 收缩，输出任务指标与中间可观测量。}
+\label{fig:sim_pipeline}
+\end{figure}
+图 \ref{fig:sim_pipeline} 将本章的门化建模、对偶推回与收缩统计统一为一条可执行流程线，便于在后续结果章节中将“物理归因”与“计算开销”对齐到同一处理阶段。
+
 \section{本章小结}[Chapter Summary]
 
-本章从 QED 出发，建立了端到端模型：四能级原子-腔发射门、5D QFC 门、5D$\times$3D 滤波记忆门、以及 Heisenberg 端的光纤与 BSM-POVM 收缩。核心技术路线是“态端保留发射与记忆核，线性光学和损耗推回 effect”。其直接收益是：在不牺牲物理可解释性的前提下，将复杂链路压缩为可枚举、可分解、可做误差预算的计算流程，为下一章的实验对照结果与参数扫描提供统一基线。
+本章从 QED 出发，建立了端到端模型：四能级原子-腔发射门、5D QFC 门、5D$\times$3D 滤波记忆门、以及 Heisenberg 端的光纤与 BSM-POVM 收缩。核心技术路线为“态端保留发射与记忆核，线性光学和损耗推回 effect”。在不牺牲物理可解释性的前提下，该路线将复杂链路压缩为可枚举、可分解、可做误差预算的计算流程，为下一章的实验对照结果与参数扫描提供统一基线。

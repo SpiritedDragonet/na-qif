@@ -15,6 +15,7 @@ from .common import (
     run_trial_detection_core,
     _compute_effective_attempt_rate_hz,
     write_click_records,
+    write_declared_density_matrix,
 )
 
 
@@ -105,6 +106,17 @@ def run_length_scan_task(
     chsh_vals = []
     click_records = []
     for shot_index, sample in enumerate(pipeline.samples):
+        p_true_given_record = float(np.clip(getattr(sample, "p_true_given_record", 0.0), 0.0, 1.0))
+        p_bg_assist_given_record = float(
+            np.clip(getattr(sample, "p_bg_assist_given_record", 0.0), 0.0, 1.0)
+        )
+        p_intrinsic_dark_assist_given_record = float(
+            np.clip(
+                getattr(sample, "p_intrinsic_dark_assist_given_record", 0.0),
+                0.0,
+                1.0,
+            )
+        )
         click_pairs = [
             (
                 c.detector,
@@ -120,6 +132,9 @@ def run_length_scan_task(
                 "success": bool(sample.success),
                 "bell": sample.bell_state,
                 "clicks": click_pairs,
+                "p_true_given_record": p_true_given_record,
+                "p_bg_assist_given_record": p_bg_assist_given_record,
+                "p_intrinsic_dark_assist_given_record": p_intrinsic_dark_assist_given_record,
             }
         )
         if sample.success:
@@ -136,6 +151,7 @@ def run_length_scan_task(
         "run_index": run_index,
         "shots": shots_per_run,
         "success": int(sum(1 for sample in pipeline.samples if sample.success)),
+        "p_two_click_abs": float(np.clip(pipeline.p_records_total, 0.0, 1.0)),
         "window_ns": float(config.run.window_ns),
         "attempt_rate_hz": attempt_rate_hz_eff,
         "event_rate_hz": event_rate_hz,
@@ -167,6 +183,13 @@ def run_length_scan_task(
         "lengths": [entry],
     }
     write_click_records(raw_dir, {f"{float(length_km):.9f}": click_records})
+    write_declared_density_matrix(
+        raw_dir,
+        rho_raw=getattr(enum_main, "rho_declared_raw", None),
+        rho_ff=getattr(enum_main, "rho_declared_ff", None),
+        trace_raw=float(getattr(enum_main, "trace_declared_raw", 0.0)),
+        trace_ff=float(getattr(enum_main, "trace_declared_ff", 0.0)),
+    )
     return metrics
 
 

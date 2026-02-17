@@ -52,6 +52,36 @@ def write_click_records(raw_dir: Path, click_records: Any) -> None:
     tmp.replace(path)
 
 
+def write_declared_density_matrix(
+    raw_dir: Path,
+    *,
+    rho_raw: Optional[np.ndarray],
+    rho_ff: Optional[np.ndarray],
+    trace_raw: float,
+    trace_ff: float,
+) -> None:
+    """
+    写入 raw/declared_density_matrix.json（每个 task 一份）。
+    """
+    if rho_raw is None or rho_ff is None:
+        return
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    path = raw_dir / "declared_density_matrix.json"
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    payload = {
+        "basis": ["00", "01", "10", "11"],
+        "trace_raw": float(trace_raw),
+        "trace_ff": float(trace_ff),
+        "rho_raw_real": np.real(rho_raw).tolist(),
+        "rho_raw_imag": np.imag(rho_raw).tolist(),
+        "rho_ff_real": np.real(rho_ff).tolist(),
+        "rho_ff_imag": np.imag(rho_ff).tolist(),
+    }
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False)
+    tmp.replace(path)
+
+
 @dataclass
 class TimingTracer:
     """统一计时器：支持打点累计、分段合并与上下文计时。"""
