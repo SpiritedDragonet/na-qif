@@ -650,11 +650,14 @@ def run_dual_atom_emission(
         delay_jitter_actual_ns = rng.uniform(-delay_jitter_ns, delay_jitter_ns)
         delay_ns_used = delay_ns + delay_jitter_actual_ns
 
-    # tau/delay 的作用口径：只作用在 Ω_B(t) 包络的时间平移上。
-    # 即通过平移 B 臂驱动中心 t0_B -> t0_B + delay 实现，而不改 bin 索引。
-    # 这与 HOM 的物理定义一致（延迟改变可干涉重叠）。
-    # 应用时间延迟到 B 的驱动中心时间
-    t0_B = t0_B + delay_ns_used
+    # tau/delay 的作用口径（全任务统一）：
+    # 对称分配到两臂驱动中心，保持相对延迟 Δ(tB - tA) = delay。
+    #   t0_A <- t0_A - delay/2
+    #   t0_B <- t0_B + delay/2
+    # 这样不会引入“只改一臂”的额外偏置，HOM/SIM/SCAN 共享同一口径。
+    half_delay_ns = 0.5 * delay_ns_used
+    t0_A = t0_A - half_delay_ns
+    t0_B = t0_B + half_delay_ns
 
     omega_A_values = _omega_envelope(t_ns, t0_A, sigma, omega_peak_A, waveform=drive_waveform_A)
     omega_B_values = _omega_envelope(t_ns, t0_B, sigma, omega_peak_B, waveform=drive_waveform_B)
@@ -726,10 +729,23 @@ def run_dual_atom_emission(
                 f"  时间延迟: base={delay_ns:.1f} ns, "
                 f"jitter_range=+/-{delay_jitter_ns:.1f} ns, "
                 f"jitter={delay_jitter_actual_ns:.2f} ns, "
-                f"used={delay_ns_used:.2f} ns"
+                f"used={delay_ns_used:.2f} ns, "
+                f"split(A/B)=({-half_delay_ns:.2f}, {half_delay_ns:.2f}) ns"
             )
         else:
-            print(f"  时间延迟: delay_ns={delay_ns:.1f} ns")
+            print(
+                f"  时间延迟: delay_ns={delay_ns:.1f} ns, "
+                f"split(A/B)=({-half_delay_ns:.2f}, {half_delay_ns:.2f}) ns"
+            )
+        time_min_ns = min(float(t0_A), float(t0_B))
+        time_max_ns = max(float(t0_A), float(t0_B))
+        time_limit_ns = float((n_bins - 1) * dt_ns)
+        if time_min_ns < 0.0 or time_max_ns > time_limit_ns:
+            print(
+                "  [warn] 驱动中心超出时间网格: "
+                f"min_t0={time_min_ns:.2f} ns, max_t0={time_max_ns:.2f} ns, "
+                f"grid=[0.00, {time_limit_ns:.2f}] ns"
+            )
 
     # ========================================================================
     # 初始化 MPS: 交错布局 A1, B1, A2, B2, ..., AN, BN, emitterA, emitterB

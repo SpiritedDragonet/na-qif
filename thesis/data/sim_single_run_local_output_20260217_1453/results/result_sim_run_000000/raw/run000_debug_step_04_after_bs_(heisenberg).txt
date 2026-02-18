@@ -1,0 +1,41 @@
+调试信息 - After BS (Heisenberg)
+============================================================
+
+注: BS 已并入测量端，不直接作用于态；该快照主要反映退相干后态。若本次轨迹未采到相位翻转，与 After Fiber 可近似一致，但探测端口统计仍会受 BS 参数影响。
+
+阶段口径/参数:
+  acts_on_state: False
+  bs_split_ratio: 5.000000e-01
+  bs_theta_rad: 7.853982e-01
+  fiber_eta_H_A: 2.325745e-01
+  fiber_eta_H_B: 2.157029e-01
+  fiber_eta_V_A: 2.368910e-01
+  fiber_eta_V_B: 2.034455e-01
+  fiber_phase_drift_rad: 1.839438e-02
+  fiber_phase_jitter_std_rad: 0.000000e+00
+  fiber_phase_slope_rad_per_bin: 8.768151e-03
+  qfc_theta_H: 8.556289e-01
+  qfc_theta_V: 8.556289e-01
+  representation: heisenberg
+
+MPS维度信息:
+  n_sites = 204
+  n_bins = 100
+  chi_min=3, chi_max=9, chi_mean=8.9
+  first_5=[12, 12, 3, 3, 5], last_5=[5, 5, 5, 5, 5]
+
+数值可信度:
+  trunc_total_calls = 600
+  trunc_total_eps = 9.710233e-29
+  trunc_total_eps_max = 4.907678e-31
+
+原子态信息:
+  对角元: [0.01155923820366033, 0.011559238203660326, 0.011559238203660333, 0.011559238203660328]
+  p_qubit: 0.0462
+  纯度(条件化): 0.2500
+
+Bell态保真度:
+  Psi+ (full/cond) = 0.0116 / 0.2500
+  Psi- (full/cond) = 0.0116 / 0.2500
+  Phi+ (full/cond) = 0.0116 / 0.2500
+  Phi- (full/cond) = 0.0116 / 0.2500

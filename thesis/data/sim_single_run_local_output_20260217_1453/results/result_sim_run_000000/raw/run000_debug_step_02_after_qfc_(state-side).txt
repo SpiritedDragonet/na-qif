@@ -1,0 +1,30 @@
+调试信息 - After QFC (State-side)
+============================================================
+
+阶段口径/参数:
+  acts_on_state: True
+  qfc_theta_H: 8.556289e-01
+  qfc_theta_V: 8.556289e-01
+  representation: state_side
+
+MPS维度信息:
+  n_sites = 204
+  n_bins = 100
+  chi_min=3, chi_max=9, chi_mean=8.9
+  first_5=[12, 12, 3, 3, 5], last_5=[5, 5, 5, 5, 5]
+
+数值可信度:
+  trunc_total_calls = 600
+  trunc_total_eps = 9.710233e-29
+  trunc_total_eps_max = 4.907678e-31
+
+原子态信息:
+  对角元: [0.01155923820366026, 0.011559238203660265, 0.011559238203660279, 0.01155923820366026]
+  p_qubit: 0.0462
+  纯度(条件化): 0.2500
+
+Bell态保真度:
+  Psi+ (full/cond) = 0.0116 / 0.2500
+  Psi- (full/cond) = 0.0116 / 0.2500
+  Phi+ (full/cond) = 0.0116 / 0.2500
+  Phi- (full/cond) = 0.0116 / 0.2500

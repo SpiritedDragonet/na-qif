@@ -926,7 +926,7 @@ def _build_task_list(
     return task_count
 
 
-def _recover_stale_tasks(paths: dict, stale_seconds: int = 600) -> None:
+def _recover_stale_tasks(paths: dict, stale_seconds: int = 180) -> None:
     # ------------------------------------------------------------------
     # 任务回收：
     #   - inprogress 中若超过 stale_seconds 未更新，视为失联

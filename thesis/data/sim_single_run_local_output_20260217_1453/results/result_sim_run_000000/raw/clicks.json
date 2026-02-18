@@ -1,0 +1,1 @@
+{"clicks": [{"shot_index": 0, "success": true, "bell": "Psi-", "clicks": [["V1", 2, false, "signal"], ["H2", 31, false, "signal"]], "p_true_given_record": 0.9951307182909619, "p_bg_assist_given_record": 0.0035233283538237195, "p_intrinsic_dark_assist_given_record": 0.0013459533552143896}]}
