@@ -532,7 +532,7 @@ def _run_single_simulation_core(
                 with timer.span("hook_plot_total"):
                     print(f"\n生成{stage_name}的可视化图...")
                     plot_path = plot_dir / f"{run_tag}_{file_suffix}.png"
-                    plot_data_path = output_dir / f"{run_tag}_{file_suffix}_states.csv"
+                    plot_data_path = plot_dir / f"{run_tag}_{file_suffix}_states.csv"
                     target = emission if use_emission_obj else emission.mps
                     kwargs = dict(
                         save_path=str(plot_path),

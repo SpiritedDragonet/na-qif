@@ -54,7 +54,7 @@ def _export_dual_arm_probabilities_csv(
     stage_name: str,
     stage_mode: str,
     time_axis_s: np.ndarray,
-    bin_state_labels: List[str],
+    state_labels: List[str],
     probs_A: np.ndarray,
     probs_B: np.ndarray,
 ) -> None:
@@ -81,14 +81,17 @@ def _export_dual_arm_probabilities_csv(
                 "time_ns_plot_axis",
                 "state_index",
                 "state_label",
+                "state_domain",
                 "probability",
             ]
         )
+        atom_labels = {"|0>", "|1>", "|u>", "|e>"}
         for arm_label, probs in (("A", probs_A), ("B", probs_B)):
             for bin_index in range(n_bins):
                 time_inc_ns = float(time_axis_s[bin_index] * 1e9)
                 time_plot_ns = float(time_axis_s[(n_bins - 1) - bin_index] * 1e9)
-                for state_index, state_label in enumerate(bin_state_labels):
+                for state_index, state_label in enumerate(state_labels):
+                    state_domain = "atom" if state_label in atom_labels else "photon"
                     writer.writerow(
                         [
                             stage_name,
@@ -99,6 +102,7 @@ def _export_dual_arm_probabilities_csv(
                             time_plot_ns,
                             int(state_index),
                             state_label,
+                            state_domain,
                             float(probs[bin_index, state_index]),
                         ]
                     )
@@ -580,17 +584,6 @@ def plot_dual_arm_heatmap(
                 probs_A[n, :] = np.maximum(0.0, np.real(np.diag(rho_A)))
                 probs_B[n, :] = np.maximum(0.0, np.real(np.diag(rho_B)))
 
-    if export_csv_path:
-        _export_dual_arm_probabilities_csv(
-            export_csv_path=export_csv_path,
-            stage_name=stage_name,
-            stage_mode=stage_mode,
-            time_axis_s=time_axis_s,
-            bin_state_labels=bin_state_labels,
-            probs_A=probs_A,
-            probs_B=probs_B,
-        )
-
     # Calculate vmax EXCLUDING (vac,vac) row (index 0), fully data-adaptive.
     photon_max_A = float(np.max(probs_A[:, 1:])) if probs_A.shape[1] > 1 else 0.0
     photon_max_B = float(np.max(probs_B[:, 1:])) if probs_B.shape[1] > 1 else 0.0
@@ -624,6 +617,17 @@ def plot_dual_arm_heatmap(
 
         combined_A = probs_A.T
         combined_B = probs_B.T
+
+    if export_csv_path:
+        _export_dual_arm_probabilities_csv(
+            export_csv_path=export_csv_path,
+            stage_name=stage_name,
+            stage_mode=stage_mode,
+            time_axis_s=time_axis_s,
+            state_labels=combined_labels_A,
+            probs_A=combined_A.T,
+            probs_B=combined_B.T,
+        )
 
     # Scientific colormaps
     # Atomic states: YlOrRd (Yellow-Orange-Red)
