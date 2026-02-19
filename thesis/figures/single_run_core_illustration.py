@@ -4,7 +4,6 @@ NeurIPS-style "big figure" for an end-to-end time-bin MPS simulation pipeline.
 
 Generates:
   - pipeline_neurips_style.pdf
-  - pipeline_neurips_style.png
 
 This script is self-contained (numpy + matplotlib only).
 """
@@ -409,7 +408,6 @@ def main():
     )
 
     fig.savefig("pipeline_neurips_style.pdf", bbox_inches="tight")
-    fig.savefig("pipeline_neurips_style.png", bbox_inches="tight")
     plt.close(fig)
 
 

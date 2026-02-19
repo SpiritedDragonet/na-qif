@@ -65,7 +65,7 @@ def main() -> None:
     ax1.legend(frameon=False, fontsize=8, loc="upper left")
 
     fig.suptitle("Detector efficiency and background: fidelity map with rate slices", fontsize=12.1, fontweight="bold")
-    out_path = pathlib.Path(__file__).with_suffix(".png")
+    out_path = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_path, dpi=220)
     plt.close(fig)
 

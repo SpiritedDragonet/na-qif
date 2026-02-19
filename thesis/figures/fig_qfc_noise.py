@@ -86,7 +86,7 @@ def main() -> None:
     ax1.scatter([0.57], [165.0], s=55, marker="o", color="#f2c14e", edgecolors="#1f1f1f", linewidths=0.8)
 
     fig.suptitle("QFC efficiency-background operating landscape", fontsize=12.5, fontweight="bold")
-    out_path = pathlib.Path(__file__).with_suffix(".png")
+    out_path = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_path, dpi=220)
     plt.close(fig)
 

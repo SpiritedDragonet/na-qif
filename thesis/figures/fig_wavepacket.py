@@ -8,6 +8,7 @@ import numpy as np
 
 
 ATOM_LABELS = ["|0>", "|1>", "|u>", "|e>"]
+FONT_SCALE = 1.75
 PALETTE = {
     "atom_0": "#4C78A8",
     "atom_1": "#F58518",
@@ -27,17 +28,15 @@ def _set_paper_style() -> None:
     mpl.rcParams.update(
         {
             "font.family": "DejaVu Sans",
-            "font.size": 9.2,
-            "axes.titlesize": 10.2,
-            "axes.labelsize": 10.0,
-            "xtick.labelsize": 8.6,
-            "ytick.labelsize": 8.6,
-            "legend.fontsize": 8.2,
+            "font.size": 9.2 * FONT_SCALE,
+            "axes.titlesize": 10.2 * FONT_SCALE,
+            "axes.labelsize": 10.0 * FONT_SCALE,
+            "xtick.labelsize": 8.6 * FONT_SCALE,
+            "ytick.labelsize": 8.6 * FONT_SCALE,
+            "legend.fontsize": 8.2 * FONT_SCALE,
             "axes.linewidth": 0.85,
             "lines.linewidth": 2.0,
-            "figure.titlesize": 12.8,
-            "savefig.bbox": "tight",
-            "savefig.pad_inches": 0.03,
+            "figure.titlesize": 12.8 * FONT_SCALE,
         }
     )
 
@@ -126,6 +125,11 @@ def _lock_time_axis(ax: plt.Axes) -> None:
     ax.set_xticks(np.arange(0.0, 101.0, 20.0))
 
 
+def _auto_wave_ymax(arm_a: np.ndarray, arm_b: np.ndarray) -> float:
+    peak = max(float(np.max(arm_a)), float(np.max(arm_b)), 1e-9)
+    return peak * 1.18
+
+
 def _panel_label(ax: plt.Axes, label: str) -> None:
     ax.text(
         0.01,
@@ -134,7 +138,7 @@ def _panel_label(ax: plt.Axes, label: str) -> None:
         transform=ax.transAxes,
         ha="left",
         va="top",
-        fontsize=10.0,
+        fontsize=11.5,
         fontweight="bold",
         bbox={"facecolor": "white", "alpha": 0.82, "edgecolor": "none", "pad": 1.8},
     )
@@ -157,7 +161,7 @@ def _plot_dual_arm(
     ax.axvspan(0.0, window_ns, color=PALETTE["window"], alpha=0.08, linewidth=0.0)
     _lock_time_axis(ax)
     ax.set_ylim(0.0, y_max)
-    ax.set_ylabel("Photon prob./bin")
+    ax.set_ylabel("Photon prob.")
     ax.set_title(title, pad=4.0)
     _style_axis(ax)
     if show_legend:
@@ -205,7 +209,6 @@ def main() -> None:
         raise ValueError("发射阶段原子态与光子态时间轴不一致。")
 
     dt_ns = float(np.median(np.diff(t_ns))) if t_ns.size > 1 else 1.0
-    n_bins = int(t_ns.size)
     window_ns = float(manifest.get("config", {}).get("run", {}).get("window_ns", 70.0))
     em_cfg = manifest.get("config", {}).get("emission", {})
     arm_a_cfg = em_cfg.get("arm_A", {})
@@ -233,29 +236,21 @@ def main() -> None:
     energy_a /= max(float(energy_a[-1]), 1e-12)
     energy_b /= max(float(energy_b[-1]), 1e-12)
 
-    wave_ymax = max(
-        float(np.max(em_a)),
-        float(np.max(em_b)),
-        float(np.max(qfc_a)),
-        float(np.max(qfc_b)),
-        float(np.max(fib_a)),
-        float(np.max(fib_b)),
-        float(np.max(bs_a)),
-        float(np.max(bs_b)),
-        1e-6,
-    )
-    wave_ymax *= 1.16
+    wave_ymax_em = _auto_wave_ymax(em_a, em_b)
+    wave_ymax_qfc = _auto_wave_ymax(qfc_a, qfc_b)
+    wave_ymax_fib = _auto_wave_ymax(fib_a, fib_b)
+    wave_ymax_bs = _auto_wave_ymax(bs_a, bs_b)
 
-    fig = plt.figure(figsize=(13.8, 10.8), constrained_layout=True)
-    gs = fig.add_gridspec(4, 2, width_ratios=[1.35, 1.0], hspace=0.22, wspace=0.18)
+    fig = plt.figure(figsize=(17.5, 11.8), constrained_layout=False)
+    gs = fig.add_gridspec(4, 2, width_ratios=[1.45, 1.0], hspace=0.55, wspace=0.30)
     ax_a = fig.add_subplot(gs[0, 0])
     ax_b = fig.add_subplot(gs[1, 0], sharex=ax_a)
     ax_c = fig.add_subplot(gs[2, 0], sharex=ax_a)
-    ax_info = fig.add_subplot(gs[3, 0])
-    ax_d = fig.add_subplot(gs[0, 1], sharex=ax_a, sharey=ax_b)
-    ax_e = fig.add_subplot(gs[1, 1], sharex=ax_a, sharey=ax_b)
-    ax_f = fig.add_subplot(gs[2, 1], sharex=ax_a, sharey=ax_b)
-    ax_g = fig.add_subplot(gs[3, 1], sharex=ax_a)
+    ax_d = fig.add_subplot(gs[3, 0])
+    ax_e = fig.add_subplot(gs[0, 1], sharex=ax_a)
+    ax_f = fig.add_subplot(gs[1, 1], sharex=ax_a)
+    ax_g = fig.add_subplot(gs[2, 1], sharex=ax_a)
+    ax_h = fig.add_subplot(gs[3, 1], sharex=ax_a)
 
     # (a) 原子四能级（真实导出）
     ax_a.plot(t_atom, p0, color=PALETTE["atom_0"], label="|0>")
@@ -271,16 +266,16 @@ def main() -> None:
     ax_a.legend(frameon=False, ncol=4, loc="upper right")
     ax_a.text(
         0.02,
-        0.08,
+        0.96,
         (
             f"$g/\\kappa_{{tot}}={g_over_kappa:.3f}$ (restored cavity parameter set).\n"
-            "In bad-cavity regime, $|u\\rangle\\!\\to\\!|e\\rangle$ is followed by fast radiative loss to $|0\\rangle,|1\\rangle$;\n"
-            "higher finesse (smaller $\\kappa$) increases coherent $u\\leftrightarrow e$ exchange, approaching Rabi-like oscillation."
+            "Bad-cavity: $|u\\rangle\\!\\to\\!|e\\rangle$ is followed by fast radiative loss.\n"
+            "Higher finesse (smaller $\\kappa$): stronger coherent $u\\leftrightarrow e$ exchange."
         ),
         transform=ax_a.transAxes,
-        va="bottom",
+        va="top",
         ha="left",
-        fontsize=7.7,
+        fontsize=9.6,
         bbox={"facecolor": "white", "edgecolor": "#D8DEE9", "alpha": 0.86, "boxstyle": "round,pad=0.32"},
     )
     _panel_label(ax_a, "(a)")
@@ -292,7 +287,7 @@ def main() -> None:
         em_a,
         em_b,
         "After emission: dual-arm wavepacket",
-        y_max=wave_ymax,
+        y_max=wave_ymax_em,
         window_ns=window_ns,
         show_legend=True,
     )
@@ -313,75 +308,92 @@ def main() -> None:
     ax_c.legend(frameon=False, loc="upper left", ncol=2)
     _panel_label(ax_c, "(c)")
 
-    # 左下信息框
-    ax_info.axis("off")
-    info_lines = [
-        "Run Snapshot (Real Data)",
-        f"Dataset: {run_root.name}",
-        f"Time bins: N={n_bins}, dt={dt_ns:.1f} ns, total={n_bins * dt_ns:.1f} ns",
-        f"Acceptance window: {window_ns:.1f} ns",
-        f"Retention @100 ns: QFC={retain_qfc[-1]:.3f}, fiber={retain_fib[-1]:.3f}, BS={retain_bs[-1]:.3f}",
-    ]
-    ax_info.text(
-        0.0,
-        0.98,
-        "\n".join(info_lines),
-        transform=ax_info.transAxes,
-        va="top",
-        ha="left",
-        fontsize=9.0,
-        bbox={
-            "facecolor": "#F7F9FC",
-            "edgecolor": "#D8DEE9",
-            "alpha": 0.96,
-            "boxstyle": "round,pad=0.45",
-        },
-    )
-
-    # (d)(e)(f) 三阶段对比
-    _plot_dual_arm(ax_d, t_ns, qfc_a, qfc_b, "After QFC", y_max=wave_ymax, window_ns=window_ns, show_legend=False)
+    # (d) 阶段总积分（波包积分）对比
+    integ_emit_b = np.cumsum(em_b) * dt_ns
+    integ_qfc_b = np.cumsum(qfc_b) * dt_ns
+    integ_fib_b = np.cumsum(fib_b) * dt_ns
+    integ_bs_b = np.cumsum(bs_b) * dt_ns
+    stage_names = ["Emission", "QFC", "Fiber", "BS"]
+    stage_x = np.arange(len(stage_names), dtype=float)
+    stage_integral_a = np.array([integ_emit[-1], integ_qfc[-1], integ_fib[-1], integ_bs[-1]], dtype=float)
+    stage_integral_b = np.array([integ_emit_b[-1], integ_qfc_b[-1], integ_fib_b[-1], integ_bs_b[-1]], dtype=float)
+    ax_d.plot(stage_x, stage_integral_a, color=PALETTE["arm_a"], marker="o", label="Arm A")
+    ax_d.plot(stage_x, stage_integral_b, color=PALETTE["arm_b"], marker="s", label="Arm B")
+    ax_d.fill_between(stage_x, 0.0, stage_integral_a, color=PALETTE["arm_a"], alpha=0.07, linewidth=0.0)
+    ax_d.fill_between(stage_x, 0.0, stage_integral_b, color=PALETTE["arm_b"], alpha=0.06, linewidth=0.0)
+    ax_d.set_xticks(stage_x, stage_names)
+    ax_d.tick_params(axis="x", labelrotation=12)
+    ax_d.set_ylabel("Integrated photon prob.")
+    ax_d.set_title("Stage-wise total photon probability", pad=4.0)
+    _style_axis(ax_d)
+    ax_d.legend(frameon=False, loc="upper right")
     _panel_label(ax_d, "(d)")
+
+    # (e)(f)(g) 三阶段双臂波包
     _plot_dual_arm(
         ax_e,
         t_ns,
-        fib_a,
-        fib_b,
-        "Before BS (after fiber)",
-        y_max=wave_ymax,
+        qfc_a,
+        qfc_b,
+        "After QFC",
+        y_max=wave_ymax_qfc,
         window_ns=window_ns,
         show_legend=False,
     )
     _panel_label(ax_e, "(e)")
-    _plot_dual_arm(ax_f, t_ns, bs_a, bs_b, "After BS", y_max=wave_ymax, window_ns=window_ns, show_legend=False)
+    _plot_dual_arm(
+        ax_f,
+        t_ns,
+        fib_a,
+        fib_b,
+        "Before BS (after fiber)",
+        y_max=wave_ymax_fib,
+        window_ns=window_ns,
+        show_legend=False,
+    )
     _panel_label(ax_f, "(f)")
-
-    # (g) 能量捕获轮廓
-    ax_g.plot(t_ns, energy_a, color=PALETTE["arm_a"], label="Arm A cumulative")
-    ax_g.plot(t_ns, energy_b, color=PALETTE["arm_b"], label="Arm B cumulative")
-    ax_g.axhline(0.65, linestyle="--", linewidth=1.2, color="#666666", label="65% level")
-    ax_g.axvline(window_ns, linestyle="--", linewidth=1.2, color=PALETTE["window"], label=f"{window_ns:.0f} ns edge")
-    ax_g.fill_between(t_ns, 0.0, energy_a, color=PALETTE["arm_a"], alpha=0.08, linewidth=0.0)
-    ax_g.fill_between(t_ns, 0.0, energy_b, color=PALETTE["arm_b"], alpha=0.07, linewidth=0.0)
-    _lock_time_axis(ax_g)
-    ax_g.set_ylim(0.0, 1.02)
-    ax_g.set_xlabel("Time (ns)")
-    ax_g.set_ylabel("Cumulative energy")
-    ax_g.set_title("Energy capture profile (after fiber)", pad=4.0)
-    _style_axis(ax_g)
-    ax_g.legend(frameon=False, loc="lower right")
+    _plot_dual_arm(
+        ax_g,
+        t_ns,
+        bs_a,
+        bs_b,
+        "After BS",
+        y_max=wave_ymax_bs,
+        window_ns=window_ns,
+        show_legend=False,
+    )
     _panel_label(ax_g, "(g)")
 
-    for ax in (ax_a, ax_b, ax_d, ax_e, ax_f):
-        ax.tick_params(labelbottom=False)
+    # (h) 能量捕获轮廓
+    ax_h.plot(t_ns, energy_a, color=PALETTE["arm_a"], label="Arm A cumulative")
+    ax_h.plot(t_ns, energy_b, color=PALETTE["arm_b"], label="Arm B cumulative")
+    ax_h.axhline(0.65, linestyle="--", linewidth=1.2, color="#666666", label="65% level")
+    ax_h.axvline(window_ns, linestyle="--", linewidth=1.2, color=PALETTE["window"], label=f"{window_ns:.0f} ns edge")
+    ax_h.fill_between(t_ns, 0.0, energy_a, color=PALETTE["arm_a"], alpha=0.08, linewidth=0.0)
+    ax_h.fill_between(t_ns, 0.0, energy_b, color=PALETTE["arm_b"], alpha=0.07, linewidth=0.0)
+    _lock_time_axis(ax_h)
+    ax_h.set_ylim(0.0, 1.02)
+    ax_h.set_xlabel("Time (ns)")
+    ax_h.set_ylabel("Cumulative energy")
+    ax_h.set_title("Energy capture profile (after fiber)", pad=4.0)
+    _style_axis(ax_h)
+    ax_h.legend(frameon=False, loc="lower right")
+    _panel_label(ax_h, "(h)")
+
+    # 共享 x 轴时 Matplotlib 默认只保留底部刻度；这里强制显示 a/b/e/f/g 的刻度数字。
+    for ax in (ax_a, ax_b, ax_e, ax_f, ax_g):
+        ax.tick_params(axis="x", labelbottom=True)
+        plt.setp(ax.get_xticklabels(), visible=True)
 
     fig.suptitle(
         "Dual-arm wavepacket temporal structure and acceptance-window placement",
-        y=1.01,
+        y=0.985,
         fontweight="bold",
     )
+    fig.subplots_adjust(left=0.06, right=0.985, top=0.94, bottom=0.08)
 
-    out_png = pathlib.Path(__file__).with_suffix(".png")
-    fig.savefig(out_png, dpi=320)
+    out_pdf = pathlib.Path(__file__).with_suffix(".pdf")
+    fig.savefig(out_pdf)
     plt.close(fig)
 
 

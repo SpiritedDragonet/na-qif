@@ -69,7 +69,7 @@ def main() -> None:
     )
 
     fig.suptitle("End-to-end scaling over metropolitan fiber links", fontsize=12.4, fontweight="bold")
-    out_path = pathlib.Path(__file__).with_suffix(".png")
+    out_path = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_path, dpi=220)
     plt.close(fig)
 

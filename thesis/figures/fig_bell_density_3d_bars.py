@@ -158,7 +158,7 @@ def main() -> None:
     fig.subplots_adjust(left=0.02, right=0.95, top=0.88, bottom=0.05, wspace=0.14)
     fig.suptitle("Heralded Bell-state density matrix (3D bar view)", fontsize=12.5, fontweight="bold")
 
-    out_png = pathlib.Path(__file__).with_suffix(".png")
+    out_png = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_png, dpi=320)
     plt.close(fig)
 

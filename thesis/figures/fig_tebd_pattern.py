@@ -25,7 +25,7 @@ def main() -> None:
     ax.axis("off")
     fig.tight_layout()
 
-    out_path = pathlib.Path(__file__).with_suffix(".png")
+    out_path = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
 

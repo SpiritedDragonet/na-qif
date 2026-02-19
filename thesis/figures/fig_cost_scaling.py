@@ -47,7 +47,7 @@ def main() -> None:
     ax1.set_title(r"$T_w$ sensitivity to bond cap")
 
     fig.suptitle("Complexity scaling under fixed physical conventions", fontsize=12.2, fontweight="bold")
-    out_path = pathlib.Path(__file__).with_suffix(".png")
+    out_path = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_path, dpi=220)
     plt.close(fig)
 

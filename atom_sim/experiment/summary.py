@@ -176,8 +176,7 @@ def _extract_record_pair_delta(events: list[SimpleNamespace]):
     return best[1], best[2]
 
 
-def _resolve_record_true_false_weights(record: dict, events: list[SimpleNamespace]):
-    _ = events
+def _resolve_record_true_false_weights(record: dict):
     p_true = _require_record_probability(record, "p_true_given_record")
     return p_true, float(1.0 - p_true)
 
@@ -196,7 +195,7 @@ def _accumulate_click_analysis(
         return
     group = _ensure_click_analysis_group(groups, group_value)
     _accumulate_bucket_weight(group["success_delta"], int(delta_bin), 1.0)
-    true_weight, false_weight = _resolve_record_true_false_weights(record, events)
+    true_weight, false_weight = _resolve_record_true_false_weights(record)
     _accumulate_bucket_weight(group["true_delta"], int(delta_bin), true_weight)
     _accumulate_bucket_weight(group["false_delta"], int(delta_bin), false_weight)
     cell_key = (pair_key, int(delta_bin))
@@ -1440,6 +1439,589 @@ def _write_length_scan_summary(paths: dict, config: SimConfig) -> None:
     _write_click_analysis_outputs(summary_dir, "length_scan", "length_km", click_analysis_groups)
 
 
+def _write_qfc_noise_scan_summary(paths: dict, config: SimConfig) -> None:
+    results_dir = paths["results"]
+    summary_dir = paths["summary"]
+    summary_dir.mkdir(parents=True, exist_ok=True)
+
+    runs_path = summary_dir / "qfc_noise_scan_runs.csv"
+    summary_path = summary_dir / "qfc_noise_scan_summary.csv"
+    groups = {}
+
+    with open(runs_path, "w", encoding="utf-8", newline="") as runs_file:
+        runs_writer = csv.writer(runs_file)
+        runs_writer.writerow([
+            "id",
+            "qfc_noise_sd_cps_per_mhz",
+            "run_index",
+            "shots",
+            "success",
+            "window_ns",
+            "attempt_rate_hz",
+            "event_rate_hz",
+            "p_two_click_abs",
+            "p_arrive",
+            "p_arrive_11",
+            "p_arrive_same_arm",
+            "p_arrive_20",
+            "p_arrive_02",
+            "p_success_abs",
+            "p_success_true_abs",
+            "p_success_false_abs",
+            "p_success_true_given_arrival",
+            "fidelity_all",
+            "fidelity_true",
+            "fidelity_false",
+            "false_fraction",
+            "corr_exx",
+            "corr_eyy",
+            "corr_ezz",
+            "chsh_s_max",
+            "p_success_intrinsic_dark_assisted",
+            "p_success_bg_assisted",
+            "timestamp",
+        ])
+
+        for meta_path in sorted(results_dir.glob("result_*/meta.json")):
+            try:
+                data = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not _is_core_experiment(data, "QFC_NOISE_SCAN"):
+                continue
+
+            tid = str(data.get("id", ""))
+            metrics = data.get("metrics", {})
+            run_index = _extract_run_index(metrics, tid, (r"qscan_noise_\d+_run_(\d+)", r"qscan_run_(\d+)"))
+            entries = metrics.get("qfc_noise_levels", [])
+            if not isinstance(entries, list):
+                entries = []
+
+            for entry in entries:
+                qfc_noise_sd = float(entry.get("qfc_noise_sd_cps_per_mhz", 0.0) or 0.0)
+                qfc_key = f"{qfc_noise_sd:.9f}"
+                shots = int(entry.get("shots", 0) or 0)
+                success = int(entry.get("success", 0) or 0)
+                window_ns = _safe_num(entry.get("window_ns"))
+                attempt_rate_hz = _safe_num(entry.get("attempt_rate_hz"))
+                p_two_click_abs = _safe_num(entry.get("p_two_click_abs"))
+                p_arrive = _safe_num(entry.get("p_arrive"))
+                p_arrive_11 = _safe_num(entry.get("p_arrive_11"))
+                p_arrive_same_arm = _safe_num(entry.get("p_arrive_same_arm"))
+                p_arrive_20 = _safe_num(entry.get("p_arrive_20"))
+                p_arrive_02 = _safe_num(entry.get("p_arrive_02"))
+                p_success_abs = _safe_num(entry.get("p_success_abs"))
+                p_success_true_abs = _safe_num(entry.get("p_success_true_abs"))
+                p_success_false_abs = _safe_num(entry.get("p_success_false_abs"))
+                p_success_true_given_arrival = _safe_num(entry.get("p_success_true_given_arrival"))
+                fidelity_all = _safe_num(entry.get("fidelity_all"))
+                fidelity_true = _safe_num(entry.get("fidelity_true"))
+                fidelity_false = _safe_num(entry.get("fidelity_false"))
+                false_fraction = _safe_num(entry.get("false_fraction"))
+                corr_exx = _safe_num(entry.get("corr_exx"))
+                corr_eyy = _safe_num(entry.get("corr_eyy"))
+                corr_ezz = _safe_num(entry.get("corr_ezz"))
+                chsh_s_max = _safe_num(entry.get("chsh_s_max"))
+                p_success_intrinsic_dark_assisted = _safe_num(
+                    entry.get("p_success_intrinsic_dark_assisted")
+                )
+                p_success_bg_assisted = _safe_num(entry.get("p_success_bg_assisted"))
+                event_rate_hz = _safe_num(entry.get("event_rate_hz"))
+                if event_rate_hz is None and p_success_abs is not None and attempt_rate_hz is not None:
+                    event_rate_hz = float(p_success_abs) * float(attempt_rate_hz)
+
+                runs_writer.writerow([
+                    tid,
+                    qfc_noise_sd,
+                    run_index,
+                    shots,
+                    success,
+                    window_ns,
+                    attempt_rate_hz,
+                    event_rate_hz,
+                    p_two_click_abs,
+                    p_arrive,
+                    p_arrive_11,
+                    p_arrive_same_arm,
+                    p_arrive_20,
+                    p_arrive_02,
+                    p_success_abs,
+                    p_success_true_abs,
+                    p_success_false_abs,
+                    p_success_true_given_arrival,
+                    fidelity_all,
+                    fidelity_true,
+                    fidelity_false,
+                    false_fraction,
+                    corr_exx,
+                    corr_eyy,
+                    corr_ezz,
+                    chsh_s_max,
+                    p_success_intrinsic_dark_assisted,
+                    p_success_bg_assisted,
+                    data.get("timestamp"),
+                ])
+
+                group = groups.setdefault(
+                    qfc_key,
+                    {
+                        "qfc_noise_sd_cps_per_mhz": qfc_noise_sd,
+                        "runs_target": config.run.runs,
+                        "runs_total": 0,
+                        "shots_total": 0,
+                        "success_total": 0,
+                        "window_ns_sum": 0.0,
+                        "attempt_rate_hz_sum": 0.0,
+                        "event_rate_hz_sum": 0.0,
+                        "p_two_click_abs_sum": 0.0,
+                        "p_arrive_sum": 0.0,
+                        "p_arrive_11_sum": 0.0,
+                        "p_arrive_same_arm_sum": 0.0,
+                        "p_arrive_20_sum": 0.0,
+                        "p_arrive_02_sum": 0.0,
+                        "p_success_abs_sum": 0.0,
+                        "p_success_true_abs_sum": 0.0,
+                        "p_success_false_abs_sum": 0.0,
+                        "p_success_true_given_arrival11_sum": 0.0,
+                        "fidelity_all_sum": 0.0,
+                        "fidelity_true_sum": 0.0,
+                        "fidelity_false_sum": 0.0,
+                        "false_fraction_sum": 0.0,
+                        "corr_exx_sum": 0.0,
+                        "corr_eyy_sum": 0.0,
+                        "corr_ezz_sum": 0.0,
+                        "chsh_s_max_sum": 0.0,
+                        "p_success_intrinsic_dark_assisted_sum": 0.0,
+                        "p_success_bg_assisted_sum": 0.0,
+                    },
+                )
+                group["runs_total"] += 1
+                group["shots_total"] += shots
+                group["success_total"] += success
+                group["window_ns_sum"] += window_ns or 0.0
+                group["attempt_rate_hz_sum"] += attempt_rate_hz or 0.0
+                group["event_rate_hz_sum"] += event_rate_hz or 0.0
+                group["p_two_click_abs_sum"] += p_two_click_abs or 0.0
+                group["p_arrive_sum"] += p_arrive or 0.0
+                group["p_arrive_11_sum"] += p_arrive_11 or 0.0
+                group["p_arrive_same_arm_sum"] += p_arrive_same_arm or 0.0
+                group["p_arrive_20_sum"] += p_arrive_20 or 0.0
+                group["p_arrive_02_sum"] += p_arrive_02 or 0.0
+                group["p_success_abs_sum"] += p_success_abs or 0.0
+                group["p_success_true_abs_sum"] += p_success_true_abs or 0.0
+                group["p_success_false_abs_sum"] += p_success_false_abs or 0.0
+                group["p_success_true_given_arrival11_sum"] += p_success_true_given_arrival or 0.0
+                group["fidelity_all_sum"] += fidelity_all or 0.0
+                group["fidelity_true_sum"] += fidelity_true or 0.0
+                group["fidelity_false_sum"] += fidelity_false or 0.0
+                group["false_fraction_sum"] += false_fraction or 0.0
+                group["corr_exx_sum"] += corr_exx or 0.0
+                group["corr_eyy_sum"] += corr_eyy or 0.0
+                group["corr_ezz_sum"] += corr_ezz or 0.0
+                group["chsh_s_max_sum"] += chsh_s_max or 0.0
+                group["p_success_intrinsic_dark_assisted_sum"] += p_success_intrinsic_dark_assisted or 0.0
+                group["p_success_bg_assisted_sum"] += p_success_bg_assisted or 0.0
+
+    with open(summary_path, "w", encoding="utf-8", newline="") as summary_file:
+        summary_writer = csv.writer(summary_file)
+        summary_writer.writerow([
+            "qfc_noise_sd_cps_per_mhz",
+            "runs_target",
+            "runs_total",
+            "shots_total",
+            "success_total",
+            "window_ns_avg",
+            "attempt_rate_hz_avg",
+            "event_rate_hz_avg",
+            "p_two_click_abs_avg",
+            "p_arrive_avg",
+            "p_arrive_11_avg",
+            "p_arrive_same_arm_avg",
+            "p_arrive_20_avg",
+            "p_arrive_02_avg",
+            "p_success_abs_avg",
+            "p_success_true_abs_avg",
+            "p_success_false_abs_avg",
+            "p_success_true_given_arrival11_global",
+            "p_success_true_given_arrival11_mean",
+            "false_fraction_global",
+            "fidelity_all_avg",
+            "fidelity_true_avg",
+            "fidelity_false_avg",
+            "corr_exx_avg",
+            "corr_eyy_avg",
+            "corr_ezz_avg",
+            "chsh_s_max_avg",
+            "herald_rate_abs",
+            "sbr_true_false",
+            "p_success_intrinsic_dark_assisted_avg",
+            "p_success_bg_assisted_avg",
+        ])
+        for key in sorted(groups.keys(), key=lambda value: float(value)):
+            group = groups[key]
+            runs_total = int(group["runs_total"])
+            shots_total = int(group["shots_total"])
+            p_success_abs_avg = (group["p_success_abs_sum"] / runs_total) if runs_total > 0 else 0.0
+            p_success_true_abs_avg = (
+                (group["p_success_true_abs_sum"] / runs_total) if runs_total > 0 else 0.0
+            )
+            p_success_false_abs_avg = (
+                (group["p_success_false_abs_sum"] / runs_total) if runs_total > 0 else 0.0
+            )
+            p_success_true_given_arrival11_global = (
+                group["p_success_true_abs_sum"] / group["p_arrive_11_sum"]
+                if group["p_arrive_11_sum"] > 0
+                else 0.0
+            )
+            p_success_true_given_arrival11_mean = (
+                (group["p_success_true_given_arrival11_sum"] / runs_total)
+                if runs_total > 0
+                else 0.0
+            )
+            false_fraction_global = (
+                group["p_success_false_abs_sum"] / group["p_success_abs_sum"]
+                if group["p_success_abs_sum"] > 0
+                else 0.0
+            )
+            herald_rate_abs = p_success_abs_avg
+            sbr_true_false = (
+                (p_success_true_abs_avg / p_success_false_abs_avg)
+                if p_success_false_abs_avg > 0
+                else None
+            )
+            summary_writer.writerow([
+                group["qfc_noise_sd_cps_per_mhz"],
+                group["runs_target"],
+                runs_total,
+                shots_total,
+                int(group["success_total"]),
+                (group["window_ns_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["attempt_rate_hz_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["event_rate_hz_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["p_two_click_abs_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["p_arrive_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["p_arrive_11_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["p_arrive_same_arm_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["p_arrive_20_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["p_arrive_02_sum"] / runs_total) if runs_total > 0 else 0.0,
+                p_success_abs_avg,
+                p_success_true_abs_avg,
+                p_success_false_abs_avg,
+                p_success_true_given_arrival11_global,
+                p_success_true_given_arrival11_mean,
+                false_fraction_global,
+                (group["fidelity_all_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["fidelity_true_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["fidelity_false_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["corr_exx_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["corr_eyy_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["corr_ezz_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["chsh_s_max_sum"] / runs_total) if runs_total > 0 else 0.0,
+                herald_rate_abs,
+                sbr_true_false,
+                (group["p_success_intrinsic_dark_assisted_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["p_success_bg_assisted_sum"] / runs_total) if runs_total > 0 else 0.0,
+            ])
+
+
+def _write_detector_bg_scan_summary(paths: dict, config: SimConfig) -> None:
+    results_dir = paths["results"]
+    summary_dir = paths["summary"]
+    summary_dir.mkdir(parents=True, exist_ok=True)
+
+    runs_path = summary_dir / "detector_bg_scan_runs.csv"
+    summary_path = summary_dir / "detector_bg_scan_summary.csv"
+    groups = {}
+
+    with open(runs_path, "w", encoding="utf-8", newline="") as runs_file:
+        runs_writer = csv.writer(runs_file)
+        runs_writer.writerow([
+            "id",
+            "eta_det",
+            "bg_rate_mean_hz",
+            "run_index",
+            "shots",
+            "success",
+            "window_ns",
+            "attempt_rate_hz",
+            "event_rate_hz",
+            "p_two_click_abs",
+            "p_arrive",
+            "p_arrive_11",
+            "p_arrive_same_arm",
+            "p_arrive_20",
+            "p_arrive_02",
+            "p_success_abs",
+            "p_success_true_abs",
+            "p_success_false_abs",
+            "p_success_true_given_arrival",
+            "fidelity_all",
+            "fidelity_true",
+            "fidelity_false",
+            "false_fraction",
+            "corr_exx",
+            "corr_eyy",
+            "corr_ezz",
+            "chsh_s_max",
+            "p_success_intrinsic_dark_assisted",
+            "p_success_bg_assisted",
+            "timestamp",
+        ])
+
+        for meta_path in sorted(results_dir.glob("result_*/meta.json")):
+            try:
+                data = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not _is_core_experiment(data, "DETECTOR_BG_SCAN"):
+                continue
+
+            tid = str(data.get("id", ""))
+            metrics = data.get("metrics", {})
+            run_index = _extract_run_index(
+                metrics,
+                tid,
+                (r"dscan_eta_\d+_bg_\d+_run_(\d+)", r"dscan_run_(\d+)"),
+            )
+            entries = metrics.get("detector_bg_points", [])
+            if not isinstance(entries, list):
+                entries = []
+
+            for entry in entries:
+                eta_det = float(entry.get("eta_det", 0.0) or 0.0)
+                bg_rate_mean_hz = float(entry.get("bg_rate_mean_hz", 0.0) or 0.0)
+                combo_key = f"{eta_det:.9f}|{bg_rate_mean_hz:.9f}"
+                shots = int(entry.get("shots", 0) or 0)
+                success = int(entry.get("success", 0) or 0)
+                window_ns = _safe_num(entry.get("window_ns"))
+                attempt_rate_hz = _safe_num(entry.get("attempt_rate_hz"))
+                p_two_click_abs = _safe_num(entry.get("p_two_click_abs"))
+                p_arrive = _safe_num(entry.get("p_arrive"))
+                p_arrive_11 = _safe_num(entry.get("p_arrive_11"))
+                p_arrive_same_arm = _safe_num(entry.get("p_arrive_same_arm"))
+                p_arrive_20 = _safe_num(entry.get("p_arrive_20"))
+                p_arrive_02 = _safe_num(entry.get("p_arrive_02"))
+                p_success_abs = _safe_num(entry.get("p_success_abs"))
+                p_success_true_abs = _safe_num(entry.get("p_success_true_abs"))
+                p_success_false_abs = _safe_num(entry.get("p_success_false_abs"))
+                p_success_true_given_arrival = _safe_num(entry.get("p_success_true_given_arrival"))
+                fidelity_all = _safe_num(entry.get("fidelity_all"))
+                fidelity_true = _safe_num(entry.get("fidelity_true"))
+                fidelity_false = _safe_num(entry.get("fidelity_false"))
+                false_fraction = _safe_num(entry.get("false_fraction"))
+                corr_exx = _safe_num(entry.get("corr_exx"))
+                corr_eyy = _safe_num(entry.get("corr_eyy"))
+                corr_ezz = _safe_num(entry.get("corr_ezz"))
+                chsh_s_max = _safe_num(entry.get("chsh_s_max"))
+                p_success_intrinsic_dark_assisted = _safe_num(
+                    entry.get("p_success_intrinsic_dark_assisted")
+                )
+                p_success_bg_assisted = _safe_num(entry.get("p_success_bg_assisted"))
+                event_rate_hz = _safe_num(entry.get("event_rate_hz"))
+                if event_rate_hz is None and p_success_abs is not None and attempt_rate_hz is not None:
+                    event_rate_hz = float(p_success_abs) * float(attempt_rate_hz)
+
+                runs_writer.writerow([
+                    tid,
+                    eta_det,
+                    bg_rate_mean_hz,
+                    run_index,
+                    shots,
+                    success,
+                    window_ns,
+                    attempt_rate_hz,
+                    event_rate_hz,
+                    p_two_click_abs,
+                    p_arrive,
+                    p_arrive_11,
+                    p_arrive_same_arm,
+                    p_arrive_20,
+                    p_arrive_02,
+                    p_success_abs,
+                    p_success_true_abs,
+                    p_success_false_abs,
+                    p_success_true_given_arrival,
+                    fidelity_all,
+                    fidelity_true,
+                    fidelity_false,
+                    false_fraction,
+                    corr_exx,
+                    corr_eyy,
+                    corr_ezz,
+                    chsh_s_max,
+                    p_success_intrinsic_dark_assisted,
+                    p_success_bg_assisted,
+                    data.get("timestamp"),
+                ])
+
+                group = groups.setdefault(
+                    combo_key,
+                    {
+                        "eta_det": eta_det,
+                        "bg_rate_mean_hz": bg_rate_mean_hz,
+                        "runs_target": config.run.runs,
+                        "runs_total": 0,
+                        "shots_total": 0,
+                        "success_total": 0,
+                        "window_ns_sum": 0.0,
+                        "attempt_rate_hz_sum": 0.0,
+                        "event_rate_hz_sum": 0.0,
+                        "p_two_click_abs_sum": 0.0,
+                        "p_arrive_sum": 0.0,
+                        "p_arrive_11_sum": 0.0,
+                        "p_arrive_same_arm_sum": 0.0,
+                        "p_arrive_20_sum": 0.0,
+                        "p_arrive_02_sum": 0.0,
+                        "p_success_abs_sum": 0.0,
+                        "p_success_true_abs_sum": 0.0,
+                        "p_success_false_abs_sum": 0.0,
+                        "p_success_true_given_arrival11_sum": 0.0,
+                        "fidelity_all_sum": 0.0,
+                        "fidelity_true_sum": 0.0,
+                        "fidelity_false_sum": 0.0,
+                        "false_fraction_sum": 0.0,
+                        "corr_exx_sum": 0.0,
+                        "corr_eyy_sum": 0.0,
+                        "corr_ezz_sum": 0.0,
+                        "chsh_s_max_sum": 0.0,
+                        "p_success_intrinsic_dark_assisted_sum": 0.0,
+                        "p_success_bg_assisted_sum": 0.0,
+                    },
+                )
+                group["runs_total"] += 1
+                group["shots_total"] += shots
+                group["success_total"] += success
+                group["window_ns_sum"] += window_ns or 0.0
+                group["attempt_rate_hz_sum"] += attempt_rate_hz or 0.0
+                group["event_rate_hz_sum"] += event_rate_hz or 0.0
+                group["p_two_click_abs_sum"] += p_two_click_abs or 0.0
+                group["p_arrive_sum"] += p_arrive or 0.0
+                group["p_arrive_11_sum"] += p_arrive_11 or 0.0
+                group["p_arrive_same_arm_sum"] += p_arrive_same_arm or 0.0
+                group["p_arrive_20_sum"] += p_arrive_20 or 0.0
+                group["p_arrive_02_sum"] += p_arrive_02 or 0.0
+                group["p_success_abs_sum"] += p_success_abs or 0.0
+                group["p_success_true_abs_sum"] += p_success_true_abs or 0.0
+                group["p_success_false_abs_sum"] += p_success_false_abs or 0.0
+                group["p_success_true_given_arrival11_sum"] += p_success_true_given_arrival or 0.0
+                group["fidelity_all_sum"] += fidelity_all or 0.0
+                group["fidelity_true_sum"] += fidelity_true or 0.0
+                group["fidelity_false_sum"] += fidelity_false or 0.0
+                group["false_fraction_sum"] += false_fraction or 0.0
+                group["corr_exx_sum"] += corr_exx or 0.0
+                group["corr_eyy_sum"] += corr_eyy or 0.0
+                group["corr_ezz_sum"] += corr_ezz or 0.0
+                group["chsh_s_max_sum"] += chsh_s_max or 0.0
+                group["p_success_intrinsic_dark_assisted_sum"] += p_success_intrinsic_dark_assisted or 0.0
+                group["p_success_bg_assisted_sum"] += p_success_bg_assisted or 0.0
+
+    with open(summary_path, "w", encoding="utf-8", newline="") as summary_file:
+        summary_writer = csv.writer(summary_file)
+        summary_writer.writerow([
+            "eta_det",
+            "bg_rate_mean_hz",
+            "runs_target",
+            "runs_total",
+            "shots_total",
+            "success_total",
+            "window_ns_avg",
+            "attempt_rate_hz_avg",
+            "event_rate_hz_avg",
+            "p_two_click_abs_avg",
+            "p_arrive_avg",
+            "p_arrive_11_avg",
+            "p_arrive_same_arm_avg",
+            "p_arrive_20_avg",
+            "p_arrive_02_avg",
+            "p_success_abs_avg",
+            "p_success_true_abs_avg",
+            "p_success_false_abs_avg",
+            "p_success_true_given_arrival11_global",
+            "p_success_true_given_arrival11_mean",
+            "false_fraction_global",
+            "fidelity_all_avg",
+            "fidelity_true_avg",
+            "fidelity_false_avg",
+            "corr_exx_avg",
+            "corr_eyy_avg",
+            "corr_ezz_avg",
+            "chsh_s_max_avg",
+            "herald_rate_abs",
+            "sbr_true_false",
+            "p_success_intrinsic_dark_assisted_avg",
+            "p_success_bg_assisted_avg",
+        ])
+        for key in sorted(
+            groups.keys(),
+            key=lambda value: (float(value.split("|")[0]), float(value.split("|")[1])),
+        ):
+            group = groups[key]
+            runs_total = int(group["runs_total"])
+            shots_total = int(group["shots_total"])
+            p_success_abs_avg = (group["p_success_abs_sum"] / runs_total) if runs_total > 0 else 0.0
+            p_success_true_abs_avg = (
+                (group["p_success_true_abs_sum"] / runs_total) if runs_total > 0 else 0.0
+            )
+            p_success_false_abs_avg = (
+                (group["p_success_false_abs_sum"] / runs_total) if runs_total > 0 else 0.0
+            )
+            p_success_true_given_arrival11_global = (
+                group["p_success_true_abs_sum"] / group["p_arrive_11_sum"]
+                if group["p_arrive_11_sum"] > 0
+                else 0.0
+            )
+            p_success_true_given_arrival11_mean = (
+                (group["p_success_true_given_arrival11_sum"] / runs_total)
+                if runs_total > 0
+                else 0.0
+            )
+            false_fraction_global = (
+                group["p_success_false_abs_sum"] / group["p_success_abs_sum"]
+                if group["p_success_abs_sum"] > 0
+                else 0.0
+            )
+            herald_rate_abs = p_success_abs_avg
+            sbr_true_false = (
+                (p_success_true_abs_avg / p_success_false_abs_avg)
+                if p_success_false_abs_avg > 0
+                else None
+            )
+            summary_writer.writerow([
+                group["eta_det"],
+                group["bg_rate_mean_hz"],
+                group["runs_target"],
+                runs_total,
+                shots_total,
+                int(group["success_total"]),
+                (group["window_ns_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["attempt_rate_hz_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["event_rate_hz_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["p_two_click_abs_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["p_arrive_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["p_arrive_11_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["p_arrive_same_arm_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["p_arrive_20_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["p_arrive_02_sum"] / runs_total) if runs_total > 0 else 0.0,
+                p_success_abs_avg,
+                p_success_true_abs_avg,
+                p_success_false_abs_avg,
+                p_success_true_given_arrival11_global,
+                p_success_true_given_arrival11_mean,
+                false_fraction_global,
+                (group["fidelity_all_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["fidelity_true_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["fidelity_false_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["corr_exx_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["corr_eyy_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["corr_ezz_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["chsh_s_max_sum"] / runs_total) if runs_total > 0 else 0.0,
+                herald_rate_abs,
+                sbr_true_false,
+                (group["p_success_intrinsic_dark_assisted_sum"] / runs_total) if runs_total > 0 else 0.0,
+                (group["p_success_bg_assisted_sum"] / runs_total) if runs_total > 0 else 0.0,
+            ])
+
+
 def _write_bsm_scan_summary(paths: dict, config: SimConfig) -> None:
     results_dir = paths["results"]
     summary_dir = paths["summary"]
@@ -2181,6 +2763,12 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
         return
     if task_type == "LENGTH_SCAN":
         _write_length_scan_summary(paths=paths, config=config)
+        return
+    if task_type == "QFC_NOISE_SCAN":
+        _write_qfc_noise_scan_summary(paths=paths, config=config)
+        return
+    if task_type == "DETECTOR_BG_SCAN":
+        _write_detector_bg_scan_summary(paths=paths, config=config)
         return
 
     if task_type == "SIM":

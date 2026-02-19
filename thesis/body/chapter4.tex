@@ -8,7 +8,7 @@
 
 本子节先固定“看什么”的统计口径，再给出“参数来源如何分工”的锚定规则。若先拟合参数而不先统一指标定义，不同数据层之间的误差会互相补偿，导致看似拟合良好却缺乏可解释性的结果。相反，先以事件概率与条件态指标建立统一输出，再区分固定参数、拟合参数与扫描参数，可显著降低参数退化并提高实验对照的一致性。
 
-分层标定流程单独放在第 4.2 节展开；本节仅定义指标与参数角色，避免“口径定义”和“求解流程”交叉叙述造成重复。
+分层标定流程单独放在第 4.2 节展开；本节仅定义指标与参数确定方式，避免“口径定义”和“求解流程”交叉叙述造成重复。
 
 端到端评估采用
 \begin{align}
@@ -31,22 +31,22 @@ p_f=p_{\mathrm{id}}+p_{\mathrm{bg}},
 
 \begin{table}[htbp]
 \centering
-\caption{基线参数锚点、角色与文献来源}
+\caption{基线参数锚点、确定方式与文献来源}
 \label{tab:param-anchor}
 \begin{tabularx}{0.98\linewidth}{l X l l l}
 \hline
-符号 & 物理含义 & 基线值 & 角色 & 参考来源 \\
+符号 & 物理含义 & 基线值 & 确定方式 & 参考来源 \\
 \hline
-$\tau_e$ & 激发态寿命标度 & $26.2\,\mathrm{ns}$ & Fixed & \cite{vanleent2022entangling} \\
-$\eta_q$ & QFC 外部效率 & $0.57$ & Fixed & \cite{vanleent2022entangling,Ikuta2018PolarizationInsensitiveQFC} \\
-$\Delta \nu_f$ & 滤波腔带宽 & $27\,\mathrm{MHz}$ & Fixed & \cite{vanleent2022entangling} \\
-$\Delta t_w$ & 数据接受窗口 & $70\,\mathrm{ns}$ & Fitted & \cite{vanleent2022entangling} \\
-$\Delta t_h$ & 硬件符合窗口 & $208\,\mathrm{ns}$ & Fixed & \cite{vanleent2022entangling} \\
-$R_d$ & SNSPD 本征暗计数率 & $<65\,\mathrm{s^{-1}}$ & Fixed & \cite{vanleent2022entangling} \\
-$R_b$ & 中心站背景计数率 & $\sim 160$--$170\,\mathrm{s^{-1}}$ & Scanned & \cite{vanleent2022entangling} \\
-$T_2$ & 长链路原子相干时间 & $\sim 330\,\mathrm{\mu s}$ & Fixed & \cite{vanleent2022entangling} \\
-$\alpha_f$ & 光纤衰减系数（1517 nm） & $\sim 0.2\,\mathrm{dB/km}$ & Scanned & \cite{vanleent2022entangling} \\
-$v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & Fitted & \cite{vanleent2022entangling} \\
+$\tau_e$ & 激发态寿命标度 & $26.2\,\mathrm{ns}$ & 文献固定 & \cite{vanleent2022entangling} \\
+$\eta_q$ & QFC 外部效率 & $0.57$ & 文献固定 & \cite{vanleent2022entangling,Ikuta2018PolarizationInsensitiveQFC} \\
+$\Delta \nu_f$ & 滤波腔带宽 & $27\,\mathrm{MHz}$ & 文献固定 & \cite{vanleent2022entangling} \\
+$\Delta t_w$ & 数据接受窗口 & $70\,\mathrm{ns}$ & 标定拟合 & \cite{vanleent2022entangling} \\
+$\Delta t_h$ & 硬件符合窗口 & $208\,\mathrm{ns}$ & 文献固定 & \cite{vanleent2022entangling} \\
+$R_d$ & SNSPD 本征暗计数率 & $<65\,\mathrm{s^{-1}}$ & 文献固定 & \cite{vanleent2022entangling} \\
+$R_b$ & 中心站背景计数率 & $\sim 160$--$170\,\mathrm{s^{-1}}$ & 扫参 & \cite{vanleent2022entangling} \\
+$T_2$ & 长链路原子相干时间 & $\sim 330\,\mathrm{\mu s}$ & 文献固定 & \cite{vanleent2022entangling} \\
+$\alpha_f$ & 光纤衰减系数（1517 nm） & $\sim 0.2\,\mathrm{dB/km}$ & 扫参 & \cite{vanleent2022entangling} \\
+$v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cite{vanleent2022entangling} \\
 \hline
 \end{tabularx}
 \end{table}
@@ -65,7 +65,7 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & Fitted & \cite{vanl
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.98\linewidth]{fig_calibration_pipeline}
+\includegraphics[width=0.98\linewidth]{fig_calibration_pipeline.pdf}
 \caption{分层标定流程图：每一层仅使用该层可观测量约束对应参数，再把约束传递到下一层，最终进入端到端任务指标验证。}
 \label{fig:calibration_pipeline}
 \end{figure}
@@ -73,31 +73,26 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & Fitted & \cite{vanl
 
 \section{结果图谱物理归因}[Result Atlas and Physical Attribution]
 
-这一节不把图当作并列证据，而把它们放入同一因果链：源端脉冲决定时间结构，时间结构与窗口共同决定有效到达事件，事件统计再通过 HOM 与 BSM 约束可分辨性，最终落到条件态质量与可用纠缠速率。因此图谱的阅读顺序必须与物理链路顺序一致，否则很容易把“数值截断效应”“窗口效应”和“真实干涉退化”混为一谈。
+本节围绕同一条物理链路报告结果：源端脉冲决定波包时域结构，窗口策略决定有效事件采样，HOM 与 BSM 共同约束干涉质量，最终体现在条件态保真度、CHSH 与可用速率上。按照这一链路组织结果后，不同图之间的因果关系可以直接对齐。
 
-\subsection{结果图谱联合诊断链}[Joint diagnostic chain of result atlas]
+\subsection{关键结果与物理解释}[Key Results and Physical Interpretation]
 
-\paragraph{源端时域结构与数值截断}
+先看源端时域结构及其与数值截断的对应关系。
 
-图 \ref{fig:wavepacket} 与图 \ref{fig:bond_dim} 联合报告源端信息。前者给出双臂波包主瓣、相对时移与尾部衰减；后者给出对应键维轨迹。两图必须同时满足“物理宽度正确、键维截断可控”两项约束，否则单看波包形状无法区分物理退相干与数值截断误差。
-
+\FloatBarrier
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.92\linewidth]{fig_wavepacket}
-\caption{双臂波包时域结构与主窗口位置。}
+\includegraphics[width=0.98\linewidth]{fig_wavepacket.pdf}
+\caption{双臂波包时域结构与主窗口位置：（a）A 臂原子四能级占据演化；（b）发射后双臂波包；（c）A 臂累计保留率；（d）各阶段总光子概率积分；（e）QFC 后双臂波包；（f）光纤后、入 BS 前波包；（g）BS 后波包；（h）光纤后累计能量捕获。}
 \label{fig:wavepacket}
 \end{figure}
-图 \ref{fig:wavepacket} 的解释重点不在“是否有脉冲峰”，而在主瓣位置、上升沿斜率与尾部衰减是否同时合理。若只匹配峰值而忽略尾部，窗口扫描阶段会系统性高估有效事件率；若尾部过宽而主瓣偏窄，则往往意味着驱动与耗散比例失配，后续 HOM 可见度也会被动下降。
+\FloatBarrier
 
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=0.86\linewidth]{fig_bond_dim}
-\caption{发射阶段 MPS 键维演化。}
-\label{fig:bond_dim}
-\end{figure}
-图 \ref{fig:bond_dim} 用于区分“物理复杂度上升”与“数值不稳定”。当键维峰值与波包主窗口同相位出现时，通常对应真实的纠缠增长；若在无明显物理事件的区间出现尖峰，则更可能是局域分解条件数恶化，需要回查时间步长或截断阈值。
+图 \ref{fig:wavepacket} 给出了单跑数据中的完整时域链路：主瓣位置、上升沿与尾部衰减在 0--100 ns 观察窗内保持一致；QFC、光纤与 BS 三阶段后，双臂波包幅值按预期逐段下降，阶段积分与累计能量曲线保持同向变化。基线单跑的发射阶段键维序列呈现“入口 3、主体平台 9、出口 3”（$3\!\to\!9\!\to\!3$）的平顶结构，四个主要阶段峰值均在 9 附近且未出现异常尖峰，说明该组结果未出现键维失稳导致的数值伪影。
 
-\paragraph{窗口选择与事件统计}
+由于该参数组下键维曲线近似常值平台，单独成图的信息增益有限，本章不再单列键维图，而将其作为每次单跑输出中的数值一致性检查项。
+
+在此基础上，窗口选择与事件统计关系可直接从多指标曲线读取。
 
 窗口宽度是实验最直接的调节量。图 \ref{fig:accept_hist} 给出点击时间分布，图 \ref{fig:window_tradeoff} 给出窗口扫描下的速率-质量折中。与传统二维折中图不同，本章同时关注
 \begin{equation}
@@ -107,43 +102,43 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & Fitted & \cite{vanl
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.88\linewidth]{fig_accept_hist}
+\includegraphics[width=0.88\linewidth]{fig_accept_hist.pdf}
 \caption{点击时间分布与接受窗口。}
 \label{fig:accept_hist}
 \end{figure}
-图 \ref{fig:accept_hist} 的主要作用是确定“信号主密度区间”与“背景主密度区间”的交叠程度。窗口边界不应只按最大计数点对称截取，而应优先覆盖真成功密度高、假成功密度低的时段，这也是后续窗口优化中使用多指标而非单指标的原因。
+图 \ref{fig:accept_hist} 给出了“信号主密度区间”与“背景主密度区间”的交叠位置。当前数据中，能同时保持较高真成功密度并压低假成功占比的区间与多指标最优窗口一致。
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.95\linewidth]{fig_window_tradeoff}
+\includegraphics[width=0.95\linewidth]{fig_window_tradeoff.pdf}
 \caption{窗口扫描下的速率、条件保真度与假成功占比。}
 \label{fig:window_tradeoff}
 \end{figure}
-图 \ref{fig:window_tradeoff} 显示了典型的多目标前沿，而非单调窗口效应。工程上应选取拐点附近作为默认工作点：继续扩窗带来的速率收益已经明显低于假成功增量，继续缩窗则开始显著损失真成功通道。
+图 \ref{fig:window_tradeoff} 显示了清晰的多目标前沿：窗口增大时成功率上升与假成功占比上升同步出现，窗口减小时条件质量改善与真成功事件损失同时出现。该前沿在当前参数组中给出了可复现的折中区间。
 
-\paragraph{干涉质量与模式分解}
+干涉质量与模式分解结果如下。
 
-HOM 与 BSM 负责验证两光子干涉链路是否可信。图 \ref{fig:hom} 约束不可分辨性与时延噪声，图 \ref{fig:bsm_patterns} 检查点击模式及真假来源分解。二者共同决定条件态的可解释性，末端保真度仅提供最终压缩指标。
+图 \ref{fig:hom} 与图 \ref{fig:bsm_patterns} 共同给出两光子干涉质量。前者约束不可分辨性与时延噪声，后者给出模式概率及真假来源分解；二者与末端条件保真度相互对应。
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.88\linewidth]{fig_hom}
+\includegraphics[width=0.88\linewidth]{fig_hom.pdf}
 \caption{HOM 曲线及可见度约束。}
 \label{fig:hom}
 \end{figure}
-图 \ref{fig:hom} 的谷深与谷宽共同约束可分辨性参数。仅拟合谷底深度会把时间抖动与频谱失配混淆；同时拟合宽度后，才能将“源端波包不匹配”与“链路相位噪声”在参数上分离。
+图 \ref{fig:hom} 的谷深与谷宽共同约束可分辨性参数。对谷深与谷宽同时拟合后，时间抖动与频谱失配可以在参数层面分离，并与源端波包匹配程度建立对应关系。
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.9\linewidth]{fig_bsm_patterns}
+\includegraphics[width=0.9\linewidth]{fig_bsm_patterns.pdf}
 \caption{BSM 模式概率与真假分量分解。}
 \label{fig:bsm_patterns}
 \end{figure}
-图 \ref{fig:bsm_patterns} 用于检查成功事件组成是否健康。若总成功率升高而真假分解中假成功占比同步抬升，则说明提升来自噪声触发而非干涉质量改善，这一情形在暗计数或背景偏高时尤为常见。
+图 \ref{fig:bsm_patterns} 显示了成功事件组成随噪声分量的变化规律。总成功率上升且假成功占比同步抬升时，主要增量来自噪声触发；该现象在暗计数或背景计数偏高区间更明显。
 
 \section{端到端性能误差预算}[End-to-End Performance Error Budget]
 
-\paragraph{条件态结构与端到端可用纠缠质量}
+接下来汇总条件态结构与端到端可用纠缠质量。
 
 前两段联合诊断给出“源端时间结构—窗口筛选—干涉模式”的因果证据链，本节转入任务层汇总：在统一成功判据下同时报告 Bell 条件保真度、CHSH 与速率工作点。图 \ref{fig:chsh} 给出 $S$ 参数趋势；图 \ref{fig:distance}、图 \ref{fig:qfc_noise}、图 \ref{fig:detector_eff} 与图 \ref{fig:rate_fidelity} 给出链路尺度、QFC 噪声、探测效率和工作点前沿。在两臂等长 $L$ 且单臂衰减系数为 $\alpha_f$ 时，成功率满足
 \begin{equation}
@@ -155,14 +150,14 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.95\linewidth]{fig_bell_density_3d}
+\includegraphics[width=0.95\linewidth]{fig_bell_density_3d.pdf}
 \caption{宣告成功条件下 Bell 后验态密度矩阵的实部/虚部二维热图。}
 \label{fig:bell_density_2d}
 \end{figure}
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.95\linewidth]{fig_bell_density_3d_bars}
+\includegraphics[width=0.95\linewidth]{fig_bell_density_3d_bars.pdf}
 \caption{同一后验态的实部/虚部三维柱状图（量子信息论文常用可视化）。}
 \label{fig:bell_density_3d_bars}
 \end{figure}
@@ -170,7 +165,7 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.82\linewidth]{fig_chsh}
+\includegraphics[width=0.82\linewidth]{fig_chsh.pdf}
 \caption{CHSH 参数趋势（虚线为经典界 $S=2$）。}
 \label{fig:chsh}
 \end{figure}
@@ -178,7 +173,7 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.9\linewidth]{fig_distance}
+\includegraphics[width=0.9\linewidth]{fig_distance.pdf}
 \caption{成功率与保真度随链路长度变化。}
 \label{fig:distance}
 \end{figure}
@@ -186,29 +181,29 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.9\linewidth]{fig_qfc_noise}
+\includegraphics[width=0.9\linewidth]{fig_qfc_noise.pdf}
 \caption{QFC 背景噪声对事件率与保真度的影响。}
 \label{fig:qfc_noise}
 \end{figure}
-图 \ref{fig:qfc_noise} 给出了 QFC 背景从“次要扰动”转为“主导污染”的阈值区。该阈值随窗口策略和探测效率变化，因此在工艺优化中应把 QFC 背景与窗口参数联合调节，不宜孤立优化单一器件指标。
+图 \ref{fig:qfc_noise} 给出了 QFC 背景从“次要扰动”转为“主导污染”的阈值区。该阈值随窗口策略和探测效率变化，表明 QFC 背景与窗口参数存在显著耦合，单独优化任一参数都难以复现同等改进幅度。
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.9\linewidth]{fig_detector_eff}
+\includegraphics[width=0.9\linewidth]{fig_detector_eff.pdf}
 \caption{探测效率-背景联合扫描下的保真度热图与成功率切片。}
 \label{fig:detector_eff}
 \end{figure}
-图 \ref{fig:detector_eff} 将“探测效率影响”写成二维工作平面：左侧热图给出不同背景计数下的条件保真度地形，右侧给出对应成功率切片。该表示直接揭示了效率增益的边际规律：在高背景区，效率继续提高对保真度的改善受限更早，而成功率仍可能上升，因此工程上需要同步压低背景而非单独追求更高探测效率。
+图 \ref{fig:detector_eff} 将“探测效率影响”写成二维工作平面：左侧热图给出不同背景计数下的条件保真度地形，右侧给出对应成功率切片。结果显示，在高背景区效率提升对保真度的边际改善更早受限，但成功率仍可继续上升。
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.9\linewidth]{fig_rate_fidelity}
+\includegraphics[width=0.9\linewidth]{fig_rate_fidelity.pdf}
 \caption{速率-保真度工作点前沿。}
 \label{fig:rate_fidelity}
 \end{figure}
-图 \ref{fig:rate_fidelity} 给出可直接用于部署决策的 Pareto 前沿。实际运行中应先由任务需求确定最低可接受保真度，再在此前提下选择速率最大的工作点，避免反向以速率最大点倒推可用性。
+图 \ref{fig:rate_fidelity} 给出速率-保真度的 Pareto 前沿，可直接对应部署约束下的工作点选择问题。
 
-\paragraph{误差归因与部署判据}
+最后给出误差归因与部署判据。
 
 误差预算采用分组边际法。设 $g$ 表示噪声组（源端、QFC+滤波、光纤、探测），定义
 \begin{equation}
@@ -217,15 +212,15 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \end{equation}
 与“全开”运行联合分析，可判断瓶颈是否发生迁移，例如从源端退相干主导迁移到暗计数主导。真假成功分解的价值在于：若 $p_s$ 上升同时 $F_t$ 稳定而 $p_f/p_s$ 抬升，则主要问题是误触发；若 $p_f$ 低而 $F_t$ 下降，则主要问题在真实干涉质量（不可分辨性、相位与偏振链路）。
 
-在工程使用层面，这一分解可转化为两阶段诊断流程。第一阶段只看事件分解比值，判断“问题在触发还是在干涉”；第二阶段再进入对应子链路做参数扫描，前者优先检查背景、暗计数与窗口，后者优先检查波包匹配、相位稳定与偏振补偿。该流程的优势是避免在全参数空间盲目搜索，从而把每轮实验-仿真闭环的调参轮次控制在可接受范围。
+在该分解下，误差归因可按“触发链路”和“干涉链路”两类展开：前者由背景、暗计数与窗口主导，后者由波包匹配、相位稳定与偏振补偿主导。分组后参数扫描空间显著收敛，实验-仿真闭环的调参轮次可控。
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.95\linewidth]{fig_error_budget}
+\includegraphics[width=0.95\linewidth]{fig_error_budget.pdf}
 \caption{误差预算汇总图：左为按噪声组分解的条件保真度瀑布图，右为假成功事件组成分解。}
 \label{fig:error_budget}
 \end{figure}
-图 \ref{fig:error_budget} 将“质量退化路径”与“假触发来源组成”放到同一视图中，便于快速判定当前轮次应优先优化的链路层级（源端、QFC/记忆、光纤或探测端）。
+图 \ref{fig:error_budget} 将“质量退化路径”与“假触发来源组成”放到同一视图中，可以直接判定当前轮次的主导退化层级（源端、QFC/记忆、光纤或探测端）。
 
 \section{计算成本与部署判据}[Computational Cost and Deployment Criteria]
 
@@ -260,11 +255,11 @@ T_w = T_{\rm em}+T_{\rm qm}+T_{\rm fib}+T_{\rm dep}+T_{\rm det}+T_{\rm aux}+T_{\
 \begin{equation}
 \frac{T_{\rm det}}{T_w}=99.42\%,
 \end{equation}
-即当前瓶颈明确位于探测阶段，而非态端动力学阶段。
+即当前瓶颈明确位于探测阶段，态端动力学阶段占比很小。
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.95\linewidth]{fig_cost_scaling}
+\includegraphics[width=0.95\linewidth]{fig_cost_scaling.pdf}
 \caption{复杂度缩放图：左为探测阶段耗时随窗口 bin 数增长，右为墙钟代理量随键维上限增长。}
 \label{fig:cost_scaling}
 \end{figure}

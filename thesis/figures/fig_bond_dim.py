@@ -146,7 +146,7 @@ def main() -> None:
 
     fig.suptitle("MPS bond growth diagnostics (real single-run data)", y=1.02, fontweight="bold")
 
-    out_png = pathlib.Path(__file__).with_suffix(".png")
+    out_png = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_png, dpi=320)
     plt.close(fig)
 

@@ -16,10 +16,17 @@ function Compile-Thesis {
 
 # 获取所有监控文件的哈希
 function Get-FilesHash {
-    $files = Get-ChildItem -Path $scriptDir -Include @("*.tex", "*.bib", "*.cls", "*.sty", "*.cfg") -Recurse -ErrorAction SilentlyContinue
+    $sourceFiles = Get-ChildItem -Path $scriptDir -Include @("*.tex", "*.bib", "*.cls", "*.sty", "*.cfg") -Recurse -ErrorAction SilentlyContinue
+    $figuresDir = Join-Path $scriptDir "figures"
+    $figureFiles = @()
+    if (Test-Path $figuresDir) {
+        $figureFiles = Get-ChildItem -Path $figuresDir -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch "\\__pycache__\\" }
+    }
+    $files = @($sourceFiles + $figureFiles) | Sort-Object -Property FullName -Unique
     $hashString = ""
     foreach ($file in $files) {
-        $hashString += "$($file.FullName)|$($file.LastWriteTime)|"
+        $hashString += "$($file.FullName)|$($file.LastWriteTimeUtc.Ticks)|$($file.Length)|"
     }
     return $hashString
 }
@@ -27,7 +34,7 @@ function Get-FilesHash {
 # 初次编译
 Compile-Thesis
 
-Write-Host "正在监控文件变化 (tex/bib/cls/sty/cfg)..." -ForegroundColor Cyan
+Write-Host "正在监控文件变化 (tex/bib/cls/sty/cfg + figures/*)..." -ForegroundColor Cyan
 Write-Host "按 Ctrl+C 停止" -ForegroundColor Cyan
 Write-Host ""
 

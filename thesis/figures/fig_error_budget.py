@@ -61,7 +61,7 @@ def main() -> None:
     ax1.legend(frameon=False, fontsize=8.4, loc="lower right")
 
     fig.suptitle("Error budget summary: fidelity waterfall and false-herald decomposition", fontsize=12.2, fontweight="bold")
-    out_path = pathlib.Path(__file__).with_suffix(".png")
+    out_path = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_path, dpi=220)
     plt.close(fig)
 

@@ -120,7 +120,7 @@ def main() -> None:
 
     fig.suptitle("Heralded Bell-state density matrix (2D heatmap view)", y=1.02, fontweight="bold")
 
-    out_png = pathlib.Path(__file__).with_suffix(".png")
+    out_png = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_png, dpi=320)
     plt.close(fig)
 

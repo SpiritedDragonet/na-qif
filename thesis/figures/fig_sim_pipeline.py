@@ -101,7 +101,7 @@ def main() -> None:
     _add_arrow(ax, (0.50, y), (0.50, 0.35))
 
     ax.set_title("End-to-end simulation pipeline (single-run core)", fontsize=12.4, fontweight="bold")
-    out_path = pathlib.Path(__file__).with_suffix(".png")
+    out_path = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_path, dpi=220)
     plt.close(fig)
 

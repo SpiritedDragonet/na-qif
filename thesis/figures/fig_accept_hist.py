@@ -31,7 +31,7 @@ def main() -> None:
     plt.legend(frameon=False, fontsize=8)
     plt.tight_layout()
 
-    out_path = pathlib.Path(__file__).with_suffix(".png")
+    out_path = pathlib.Path(__file__).with_suffix(".pdf")
     plt.savefig(out_path, dpi=150)
     plt.close()
 

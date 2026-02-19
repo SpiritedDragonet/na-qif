@@ -106,7 +106,7 @@ def main() -> None:
     _arrow(ax, (0.50, y), (0.50, 0.41))
 
     ax.set_title("Layered calibration workflow and observable-to-parameter mapping", fontsize=12.3, fontweight="bold")
-    out_path = pathlib.Path(__file__).with_suffix(".png")
+    out_path = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_path, dpi=220)
     plt.close(fig)
 

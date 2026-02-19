@@ -73,7 +73,7 @@ def main() -> None:
     )
 
     fig.suptitle("Window scan: rate-quality tradeoff under true/false decomposition", fontsize=12.3, fontweight="bold")
-    out_path = pathlib.Path(__file__).with_suffix(".png")
+    out_path = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_path, dpi=220)
     plt.close(fig)
 

@@ -64,7 +64,7 @@ def main() -> None:
     cbar.set_label("True-herald probability")
 
     fig.suptitle("BSM pattern diagnostics with true/false decomposition", fontsize=12.4, fontweight="bold")
-    out_path = pathlib.Path(__file__).with_suffix(".png")
+    out_path = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_path, dpi=220)
     plt.close(fig)
 

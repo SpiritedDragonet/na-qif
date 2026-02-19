@@ -233,11 +233,11 @@ U_{36}^{(n)} & 0\\
 
 \section{QFC 与滤波记忆核的显式张量门}[Explicit Tensor Gates for QFC and Filter Memory Kernel]
 
-\paragraph{QFC 与滤波记忆核的张量门}
+QFC 与滤波记忆核的张量门需要在不扩张原子自由度的前提下显式构造。
 
 当发射阶段结束后，链路中的主导物理过程从“原子-场耦合”转为“频率转换与有限带宽记忆”。因此，本子节围绕 bin 与记忆模之间的局域幺正更新给出可直接收缩的门表达，并保持原子自由度集合不扩张。该表达同时保留 QFC 效率、滤波带宽与跨 bin 相关三类信息，是后续 BSM 条件态质量分析的必要输入。
 
-\paragraph{QFC 的 5D 局域门}
+先给出 QFC 的 5D 局域门表达。
 
 QFC 在强泵近似下可写成“同偏振两频率模式间的分束器型耦合” \cite{Ikuta2018PolarizationInsensitiveQFC}。在 5D bin 基序下，$U_{\mathrm{QFC}}$ 仅作用于 $(|H_{780}\rangle,|H_{1517}\rangle)$ 与 $(|V_{780}\rangle,|V_{1517}\rangle)$ 两个二维子块：
 \begin{equation}
@@ -252,7 +252,7 @@ U_{\mathrm{QFC}}=
 \end{equation}
 其中 $c_{\mu}=\cos\theta_\mu,\; s_{\mu}=\sin\theta_\mu$，转换效率满足 $\eta_\mu=\sin^2\theta_\mu$。
 
-\paragraph{滤波腔记忆模与 5D$\times$3D 步进门}
+随后给出滤波腔记忆模与 5D$\times$3D 步进门。
 
 参照波导 QED 的离散记忆表示 \cite{ArranzRegidor2021WaveguideQED}，先写单偏振滤波腔的输入输出方程
 \begin{equation}
@@ -314,7 +314,7 @@ t&r^*
 \end{equation}
 因此“当前 bin 的 1517 分量”和“记忆模占据”在每步进行相干交换并积累跨 bin 相关，形成非马尔可夫尾迹 \cite{ArranzRegidor2021WaveguideQED,Garraway1997DecayStrongReservoir}。
 
-\paragraph{链布局与唯一路径实现}
+链布局与唯一路径实现如下。
 
 本工作固定采用显式记忆路径。发射结束布局为
 \begin{equation}
@@ -358,7 +358,7 @@ p_{\mathrm{memA}}\rightarrow 2,\qquad p_{\mathrm{memB}}\rightarrow 3,
 
 本子节聚焦测量端定义：从探测点击记录构造可分辨性混合 effect，经由对偶映射推回输入端，并据此给出成功事件集合与核心统计量。复杂度口径与 wall-clock 开销解释在第 3.4 节统一讨论。
 
-\paragraph{探测端 effect 构造与可分辨性混合}
+探测端 effect 先按可分辨性混合规则构造。
 
 对每个偏振 $\mu\in\{H,V\}$，50:50 分束器先定义输入输出模变换
 \begin{equation}
@@ -400,7 +400,7 @@ E^{(v_{\mathrm{res}})}=v_{\mathrm{res}}E_{\mathrm{int}}+(1-v_{\mathrm{res}})E_{\
 \end{equation}
 其中 $v_{\mathrm{res}}\in[0,1]$。
 
-\paragraph{光纤与相位噪声的对偶推回}
+光纤与相位噪声随后通过对偶映射推回。
 
 光纤段包含偏振旋转（Jones）、偏振相关损耗（PDL）与相位剖面。每个 bin 的相位写为
 \begin{equation}
@@ -413,7 +413,7 @@ E^{(v_{\mathrm{res}})}=v_{\mathrm{res}}E_{\mathrm{int}}+(1-v_{\mathrm{res}})E_{\
 \end{equation}
 作用于 effect，而非作用在态上。这样可在保持纯态 MPS 主态演化的同时，严格保留损耗与噪声统计。
 
-\paragraph{成功判据与核心指标}
+在完成推回后，成功判据与核心指标可直接定义。
 
 设 $\mathcal{S}$ 为窗口内 BSM 成功模式集合。枚举阶段直接从收缩获得
 \begin{align}
@@ -429,7 +429,7 @@ p_{t|11}=\frac{p_t}{p_{11}}.
 
 \section{实现口径、复杂度与可扩展性}[Conventions, Complexity, and Scalability]
 
-\paragraph{统一口径与复杂度瓶颈}
+统一口径后，复杂度瓶颈可明确写成以下结构。
 
 当前实现对时间口径做了显式统一：哈密顿量参数（如 $\Omega,g,\Delta$）按 $\mathrm{rad/s}$ 解释，耗散速率（如 $\kappa,\gamma$）按 $\mathrm{1/s}$ 解释；在进入发射内核前统一换算。该约束用于避免 $2\pi$ 口径混用导致的时间尺度偏差，并已用于发射波包标定（目标时间常数接近实验 $26.2\,\mathrm{ns}$ \cite{vanleent2022entangling}）。
 为了使这一定义在不同离散步长、不同窗口大小和不同参数扫描任务中保持可比，本工作同时约束了“时间积分相关无量纲组合”的一致性：当 $\Delta t$ 改变时，影响动力学的关键组合量（例如 $g\sqrt{\Delta t}$ 与 $\kappa\Delta t$）必须与连续模型保持对应，不能让数值网格本身重定义物理时间尺度。也正因此，本章所有运行时间解释都以“固定物理口径”作为前提，而非以“固定步数”作为前提。
@@ -446,7 +446,7 @@ $W$ 为窗口宽度对应的 bin 数，$C(\chi)$ 表示给定键维下的单次�
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.96\linewidth]{fig_sim_pipeline}
+\includegraphics[width=0.96\linewidth]{fig_sim_pipeline.pdf}
 \caption{端到端单次任务仿真流程图：从参数与离散设置输入，经发射 TEBD、QFC+记忆门、光纤与 BSM 对偶推回、POVM 收缩，输出任务指标与中间可观测量。}
 \label{fig:sim_pipeline}
 \end{figure}

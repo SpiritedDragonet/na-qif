@@ -16,7 +16,7 @@ def main() -> None:
     plt.ylabel("coincidence probability")
     plt.tight_layout()
 
-    out_path = pathlib.Path(__file__).with_suffix(".png")
+    out_path = pathlib.Path(__file__).with_suffix(".pdf")
     plt.savefig(out_path, dpi=150)
     plt.close()
 

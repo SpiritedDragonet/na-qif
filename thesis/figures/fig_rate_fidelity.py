@@ -93,7 +93,7 @@ def main() -> None:
     cbar1.set_label("Window (ns)")
 
     fig.suptitle("Rate-Fidelity frontier with explicit false-herald burden", fontsize=12.3, fontweight="bold")
-    out_path = pathlib.Path(__file__).with_suffix(".png")
+    out_path = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_path, dpi=220)
     plt.close(fig)
 

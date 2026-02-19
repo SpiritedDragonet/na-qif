@@ -59,7 +59,7 @@ S_n\le \log \chi_n,
 \end{equation}
 键维直接限定了可表达纠缠强度。
 
-\paragraph{规范自由度与正则化计算}
+规范自由度与正则化计算是这一表示可稳定落地的第一步。
 
 MPS 在相邻张量间存在规范变换
 \begin{equation}
@@ -70,7 +70,7 @@ A^{[n+1]}\rightarrow X^{-1}A^{[n+1]},
 
 正则形式带来两点收益：一是局域期望值和关联函数可在稳定条件下逐步收缩；二是局域门更新后只需局域重分解即可恢复数值稳定性。
 
-\paragraph{可观测量收缩与复杂度}
+可观测量收缩与复杂度估计由同一套转移张量递推给出。
 
 给定两个 MPS，内积可写成转移张量连乘，开销 $O(N\chi^3)$。对单体算符 $\hat O_n$，
 \begin{equation}
@@ -105,7 +105,7 @@ A^{[n+1]}\rightarrow X^{-1}A^{[n+1]},
 \end{equation}
 若精确秩超过阈值 $\chi_{\max}$，则按式 \eqref{eq:ch2-truncerr} 截断。该步骤把“局域相互作用引起的纠缠增长”压缩回可计算子空间。
 
-\paragraph{TEBD 时间推进与误差项}
+接下来把局域门更新嵌入 TEBD 时间推进，并显式给出主要误差项。
 
 当哈密顿量为最近邻和
 \begin{equation}
@@ -123,7 +123,7 @@ e^{-iH_{\mathrm{o}}\Delta t/2}
 \end{equation}
 TEBD 即按式 \eqref{eq:ch2-trotter2} 顺序施加局域双体门并在每步截断。若总演化时间为 $T$，则 Trotter 误差累计为 $O(T\Delta t^2)$；截断误差由每步保留谱决定，二者构成时间推进误差的主来源。
 
-\paragraph{复杂度尺度与可扩展性边界}
+在该推进框架下，复杂度尺度与可扩展性边界可由单步成本累积得到。
 
 在均匀维度近似下，双体更新主开销来自局域 SVD，单步成本近似
 \begin{equation}
@@ -158,7 +158,7 @@ p_\mu=\|K_\mu|\psi\rangle\|^2.
 \end{equation}
 轨迹平均恢复式 \eqref{eq:ch2-kraus} 的统计结果。该表示与“单次实验随机记录”的物理过程同构，适合输出事件级观测量。
 
-\paragraph{Heisenberg 对偶映射}
+Heisenberg 对偶映射把开放系统噪声统一推回到 effect 端。
 
 对任意 effect $E$ 与信道 $\Lambda$，有
 \begin{equation}
@@ -175,7 +175,7 @@ E\mapsto U^\dagger E U.
 \end{equation}
 因此线性光学网络与探测器模型可统一为“effect 递推”，减少混态膨胀带来的维数开销。
 
-\paragraph{POVM 条件化与成功事件}
+在得到对偶映射后，POVM 条件化用于定义成功事件与后验态。
 
 广义测量由 POVM $\{\Pi_m\}$ 给出，
 \begin{equation}

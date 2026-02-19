@@ -325,6 +325,15 @@ class RunConfig:
     window_sweep_start_ns: Optional[float] = None
     window_sweep_end_ns: Optional[float] = None
     window_sweep_step_ns: Optional[float] = None
+    qfc_noise_sweep_start_cps_per_mhz: Optional[float] = None
+    qfc_noise_sweep_end_cps_per_mhz: Optional[float] = None
+    qfc_noise_sweep_step_cps_per_mhz: Optional[float] = None
+    eta_det_sweep_start: Optional[float] = None
+    eta_det_sweep_end: Optional[float] = None
+    eta_det_sweep_step: Optional[float] = None
+    bg_mean_sweep_start_hz: Optional[float] = None
+    bg_mean_sweep_end_hz: Optional[float] = None
+    bg_mean_sweep_step_hz: Optional[float] = None
     bs_sweep_start_theta: Optional[float] = None
     bs_sweep_end_theta: Optional[float] = None
     bs_sweep_step_theta: Optional[float] = None
