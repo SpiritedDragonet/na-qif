@@ -46,6 +46,7 @@ TASK_PROTOCOL_VERSION = "v2_core_trial"
 RUN_MANIFEST_FILENAME = "run_manifest.json"
 CORE_TASK_MODE = "CORE_TRIAL"
 SUMMARY_TASK_MODE = "SUMMARY"
+SUMMARY_TASK_FILENAME = "task_summary.json"
 SUPPORTED_EXPERIMENTS = {
     "SIM",
     "HOM",
@@ -952,6 +953,56 @@ def _validate_task_schema(task: dict, manifest: dict) -> None:
             )
 
 
+def _build_summary_task(summary_for: str) -> dict:
+    summary_for = str(summary_for).upper()
+    return {
+        "id": "summary",
+        "mode": SUMMARY_TASK_MODE,
+        "experiment": summary_for,
+        "summary_for": summary_for,
+    }
+
+
+def _count_total_and_core_tasks(task_dir: Path) -> tuple[int, int]:
+    total = 0
+    core = 0
+    for task_path in task_dir.glob("task_*.json"):
+        total += 1
+        if task_path.name != SUMMARY_TASK_FILENAME:
+            core += 1
+    return total, core
+
+
+def _summary_task_exists(paths: dict) -> bool:
+    for section in ("pending", "inprogress", "done", "error"):
+        if (paths[section] / SUMMARY_TASK_FILENAME).exists():
+            return True
+    return False
+
+
+def _enqueue_summary_task_if_needed(paths: dict, summary_for: Optional[str]) -> bool:
+    if not summary_for or summary_for not in SUPPORTED_EXPERIMENTS:
+        return False
+    if _summary_task_exists(paths):
+        return False
+    try:
+        _write_json_atomic(paths["pending"] / SUMMARY_TASK_FILENAME, _build_summary_task(summary_for))
+        return True
+    except Exception:
+        return False
+
+
+def _resolve_summary_for(paths: dict) -> Optional[str]:
+    try:
+        manifest = _load_run_manifest(paths)
+    except Exception:
+        return None
+    summary_for = str(manifest.get("task_type", "")).upper()
+    if summary_for in SUPPORTED_EXPERIMENTS:
+        return summary_for
+    return None
+
+
 def _build_task_list(
     task_type: str,
     config: SimConfig,
@@ -962,7 +1013,7 @@ def _build_task_list(
     #   - 所有物理子任务统一为 mode=CORE_TRIAL
     #   - 实验语义放在 experiment 字段
     #   - 参数分为 run_manifest(全局) + task.payload(局部)
-    #   - SUMMARY 作为唯一汇总任务
+    #   - SUMMARY 任务由 server 在 core 任务清空后下发
     #
     # 所有任务只写入 pending/task_*.json，执行由 worker 完成。
     # ------------------------------------------------------------------
@@ -995,16 +1046,6 @@ def _build_task_list(
             run_index=int(entry["run_index"]),
             payload=entry.get("payload") or {},
         )
-    summary_task = {
-        "id": "summary",
-        "mode": SUMMARY_TASK_MODE,
-        "experiment": task_type,
-        "summary_for": task_type,
-    }
-    summary_path = pending_dir / "task_summary.json"
-    if not summary_path.exists():
-        _write_json_atomic(summary_path, summary_task)
-    task_count += 1
     return task_count
 
 
@@ -1062,7 +1103,11 @@ def _run_server_monitor(
 
     last_report = 0.0
     last_heartbeat = 0.0
+    last_done_error_refresh = -1.0
+    done_count_cached = 0
+    error_count_cached = 0
     heartbeat_path = paths["summary"] / "server_heartbeat.txt"
+    summary_for = _resolve_summary_for(paths)
     start_ts = time.time()
     while True:
         now = time.time()
@@ -1074,10 +1119,18 @@ def _run_server_monitor(
                 pass
             last_heartbeat = now
         _recover_stale_tasks(paths)
-        pending = list(paths["pending"].glob("task_*.json"))
-        inprogress = list(paths["inprogress"].glob("task_*.json"))
-        done_count = len(list(paths["done"].glob("task_*.json")))
-        error_count = len(list(paths["error"].glob("task_*.json")))
+        pending_count, pending_core_count = _count_total_and_core_tasks(paths["pending"])
+        inprogress_count, inprogress_core_count = _count_total_and_core_tasks(paths["inprogress"])
+        if pending_core_count == 0 and inprogress_core_count == 0:
+            if _enqueue_summary_task_if_needed(paths, summary_for):
+                pending_count, pending_core_count = _count_total_and_core_tasks(paths["pending"])
+
+        if (now - last_done_error_refresh >= 30.0) or (pending_count == 0 and inprogress_count == 0):
+            done_count_cached = sum(1 for _ in paths["done"].glob("task_*.json"))
+            error_count_cached = sum(1 for _ in paths["error"].glob("task_*.json"))
+            last_done_error_refresh = now
+        done_count = done_count_cached
+        error_count = error_count_cached
         quiet_recent = False
         if quiet_output_path is not None and quiet_secs > 0:
             try:
@@ -1087,7 +1140,7 @@ def _run_server_monitor(
         if show_progress and (not quiet_recent) and now - last_report >= 5:
             # 总量与 ETA 统一使用实时队列总数，
             # 便于运行中手工删减/新增 pending 任务时进度与 ETA 同步更新。
-            total = done_count + len(pending) + len(inprogress) + error_count
+            total = done_count + pending_count + inprogress_count + error_count
             elapsed = now - start_ts
             eta = "--:--:--"
             if done_count > 0 and total > done_count:
@@ -1095,7 +1148,7 @@ def _run_server_monitor(
                 eta = _format_duration((total - done_count) / max(rate, 1e-9))
             msg = (
                 f"[server] 进度: 已完成 {done_count}/{total} | "
-                f"进行中 {len(inprogress)} | 待完成 {len(pending)} | 失败 {error_count} | "
+                f"进行中 {inprogress_count} | 待完成 {pending_count} | 失败 {error_count} | "
                 f"用时 {_format_duration(elapsed)} | ETA {eta}"
             )
             if inline:
@@ -1103,7 +1156,7 @@ def _run_server_monitor(
             else:
                 print(msg, flush=True)
             last_report = now
-        if not pending and not inprogress:
+        if pending_count == 0 and inprogress_count == 0:
             if show_progress:
                 if inline:
                     print()
@@ -1145,11 +1198,16 @@ def _run_worker_loop(
     heartbeat_path = None
     done_flag = Path(done_flag_path) if done_flag_path else None
     tracker_installed = False
-    backoff = [5, 10, 30]
+    backoff = [5, 15, 30, 60, 120]
     backoff_idx = 0
     last_heartbeat = 0.0
     seen_task = False
     empty_rounds = 0
+
+    def _sleep_backoff() -> None:
+        delay = float(backoff[backoff_idx])
+        jitter = float(np.random.random() * min(3.0, max(0.5, 0.1 * delay)))
+        time.sleep(delay + jitter)
 
     while True:
         if not auto_pick and paths is None and exit_when_done:
@@ -1161,20 +1219,13 @@ def _run_worker_loop(
             picked = None
             for run_root in _discover_run_roots(base_root):
                 run_paths = _queue_paths(run_root)
-                _recover_stale_tasks(run_paths)
-                pending_all = list(run_paths["pending"].glob("task_*.json"))
-                if not pending_all:
+                pending_count, _ = _count_total_and_core_tasks(run_paths["pending"])
+                if pending_count <= 0:
                     continue
-                # 优先抢“非 summary”任务；summary 只有在无人执行时才领
-                non_summary_pending = [p for p in pending_all if p.name != "task_summary.json"]
-                non_summary_inprogress = [
-                    p for p in run_paths["inprogress"].glob("task_*.json") if p.name != "task_summary.json"
-                ]
-                if non_summary_pending or not non_summary_inprogress:
-                    picked = run_paths
-                    break
+                picked = run_paths
+                break
             if picked is None:
-                time.sleep(backoff[backoff_idx])
+                _sleep_backoff()
                 backoff_idx = min(backoff_idx + 1, len(backoff) - 1)
                 continue
             paths = picked
@@ -1201,8 +1252,7 @@ def _run_worker_loop(
             if heartbeat_path is not None and heartbeat_path.parent.exists():
                 heartbeat_path.write_text(str(int(now)), encoding="utf-8")
             last_heartbeat = now
-        _recover_stale_tasks(paths)
-        pending_all = sorted(paths["pending"].glob("task_*.json"))
+        pending_all = list(paths["pending"].glob("task_*.json"))
         if not pending_all:
             inprogress = list(paths["inprogress"].glob("task_*.json"))
             if exit_when_done:
@@ -1216,23 +1266,13 @@ def _run_worker_loop(
                         break
                 else:
                     empty_rounds = 0
-            time.sleep(backoff[backoff_idx])
+            _sleep_backoff()
             backoff_idx = min(backoff_idx + 1, len(backoff) - 1)
             continue
-        # pending 优先非 summary；若只剩 summary 且无非 summary 在跑则领
-        non_summary_pending = [p for p in pending_all if p.name != "task_summary.json"]
-        non_summary_inprogress = [
-            p for p in paths["inprogress"].glob("task_*.json") if p.name != "task_summary.json"
-        ]
-        if non_summary_pending:
-            pending = non_summary_pending
-        elif not non_summary_inprogress:
-            pending = pending_all
-        else:
-            time.sleep(backoff[backoff_idx])
-            backoff_idx = min(backoff_idx + 1, len(backoff) - 1)
-            continue
-        seen_task = True
+        pending = pending_all
+        if len(pending) > 1:
+            start = int(np.random.randint(0, len(pending)))
+            pending = pending[start:] + pending[:start]
         empty_rounds = 0
         task_path = None
         for cand in pending:
@@ -1247,9 +1287,10 @@ def _run_worker_loop(
             except PermissionError:
                 continue
         if task_path is None:
-            time.sleep(backoff[backoff_idx])
+            _sleep_backoff()
             backoff_idx = min(backoff_idx + 1, len(backoff) - 1)
             continue
+        seen_task = True
         backoff_idx = 0
 
         stop_flag = threading.Event()
@@ -1470,7 +1511,8 @@ def main():
         else:
             # 先写 manifest，再生成任务列表（避免中断时缺少 run_manifest）
             _write_run_manifest(paths, task_type, config)
-            expected_total = _build_task_list(task_type, config, paths["pending"])
+            core_task_total = _build_task_list(task_type, config, paths["pending"])
+            expected_total = core_task_total + 1
         print(f"[server] 任务总数: {expected_total} | queue: {paths['root']}")
         if not has_worker_capability:
             _run_server_monitor(

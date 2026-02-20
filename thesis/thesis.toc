@@ -40,14 +40,14 @@
 \contentsline {section}{\numberline {4.5}计算成本与部署判据}{36}{section.4.5}%
 \contentsline {section}{\numberline {4.6}本章小结}{38}{section.4.6}%
 \contentsline {chapter}{\heiti 结\hspace {\ccwd }论}{39}{section*.19}%
-\contentsline {chapter}{\heiti 参考文献}{40}{section*.22}%
-\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{43}{section*.24}%
-\contentsline {chapter}{\heiti 致\hspace {\ccwd }谢}{44}{section*.26}%
-\contentsline {chapter}{\numberline {附录 A}补充数学推导}{45}{appendix.A}%
-\contentsline {section}{\numberline {A.1}12维发射体的块结构与基序置换}{45}{section.A.1}%
-\contentsline {section}{\numberline {A.2}从 36 维子门到 60 维站点门的索引嵌入}{45}{section.A.2}%
-\contentsline {section}{\numberline {A.3}滤波记忆步进门的离散推导与幺正性}{46}{section.A.3}%
-\contentsline {section}{\numberline {A.4}交换调度的不变量与终态布局}{47}{section.A.4}%
-\contentsline {section}{\numberline {A.5}计时闭合关系与主导项判据}{47}{section.A.5}%
-\contentsline {chapter}{\heiti 攻读硕士学位期间发表的论文及其他成果}{49}{section*.29}%
-\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{50}{section*.31}%
+\contentsline {chapter}{\heiti 参考文献}{41}{section*.22}%
+\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{44}{section*.24}%
+\contentsline {chapter}{\heiti 致\hspace {\ccwd }谢}{45}{section*.26}%
+\contentsline {chapter}{\numberline {附录 A}补充数学推导}{46}{appendix.A}%
+\contentsline {section}{\numberline {A.1}12维发射体的块结构与基序置换}{46}{section.A.1}%
+\contentsline {section}{\numberline {A.2}从 36 维子门到 60 维站点门的索引嵌入}{46}{section.A.2}%
+\contentsline {section}{\numberline {A.3}滤波记忆步进门的离散推导与幺正性}{47}{section.A.3}%
+\contentsline {section}{\numberline {A.4}交换调度的不变量与终态布局}{48}{section.A.4}%
+\contentsline {section}{\numberline {A.5}计时闭合关系与主导项判据}{48}{section.A.5}%
+\contentsline {chapter}{\heiti 攻读硕士学位期间发表的论文及其他成果}{50}{section*.29}%
+\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{51}{section*.31}%
