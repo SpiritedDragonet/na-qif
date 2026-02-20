@@ -1049,20 +1049,25 @@ def _build_task_list(
     return task_count
 
 
-def _recover_stale_tasks(paths: dict, stale_seconds: int = 180) -> None:
+def _recover_stale_tasks(paths: dict, stale_seconds: int = 180) -> int:
     # ------------------------------------------------------------------
     # 任务回收：
     #   - inprogress 中若超过 stale_seconds 未更新，视为失联
     #   - 回滚到 pending 以便其他 worker 重新领取
     # ------------------------------------------------------------------
     now = time.time()
+    recovered = 0
     for task_path in paths["inprogress"].glob("task_*.json"):
         try:
             # 以 mtime 作为“心跳”，超时则回收
             if now - task_path.stat().st_mtime > stale_seconds:
                 task_path.replace(paths["pending"] / task_path.name)
+                recovered += 1
         except FileNotFoundError:
             continue
+        except Exception:
+            continue
+    return recovered
 
 
 def _requeue_inprogress_to_pending(paths: dict) -> int:
@@ -1106,6 +1111,7 @@ def _run_server_monitor(
     last_done_error_refresh = -1.0
     done_count_cached = 0
     error_count_cached = 0
+    stale_recovered_total = 0
     heartbeat_path = paths["summary"] / "server_heartbeat.txt"
     summary_for = _resolve_summary_for(paths)
     start_ts = time.time()
@@ -1118,7 +1124,7 @@ def _run_server_monitor(
             except Exception:
                 pass
             last_heartbeat = now
-        _recover_stale_tasks(paths)
+        stale_recovered_total += _recover_stale_tasks(paths)
         pending_count, pending_core_count = _count_total_and_core_tasks(paths["pending"])
         inprogress_count, inprogress_core_count = _count_total_and_core_tasks(paths["inprogress"])
         if pending_core_count == 0 and inprogress_core_count == 0:
@@ -1149,7 +1155,7 @@ def _run_server_monitor(
             msg = (
                 f"[server] 进度: 已完成 {done_count}/{total} | "
                 f"进行中 {inprogress_count} | 待完成 {pending_count} | 失败 {error_count} | "
-                f"用时 {_format_duration(elapsed)} | ETA {eta}"
+                f"stale回收 {stale_recovered_total} | 用时 {_format_duration(elapsed)} | ETA {eta}"
             )
             if inline:
                 print(f"\r{msg}", end="", flush=True)
@@ -1161,7 +1167,7 @@ def _run_server_monitor(
                 if inline:
                     print()
                 print(
-                    f"[server] 队列已空，结束监控（已完成 {done_count} | 失败 {error_count}）",
+                    f"[server] 队列已空，结束监控（已完成 {done_count} | 失败 {error_count} | stale回收 {stale_recovered_total}）",
                     flush=True,
                 )
             if done_flag_path is not None:
@@ -1294,6 +1300,15 @@ def _run_worker_loop(
         backoff_idx = 0
 
         stop_flag = threading.Event()
+        ownership_lost = threading.Event()
+
+        def _has_task_ownership() -> bool:
+            if ownership_lost.is_set():
+                return False
+            if not task_path.exists():
+                ownership_lost.set()
+                return False
+            return True
 
         def _heartbeat_loop() -> None:
             while not stop_flag.is_set():
@@ -1302,8 +1317,16 @@ def _run_worker_loop(
                     break
                 heartbeat_path.write_text(str(ts), encoding="utf-8")
                 # touch task_path：避免被回收为 stale
-                if task_path.exists():
+                if not task_path.exists():
+                    ownership_lost.set()
+                    break
+                try:
                     task_path.touch()
+                except FileNotFoundError:
+                    ownership_lost.set()
+                    break
+                except Exception:
+                    pass
                 time.sleep(60)
 
         t = threading.Thread(target=_heartbeat_loop, daemon=True)
@@ -1316,7 +1339,10 @@ def _run_worker_loop(
         metrics = {}
         task_mode = ""
         task_experiment = ""
+        task_id = task_path.stem.replace("task_", "")
         try:
+            if not _has_task_ownership():
+                raise RuntimeError("OWNERSHIP_LOST")
             task = json.loads(task_path.read_text(encoding="utf-8"))
             task_id = task.get("id", task_path.stem.replace("task_", ""))
             task_mode = str(task.get("mode", "")).upper()
@@ -1325,6 +1351,8 @@ def _run_worker_loop(
             manifest = _load_run_manifest(paths)
             _apply_manifest_to_config(config, manifest)
             _validate_task_schema(task, manifest)
+            if not _has_task_ownership():
+                raise RuntimeError("OWNERSHIP_LOST")
 
             result_dir = paths["results"] / f"result_{task_id}"
             result_dir.mkdir(parents=True, exist_ok=True)
@@ -1334,6 +1362,8 @@ def _run_worker_loop(
                 summary.write_summary(task_type=summary_for, paths=paths, config=config)
                 metrics = {"summary_for": summary_for}
                 task_experiment = summary_for
+                if not _has_task_ownership():
+                    raise RuntimeError("OWNERSHIP_LOST")
             elif task_mode == CORE_TASK_MODE:
                 plots_dir = result_dir / "plots"
                 raw_dir = result_dir / "raw"
@@ -1351,6 +1381,8 @@ def _run_worker_loop(
                     plots_dir=plots_dir,
                     task_id=task_id,
                 )
+                if not _has_task_ownership():
+                    raise RuntimeError("OWNERSHIP_LOST")
             else:
                 raise ValueError(
                     f"SCHEMA_ERROR: 无法分发 task，mode={task_mode or '缺失'} "
@@ -1368,6 +1400,12 @@ def _run_worker_loop(
         finally:
             stop_flag.set()
             t.join(timeout=1)
+        if ownership_lost.is_set():
+            print(
+                f"[worker-{worker_id}] 任务 {task_id} 丢失所有权，已放弃本次结果",
+                flush=True,
+            )
+            continue
         try:
             task_id = task.get("id", task_path.stem.replace("task_", ""))
             result_dir = result_dir or (paths["results"] / f"result_{task_id}")
@@ -1386,8 +1424,12 @@ def _run_worker_loop(
                 meta["error_type"] = error_type or "RUNTIME_ERROR"
                 meta["error_detail"] = err_msg
             _write_json_atomic(meta_path, meta)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(
+                f"[worker-{worker_id}] 写入 meta 失败: task={task_id}, err={exc}",
+                file=sys.stderr,
+                flush=True,
+            )
         try:
             if status == "error":
                 error_path = paths["error"] / task_path.name
@@ -1395,8 +1437,13 @@ def _run_worker_loop(
             else:
                 done_path = paths["done"] / task_path.name
                 task_path.replace(done_path)
-        except Exception:
-            pass
+        except Exception as exc:
+            target = "error" if status == "error" else "done"
+            print(
+                f"[worker-{worker_id}] 任务状态迁移失败: task={task_id}, target={target}, err={exc}",
+                file=sys.stderr,
+                flush=True,
+            )
 
 
 def main():
