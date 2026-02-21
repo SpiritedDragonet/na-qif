@@ -12,6 +12,13 @@ import multiprocessing as mp
 import time
 import re
 import shutil
+
+# 必须在数值库导入前设置线程上限，避免 worker 多进程下触发线程风暴。
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+
 import numpy as np
 from dataclasses import fields, is_dataclass
 from pathlib import Path
