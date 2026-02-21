@@ -1116,10 +1116,7 @@ def _worker_heartbeat_process(
             ownership_lost_event.set()
             break
         except Exception:
-            # 无法持续 touch inprogress 任务文件时，租约不可维持，
-            # 立即中止避免主计算继续空跑。
-            ownership_lost_event.set()
-            break
+            pass
         if stop_event.wait(timeout=float(interval)):
             break
 
@@ -1326,13 +1323,6 @@ def _run_worker_loop(
             try:
                 # 原子“抢占”：rename 成功即视为领取
                 cand.replace(dest)
-                # 续算任务文件通常较老，rename 不会刷新 mtime；
-                # 立刻 touch，避免 server 按旧 mtime 误判 stale 并回收。
-                try:
-                    dest.touch()
-                except Exception:
-                    # 交给后续统一所有权检测处理。
-                    pass
                 task_path = dest
                 break
             except FileNotFoundError:
