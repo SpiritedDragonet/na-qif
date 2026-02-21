@@ -714,9 +714,12 @@ class DetectionContractionEngine:
         left_envs: List[np.ndarray],
         effects_by_bin: List[dict],
         key_pair: Tuple[str, ...],
+        should_abort: Optional[Callable[[], bool]] = None,
     ) -> float:
         total = 0.0
         for bin_idx in range(self.n_bins):
+            if should_abort is not None and bool(should_abort()):
+                raise RuntimeError("OWNERSHIP_LOST")
             site = self.bin_offset + bin_idx
             op_pair = effects_by_bin[bin_idx].get(key_pair, self.zero_effect)
             env_mid = self._apply_env_left(
@@ -733,9 +736,12 @@ class DetectionContractionEngine:
         left_envs: List[np.ndarray],
         effects_by_bin: List[dict],
         key_pair: Tuple[str, ...],
+        should_abort: Optional[Callable[[], bool]] = None,
     ) -> complex:
         total = 0.0 + 0.0j
         for bin_idx in range(self.n_bins):
+            if should_abort is not None and bool(should_abort()):
+                raise RuntimeError("OWNERSHIP_LOST")
             site = self.bin_offset + bin_idx
             op_pair = effects_by_bin[bin_idx].get(key_pair, self.zero_effect)
             env_mid = self._apply_env_left(
@@ -754,9 +760,12 @@ class DetectionContractionEngine:
         key_first: Tuple[str, ...],
         key_second: Tuple[str, ...],
         window_bins: Optional[int],
+        should_abort: Optional[Callable[[], bool]] = None,
     ) -> float:
         total = 0.0
         for first_bin in range(self.n_bins - 1):
+            if should_abort is not None and bool(should_abort()):
+                raise RuntimeError("OWNERSHIP_LOST")
             first_site = self.bin_offset + first_bin
             op_first = effects_by_bin[first_bin].get(key_first, self.zero_effect)
             env_mid = self._apply_env_left(
@@ -794,6 +803,7 @@ class DetectionContractionEngine:
         key_a: Tuple[str, ...],
         key_b: Tuple[str, ...],
         window_bins: Optional[int],
+        should_abort: Optional[Callable[[], bool]] = None,
     ) -> float:
         """
         双向累计不同 bin 双点击：A->B 与 B->A 在一次遍历中同时完成。
@@ -803,6 +813,8 @@ class DetectionContractionEngine:
         """
         total = 0.0
         for first_bin in range(self.n_bins - 1):
+            if should_abort is not None and bool(should_abort()):
+                raise RuntimeError("OWNERSHIP_LOST")
             first_site = self.bin_offset + first_bin
             op_first_ab = effects_by_bin[first_bin].get(key_a, self.zero_effect)
             op_first_ba = effects_by_bin[first_bin].get(key_b, self.zero_effect)
@@ -866,9 +878,12 @@ class DetectionContractionEngine:
         key_a: Tuple[str, ...],
         key_b: Tuple[str, ...],
         window_bins: Optional[int],
+        should_abort: Optional[Callable[[], bool]] = None,
     ) -> complex:
         total = 0.0 + 0.0j
         for first_bin in range(self.n_bins - 1):
+            if should_abort is not None and bool(should_abort()):
+                raise RuntimeError("OWNERSHIP_LOST")
             first_site = self.bin_offset + first_bin
             op_first_ab = effects_by_bin[first_bin].get(key_a, self.zero_effect)
             op_first_ba = effects_by_bin[first_bin].get(key_b, self.zero_effect)
@@ -931,10 +946,13 @@ class DetectionContractionEngine:
         det_a: str,
         det_b: str,
         weight_eps: float,
+        should_abort: Optional[Callable[[], bool]] = None,
     ) -> List[Tuple[str, str, int, int, float]]:
         key_pair = self.order_detectors([det_a, det_b])
         records = []
         for bin_idx in range(self.n_bins):
+            if should_abort is not None and bool(should_abort()):
+                raise RuntimeError("OWNERSHIP_LOST")
             site = self.bin_offset + bin_idx
             op_pair = effects_by_bin[bin_idx].get(key_pair, self.zero_effect)
             env_mid = self._apply_env_left(
@@ -955,11 +973,14 @@ class DetectionContractionEngine:
         det_second: str,
         weight_eps: float,
         window_bins: Optional[int],
+        should_abort: Optional[Callable[[], bool]] = None,
     ) -> List[Tuple[str, str, int, int, float]]:
         key_first = self.order_detectors([det_first])
         key_second = self.order_detectors([det_second])
         records = []
         for first_bin in range(self.n_bins - 1):
+            if should_abort is not None and bool(should_abort()):
+                raise RuntimeError("OWNERSHIP_LOST")
             first_site = self.bin_offset + first_bin
             op_first = effects_by_bin[first_bin].get(key_first, self.zero_effect)
             env_mid = self._apply_env_left(
@@ -1081,6 +1102,7 @@ class DetectionContractionEngine:
         effects_by_bin: List[dict],
         patterns: List[Tuple[str, Tuple[str, str]]],
         window_bins: Optional[int],
+        should_abort: Optional[Callable[[], bool]] = None,
     ) -> Dict[str, np.ndarray]:
         """
         按宣告标签分组累计成功事件的未归一化双量子比特态。
@@ -1090,18 +1112,28 @@ class DetectionContractionEngine:
         sigma_by_label = {label: np.zeros((4, 4), dtype=complex) for label in labels}
         for i in range(4):
             for j in range(4):
+                if should_abort is not None and bool(should_abort()):
+                    raise RuntimeError("OWNERSHIP_LOST")
                 left_envs = self._left_envs_qubit[i][j]
                 for label, (det_a, det_b) in patterns:
+                    if should_abort is not None and bool(should_abort()):
+                        raise RuntimeError("OWNERSHIP_LOST")
                     key_pair = self.order_detectors([det_a, det_b])
                     key_a = self.order_detectors([det_a])
                     key_b = self.order_detectors([det_b])
-                    value = self.sum_same_bin_complex(left_envs, effects_by_bin, key_pair)
+                    value = self.sum_same_bin_complex(
+                        left_envs,
+                        effects_by_bin,
+                        key_pair,
+                        should_abort=should_abort,
+                    )
                     value += self.sum_diff_bins_bidirectional_complex(
                         left_envs,
                         effects_by_bin,
                         key_a,
                         key_b,
                         window_bins,
+                        should_abort=should_abort,
                     )
                     sigma_by_label[str(label)][i, j] += value
         return sigma_by_label

@@ -136,6 +136,7 @@ def _run_hom_run(
     verbose: bool = False,
     debug: bool = False,
     rng_seed: Optional[int] = None,
+    should_abort=None,
 ) -> tuple:
     # ------------------------------------------------------------------
     # 单个 τ 的 HOM 统计：
@@ -157,6 +158,7 @@ def _run_hom_run(
         debug=debug,
         hooks=None,
         emission_diagnostics=False,
+        should_abort=should_abort,
     )
     if pipe.timings:
         timer.merge_timing_map(pipe.timings)
@@ -170,6 +172,7 @@ def _run_hom_run(
         compute_metrics=False,
         verbose=verbose,
         bs_theta=float(config.detector.bs_theta),
+        should_abort=should_abort,
     )
     window_bins = param_store.window_bins
     coincidences = 0
@@ -282,6 +285,7 @@ def run_hom_task(
     raw_dir: Path,
     plots_dir: Path,
     task_id: str,
+    should_abort=None,
 ) -> dict:
     _ = plots_dir, task_id
     seed_raw = task.get("seed")
@@ -301,6 +305,7 @@ def run_hom_task(
         verbose=False,
         debug=config.run.debug,
         rng_seed=seed,
+        should_abort=should_abort,
     )
     metrics = {
         "run_index": run_index,

@@ -8,6 +8,7 @@ import os
 import json
 import argparse
 import threading
+import multiprocessing as mp
 import time
 import re
 import shutil
@@ -47,6 +48,8 @@ RUN_MANIFEST_FILENAME = "run_manifest.json"
 CORE_TASK_MODE = "CORE_TRIAL"
 SUMMARY_TASK_MODE = "SUMMARY"
 SUMMARY_TASK_FILENAME = "task_summary.json"
+WORKER_HEARTBEAT_INTERVAL_SECS = 40
+WORKER_STALE_RECOVERY_SECS = 240
 SUPPORTED_EXPERIMENTS = {
     "SIM",
     "HOM",
@@ -1049,7 +1052,7 @@ def _build_task_list(
     return task_count
 
 
-def _recover_stale_tasks(paths: dict, stale_seconds: int = 180) -> int:
+def _recover_stale_tasks(paths: dict, stale_seconds: int = WORKER_STALE_RECOVERY_SECS) -> int:
     # ------------------------------------------------------------------
     # 任务回收：
     #   - inprogress 中若超过 stale_seconds 未更新，视为失联
@@ -1083,6 +1086,39 @@ def _requeue_inprogress_to_pending(paths: dict) -> int:
         except FileNotFoundError:
             continue
     return moved
+
+
+def _worker_heartbeat_process(
+    heartbeat_path_str: str,
+    task_path_str: str,
+    pending_path_str: str,
+    stop_event: "mp.synchronize.Event",
+    ownership_lost_event: "mp.synchronize.Event",
+    interval_secs: int,
+) -> None:
+    heartbeat_path = Path(heartbeat_path_str)
+    task_path = Path(task_path_str)
+    pending_path = Path(pending_path_str)
+    interval = max(1, int(interval_secs))
+    while not stop_event.is_set():
+        now = int(time.time())
+        try:
+            if heartbeat_path.parent.exists():
+                heartbeat_path.write_text(str(now), encoding="utf-8")
+        except Exception:
+            pass
+        if pending_path.exists() or (not task_path.exists()):
+            ownership_lost_event.set()
+            break
+        try:
+            task_path.touch()
+        except FileNotFoundError:
+            ownership_lost_event.set()
+            break
+        except Exception:
+            pass
+        if stop_event.wait(timeout=float(interval)):
+            break
 
 
 def _run_server_monitor(
@@ -1207,6 +1243,7 @@ def _run_worker_loop(
     backoff = [5, 15, 30, 60, 120]
     backoff_idx = 0
     last_heartbeat = 0.0
+    heartbeat_interval_secs = WORKER_HEARTBEAT_INTERVAL_SECS
     seen_task = False
     empty_rounds = 0
 
@@ -1254,7 +1291,7 @@ def _run_worker_loop(
                 tracker_installed = True
 
         now = time.time()
-        if now - last_heartbeat > 60:
+        if now - last_heartbeat > heartbeat_interval_secs:
             if heartbeat_path is not None and heartbeat_path.parent.exists():
                 heartbeat_path.write_text(str(int(now)), encoding="utf-8")
             last_heartbeat = now
@@ -1299,38 +1336,44 @@ def _run_worker_loop(
         seen_task = True
         backoff_idx = 0
 
-        stop_flag = threading.Event()
-        ownership_lost = threading.Event()
+        stop_flag = mp.Event()
+        ownership_lost = mp.Event()
+        pending_task_path = paths["pending"] / task_path.name
 
         def _has_task_ownership() -> bool:
             if ownership_lost.is_set():
                 return False
-            if not task_path.exists():
+            if pending_task_path.exists() or not task_path.exists():
                 ownership_lost.set()
                 return False
             return True
 
-        def _heartbeat_loop() -> None:
-            while not stop_flag.is_set():
-                ts = int(time.time())
-                if heartbeat_path is None or not heartbeat_path.parent.exists():
-                    break
-                heartbeat_path.write_text(str(ts), encoding="utf-8")
-                # touch task_path：避免被回收为 stale
-                if not task_path.exists():
-                    ownership_lost.set()
-                    break
-                try:
-                    task_path.touch()
-                except FileNotFoundError:
-                    ownership_lost.set()
-                    break
-                except Exception:
-                    pass
-                time.sleep(60)
+        def _should_abort_task() -> bool:
+            if ownership_lost.is_set():
+                return True
+            if pending_task_path.exists() or (not task_path.exists()):
+                ownership_lost.set()
+                return True
+            return False
 
-        t = threading.Thread(target=_heartbeat_loop, daemon=True)
-        t.start()
+        heartbeat_target = (
+            str(heartbeat_path)
+            if heartbeat_path is not None
+            else str(paths["heartbeat"] / f"worker_{host}_{worker_id}.txt")
+        )
+        heartbeat_proc = mp.Process(
+            target=_worker_heartbeat_process,
+            args=(
+                heartbeat_target,
+                str(task_path),
+                str(pending_task_path),
+                stop_flag,
+                ownership_lost,
+                heartbeat_interval_secs,
+            ),
+            daemon=True,
+        )
+        heartbeat_proc.start()
         task = {}
         result_dir = None
         status = "ok"
@@ -1349,7 +1392,9 @@ def _run_worker_loop(
             task_experiment = str(task.get("experiment", "")).upper()
 
             manifest = _load_run_manifest(paths)
+            runtime_cores = int(config.run.cores)
             _apply_manifest_to_config(config, manifest)
+            config.run.cores = runtime_cores
             _validate_task_schema(task, manifest)
             if not _has_task_ownership():
                 raise RuntimeError("OWNERSHIP_LOST")
@@ -1380,6 +1425,7 @@ def _run_worker_loop(
                     raw_dir=raw_dir,
                     plots_dir=plots_dir,
                     task_id=task_id,
+                    should_abort=_should_abort_task,
                 )
                 if not _has_task_ownership():
                     raise RuntimeError("OWNERSHIP_LOST")
@@ -1399,7 +1445,9 @@ def _run_worker_loop(
                 error_type = "RUNTIME_ERROR"
         finally:
             stop_flag.set()
-            t.join(timeout=1)
+            heartbeat_proc.join(timeout=3)
+            if heartbeat_proc.is_alive():
+                heartbeat_proc.terminate()
         if ownership_lost.is_set():
             print(
                 f"[worker-{worker_id}] 任务 {task_id} 丢失所有权，已放弃本次结果",
@@ -1469,6 +1517,8 @@ def main():
         progress_inline,
         self_check,
     ) = _parse_run_params(sys.argv)
+    # 本机 worker 并发预算（cores）允许在续算时作为调度参数透传。
+    cli_worker_cores = int(config.run.cores)
     has_server_capability = role in ("server", "both")
     has_worker_capability = role in ("worker", "both")
     run_monitor_in_background = has_server_capability and has_worker_capability
@@ -1534,11 +1584,16 @@ def main():
         if resume_existing_run:
             manifest = _load_run_manifest(paths)
             _apply_manifest_to_config(config, manifest)
+            if has_worker_capability and "cores" in explicit_cli_dests:
+                config.run.cores = cli_worker_cores
             task_type = str(manifest.get("task_type", task_type)).upper()
+            resume_passthrough = set(RESUME_PASSTHROUGH_CLI_DESTS)
+            if has_worker_capability:
+                resume_passthrough.add("cores")
             ignored_cli = sorted(
                 dst
                 for dst in explicit_cli_dests
-                if dst not in RESUME_PASSTHROUGH_CLI_DESTS
+                if dst not in resume_passthrough
             )
             if ignored_cli:
                 msg = (

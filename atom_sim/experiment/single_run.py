@@ -216,6 +216,7 @@ def _run_single_trial(
     debug: bool,
     hooks: Optional[PipelineHooks],
     emission_diagnostics: bool,
+    should_abort=None,
 ):
     """
     目的：抽出最小可复用的物理流程（发射->QFC->滤波->光纤->退相干->BS并入测量）。
@@ -230,6 +231,7 @@ def _run_single_trial(
         debug=debug,
         hooks=hooks,
         emission_diagnostics=emission_diagnostics,
+        should_abort=should_abort,
     )
 
 def _run_single_simulation_core(
@@ -240,6 +242,7 @@ def _run_single_simulation_core(
     plot_dir: Optional[Path] = None,
     run_tag: Optional[str] = None,
     seed: Optional[int] = None,
+    should_abort=None,
 ):
     run_wall_start = time.perf_counter()
     trace_enabled = bool(DEBUG_MODE)
@@ -640,6 +643,7 @@ def _run_single_simulation_core(
             after_fiber=_after_fiber,
             after_bs=_after_bs,
         ),
+        should_abort=should_abort,
     )
     if pipe.timings:
         timer.merge_timing_map(pipe.timings)
@@ -718,6 +722,7 @@ def _run_single_simulation_core(
             param_store=param_store,
             p_dark_intrinsic_map={det: 0.0 for det in p_dark_intrinsic_map},
             p_bg_detector_map={det: 0.0 for det in p_bg_detector_map},
+            should_abort=should_abort,
         )
         enum_no_dark = pipeline.metrics
         enum_main = enum_no_dark
@@ -738,6 +743,7 @@ def _run_single_simulation_core(
                 param_store=param_store,
                 p_dark_intrinsic_map={det: 0.0 for det in p_dark_intrinsic_map},
                 p_bg_detector_map={det: 0.0 for det in p_bg_detector_map},
+                should_abort=should_abort,
             )
             enum_no_dark = enum_pipeline.metrics
             _merge_detection_timings("baseline", enum_pipeline.timings)
@@ -756,6 +762,7 @@ def _run_single_simulation_core(
             param_store=param_store,
             p_dark_intrinsic_map=p_dark_intrinsic_map,
             p_bg_detector_map=p_bg_detector_map,
+            should_abort=should_abort,
         )
         enum_main = pipeline.metrics
         samples = pipeline.samples
@@ -1099,6 +1106,7 @@ def run_sim_task(
     raw_dir: Path,
     plots_dir: Path,
     task_id: str,
+    should_abort=None,
 ) -> dict:
     seed_raw = task.get("seed")
     seed = int(seed_raw) if seed_raw is not None else None
@@ -1111,6 +1119,7 @@ def run_sim_task(
         plot_dir=plots_dir,
         run_tag=task_id,
         seed=seed,
+        should_abort=should_abort,
     )
     write_click_records(raw_dir, click_records)
     metrics = build_sim_task_metrics(run_stats, run_index, success_metrics)

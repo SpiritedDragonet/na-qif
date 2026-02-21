@@ -87,6 +87,7 @@ def run_bsm_scan_task(
     raw_dir: Path,
     plots_dir: Path,
     task_id: str,
+    should_abort=None,
 ) -> dict:
     _ = plots_dir, task_id
 
@@ -114,6 +115,7 @@ def run_bsm_scan_task(
         bs_theta=bs_theta,
         hooks=None,
         emission_diagnostics=False,
+        should_abort=should_abort,
     )
 
     enum_main = pipeline.metrics

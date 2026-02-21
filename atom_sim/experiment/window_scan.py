@@ -75,6 +75,7 @@ def run_window_scan_task(
     raw_dir: Path,
     plots_dir: Path,
     task_id: str,
+    should_abort=None,
 ) -> dict:
     _ = plots_dir, task_id
 
@@ -103,6 +104,7 @@ def run_window_scan_task(
         hooks=None,
         emission_diagnostics=False,
         window_bins=None,
+        should_abort=should_abort,
     )
 
     # WINDOW_SCAN 口径统一：

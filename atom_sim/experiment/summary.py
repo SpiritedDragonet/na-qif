@@ -539,6 +539,7 @@ def _init_window_scan_group(window_ns: float, runs_target: int) -> dict:
         "fidelity_all_sum": 0.0,
         "fidelity_true_sum": 0.0,
         "fidelity_false_sum": 0.0,
+        "false_fraction_sum": 0.0,
         "corr_exx_sum": 0.0,
         "corr_eyy_sum": 0.0,
         "corr_ezz_sum": 0.0,

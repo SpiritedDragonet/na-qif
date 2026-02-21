@@ -964,6 +964,11 @@ def _build_detection_kwargs(
 _WINDOW_BINS_UNSET = object()
 
 
+def _raise_if_should_abort(should_abort: Optional[Callable[[], bool]]) -> None:
+    if should_abort is not None and bool(should_abort()):
+        raise RuntimeError("OWNERSHIP_LOST")
+
+
 def run_trial_physics_core(
     *,
     rng: Optional[np.random.Generator],
@@ -974,6 +979,7 @@ def run_trial_physics_core(
     debug: bool,
     hooks: Optional[PipelineHooks],
     emission_diagnostics: bool,
+    should_abort: Optional[Callable[[], bool]] = None,
 ) -> PipelineResult:
     """
     统一单次物理链路核心（发射->QFC/滤波->光纤->退相干->BS并入测量）。
@@ -983,6 +989,7 @@ def run_trial_physics_core(
     - 所有 task 应复用该入口，避免重复造轮子。
     """
     run_rng = rng or np.random.default_rng()
+    _raise_if_should_abort(should_abort)
     t_wait_us = _compute_t_wait_us_from_length(
         length_km=config.fiber.length_km,
         fiber_group_velocity_mps=config.run.fiber_group_velocity_mps,
@@ -1002,6 +1009,7 @@ def run_trial_physics_core(
         t2_us=float(config.run.t2_us),
         record_timings=debug,
         emission_diagnostics=emission_diagnostics,
+        should_abort=should_abort,
     )
 
 
@@ -1019,6 +1027,7 @@ def run_detection_core_from_pipe(
     param_store: Optional[RunParameterStore] = None,
     p_dark_intrinsic_map: Optional[dict] = None,
     p_bg_detector_map: Optional[dict] = None,
+    should_abort: Optional[Callable[[], bool]] = None,
 ):
     """
     基于已生成的单次物理链路态，执行统一探测 core。
@@ -1033,6 +1042,7 @@ def run_detection_core_from_pipe(
     from ..physics.gates import bs_gate_6d
     from ..simulation import run_detection_pipeline
 
+    _raise_if_should_abort(should_abort)
     if param_store is None:
         param_store = _build_run_parameter_store(
             config=config,
@@ -1069,7 +1079,9 @@ def run_detection_core_from_pipe(
         p_bg_detector=bg_map,
         n_samples=int(shots_per_run),
         compute_metrics=bool(compute_metrics),
+        should_abort=should_abort,
     )
+    _raise_if_should_abort(should_abort)
     return param_store, pipeline
 
 
@@ -1090,6 +1102,7 @@ def run_trial_detection_core(
     window_bins=_WINDOW_BINS_UNSET,
     p_dark_intrinsic_map: Optional[dict] = None,
     p_bg_detector_map: Optional[dict] = None,
+    should_abort: Optional[Callable[[], bool]] = None,
 ):
     """
     统一 trial+detect 入口：先跑物理链路，再跑探测统计。
@@ -1097,6 +1110,7 @@ def run_trial_detection_core(
     返回：(pipe, param_store, pipeline)
     """
     run_rng = rng or np.random.default_rng()
+    _raise_if_should_abort(should_abort)
     pipe = run_trial_physics_core(
         rng=run_rng,
         config=config,
@@ -1106,7 +1120,9 @@ def run_trial_detection_core(
         debug=debug,
         hooks=hooks,
         emission_diagnostics=emission_diagnostics,
+        should_abort=should_abort,
     )
+    _raise_if_should_abort(should_abort)
     param_store, pipeline = run_detection_core_from_pipe(
         pipe=pipe,
         config=config,
@@ -1119,7 +1135,9 @@ def run_trial_detection_core(
         window_bins=window_bins,
         p_dark_intrinsic_map=p_dark_intrinsic_map,
         p_bg_detector_map=p_bg_detector_map,
+        should_abort=should_abort,
     )
+    _raise_if_should_abort(should_abort)
     return pipe, param_store, pipeline
 
 
@@ -1136,6 +1154,7 @@ def run_emission_to_bs(
     t2_us: float = DEFAULT_T2_US,
     record_timings: bool = False,
     emission_diagnostics: bool = False,
+    should_abort: Optional[Callable[[], bool]] = None,
 ) -> PipelineResult:
     """
     统一的发射->QFC->滤波->投影->光纤->退相干->(BS并入测量) 流水线。
@@ -1191,6 +1210,7 @@ def run_emission_to_bs(
                 time.perf_counter() - t0_local
             )
 
+    _raise_if_should_abort(should_abort)
     _call_stage("发射")
     t0 = time.perf_counter() if timings is not None else None
     emission = run_dual_atom_emission(
@@ -1203,12 +1223,14 @@ def run_emission_to_bs(
     )
     if timings is not None and t0 is not None:
         timings["emission"] = time.perf_counter() - t0
+    _raise_if_should_abort(should_abort)
     mps = emission.mps
     _debug_mps_sanity("After Emission", mps)
     _, p_qubit_emit = extract_qubit_state(mps)
     if hooks.after_emission is not None:
         hooks.after_emission(emission)
 
+    _raise_if_should_abort(should_abort)
     _call_stage("QFC + 滤波记忆(态端)")
     t0 = time.perf_counter() if timings is not None else None
     qfc_theta_H = float(qfc.theta_H)
@@ -1243,7 +1265,9 @@ def run_emission_to_bs(
         )
         if verbose:
             print("QFC/滤波记忆已在态端显式作用。")
+    _raise_if_should_abort(should_abort)
 
+    _raise_if_should_abort(should_abort)
     _call_stage("光纤信道 (Heisenberg 参数)")
     t0 = time.perf_counter() if timings is not None else None
     mps, fiber_sample = sample_fiber_realization(
@@ -1264,6 +1288,7 @@ def run_emission_to_bs(
         )
         if verbose:
             print("光纤噪声仅作为测量端参数写入（Heisenberg），未对态显式作用。")
+    _raise_if_should_abort(should_abort)
 
     if t2_us > 0.0:
         p_dephase = 0.5 * (1.0 - np.exp(-t_wait_us / t2_us))
@@ -1276,6 +1301,7 @@ def run_emission_to_bs(
     _debug_mps_sanity("After Dephase", mps)
     if timings is not None and t0 is not None:
         timings["dephase"] = time.perf_counter() - t0
+    _raise_if_should_abort(should_abort)
 
     # 这里仅触发“after_bs”可视化 hook；
     # 真正的 BS 已在测量端 effect 中处理。
@@ -1288,6 +1314,7 @@ def run_emission_to_bs(
             fiber_sample=fiber_sample,
             qfc_params=(qfc_theta_H, qfc_theta_V),
         )
+    _raise_if_should_abort(should_abort)
 
     return PipelineResult(
         emission=emission,

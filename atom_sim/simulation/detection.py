@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 import time
 
 import numpy as np
@@ -375,6 +375,11 @@ def _build_empty_samples(n_samples: int) -> List[TwoPhotonDetectionResult]:
     ]
 
 
+def _raise_if_should_abort(should_abort: Optional[Callable[[], bool]]) -> None:
+    if should_abort is not None and bool(should_abort()):
+        raise RuntimeError("OWNERSHIP_LOST")
+
+
 def _accumulate_success_and_fidelity(
     engine: DetectionContractionEngine,
     left_envs_bell: dict,
@@ -382,33 +387,47 @@ def _accumulate_success_and_fidelity(
     patterns: List[Tuple[str, Tuple[str, str]]],
     window_bins: Optional[int],
     include_fidelity: bool = True,
+    should_abort: Optional[Callable[[], bool]] = None,
 ) -> Tuple[float, float]:
     """在给定 effect 集合上累计成功率与 Bell 保真度加权和。"""
     p_success = 0.0
     fidelity_weighted = 0.0
     for bell_state, (det_a, det_b) in patterns:
+        _raise_if_should_abort(should_abort)
         key_pair = _order_two_port_detectors([det_a, det_b])
         key_a = _order_two_port_detectors([det_a])
         key_b = _order_two_port_detectors([det_b])
 
-        weight_same = engine.sum_same_bin(engine.left_envs_identity, effects_by_bin, key_pair)
+        weight_same = engine.sum_same_bin(
+            engine.left_envs_identity,
+            effects_by_bin,
+            key_pair,
+            should_abort=should_abort,
+        )
         weight_diff = engine.sum_diff_bins_bidirectional(
             engine.left_envs_identity,
             effects_by_bin,
             key_a,
             key_b,
             window_bins,
+            should_abort=should_abort,
         )
         p_success += weight_same + weight_diff
 
         if include_fidelity:
-            fidelity_weighted += engine.sum_same_bin(left_envs_bell[bell_state], effects_by_bin, key_pair)
+            fidelity_weighted += engine.sum_same_bin(
+                left_envs_bell[bell_state],
+                effects_by_bin,
+                key_pair,
+                should_abort=should_abort,
+            )
             fidelity_weighted += engine.sum_diff_bins_bidirectional(
                 left_envs_bell[bell_state],
                 effects_by_bin,
                 key_a,
                 key_b,
                 window_bins,
+                should_abort=should_abort,
             )
     return float(max(0.0, p_success)), float(max(0.0, fidelity_weighted))
 
@@ -446,6 +465,7 @@ def run_detection_pipeline(
     bs_theta: float = np.pi / 4,
     v_res: float = 1.0,
     qubit_levels: Tuple[int, int] = (0, 1),
+    should_abort: Optional[Callable[[], bool]] = None,
 ) -> DetectionPipelineResult:
     """
     执行探测流水线（编排层）。
@@ -464,6 +484,7 @@ def run_detection_pipeline(
     """
     if rng is None:
         rng = np.random.default_rng()
+    _raise_if_should_abort(should_abort)
     timings = {}
     detect_start = time.perf_counter()
 
@@ -569,6 +590,7 @@ def run_detection_pipeline(
         )
 
     # 逐 bin 5D effect 构造：底层算符逻辑已下沉到 physics 层。
+    _raise_if_should_abort(should_abort)
     t0 = time.perf_counter()
     effects_all_by_bin, effects_true_by_bin, effects_mask_by_bin = build_detection_effects_5d_by_bin(
         n_bins=n_bins,
@@ -587,6 +609,7 @@ def run_detection_pipeline(
         rng=rng,
     )
     timings["povm_effects"] = time.perf_counter() - t0
+    _raise_if_should_abort(should_abort)
 
     effects_all_sig_by_bin = [dict(effects) for effects in effects_all_by_bin]
     effects_true_sig_by_bin = [dict(effects) for effects in effects_true_by_bin]
@@ -665,6 +688,7 @@ def run_detection_pipeline(
 
     metrics = None
     if compute_metrics:
+        _raise_if_should_abort(should_abort)
         t0 = time.perf_counter()
         if verbose:
             dim_pair = bin_dim * bin_dim
@@ -703,7 +727,9 @@ def run_detection_pipeline(
             patterns,
             window_bins,
             include_fidelity=True,
+            should_abort=should_abort,
         )
+        _raise_if_should_abort(should_abort)
         if verbose:
             elapsed = time.perf_counter() - t0
             print(f"  POVM枚举阶段完成: 1/3 | elapsed={elapsed:.2f}s")
@@ -717,7 +743,9 @@ def run_detection_pipeline(
             patterns,
             window_bins,
             include_fidelity=True,
+            should_abort=should_abort,
         )
+        _raise_if_should_abort(should_abort)
         if verbose:
             elapsed = time.perf_counter() - t0
             print(f"  POVM枚举阶段完成: 2/3 | elapsed={elapsed:.2f}s")
@@ -733,7 +761,9 @@ def run_detection_pipeline(
             patterns,
             window_bins,
             include_fidelity=False,
+            should_abort=should_abort,
         )
+        _raise_if_should_abort(should_abort)
         if verbose:
             elapsed = time.perf_counter() - t0
             print(f"  POVM枚举阶段完成: 3/3 | elapsed={elapsed:.2f}s")
@@ -749,6 +779,7 @@ def run_detection_pipeline(
             effects_by_bin=effects_all_by_bin,
             patterns=patterns,
             window_bins=window_bins,
+            should_abort=should_abort,
         )
         sigma_declared_raw = np.zeros((4, 4), dtype=complex)
         sigma_declared_ff = np.zeros((4, 4), dtype=complex)
@@ -843,7 +874,14 @@ def run_detection_pipeline(
     weight_eps = 1e-14
     records: List[TwoClickRecord] = []
     for _, (det_a, det_b) in patterns_records:
-        for record in engine.collect_same_bin_records(effects_all_by_bin, det_a, det_b, weight_eps):
+        _raise_if_should_abort(should_abort)
+        for record in engine.collect_same_bin_records(
+            effects_all_by_bin,
+            det_a,
+            det_b,
+            weight_eps,
+            should_abort=should_abort,
+        ):
             records.append(TwoClickRecord(*record))
         for record in engine.collect_diff_bin_records(
             effects_all_by_bin,
@@ -851,6 +889,7 @@ def run_detection_pipeline(
             det_b,
             weight_eps,
             window_bins,
+            should_abort=should_abort,
         ):
             records.append(TwoClickRecord(*record))
         for record in engine.collect_diff_bin_records(
@@ -859,6 +898,7 @@ def run_detection_pipeline(
             det_a,
             weight_eps,
             window_bins,
+            should_abort=should_abort,
         ):
             records.append(TwoClickRecord(*record))
 
@@ -891,6 +931,8 @@ def run_detection_pipeline(
     record_qubit_state_cache: dict[int, np.ndarray] = {}
     t0 = time.perf_counter()
     for sample_index in range(1, n_samples + 1):
+        if (sample_index - 1) % 16 == 0:
+            _raise_if_should_abort(should_abort)
         record_index = int(rng.choice(len(records), p=probs))
         record = records[record_index]
 

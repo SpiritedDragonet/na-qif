@@ -85,6 +85,7 @@ def run_detector_bg_scan_task(
     raw_dir: Path,
     plots_dir: Path,
     task_id: str,
+    should_abort=None,
 ) -> dict:
     _ = plots_dir, task_id
 
@@ -135,6 +136,7 @@ def run_detector_bg_scan_task(
             debug=config.run.debug,
             hooks=None,
             emission_diagnostics=False,
+            should_abort=should_abort,
         )
     finally:
         config.detector.eta_det = base_eta
