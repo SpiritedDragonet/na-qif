@@ -475,7 +475,6 @@ def _finalize_group_summary(group: dict, attempt_rate_hz_eff: float) -> dict:
         "p_success_bg_assisted_abs_avg": "p_success_bg_assisted_abs_sum",
         "p_success_true_given_arrival11_mean": "p_success_true_given_arrival11_sum",
         "fidelity_all_avg": "fidelity_all_sum",
-        "fidelity_true_avg": "fidelity_true_sum",
         "fidelity_false_avg": "fidelity_false_sum",
         "corr_exx_avg": "corr_exx_sum",
         "corr_eyy_avg": "corr_eyy_sum",
@@ -486,6 +485,16 @@ def _finalize_group_summary(group: dict, attempt_rate_hz_eff: float) -> dict:
         out_key: (group[sum_key] / runs_total if runs_total > 0 else 0.0)
         for out_key, sum_key in avg_pairs.items()
     }
+    # WINDOW_SCAN 的 true-fidelity 使用全局条件口径：
+    # fidelity_true_avg = sum_r[fidelity_true(r) * p_success_true_abs(r)] / sum_r[p_success_true_abs(r)]
+    # 避免 shots_per_run 很小时，按 run 等权平均导致的系统性低估。
+    p_success_true_abs_sum = float(group["p_success_true_abs_sum"])
+    fidelity_true_weighted_abs_sum = float(group.get("fidelity_true_weighted_abs_sum", 0.0))
+    averages["fidelity_true_avg"] = (
+        fidelity_true_weighted_abs_sum / p_success_true_abs_sum
+        if p_success_true_abs_sum > 0.0
+        else 0.0
+    )
     averages["p_success_true_given_arrival11_global"] = (
         group["p_success_true_abs_sum"] / group["p_arrive_11_sum"] if group["p_arrive_11_sum"] > 0 else 0.0
     )
@@ -538,6 +547,7 @@ def _init_window_scan_group(window_ns: float, runs_target: int) -> dict:
         "p_success_true_given_arrival11_sum": 0.0,
         "fidelity_all_sum": 0.0,
         "fidelity_true_sum": 0.0,
+        "fidelity_true_weighted_abs_sum": 0.0,
         "fidelity_false_sum": 0.0,
         "false_fraction_sum": 0.0,
         "corr_exx_sum": 0.0,
@@ -559,6 +569,9 @@ def _accumulate_window_scan_group(group: dict, entry: dict) -> None:
     for key in _CORE_METRIC_FIELDS:
         sum_key = "p_success_true_given_arrival11_sum" if key == "p_success_true_given_arrival" else f"{key}_sum"
         group[sum_key] += _safe_num(entry.get(key)) or 0.0
+    p_success_true_abs = _safe_num(entry.get("p_success_true_abs")) or 0.0
+    fidelity_true = _safe_num(entry.get("fidelity_true")) or 0.0
+    group["fidelity_true_weighted_abs_sum"] += p_success_true_abs * fidelity_true
     group["p_success_intrinsic_dark_assisted_abs_sum"] += (
         _safe_num(entry.get("p_success_intrinsic_dark_assisted_abs")) or 0.0
     )

@@ -1330,6 +1330,12 @@ def _run_worker_loop(
             try:
                 # 原子“抢占”：rename 成功即视为领取
                 cand.replace(dest)
+                # pending 任务可能已存在较久；抢占后若不刷新 mtime，
+                # 监控线程会按“过期 inprogress”立刻回收，导致任务反复丢失所有权。
+                try:
+                    dest.touch()
+                except Exception:
+                    pass
                 task_path = dest
                 break
             except FileNotFoundError:

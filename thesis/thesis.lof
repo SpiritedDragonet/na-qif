@@ -8,7 +8,7 @@
 \addvspace {10.0pt}
 \contentsline {figure}{\numberline {4-1}{\ignorespaces 分层标定流程图：每一层仅使用该层可观测量约束对应参数，再把约束传递到下一层，最终进入端到端任务指标验证。}}{29}{figure.4.1}%
 \contentsline {figure}{\numberline {4-2}{\ignorespaces 双臂波包时域结构与主窗口位置：（a）A 臂原子四能级占据演化；（b）发射后双臂波包；（c）A 臂累计保留率；（d）各阶段总光子概率积分；（e）QFC 后双臂波包；（f）光纤后、入 BS 前波包；（g）BS 后波包；（h）光纤后累计能量捕获。}}{29}{figure.4.2}%
-\contentsline {figure}{\numberline {4-3}{\ignorespaces 点击时间分布与接受窗口。}}{30}{figure.4.3}%
+\contentsline {figure}{\numberline {4-3}{\ignorespaces A/B 两臂绝对点击时间分布（左）与相对双点击时间差分布（右）；右图淡黄色阴影为 $\pm 70\,\mathrm {ns}$ 的时间差接收窗口。}}{30}{figure.4.3}%
 \contentsline {figure}{\numberline {4-4}{\ignorespaces 窗口扫描下的速率、条件保真度与假成功占比。}}{31}{figure.4.4}%
 \contentsline {figure}{\numberline {4-5}{\ignorespaces HOM 曲线及可见度约束。}}{31}{figure.4.5}%
 \contentsline {figure}{\numberline {4-6}{\ignorespaces BSM 模式概率与真假分量分解。}}{32}{figure.4.6}%

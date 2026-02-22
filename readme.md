@@ -197,6 +197,7 @@ python total_simulation.py --runs 1 --shots 1 --debug --no-plot \
 - `window_scan_trials.csv`：WINDOW_SCAN 逐 shot 明细
 - `window_scan_runs.csv`：WINDOW_SCAN 逐 (window_ns, run_index) 指标（同一 run 复用同一次发射态）
 - `window_scan_summary.csv`：WINDOW_SCAN 按 window 聚合统计（扫描主结果，含 `herald_rate_abs` / `sbr_true_false` / `acceptance_fraction_vs_max_window`）
+  - `fidelity_true_avg` 采用全局条件口径：`sum(fidelity_true_run * p_success_true_abs_run) / sum(p_success_true_abs_run)`（非 run 等权平均）
 - `bsm_scan_trials.csv`：BSM_SCAN 逐 shot 明细（含 pattern 与 source 标签）
 - `bsm_scan_runs.csv`：BSM_SCAN 逐 (bs_theta, run_index) 指标（含 click pattern 计数/占比）
 - `bsm_scan_summary.csv`：BSM_SCAN 按 `bs_theta` 聚合统计（用于 BS 误差预算）
@@ -347,8 +348,11 @@ atomA(4D) - atomB(4D) - A1(5D) - B1(5D) - A2(5D) - B2(5D) - ... - AN(5D) - BN(5D
 - `QfcFilterCavityParams.fwhm_mhz = 27.0`
 - `QfcFilterCavityParams.eta_peak_A/B = 0.81`
 - `QfcParams.qfc_noise_sd_cps_per_mhz_A/B = 41.1`
-- `EmissionParams.sigma = 16.8 ns`
-- `EmissionParams.t0_A_ns/t0_B_ns = 22.0 ns`（延迟与抖动按 `delay_ns/delay_jitter_ns` 在运行时拆分到 A/B）
+- `EmissionParams.sigma = 9.5 ns`
+- `EmissionParams.t0_A_ns/t0_B_ns = 8.0 ns`（延迟与抖动按 `delay_ns/delay_jitter_ns` 在运行时拆分到 A/B）
+- `EmissionParams.arm_A/B.omega_peak = 0.65 * (2*pi*20e6) rad/s`
+- `EmissionParams.arm_A/B.g = 0.09 * (2*pi*20e6) rad/s`
+- `EmissionParams.arm_A/B.kappa_ex / kappa_in = 20e6 / 1e6 (1/s)`
 - `EmissionParams.delay_jitter_ns = 0.3 ns`
 - `RunConfig.t2_us = 330 us`
 

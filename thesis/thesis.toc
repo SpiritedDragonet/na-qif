@@ -36,7 +36,7 @@
 \contentsline {section}{\numberline {4.2}分层标定流程}{28}{section.4.2}%
 \contentsline {section}{\numberline {4.3}结果图谱物理归因}{28}{section.4.3}%
 \contentsline {subsection}{\numberline {4.3.1}关键结果与物理解释}{29}{subsection.4.3.1}%
-\contentsline {section}{\numberline {4.4}端到端性能误差预算}{32}{section.4.4}%
+\contentsline {section}{\numberline {4.4}端到端性能误差预算}{31}{section.4.4}%
 \contentsline {section}{\numberline {4.5}计算成本与部署判据}{36}{section.4.5}%
 \contentsline {section}{\numberline {4.6}本章小结}{38}{section.4.6}%
 \contentsline {chapter}{\heiti 结\hspace {\ccwd }论}{39}{section*.19}%
