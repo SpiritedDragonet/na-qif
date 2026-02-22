@@ -8,6 +8,7 @@
 
 from typing import Tuple, Optional, List, Union
 import csv
+import json
 import os
 from pathlib import Path
 import numpy as np
@@ -47,6 +48,48 @@ def _maybe_show(wait_s: float = 5.0, show: bool = True) -> None:
         return
     plt.show(block=False)
     plt.pause(wait_s)
+
+
+def _drive_curves_from_manifest(save_path: str, n_bins: int) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    path = Path(save_path)
+    manifest_path = None
+    for parent in [path.parent, *path.parents]:
+        candidate = parent / "summary" / "run_manifest.json"
+        if candidate.exists():
+            manifest_path = candidate
+            break
+    if manifest_path is None:
+        return None
+    try:
+        emission = json.loads(manifest_path.read_text(encoding="utf-8"))["config"]["emission"]
+        dt_ns = float(emission["dt_ns"])
+        sigma = float(emission["sigma"])
+        delay = emission.get("delay_ns")
+        if delay is None:
+            return None
+        delay = float(delay)
+        t0_raw = emission.get("t0_ns")
+        t0_ns = float((n_bins - 1) * dt_ns * 0.5 if t0_raw is None else t0_raw)
+        wf_a = str(emission.get("drive_waveform_A", "gaussian")).strip().lower()
+        wf_b = str(emission.get("drive_waveform_B", "gaussian")).strip().lower()
+    except Exception:
+        return None
+    t_ns = np.arange(n_bins, dtype=float) * dt_ns
+    if sigma <= 0.0:
+        return None
+    def _env(waveform: str, center_ns: float) -> np.ndarray:
+        x = (t_ns - center_ns) / sigma
+        if waveform == "gaussian":
+            return np.exp(-0.5 * x ** 2)
+        if waveform == "sech":
+            return 1.0 / np.cosh(x)
+        if waveform == "square":
+            return (np.abs(x) <= 1.0).astype(float)
+        return np.zeros_like(t_ns, dtype=float)
+    i_a = np.flip(_env(wf_a, t0_ns - 0.5 * delay) ** 2)
+    i_b = np.flip(_env(wf_b, t0_ns + 0.5 * delay) ** 2)
+    scale = max(float(np.max(i_a)), float(np.max(i_b)), 1e-30)
+    return i_a / scale, i_b / scale
 
 
 def _export_dual_arm_probabilities_csv(
@@ -787,6 +830,25 @@ def plot_dual_arm_heatmap(
     axes[1].top.set_xticklabels([str(i) for i in tick_indices], fontsize=9)
     axes[1].top.set_xlabel('Bin index', fontsize=10)
     axes[1].top.set_xlim(axes[1].get_xlim())
+
+    # 发射阶段附加驱动强度曲线（上方小窗）
+    if display_atomic and stage_mode == "emission" and isinstance(result, EmissionResult):
+        drive_curves = _drive_curves_from_manifest(save_path, n_bins)
+        if drive_curves is not None:
+            for host_ax, drive in ((axes[0], drive_curves[0]), (axes[1], drive_curves[1])):
+                ax_drive = host_ax.inset_axes([0.0, 1.02, 1.0, 0.16])
+                x = np.arange(n_bins, dtype=float)
+                y = np.clip(np.asarray(drive, dtype=float), 0.0, 1.0)
+                ax_drive.plot(x, y, color="#1f77b4", linewidth=1.2)
+                ax_drive.fill_between(x, 0.0, y, color="#1f77b4", alpha=0.18)
+                ax_drive.set_xlim(0, n_bins - 1)
+                ax_drive.set_ylim(0.0, 1.0)
+                ax_drive.set_xticks([])
+                ax_drive.set_yticks([0.0, 1.0])
+                ax_drive.tick_params(axis="y", labelsize=7, length=2)
+                ax_drive.set_ylabel("|Omega|^2", fontsize=7)
+                ax_drive.spines["top"].set_visible(False)
+                ax_drive.spines["right"].set_visible(False)
 
     # Add separator lines for bin states
     # 根据bin维度确定分界线位置

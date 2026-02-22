@@ -26,7 +26,7 @@ DEFAULT_QFC_NOISE_SD_CPS_PER_MHZ = 41.1
 DEFAULT_EMISSION_SIGMA_NS = 18.5
 # 目标：在 n_bins=100, dt=1ns 且 delay∈[-10,10]ns 的默认口径下，
 # after_bs 的非真空波包应完整落在窗口内（首尾均接近 0）。
-DEFAULT_EMISSION_T0_NS = 24.0
+DEFAULT_EMISSION_T0_NS = 40.0
 DEFAULT_EMISSION_OMEGA_PEAK_RAD_S = float(2.0 * np.pi * 20e6 * 0.65)
 DEFAULT_EMISSION_G_RAD_S = float(2.0 * np.pi * 20e6 * 0.165)
 DEFAULT_EMISSION_KAPPA_EX_HZ = 20e6 * 2.2
