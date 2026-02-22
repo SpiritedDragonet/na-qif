@@ -190,8 +190,8 @@ class EmissionParams:
     dt_ns: float = 1.0
     chi_max: int = 50
     sigma: float = DEFAULT_EMISSION_SIGMA_NS
-    t0_A_ns: Optional[float] = DEFAULT_EMISSION_T0_NS
-    t0_B_ns: Optional[float] = DEFAULT_EMISSION_T0_NS
+    # 单一发射中心时刻：两臂共用同一基准 t0，再由 delay 对称拆分到 A/B。
+    t0_ns: Optional[float] = DEFAULT_EMISSION_T0_NS
     # 驱动包络类型（默认高斯）；支持: gaussian / sech / square
     drive_waveform_A: str = "gaussian"
     drive_waveform_B: str = "gaussian"
@@ -482,8 +482,7 @@ def build_emission_kernel_kwargs(emission: EmissionParams) -> dict:
         "omega_peak_B": _h(emission.arm_B.omega_peak),
         "drive_waveform_A": emission.drive_waveform_A,
         "drive_waveform_B": emission.drive_waveform_B,
-        "t0_A": emission.t0_A_ns,
-        "t0_B": emission.t0_B_ns,
+        "t0_ns": emission.t0_ns,
         "sigma": float(emission.sigma),
         "g_A": _h(emission.arm_A.g),
         "g_B": _h(emission.arm_B.g),
@@ -529,8 +528,7 @@ def build_hom_self_check_setup(base_emission: EmissionParams) -> tuple[EmissionP
         dt_ns=0.5,
         chi_max=20,
         sigma=3.0,
-        t0_A_ns=None,
-        t0_B_ns=None,
+        t0_ns=None,
     )
     return emission_cfg, 36, 20.0
 

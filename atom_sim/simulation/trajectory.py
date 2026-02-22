@@ -446,8 +446,7 @@ def run_dual_atom_emission(
     omega_peak_B: Optional[float] = None,
     drive_waveform_A: str = "gaussian",
     drive_waveform_B: str = "gaussian",
-    t0_A: Optional[float] = None,
-    t0_B: Optional[float] = None,
+    t0_ns: Optional[float] = None,
     sigma: Optional[float] = None,
     delay_ns: float = 0.0,
     delay_jitter_ns: float = 0.0,
@@ -507,10 +506,8 @@ def run_dual_atom_emission(
         原子A的驱动脉冲峰值幅度（Ω峰值，rad/s）
     omega_peak_B : float
         原子B的驱动脉冲峰值幅度（Ω峰值，rad/s）
-    t0_A : float, optional
-        原子A的峰值时间（纳秒）
-    t0_B : float, optional
-        原子B的峰值时间（纳秒）
+    t0_ns : float, optional
+        两臂共用的基准峰值时间（纳秒），随后按 delay 对称拆分到 A/B
     drive_waveform_A : str
         A 臂驱动包络（gaussian/sech/square）
     drive_waveform_B : str
@@ -635,10 +632,8 @@ def run_dual_atom_emission(
     # 设置默认峰值为bin中心
     # 时间数组是 [0, dt, 2*dt, ..., (N-1)*dt]
     # 中心bin索引是 (N-1)/2，对应时间是 (N-1)*dt/2
-    if t0_A is None:
-        t0_A = (n_bins - 1) * dt_ns / 2
-    if t0_B is None:
-        t0_B = (n_bins - 1) * dt_ns / 2
+    if t0_ns is None:
+        t0_ns = (n_bins - 1) * dt_ns / 2
 
     # 延迟抖动（一次采样，作用于整个波包）
     delay_jitter_actual_ns = 0.0
@@ -652,12 +647,12 @@ def run_dual_atom_emission(
 
     # tau/delay 的作用口径（全任务统一）：
     # 对称分配到两臂驱动中心，保持相对延迟 Δ(tB - tA) = delay。
-    #   t0_A <- t0_A - delay/2
-    #   t0_B <- t0_B + delay/2
+    #   t0_A <- t0_ns - delay/2
+    #   t0_B <- t0_ns + delay/2
     # 这样不会引入“只改一臂”的额外偏置，HOM/SIM/SCAN 共享同一口径。
     half_delay_ns = 0.5 * delay_ns_used
-    t0_A = t0_A - half_delay_ns
-    t0_B = t0_B + half_delay_ns
+    t0_A = float(t0_ns) - half_delay_ns
+    t0_B = float(t0_ns) + half_delay_ns
 
     omega_A_values = _omega_envelope(t_ns, t0_A, sigma, omega_peak_A, waveform=drive_waveform_A)
     omega_B_values = _omega_envelope(t_ns, t0_B, sigma, omega_peak_B, waveform=drive_waveform_B)

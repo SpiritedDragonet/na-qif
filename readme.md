@@ -349,7 +349,7 @@ atomA(4D) - atomB(4D) - A1(5D) - B1(5D) - A2(5D) - B2(5D) - ... - AN(5D) - BN(5D
 - `QfcFilterCavityParams.eta_peak_A/B = 0.81`
 - `QfcParams.qfc_noise_sd_cps_per_mhz_A/B = 41.1`
 - `EmissionParams.sigma = 18.5 ns`
-- `EmissionParams.t0_A_ns/t0_B_ns = 24.0 ns`（延迟与抖动按 `delay_ns/delay_jitter_ns` 在运行时拆分到 A/B）
+- `EmissionParams.t0_ns = 24.0 ns`（两臂共用同一基准 t0；延迟与抖动按 `delay_ns/delay_jitter_ns` 在运行时对称拆分到 A/B）
 - `EmissionParams.arm_A/B.omega_peak = 0.65 * (2*pi*20e6) rad/s`
 - `EmissionParams.arm_A/B.g = 0.165 * (2*pi*20e6) rad/s`
 - `EmissionParams.arm_A/B.kappa_ex / kappa_in = 44e6 / 2.2e6 (1/s)`
