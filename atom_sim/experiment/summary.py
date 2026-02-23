@@ -1235,6 +1235,23 @@ def _write_qfc_noise_scan_summary(paths: dict, config: SimConfig) -> None:
     )
 
 
+def _write_qfc_eff_noise_scan_summary(paths: dict, config: SimConfig) -> None:
+    _write_generic_noise_scan_summary(
+        paths=paths,
+        config=config,
+        experiment_name="QFC_EFF_NOISE_SCAN",
+        metrics_key="qfc_eff_noise_points",
+        run_index_patterns=(r"qescan_eta_\d+_noise_\d+_run_(\d+)", r"qescan_run_(\d+)"),
+        runs_filename="qfc_eff_noise_scan_runs.csv",
+        summary_filename="qfc_eff_noise_scan_summary.csv",
+        group_columns=("qfc_eta", "qfc_noise_sd_cps_per_mhz"),
+        group_value_reader=lambda entry: (
+            entry.get("qfc_eta", 0.0),
+            entry.get("qfc_noise_sd_cps_per_mhz", 0.0),
+        ),
+    )
+
+
 def _write_detector_bg_scan_summary(paths: dict, config: SimConfig) -> None:
     _write_generic_noise_scan_summary(
         paths=paths,
@@ -1708,6 +1725,7 @@ def write_summary(task_type: str, paths: dict, config: SimConfig) -> None:
         "BSM_SCAN": _write_bsm_scan_summary,
         "LENGTH_SCAN": _write_length_scan_summary,
         "QFC_NOISE_SCAN": _write_qfc_noise_scan_summary,
+        "QFC_EFF_NOISE_SCAN": _write_qfc_eff_noise_scan_summary,
         "DETECTOR_BG_SCAN": _write_detector_bg_scan_summary,
     }
     writer = specialized.get(task_type)

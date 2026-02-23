@@ -1,20 +1,113 @@
+import argparse
+import csv
 import pathlib
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 
-def _metrics(eta_q: np.ndarray, bg_cps: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    qq, bb = np.meshgrid(eta_q, bg_cps, indexing="xy")
-    p_true = 1.35e-6 * qq**2
-    p_false = 0.08e-6 + 0.006e-6 * bb
-    p_all = p_true + p_false
-    fidelity = 0.97 - 0.13 * (1.0 - qq) - 0.00055 * bb
-    fidelity = np.clip(fidelity, 0.5, 0.99)
-    return fidelity, p_all
+DEFAULT_BASELINE_ETA_Q = 0.57
+DEFAULT_BASELINE_NOISE_CPS_PER_MHZ = 41.1
+
+
+def _repo_root() -> pathlib.Path:
+    return pathlib.Path(__file__).resolve().parents[2]
+
+
+def _default_summary_csv() -> pathlib.Path:
+    data_root = pathlib.Path(__file__).resolve().parents[1] / "data"
+    candidates = sorted(
+        data_root.glob("*/summary/qfc_eff_noise_scan_summary.csv"),
+        key=lambda p: p.stat().st_mtime,
+    )
+    if candidates:
+        return candidates[-1]
+
+    outputs_root = _repo_root() / "outputs"
+    candidates = sorted(
+        outputs_root.glob("*/summary/qfc_eff_noise_scan_summary.csv"),
+        key=lambda p: p.stat().st_mtime,
+    )
+    if candidates:
+        return candidates[-1]
+
+    return data_root / "qfc_eff_noise_scan_server_output_latest" / "summary" / "qfc_eff_noise_scan_summary.csv"
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Plot QFC efficiency-noise landscape from summary CSV.")
+    parser.add_argument("--summary-csv", type=pathlib.Path, default=_default_summary_csv())
+    return parser.parse_args()
+
+
+def _parse_float(row: dict[str, str], key: str, line_no: int) -> float:
+    raw = (row.get(key) or "").strip()
+    if raw == "":
+        raise ValueError(f"CSV line {line_no}: missing value for '{key}'")
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"CSV line {line_no}: invalid float '{raw}' for '{key}'") from exc
+    if not np.isfinite(value):
+        raise ValueError(f"CSV line {line_no}: non-finite value '{raw}' for '{key}'")
+    return value
+
+
+def _load_grid(summary_csv: pathlib.Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    if not summary_csv.exists():
+        raise FileNotFoundError(f"Summary CSV not found: {summary_csv}")
+
+    with summary_csv.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+        fieldnames = reader.fieldnames or []
+
+    required = (
+        "qfc_eta",
+        "qfc_noise_sd_cps_per_mhz",
+        "fidelity_true_avg",
+        "p_success_abs_avg",
+    )
+    missing = [key for key in required if key not in fieldnames]
+    if missing:
+        raise ValueError(f"Summary CSV missing required columns: {', '.join(missing)}")
+    if not rows:
+        raise ValueError(f"Summary CSV has no rows: {summary_csv}")
+
+    eta_vals = sorted(
+        {
+            round(_parse_float(row, "qfc_eta", idx), 9)
+            for idx, row in enumerate(rows, start=2)
+        }
+    )
+    noise_vals = sorted(
+        {
+            round(_parse_float(row, "qfc_noise_sd_cps_per_mhz", idx), 9)
+            for idx, row in enumerate(rows, start=2)
+        }
+    )
+    eta = np.asarray(eta_vals, dtype=float)
+    noise = np.asarray(noise_vals, dtype=float)
+
+    fidelity = np.full((noise.size, eta.size), np.nan, dtype=float)
+    p_success = np.full((noise.size, eta.size), np.nan, dtype=float)
+    eta_index = {value: idx for idx, value in enumerate(eta_vals)}
+    noise_index = {value: idx for idx, value in enumerate(noise_vals)}
+
+    for line_no, row in enumerate(rows, start=2):
+        e = round(_parse_float(row, "qfc_eta", line_no), 9)
+        n = round(_parse_float(row, "qfc_noise_sd_cps_per_mhz", line_no), 9)
+        i = noise_index[n]
+        j = eta_index[e]
+        fidelity[i, j] = _parse_float(row, "fidelity_true_avg", line_no)
+        p_success[i, j] = _parse_float(row, "p_success_abs_avg", line_no)
+
+    return eta, noise, fidelity, p_success
 
 
 def main() -> None:
+    args = _parse_args()
+
     plt.rcParams.update(
         {
             "font.family": "DejaVu Sans",
@@ -24,68 +117,87 @@ def main() -> None:
         }
     )
 
-    eta_q = np.linspace(0.3, 0.9, 180)
-    bg_cps = np.linspace(0.0, 260.0, 180)
-    fidelity, p_all = _metrics(eta_q, bg_cps)
+    eta_q, noise_sd, fidelity, p_success = _load_grid(args.summary_csv)
+    fidelity_m = np.ma.masked_invalid(fidelity)
+    p_success_m = np.ma.masked_invalid(p_success)
 
-    fig = plt.figure(figsize=(9.5, 4.6), constrained_layout=True)
-    gs = fig.add_gridspec(1, 2, width_ratios=[1.0, 1.0], wspace=0.25)
+    fig = plt.figure(figsize=(9.8, 4.8), constrained_layout=True)
+    gs = fig.add_gridspec(1, 2, width_ratios=[1.0, 1.0], wspace=0.26)
     ax0 = fig.add_subplot(gs[0, 0])
     ax1 = fig.add_subplot(gs[0, 1])
 
+    extent = [float(eta_q.min()), float(eta_q.max()), float(noise_sd.min()), float(noise_sd.max())]
+
     im0 = ax0.imshow(
-        fidelity,
+        fidelity_m,
         origin="lower",
         aspect="auto",
-        extent=[eta_q.min(), eta_q.max(), bg_cps.min(), bg_cps.max()],
+        extent=extent,
         cmap="viridis",
-        vmin=0.55,
-        vmax=0.97,
     )
     cs0 = ax0.contour(
         eta_q,
-        bg_cps,
-        fidelity,
-        levels=[0.70, 0.75, 0.80, 0.85, 0.90],
+        noise_sd,
+        fidelity_m,
+        levels=6,
         colors="white",
-        linewidths=0.9,
-        alpha=0.8,
+        linewidths=0.8,
+        alpha=0.85,
     )
-    ax0.clabel(cs0, fmt="%.2f", inline=True, fontsize=8)
+    ax0.clabel(cs0, fmt="%.3f", inline=True, fontsize=8)
     ax0.set_xlabel(r"QFC efficiency $\eta_q$")
-    ax0.set_ylabel("Background rate (cps)")
-    ax0.set_title("Conditional fidelity map")
-    cb0 = fig.colorbar(im0, ax=ax0, fraction=0.048, pad=0.03)
+    ax0.set_ylabel(r"QFC noise SD (cps/MHz)")
+    ax0.set_title(r"Conditional fidelity map $F_t(\eta_q,\sigma_{\rm QFC})$")
+    cb0 = fig.colorbar(im0, ax=ax0, fraction=0.05, pad=0.03)
     cb0.set_label(r"$F_t$")
 
     im1 = ax1.imshow(
-        1e6 * p_all,
+        1e6 * p_success_m,
         origin="lower",
         aspect="auto",
-        extent=[eta_q.min(), eta_q.max(), bg_cps.min(), bg_cps.max()],
+        extent=extent,
         cmap="magma",
     )
     cs1 = ax1.contour(
         eta_q,
-        bg_cps,
-        1e6 * p_all,
-        levels=[0.2, 0.4, 0.8, 1.2, 1.6],
+        noise_sd,
+        1e6 * p_success_m,
+        levels=6,
         colors="white",
-        linewidths=0.9,
-        alpha=0.8,
+        linewidths=0.8,
+        alpha=0.85,
     )
-    ax1.clabel(cs1, fmt="%.1f", inline=True, fontsize=8)
+    ax1.clabel(cs1, fmt="%.3f", inline=True, fontsize=8)
     ax1.set_xlabel(r"QFC efficiency $\eta_q$")
-    ax1.set_ylabel("Background rate (cps)")
-    ax1.set_title(r"Herald probability map ($\times10^{-6}$)")
-    cb1 = fig.colorbar(im1, ax=ax1, fraction=0.048, pad=0.03)
+    ax1.set_ylabel(r"QFC noise SD (cps/MHz)")
+    ax1.set_title(r"Herald probability map $p_s(\eta_q,\sigma_{\rm QFC})$")
+    cb1 = fig.colorbar(im1, ax=ax1, fraction=0.05, pad=0.03)
     cb1.set_label(r"$p_s \times 10^{-6}$")
 
-    ax0.scatter([0.57], [165.0], s=55, marker="o", color="#f2c14e", edgecolors="#1f1f1f", linewidths=0.8)
-    ax0.text(0.585, 172.0, "baseline", fontsize=8.5, color="#1f1f1f")
-    ax1.scatter([0.57], [165.0], s=55, marker="o", color="#f2c14e", edgecolors="#1f1f1f", linewidths=0.8)
+    ax0.scatter(
+        [DEFAULT_BASELINE_ETA_Q],
+        [DEFAULT_BASELINE_NOISE_CPS_PER_MHZ],
+        s=48,
+        marker="o",
+        color="#f2c14e",
+        edgecolors="#1f1f1f",
+        linewidths=0.8,
+    )
+    ax1.scatter(
+        [DEFAULT_BASELINE_ETA_Q],
+        [DEFAULT_BASELINE_NOISE_CPS_PER_MHZ],
+        s=48,
+        marker="o",
+        color="#f2c14e",
+        edgecolors="#1f1f1f",
+        linewidths=0.8,
+    )
 
-    fig.suptitle("QFC efficiency-background operating landscape", fontsize=12.5, fontweight="bold")
+    fig.suptitle(
+        "QFC Efficiency-Noise Tradeoff from QFC_EFF_NOISE_SCAN Summary",
+        fontsize=12.3,
+        fontweight="bold",
+    )
     out_path = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_path, dpi=220)
     plt.close(fig)

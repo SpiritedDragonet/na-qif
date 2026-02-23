@@ -123,10 +123,19 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.88\linewidth]{fig_hom.pdf}
-\caption{HOM 曲线及可见度约束。}
+\caption{基于同偏振跨端口双点击统计的 HOM 二阶关联曲线及最小二乘拟合。}
 \label{fig:hom}
 \end{figure}
-图 \ref{fig:hom} 的谷深与谷宽共同约束可分辨性参数。对谷深与谷宽同时拟合后，时间抖动与频谱失配可以在参数层面分离，并与源端波包匹配程度建立对应关系。
+图 \ref{fig:hom} 纵轴采用二阶关联量
+\begin{equation}
+g^{(2)}_{HH,VV}(\tau)=\frac{P_{2}(\tau)}{\langle P_{2}(|\tau|\ge\tau_{\mathrm{edge}})\rangle},\qquad
+P_{2}(\tau)=\frac{\mathrm{coinc\_counts}(\tau)}{\mathrm{shots\_total}(\tau)},
+\end{equation}
+其中双点击事件定义为同偏振跨端口符合（$H1$-$H2$ 或 $V1$-$V2$），$\tau_{\mathrm{edge}}$ 取 $|\tau|$ 外侧 $15\%$ 区间的阈值。曲线采用
+\begin{equation}
+g^{(2)}(\tau)=b-a\exp\!\left[-\left(\frac{\tau-\tau_0}{\sigma}\right)^2\right]
+\end{equation}
+进行最小二乘拟合；谷深 $a$、中心偏移 $\tau_0$ 与宽度 $\sigma$ 分别对应可分辨性退化、时延偏置与有效干涉时间尺度。
 
 \begin{figure}[htbp]
 \centering
@@ -260,10 +269,10 @@ T_w = T_{\rm em}+T_{\rm qm}+T_{\rm fib}+T_{\rm dep}+T_{\rm det}+T_{\rm aux}+T_{\
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.95\linewidth]{fig_cost_scaling.pdf}
-\caption{复杂度缩放图：左为探测阶段耗时随窗口 bin 数增长，右为墙钟代理量随键维上限增长。}
+\caption{复杂度缩放图：左为探测阶段耗时随窗口 bin 数增长，右为墙钟代理量随 bin 个数上限增长。}
 \label{fig:cost_scaling}
 \end{figure}
-图 \ref{fig:cost_scaling} 量化了第 3 章复杂度表达在当前实现中的可观测后果：窗口与枚举空间扩展会优先推高 $T_{\rm det}$，而键维上限提升会抬升单次收缩成本并传导到总墙钟。
+图 \ref{fig:cost_scaling} 给出窗口 bin 上限变化下的探测阶段开销与墙钟代理量趋势，用于与第 3 章复杂度分析对应。
 
 部署判据因此采用两层规则：先满足硬约束
 \begin{equation}

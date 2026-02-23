@@ -130,6 +130,58 @@ def _auto_wave_ymax(arm_a: np.ndarray, arm_b: np.ndarray) -> float:
     return peak * 1.18
 
 
+def _omega_peak_to_rad_s(omega_peak: float, unit: str) -> float:
+    unit_norm = str(unit).strip().lower()
+    return float(omega_peak) * (2.0 * np.pi) if unit_norm == "hz" else float(omega_peak)
+
+
+def _drive_envelope(
+    t_ns: np.ndarray,
+    *,
+    t0_ns: float,
+    sigma_ns: float,
+    waveform: str,
+) -> np.ndarray:
+    if sigma_ns <= 0.0:
+        return np.zeros_like(t_ns, dtype=float)
+    x = (t_ns - float(t0_ns)) / float(sigma_ns)
+    wf = str(waveform).strip().lower()
+    if wf == "gaussian":
+        return np.exp(-0.5 * x * x)
+    if wf == "sech":
+        return 1.0 / np.cosh(x)
+    if wf == "square":
+        return (np.abs(x) <= 1.0).astype(float)
+    return np.zeros_like(t_ns, dtype=float)
+
+
+def _compute_drive_intensity_curves(t_ns: np.ndarray, manifest: dict) -> tuple[np.ndarray, np.ndarray]:
+    emission = manifest.get("config", {}).get("emission", {})
+    arm_a_cfg = emission.get("arm_A", {})
+    arm_b_cfg = emission.get("arm_B", {})
+    sigma_ns = float(emission.get("sigma", 0.0))
+    delay_ns_raw = emission.get("delay_ns", 0.0)
+    delay_ns = 0.0 if delay_ns_raw is None else float(delay_ns_raw)
+    t0_raw = emission.get("t0_ns")
+    if t0_raw is None:
+        t0_ns = 0.5 * float(t_ns[0] + t_ns[-1]) if t_ns.size > 0 else 0.0
+    else:
+        t0_ns = float(t0_raw)
+    unit = str(emission.get("hamiltonian_rate_unit", "rad_s"))
+    omega_peak_a = _omega_peak_to_rad_s(float(arm_a_cfg.get("omega_peak", 0.0)), unit)
+    omega_peak_b = _omega_peak_to_rad_s(float(arm_b_cfg.get("omega_peak", 0.0)), unit)
+    wf_a = str(emission.get("drive_waveform_A", "gaussian"))
+    wf_b = str(emission.get("drive_waveform_B", "gaussian"))
+    half_delay = 0.5 * delay_ns
+    t0_a = t0_ns - half_delay
+    t0_b = t0_ns + half_delay
+    env_a = _drive_envelope(t_ns, t0_ns=t0_a, sigma_ns=sigma_ns, waveform=wf_a)
+    env_b = _drive_envelope(t_ns, t0_ns=t0_b, sigma_ns=sigma_ns, waveform=wf_b)
+    intensity_a = (omega_peak_a * env_a) ** 2
+    intensity_b = (omega_peak_b * env_b) ** 2
+    return intensity_a, intensity_b
+
+
 def _panel_label(ax: plt.Axes, label: str) -> None:
     ax.text(
         0.01,
@@ -161,7 +213,7 @@ def _plot_dual_arm(
     ax.axvspan(0.0, window_ns, color=PALETTE["window"], alpha=0.08, linewidth=0.0)
     _lock_time_axis(ax)
     ax.set_ylim(0.0, y_max)
-    ax.set_ylabel("Photon prob.")
+    ax.set_ylabel("Photon probability")
     ax.set_title(title, pad=4.0)
     _style_axis(ax)
     if show_legend:
@@ -196,6 +248,7 @@ def main() -> None:
     _, qfc_a, qfc_b = _extract_dual_arm_photon_intensity(qfc_table, qfc_labels)
     _, fib_a, fib_b = _extract_dual_arm_photon_intensity(fib_table, fib_labels)
     _, bs_a, bs_b = _extract_dual_arm_photon_intensity(bs_table, bs_labels)
+    drive_a, drive_b = _compute_drive_intensity_curves(t_ns, manifest)
 
     missing_atomic = [lbl for lbl in ATOM_LABELS if lbl not in set(em_labels)]
     if missing_atomic:
@@ -286,10 +339,38 @@ def main() -> None:
         t_ns,
         em_a,
         em_b,
-        "After emission: dual-arm wavepacket",
+        "After emission: dual-arm wavepacket + drive intensity",
         y_max=wave_ymax_em,
         window_ns=window_ns,
         show_legend=True,
+    )
+    ax_b_r = ax_b.twinx()
+    ax_b_r.plot(t_ns, drive_a, color=PALETTE["arm_a"], linestyle="--", linewidth=1.8, label="Arm A drive")
+    ax_b_r.plot(t_ns, drive_b, color=PALETTE["arm_b"], linestyle="--", linewidth=1.8, label="Arm B drive")
+    drive_peak = max(float(np.max(drive_a)), float(np.max(drive_b)), 1e-30)
+    ax_b_r.set_ylim(0.0, drive_peak * 1.12)
+    ax_b_r.set_ylabel(r"Drive intensity $|\Omega|^2$ (rad$^2$/s$^2$)")
+    ax_b_r.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
+    ax_b_r.grid(False)
+    ax_b_r.spines["top"].set_visible(False)
+    ax_b_r.legend(frameon=False, loc="upper left")
+    n_bins = int(t_ns.size)
+    t_start_ns = 0.0
+    t_end_ns = float(n_bins * dt_ns)
+    ax_b.text(
+        0.02,
+        0.06,
+        (
+            f"time-axis view (not bin index): Δt={dt_ns:g} ns/bin; "
+            f"internal bin order is reversed, i.e., bin {n_bins} ↔ [{t_start_ns:g},{dt_ns:g}) ns, "
+            f"bin 1 ↔ [{t_end_ns - dt_ns:g},{t_end_ns:g}) ns"
+        ),
+        transform=ax_b.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=8.2,
+        color="#222222",
+        bbox={"facecolor": "white", "alpha": 0.80, "edgecolor": "none", "pad": 1.6},
     )
     _panel_label(ax_b, "(b)")
 
@@ -390,7 +471,18 @@ def main() -> None:
         y=0.985,
         fontweight="bold",
     )
-    fig.subplots_adjust(left=0.06, right=0.985, top=0.94, bottom=0.08)
+    fig.text(
+        0.5,
+        0.02,
+        (
+            f"Axis convention: all time-domain panels use physical event time t (ns). "
+            f"One time-bin width is Δt={dt_ns:g} ns."
+        ),
+        ha="center",
+        va="bottom",
+        fontsize=9.0,
+    )
+    fig.subplots_adjust(left=0.06, right=0.985, top=0.94, bottom=0.10)
 
     out_pdf = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_pdf)

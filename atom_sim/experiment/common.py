@@ -328,6 +328,9 @@ class RunConfig:
     qfc_noise_sweep_start_cps_per_mhz: Optional[float] = None
     qfc_noise_sweep_end_cps_per_mhz: Optional[float] = None
     qfc_noise_sweep_step_cps_per_mhz: Optional[float] = None
+    qfc_eta_sweep_start: Optional[float] = None
+    qfc_eta_sweep_end: Optional[float] = None
+    qfc_eta_sweep_step: Optional[float] = None
     eta_det_sweep_start: Optional[float] = None
     eta_det_sweep_end: Optional[float] = None
     eta_det_sweep_step: Optional[float] = None
