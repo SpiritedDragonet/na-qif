@@ -157,6 +157,10 @@ class SuccessEnumerationResult:
     rho_declared_ff: Optional[np.ndarray] = None
     trace_declared_raw: float = 0.0
     trace_declared_ff: float = 0.0
+    rho_declared_raw_by_bell: dict[str, np.ndarray] = field(default_factory=dict)
+    rho_declared_ff_by_bell: dict[str, np.ndarray] = field(default_factory=dict)
+    trace_declared_raw_by_bell: dict[str, float] = field(default_factory=dict)
+    trace_declared_ff_by_bell: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -783,10 +787,27 @@ def run_detection_pipeline(
         )
         sigma_declared_raw = np.zeros((4, 4), dtype=complex)
         sigma_declared_ff = np.zeros((4, 4), dtype=complex)
+        rho_declared_raw_by_bell: dict[str, np.ndarray] = {}
+        rho_declared_ff_by_bell: dict[str, np.ndarray] = {}
+        trace_declared_raw_by_bell: dict[str, float] = {}
+        trace_declared_ff_by_bell: dict[str, float] = {}
         for bell_state, sigma_part in sigma_by_bell.items():
+            trace_part_raw = float(np.trace(sigma_part).real)
+            trace_declared_raw_by_bell[bell_state] = trace_part_raw
+            if trace_part_raw > P_ARRIVE_EPS:
+                rho_declared_raw_by_bell[bell_state] = sigma_part / trace_part_raw
+            else:
+                rho_declared_raw_by_bell[bell_state] = np.zeros((4, 4), dtype=complex)
             sigma_declared_raw += sigma_part
             u_ff = _build_feedforward_op_for_bell(bell_state)
-            sigma_declared_ff += u_ff @ sigma_part @ u_ff.conj().T
+            sigma_part_ff = u_ff @ sigma_part @ u_ff.conj().T
+            trace_part_ff = float(np.trace(sigma_part_ff).real)
+            trace_declared_ff_by_bell[bell_state] = trace_part_ff
+            if trace_part_ff > P_ARRIVE_EPS:
+                rho_declared_ff_by_bell[bell_state] = sigma_part_ff / trace_part_ff
+            else:
+                rho_declared_ff_by_bell[bell_state] = np.zeros((4, 4), dtype=complex)
+            sigma_declared_ff += sigma_part_ff
         trace_declared_raw = float(np.trace(sigma_declared_raw).real)
         trace_declared_ff = float(np.trace(sigma_declared_ff).real)
         if trace_declared_raw > P_ARRIVE_EPS:
@@ -857,6 +878,10 @@ def run_detection_pipeline(
             rho_declared_ff=rho_declared_ff,
             trace_declared_raw=trace_declared_raw,
             trace_declared_ff=trace_declared_ff,
+            rho_declared_raw_by_bell=rho_declared_raw_by_bell,
+            rho_declared_ff_by_bell=rho_declared_ff_by_bell,
+            trace_declared_raw_by_bell=trace_declared_raw_by_bell,
+            trace_declared_ff_by_bell=trace_declared_ff_by_bell,
         )
         timings["povm_enumeration"] = time.perf_counter() - t0
 

@@ -10,17 +10,27 @@
 
 分层标定流程单独放在第 4.2 节展开；本节仅定义指标与参数确定方式，避免“口径定义”和“求解流程”交叉叙述造成重复。
 
-端到端评估采用
-\begin{align}
-p_a &: \text{两光子到达概率（含同臂项）},\\
-p_{11} &: \text{两臂各到达一个光子的概率},\\
-p_s &: \text{宣告成功概率},\qquad
-p_t : \text{真成功概率},\qquad
-p_f=p_s-p_t,\\
-p_{t|11} &= \frac{p_t}{p_{11}},\\
-F_d &: \text{宣告口径条件保真度},\qquad
-F_t : \text{真成功口径条件保真度}.
-\end{align}
+端到端评估采用表 \ref{tab:metric-def} 所示统一指标口径。
+
+\begin{table}[htbp]
+\centering
+\caption{端到端评估指标定义}
+\label{tab:metric-def}
+\begin{tabularx}{0.98\linewidth}{l X X}
+\hline
+符号 & 物理含义 & 定义/计算式 \\
+\hline
+$p_a$ & 两光子到达概率（含同臂项） & 由到达事件统计直接得到 \\
+$p_{11}$ & 两臂各到达一个光子的概率 & 由双臂单光子同时到达事件统计得到 \\
+$p_s$ & 宣告成功概率 & 在成功模式集合 $\mathcal{S}$ 上的总宣告概率 \\
+$p_t$ & 真成功概率 & 成功集合中由真实双光子干涉贡献的概率 \\
+$p_f$ & 假成功概率 & $p_f=p_s-p_t$ \\
+$p_{t|11}$ & 到达条件下真成功概率 & $p_{t|11}=p_t/p_{11}$ \\
+$F_d$ & 宣告口径条件保真度 & 以全部宣告成功事件构造的条件保真度 \\
+$F_t$ & 真成功口径条件保真度 & 仅以真成功事件构造的条件保真度 \\
+\hline
+\end{tabularx}
+\end{table}
 其中 $p_f$ 继续分解为本征暗计数分量与背景分量
 \begin{equation}
 p_f=p_{\mathrm{id}}+p_{\mathrm{bg}},
@@ -94,7 +104,7 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 
 在此基础上，窗口选择与事件统计关系可直接从多指标曲线读取。
 
-窗口宽度是实验最直接的调节量。图 \ref{fig:accept_hist} 基于 window scan 真实数据给出时序统计：左图为 A/B 两臂绝对点击时间分布，右图为相对双点击时间差 $\Delta t=t_A-t_B$ 的直方图；图 \ref{fig:window_tradeoff} 给出窗口扫描下的速率-质量折中。与传统二维折中图不同，本章同时关注
+窗口宽度是实验最直接的调节量。图 \ref{fig:accept_hist} 基于窗口扫描真实数据给出时序统计：图 \ref{fig:accept_hist}(a) 为 A/B 两臂绝对点击时间分布，图 \ref{fig:accept_hist}(b) 为相对双点击时间差 $\Delta t=t_A-t_B$ 的直方图；图 \ref{fig:window_tradeoff} 给出窗口扫描下的速率-质量折中。与传统二维折中图不同，本章同时关注
 \begin{equation}
 \Xi(\Delta t_w)=\left(p_s,\;F_t,\;\frac{p_f}{p_s},\;p_{t|11}\right),
 \end{equation}
@@ -103,10 +113,10 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.88\linewidth]{fig_accept_hist.pdf}
-\caption{A/B 两臂绝对点击时间分布（左）与相对双点击时间差分布（右）；右图淡黄色阴影为 $\pm 70\,\mathrm{ns}$ 的时间差接收窗口。}
+\caption{A/B 两臂绝对点击时间分布（a）与相对双点击时间差分布（b）；其中 (b) 中淡黄色阴影为 $\pm 70\,\mathrm{ns}$ 的时间差接收窗口。}
 \label{fig:accept_hist}
 \end{figure}
-图 \ref{fig:accept_hist} 直接给出了两臂点击主密度区以及相对时差集中区间；其中右图的 $\Delta t$ 与窗口判定使用同一相对时间口径，因此对后续窗口策略解释更直接。
+图 \ref{fig:accept_hist} 直接给出了两臂点击主密度区以及相对时差集中区间；其中图 \ref{fig:accept_hist}(b) 的 $\Delta t$ 与窗口判定使用同一相对时间口径，因此对后续窗口策略解释更直接。
 
 \begin{figure}[htbp]
 \centering
@@ -129,9 +139,9 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 图 \ref{fig:hom} 纵轴采用二阶关联量
 \begin{equation}
 g^{(2)}_{HH,VV}(\tau)=\frac{P_{2}(\tau)}{\langle P_{2}(|\tau|\ge\tau_{\mathrm{edge}})\rangle},\qquad
-P_{2}(\tau)=\frac{\mathrm{coinc\_counts}(\tau)}{\mathrm{shots\_total}(\tau)},
+P_{2}(\tau)=\frac{C_{2}(\tau)}{N_{\mathrm{shot}}(\tau)},
 \end{equation}
-其中双点击事件定义为同偏振跨端口符合（$H1$-$H2$ 或 $V1$-$V2$），$\tau_{\mathrm{edge}}$ 取 $|\tau|$ 外侧 $15\%$ 区间的阈值。曲线采用
+其中 $C_2(\tau)$ 表示时延为 $\tau$ 时同偏振跨端口双点击计数（$H1$-$H2$ 或 $V1$-$V2$），$N_{\mathrm{shot}}(\tau)$ 为对应时延采样的总尝试数，$\tau_{\mathrm{edge}}$ 取 $|\tau|$ 外侧 $15\%$ 区间的阈值。曲线采用
 \begin{equation}
 g^{(2)}(\tau)=b-a\exp\!\left[-\left(\frac{\tau-\tau_0}{\sigma}\right)^2\right]
 \end{equation}
@@ -140,10 +150,10 @@ g^{(2)}(\tau)=b-a\exp\!\left[-\left(\frac{\tau-\tau_0}{\sigma}\right)^2\right]
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.9\linewidth]{fig_bsm_patterns.pdf}
-\caption{BSM 模式概率与真假分量分解。}
+\caption{基于真实 BSM 扫描汇总结果的三联诊断图：（a）推荐工作点（$\theta_{\mathrm{BS}}=0.75$ rad）下宣告记录在各点击模式上的后验组成（真成功、背景辅助假成功、内禀暗计数辅助假成功）；（b）探测器对与相对时间仓索引差 $|\Delta n|$ 的记录真实性热图；（c）总成功、真成功与假成功三类权重在 $|\Delta n|$ 上的归一化分布。}
 \label{fig:bsm_patterns}
 \end{figure}
-图 \ref{fig:bsm_patterns} 显示了成功事件组成随噪声分量的变化规律。总成功率上升且假成功占比同步抬升时，主要增量来自噪声触发；该现象在暗计数或背景计数偏高区间更明显。
+图 \ref{fig:bsm_patterns} 显示该工作点下真成功质量主要集中在四类正交偏振模式（H1V2、V1H2、H1V1、H2V2）；假成功质量可进一步分为背景辅助与内禀暗计数辅助，其中背景辅助约占 $58.7\%$，内禀暗计数约占 $41.3\%$。在时域上，真成功权重更集中于小 $|\Delta n|$（其中 $\Delta n$ 为两端口时间仓索引差，例如 $|\Delta n|\le 10$ 的累计占比约 $47.6\%$），假成功权重则呈更长尾分布并在较大 $\Delta n$ 区域出现峰值，说明“长尾时差记录”更容易承载假成功成分。
 
 \section{端到端性能误差预算}[End-to-End Performance Error Budget]
 
@@ -160,17 +170,10 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.95\linewidth]{fig_bell_density_3d.pdf}
-\caption{宣告成功条件下 Bell 后验态密度矩阵的实部/虚部二维热图。}
+\caption{宣告成功条件下 Bell 后验态密度矩阵的十二联图：三行分别对应 raw $\Psi^{+}$、raw $\Psi^{-}$ 与 $\Delta\rho_{\mathrm{ff}}=\rho^{\Psi+}_{\mathrm{ff}}-\rho^{\Psi-}_{\mathrm{ff}}$；每行四列依次为二维实部热图、三维实部柱图、二维虚部热图与三维虚部柱图。}
 \label{fig:bell_density_2d}
 \end{figure}
-
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=0.95\linewidth]{fig_bell_density_3d_bars.pdf}
-\caption{同一后验态的实部/虚部三维柱状图（量子信息论文常用可视化）。}
-\label{fig:bell_density_3d_bars}
-\end{figure}
-图 \ref{fig:bell_density_2d} 与图 \ref{fig:bell_density_3d_bars} 使用同一后验态数据。二维热图用于精确比较矩阵元素与偏离位置，三维柱图保留量子信息论文中常见的直观呈现方式。两种视角一致显示：实部主对角集中在 $|01\rangle$ 与 $|10\rangle$，且二者之间存在显著负相关非对角元；虚部整体较小，表明相位噪声仍处于受控区间。与后续 CHSH 曲线联合解读时，可以同时回答“态结构是否接近目标 Bell 形态”与“非定域关联是否仍可观测”两个问题。
+图 \ref{fig:bell_density_2d} 在同一页面给出“二维数值读数”与“三维形状直觉”的并行视图：例如图 \ref{fig:bell_density_2d}(a)/(b) 与图 \ref{fig:bell_density_2d}(e)/(f) 分别对应 raw $\Psi^{+}$ 与 raw $\Psi^{-}$ 的实部二维-三维对照，图 \ref{fig:bell_density_2d}(i)--(l) 则展示前馈对齐后的差分项 $\Delta\rho_{\mathrm{ff}}$。整体上，实部主权重集中在 $|01\rangle$ 与 $|10\rangle$ 相关块，且两态间的结构差异在差分图中直接显现；虚部幅值相对较小但其空间分布仍可用于定位相位相关误差来源。与后续 CHSH 曲线联合解读时，可以同时回答“态结构是否接近目标 Bell 形态”与“非定域关联是否仍可观测”两个问题。
 
 \begin{figure}[htbp]
 \centering
@@ -202,15 +205,15 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \caption{探测效率-背景联合扫描下的保真度热图与成功率切片。}
 \label{fig:detector_eff}
 \end{figure}
-图 \ref{fig:detector_eff} 将“探测效率影响”写成二维工作平面：左侧热图给出不同背景计数下的条件保真度地形，右侧给出对应成功率切片。结果显示，在高背景区效率提升对保真度的边际改善更早受限，但成功率仍可继续上升。
+图 \ref{fig:detector_eff} 将“探测效率影响”写成二维工作平面：图 \ref{fig:detector_eff}(a) 的热图给出不同背景计数下的条件保真度地形，图 \ref{fig:detector_eff}(b) 给出对应成功率切片。结果显示，在高背景区效率提升对保真度的边际改善更早受限，但成功率仍可继续上升。
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.9\linewidth]{fig_rate_fidelity.pdf}
-\caption{速率-保真度工作点前沿。}
+\caption{速率-保真度工作点前沿（分束器混合角扫描）：（a）每次尝试宣告概率与条件保真度的工作点平面，并以颜色表示假成功占比；（b）条件保真度、每次尝试宣告概率与假成功占比随 $\theta_{\mathrm{BS}}$ 的变化。}
 \label{fig:rate_fidelity}
 \end{figure}
-图 \ref{fig:rate_fidelity} 给出速率-保真度的 Pareto 前沿，可直接对应部署约束下的工作点选择问题。
+图 \ref{fig:rate_fidelity} 给出了速率-保真度-假成功的联合权衡关系：在本轮扫描中，最优工作点 $\theta_{\mathrm{BS}}=0.75$ rad 同时达到最高条件保真度 $F_t\approx 0.465$ 与最高每次尝试宣告概率 $p_s\approx 4.176\times10^{-4}$，对应假成功占比约 $0.390\%$。该图可用于在质量门槛约束下选择可接受的事件率工作点，并判定“提高事件率是否伴随不可接受的假成功抬升”。
 
 最后给出误差归因与部署判据。
 
@@ -226,10 +229,10 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.95\linewidth]{fig_error_budget.pdf}
-\caption{误差预算汇总图：左为按噪声组分解的条件保真度瀑布图，右为假成功事件组成分解。}
+\caption{误差预算汇总图（真实 BSM 扫描）：（a）真成功/假成功宣告概率预算及 $F_t$、假成功占比、$S_{\max}/4$ 随 $\theta_{\mathrm{BS}}$ 的联合变化；（b）推荐工作点的假成功来源（背景辅助与内禀暗计数辅助）及其模式贡献分解。}
 \label{fig:error_budget}
 \end{figure}
-图 \ref{fig:error_budget} 将“质量退化路径”与“假触发来源组成”放到同一视图中，可以直接判定当前轮次的主导退化层级（源端、QFC/记忆、光纤或探测端）。
+图 \ref{fig:error_budget} 将“事件预算”（$p_t$ 与 $p_f$）与“质量预算”（$F_t$、$S_{\max}$、假成功占比）统一到同一张图中。图 \ref{fig:error_budget}(b) 的分解进一步指出推荐工作点下假成功并非单一来源主导，而是由背景与内禀暗计数共同贡献，并在不同点击模式间分担，这为后续“先压背景还是先压暗计数”的工程优先级提供了直接依据。
 
 \section{计算成本与部署判据}[Computational Cost and Deployment Criteria]
 
@@ -269,7 +272,7 @@ T_w = T_{\rm em}+T_{\rm qm}+T_{\rm fib}+T_{\rm dep}+T_{\rm det}+T_{\rm aux}+T_{\
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.95\linewidth]{fig_cost_scaling.pdf}
-\caption{复杂度缩放图：左为探测阶段耗时随窗口 bin 数增长，右为墙钟代理量随 bin 个数上限增长。}
+\caption{复杂度缩放图：（a）探测阶段耗时随窗口 bin 数增长；（b）墙钟代理量随 bin 个数上限增长。}
 \label{fig:cost_scaling}
 \end{figure}
 图 \ref{fig:cost_scaling} 给出窗口 bin 上限变化下的探测阶段开销与墙钟代理量趋势，用于与第 3 章复杂度分析对应。

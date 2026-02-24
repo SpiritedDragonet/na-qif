@@ -14,10 +14,12 @@
 \begin{equation}
 \mathcal{L}=\bar{\psi}\left(i\gamma^\mu\partial_\mu-m\right)\psi-eA_\mu\bar{\psi}\gamma^\mu\psi-\frac{1}{4}F_{\mu\nu}F^{\mu\nu}.
 \end{equation}
+其中 $\psi$ 为费米场，$\bar{\psi}$ 为其 Dirac 共轭，$A_\mu$ 为电磁四势，$F_{\mu\nu}$ 为电磁场强张量，$e,m$ 分别表示电荷与质量，$\gamma^\mu$ 为 Dirac 矩阵。
 在中性原子量子接口的能量与尺度范围内，经过低能近似、绝热消元、长波偶极近似、有限能级截断与旋转波近似，可得到“原子多能级 + 腔模 + 驱动 + 损耗”的有效模型。若先在二能级极限下保留一条原子跃迁与一条腔模，则退化为 Jaynes-Cummings 哈密顿量 \cite{JaynesCummings1963}：
 \begin{equation}
 H_{\mathrm{JC}}=\frac{\omega_{ab}}{2}\sigma_z+\omega_c\left(a^\dagger a+\frac{1}{2}\right)+g\left(\sigma^+a+\sigma^-a^\dagger\right).
 \end{equation}
+这里 $\omega_{ab}$ 为原子跃迁角频率，$\omega_c$ 为腔模角频率，$g$ 为原子-腔耦合强度。
 
 本项目采用通信原子的四能级有效基序
 \begin{equation}
@@ -34,7 +36,7 @@ H_{\mathrm{atom}}(t)=
 \end{bmatrix}.
 \label{eq:h-atom-4level}
 \end{equation}
-\eqref{eq:h-atom-4level} 不直接写入 $|e\rangle\rightarrow|0\rangle,|1\rangle$ 辐射过程；该过程通过原子-腔耦合项与塌缩通道进入动力学，而非原子内部相干块。
+其中 $\Delta_e,\Delta_u$ 分别是 $|e\rangle,|u\rangle$ 在旋转参考系中的失谐，$\Omega(t)$ 为时间依赖驱动（Rabi）幅度。$\eqref{eq:h-atom-4level}$ 不直接写入 $|e\rangle\rightarrow|0\rangle,|1\rangle$ 辐射过程；该过程通过原子-腔耦合项与塌缩通道进入动力学，而非原子内部相干块。
 
 偏振选择定则由两个跃迁算符表示：
 \begin{equation}
@@ -118,7 +120,7 @@ H_{\mathrm{atom}}(t)\otimes I_3 + I_4\otimes \mathrm{diag}(0,\delta_{c,H},\delta
 \Bigr).
 \label{eq:emitter-hamiltonian-12d}
 \end{align}
-第一项给出原子内部失谐与驱动，第二项给出腔模失谐，第三项给出 $|e\rangle\leftrightarrow|0/1\rangle$ 与腔内偏振模的相干交换。可见输出通道与不可见塌缩通道分别写成
+其中 $\delta_{c,H},\delta_{c,V}$ 表示 H/V 偏振腔模相对参考频率的失谐。第一项给出原子内部失谐与驱动，第二项给出腔模失谐，第三项给出 $|e\rangle\leftrightarrow|0/1\rangle$ 与腔内偏振模的相干交换。可见输出通道与不可见塌缩通道分别写成
 \begin{equation}
 L_{{\rm out},H}=\sqrt{\kappa_{{\rm ex},H}}\,I_4\otimes a_H,\quad
 L_{{\rm out},V}=\sqrt{\kappa_{{\rm ex},V}}\,I_4\otimes a_V,
@@ -131,6 +133,7 @@ L_{{\rm out},V}=\sqrt{\kappa_{{\rm ex},V}}\,I_4\otimes a_V,
 \sqrt{\gamma_-}\,S_-\otimes I_3
 \right\}.
 \end{equation}
+这里 $\kappa_{{\rm ex},\mu}$ 与 $\kappa_{{\rm in},\mu}$ 分别表示偏振 $\mu\in\{H,V\}$ 的外耦合与内损速率，$\gamma_\pm$ 表示两条自发辐射通道的速率。
 为直观展示 $12\times 12$ 结构，可在等价的 cavity-major 重排基序
 \begin{equation}
 \tilde{\mathcal{B}}_{12}=
@@ -204,7 +207,7 @@ U_{36}^{(n)} & 0\\
 \end{equation}
 其中 $\mathcal{K}$ 由 $\mathcal{C}$ 生成。MPS 调度中，每个 $\Delta t$ 只对“当前 bin 与 12 维发射体”这一个键作用一次 $U_{\mathrm{emit}}^{(n)}$，随后把发射体交换到下一对相邻 bin，直至扫完整条时间链，因此“一个 $\Delta t$ 对应一个 bin”在物理与数值层面完全对齐。
 
-发射阶段的链式调度可显式写为。记相邻交换算符为 $\mathsf{S}_j$（交换第 $j$ 与 $j\!+\!1$ 站点），发射前链序
+发射阶段的链式调度可显式写为。记总时间 bin 数为 $N$，A/B 两臂第 $n$ 个时间 bin 站点分别记作 $A_n,B_n$；相邻交换算符记为 $\mathsf{S}_j$（交换第 $j$ 与 $j\!+\!1$ 站点）。发射前链序
 \begin{equation}
 \mathcal{L}_0=
 ({\rm A_1,B_1,\ldots,A_N,B_N,atomA,atomB}),
@@ -214,7 +217,7 @@ U_{36}^{(n)} & 0\\
 \mathcal{L}_0^+=\mathsf{S}_{2N-1}\mathcal{L}_0
 =({\rm A_1,B_1,\ldots,A_N,atomA,B_N,atomB}).
 \end{equation}
-对 $n=N,N-1,\ldots,1$，先在 $(A_n,atomA)$ 与 $(B_n,atomB)$ 上施加发射门，再做位置更新：
+对 $n=N,N-1,\ldots,1$（即按时间从晚到早回扫），先在 $(A_n,atomA)$ 与 $(B_n,atomB)$ 上施加发射门，再做位置更新：
 \begin{equation}
 \mathcal{T}_n=
 \begin{cases}
@@ -251,6 +254,7 @@ U_{\mathrm{QFC}}=
 \end{bmatrix},
 \end{equation}
 其中 $c_{\mu}=\cos\theta_\mu,\; s_{\mu}=\sin\theta_\mu$，转换效率满足 $\eta_\mu=\sin^2\theta_\mu$。
+相位 $\phi_H,\phi_V$ 分别对应 H/V 偏振转换子块的相位失配或外加相位补偿。
 
 随后给出滤波腔记忆模与 5D$\times$3D 步进门。
 
@@ -260,12 +264,14 @@ U_{\mathrm{QFC}}=
 b_{\mathrm{out}}(t)=b_{\mathrm{in}}(t)-\sqrt{\kappa_f}\,a_f(t).
 \label{eq:filter-io-continuous}
 \end{equation}
+其中 $\delta$ 表示滤波腔与信号中心频率之间的失谐。
 在时间 bin 离散后，令 $\Delta\nu=\kappa_f/(2\pi)$，可写成
 \begin{equation}
 a_{n+1}=r\,a_n+t\,b_n,\qquad
 \tilde b_n=r^*\,b_n-t\,a_n,
 \label{eq:filter-recursion-discrete}
 \end{equation}
+这里 $b_n$ 与 $\tilde b_n$ 分别表示第 $n$ 个时间 bin 的输入场与输出场算符。
 其中
 \begin{equation}
 r=\exp\!\left[-\left(\pi\Delta\nu+i2\pi\delta\right)\Delta t\right],\qquad
@@ -356,7 +362,7 @@ p_{\mathrm{memA}}\rightarrow 2,\qquad p_{\mathrm{memB}}\rightarrow 3,
 
 \subsection{Heisenberg-POVM 推回及成功判据}[Heisenberg-POVM pushback and success criteria]
 
-本子节聚焦测量端定义：从探测点击记录构造可分辨性混合 effect，经由对偶映射推回输入端，并据此给出成功事件集合与核心统计量。复杂度口径与 wall-clock 开销解释在第 3.4 节统一讨论。
+本子节聚焦测量端定义：从探测点击记录构造可分辨性混合 effect，经由对偶映射推回输入端，并据此给出成功事件集合与核心统计量。复杂度口径与墙钟时间开销解释在第 3.4 节统一讨论。
 
 探测端 effect 先按可分辨性混合规则构造。
 
@@ -378,12 +384,14 @@ a_{B\mu}
 \end{bmatrix}.
 \label{eq:bs-mode-map}
 \end{equation}
+其中 $a_{A\mu},a_{B\mu}$ 为分束器前 A/B 输入端模式，$c_{1\mu},c_{2\mu}$ 为分束器后 1/2 输出端模式。
 在探测端口上，对单个探测器 $j$（效率 $\eta_j$、暗计数概率 $d_j$）可写二元 effect
 \begin{equation}
 E_j^{(1)}=I-(1-d_j)\left(I-\eta_j n_j\right),\qquad
 E_j^{(0)}=I-E_j^{(1)}.
 \label{eq:single-detector-effect}
 \end{equation}
+这里 $n_j$ 为第 $j$ 路探测通道上的光子数算符。
 四路联合记录 $\mathbf{s}=(s_1,s_2,s_3,s_4)$ 的 effect 为
 \begin{equation}
 E_{\mathbf{s}}=\bigotimes_{j=1}^{4}E_j^{(s_j)}.
@@ -406,16 +414,73 @@ E^{(v_{\mathrm{res}})}=v_{\mathrm{res}}E_{\mathrm{int}}+(1-v_{\mathrm{res}})E_{\
 \begin{equation}
 \phi_n=\phi_{\mathrm{slope}}\!\left(n-\frac{N-1}{2}\right)+\xi_n,\qquad \xi_n\sim\mathcal{N}(0,\sigma_\phi^2),
 \end{equation}
-并通过 $U_B(\phi_n)$ 进入 B 臂 Jones 矩阵。所有光纤和探测信道均通过对偶映射
+其中 $\phi_{\mathrm{slope}}$ 为沿时间 bin 的线性相位斜率，$\sigma_\phi$ 为相位噪声标准差。并通过 $U_B(\phi_n)$ 进入 B 臂 Jones 矩阵，其中 $U_B(\phi_n)$ 表示 B 臂在第 $n$ 个 bin 上的偏振旋转/相位幺正。所有光纤和探测信道均通过对偶映射
 \begin{equation}
 \Lambda^\dagger(E)=\sum_k K_k^\dagger E K_k
 \label{eq:channel-adjoint}
 \end{equation}
 作用于 effect，而非作用在态上。这样可在保持纯态 MPS 主态演化的同时，严格保留损耗与噪声统计。
 
+为避免“非方阵嵌入与带损耗 Kraus 会破坏精确性”的误解，这里给出概率不变性的显式链式表达。设输入态在空间 $\mathcal{H}_{\mathrm{in}}$ 上，探测端声明记录 $m$ 的 effect 为 $F_m$（定义在探测空间 $\mathcal{H}_{\mathrm{det}}$）。若先经过可分辨性/标签嵌入等距映射
+\begin{equation}
+V:\mathcal{H}_{\mathrm{in}}\rightarrow \mathcal{H}_{\mathrm{emb}},\qquad V^\dagger V=I_{\mathrm{in}},
+\label{eq:isometry-embed}
+\end{equation}
+再经过损耗信道
+\begin{equation}
+\mathcal{L}(\rho)=\sum_{\alpha} K_\alpha \rho K_\alpha^\dagger,\qquad
+K_\alpha:\mathcal{H}_{\mathrm{emb}}\rightarrow \mathcal{H}_{\mathrm{det}},
+\label{eq:loss-kraus-rect}
+\end{equation}
+则记录概率可写为
+\begin{align}
+p_m
+&=\mathrm{Tr}\!\left[F_m\,\mathcal{L}\!\left(V\rho V^\dagger\right)\right]\notag\\
+&=\mathrm{Tr}\!\left[\rho\,V^\dagger\!\left(\sum_{\alpha}K_\alpha^\dagger F_m K_\alpha\right)V\right]
+=\mathrm{Tr}\!\left(\rho\,E_m^{\mathrm{in}}\right),
+\label{eq:pushback-prob-exact}
+\end{align}
+其中输入端等效 effect 为
+\begin{equation}
+E_m^{\mathrm{in}}
+=V^\dagger\!\left(\sum_{\alpha}K_\alpha^\dagger F_m K_\alpha\right)V.
+\label{eq:effective-input-effect}
+\end{equation}
+式 \eqref{eq:pushback-prob-exact} 仅使用迹循环与对偶映射定义，因此对 $K_\alpha$ 是否方阵不敏感；只要映射维度可复合，上式严格成立。
+
+若再包含分束器幺正 $U_{\mathrm{BS}}$ 及其它串联信道（如光纤相位/PDL），其输入端 effect 仍是逐层对偶复合
+\begin{equation}
+E_m^{\mathrm{in}}
+=\Phi^\dagger(F_m),\qquad
+\Phi=\mathcal{M}_{\mathrm{det}}\circ\mathrm{Ad}_{U_{\mathrm{BS}}}\circ\mathcal{L}\circ\mathcal{V},
+\label{eq:composed-dual-map}
+\end{equation}
+其中 $\mathcal{V}(\rho)=V\rho V^\dagger$ 为嵌入信道，$\mathcal{M}_{\mathrm{det}}$ 表示探测端损耗与响应信道；$\mathrm{Ad}_{U}(X)=UXU^\dagger$，故 $\mathrm{Ad}_{U}^\dagger(E)=U^\dagger E U$。这与本文实现中“先在探测端构造 $F_m$，再逐层推回输入端”的计算流程一致。
+
+在真假成功分解中，记录 effect 可写成
+\begin{equation}
+F_m=F_m^{\mathrm{true}}+F_m^{\mathrm{bg}}+F_m^{\mathrm{dark}},
+\qquad F_m^{(\cdot)}\succeq 0,
+\label{eq:record-effect-decomp}
+\end{equation}
+由线性性立刻得到
+\begin{equation}
+E_m^{(\cdot)}=\Phi^\dagger\!\left(F_m^{(\cdot)}\right),\qquad
+p_{(\cdot)}=\sum_{m\in\mathcal{S}}\mathrm{Tr}\!\left(E_m^{(\cdot)}\rho\right),
+\label{eq:component-pushback}
+\end{equation}
+并且单条记录后验权重为
+\begin{equation}
+p_{\mathrm{true}\mid m}
+=\frac{\mathrm{Tr}\!\left(E_m^{\mathrm{true}}\rho\right)}
+{\mathrm{Tr}\!\left(E_m\rho\right)}.
+\label{eq:true-posterior-record}
+\end{equation}
+因此，“带损耗的多 Kraus + 非方阵嵌入”并不会引入近似误差；误差只来自物理建模截断（如有限 bin、有限模式集合），而非推回公式本身。
+
 在完成推回后，成功判据与核心指标可直接定义。
 
-设 $\mathcal{S}$ 为窗口内 BSM 成功模式集合。枚举阶段直接从收缩获得
+设 $\mathcal{S}$ 为窗口内 BSM 成功模式集合，$\rho$ 为进入该枚举层的输入态。枚举阶段直接从收缩获得
 \begin{align}
 p_s &= \sum_{m\in\mathcal{S}} \mathrm{Tr}(E_m\rho),\\
 p_t &= \sum_{m\in\mathcal{S}} \mathrm{Tr}(E_m^{\mathrm{true}}\rho),\\
@@ -425,7 +490,7 @@ p_f &= p_s-p_t,
 \begin{equation}
 p_{t|11}=\frac{p_t}{p_{11}}.
 \end{equation}
-该指标体系同时给出“宣告成功率”“真成功分量”与“假成功污染”，可直接用于误差预算。
+其中 $p_{11}$ 表示两臂各到达一个光子的事件概率。该指标体系同时给出“宣告成功率”“真成功分量”与“假成功污染”，可直接用于误差预算。
 
 \section{实现口径、复杂度与可扩展性}[Conventions, Complexity, and Scalability]
 
@@ -438,11 +503,12 @@ p_{t|11}=\frac{p_t}{p_{11}}.
 \begin{equation}
 T_w\approx T_e+T_q+T_n+T_m,
 \end{equation}
-其中
+其中 $T_w$ 为总墙钟时间，$T_e$ 为发射阶段开销，$T_q$ 为 QFC+滤波阶段开销，$T_n$ 为 POVM 枚举收缩阶段开销，$T_m$ 为其余管理与 I/O 开销。
+进一步有
 \begin{equation}
 T_n\propto O\!\left(N\cdot W\cdot C(\chi)\right),
 \end{equation}
-$W$ 为窗口宽度对应的 bin 数，$C(\chi)$ 表示给定键维下的单次收缩成本。该结构解释了“参数几乎不变但窗口或枚举口径改变时墙钟显著变化”的现象。进一步地，若把状态更新、effect 推回与最终枚举看成三层管线，则 wall-clock 的主导项在不同任务类型下会迁移：参数扫描任务通常受 $T_n$ 主导，而单次高精度结构分析则更受 $C(\chi)$ 的局域高秩峰值主导。这一分解直接指导第四章中的性能诊断与优化优先级设定。
+$W$ 为窗口宽度对应的 bin 数，$C(\chi)$ 表示给定键维下的单次收缩成本。该结构解释了“参数几乎不变但窗口或枚举口径改变时墙钟显著变化”的现象。进一步地，若把状态更新、effect 推回与最终枚举看成三层管线，则墙钟时间的主导项在不同任务类型下会迁移：参数扫描任务通常受 $T_n$ 主导，而单次高精度结构分析则更受 $C(\chi)$ 的局域高秩峰值主导。这一分解直接指导第四章中的性能诊断与优化优先级设定。
 
 \begin{figure}[htbp]
 \centering

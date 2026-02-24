@@ -61,6 +61,10 @@ def write_declared_density_matrix(
     rho_ff: Optional[np.ndarray],
     trace_raw: float,
     trace_ff: float,
+    rho_raw_by_bell: Optional[Mapping[str, np.ndarray]] = None,
+    rho_ff_by_bell: Optional[Mapping[str, np.ndarray]] = None,
+    trace_raw_by_bell: Optional[Mapping[str, float]] = None,
+    trace_ff_by_bell: Optional[Mapping[str, float]] = None,
 ) -> None:
     """
     写入 raw/declared_density_matrix.json（每个 task 一份）。
@@ -79,6 +83,32 @@ def write_declared_density_matrix(
         "rho_ff_real": np.real(rho_ff).tolist(),
         "rho_ff_imag": np.imag(rho_ff).tolist(),
     }
+    if rho_raw_by_bell:
+        payload["rho_raw_by_bell_real"] = {
+            str(label): np.real(np.asarray(matrix, dtype=complex)).tolist()
+            for label, matrix in rho_raw_by_bell.items()
+        }
+        payload["rho_raw_by_bell_imag"] = {
+            str(label): np.imag(np.asarray(matrix, dtype=complex)).tolist()
+            for label, matrix in rho_raw_by_bell.items()
+        }
+    if rho_ff_by_bell:
+        payload["rho_ff_by_bell_real"] = {
+            str(label): np.real(np.asarray(matrix, dtype=complex)).tolist()
+            for label, matrix in rho_ff_by_bell.items()
+        }
+        payload["rho_ff_by_bell_imag"] = {
+            str(label): np.imag(np.asarray(matrix, dtype=complex)).tolist()
+            for label, matrix in rho_ff_by_bell.items()
+        }
+    if trace_raw_by_bell:
+        payload["trace_raw_by_bell"] = {
+            str(label): float(value) for label, value in trace_raw_by_bell.items()
+        }
+    if trace_ff_by_bell:
+        payload["trace_ff_by_bell"] = {
+            str(label): float(value) for label, value in trace_ff_by_bell.items()
+        }
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False)
     tmp.replace(path)
@@ -322,6 +352,32 @@ class RunConfig:
     plot_enabled: bool = True
     debug: bool = False
     window_ns: float = 70.0
+    # canonical 扫描字段：scan_<param>_{start,end,step}
+    scan_window_ns_start: Optional[float] = None
+    scan_window_ns_end: Optional[float] = None
+    scan_window_ns_step: Optional[float] = None
+    scan_tau_ns_start: Optional[float] = None
+    scan_tau_ns_end: Optional[float] = None
+    scan_tau_ns_step: Optional[float] = None
+    scan_qfc_noise_sd_cps_per_mhz_start: Optional[float] = None
+    scan_qfc_noise_sd_cps_per_mhz_end: Optional[float] = None
+    scan_qfc_noise_sd_cps_per_mhz_step: Optional[float] = None
+    scan_qfc_eta_start: Optional[float] = None
+    scan_qfc_eta_end: Optional[float] = None
+    scan_qfc_eta_step: Optional[float] = None
+    scan_eta_det_start: Optional[float] = None
+    scan_eta_det_end: Optional[float] = None
+    scan_eta_det_step: Optional[float] = None
+    scan_bg_rate_mean_hz_start: Optional[float] = None
+    scan_bg_rate_mean_hz_end: Optional[float] = None
+    scan_bg_rate_mean_hz_step: Optional[float] = None
+    scan_bs_theta_start: Optional[float] = None
+    scan_bs_theta_end: Optional[float] = None
+    scan_bs_theta_step: Optional[float] = None
+    scan_length_km_start: Optional[float] = None
+    scan_length_km_end: Optional[float] = None
+    scan_length_km_step: Optional[float] = None
+    # legacy 扫描字段（兼容）
     window_sweep_start_ns: Optional[float] = None
     window_sweep_end_ns: Optional[float] = None
     window_sweep_step_ns: Optional[float] = None

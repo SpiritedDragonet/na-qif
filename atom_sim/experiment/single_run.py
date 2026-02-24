@@ -1004,6 +1004,10 @@ def _run_single_simulation_core(
             rho_ff=getattr(enum_main, "rho_declared_ff", None),
             trace_raw=float(getattr(enum_main, "trace_declared_raw", 0.0)),
             trace_ff=float(getattr(enum_main, "trace_declared_ff", 0.0)),
+            rho_raw_by_bell=getattr(enum_main, "rho_declared_raw_by_bell", None),
+            rho_ff_by_bell=getattr(enum_main, "rho_declared_ff_by_bell", None),
+            trace_raw_by_bell=getattr(enum_main, "trace_declared_raw_by_bell", None),
+            trace_ff_by_bell=getattr(enum_main, "trace_declared_ff_by_bell", None),
         )
 
     if trace_enabled:

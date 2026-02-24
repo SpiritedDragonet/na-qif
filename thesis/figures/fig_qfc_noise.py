@@ -8,6 +8,8 @@ import numpy as np
 
 DEFAULT_BASELINE_ETA_Q = 0.57
 DEFAULT_BASELINE_NOISE_CPS_PER_MHZ = 41.1
+DEFAULT_SMOOTH_SIGMA = 0.85
+DEFAULT_SMOOTH_BLEND = 0.65
 
 
 def _repo_root() -> pathlib.Path:
@@ -37,6 +39,18 @@ def _default_summary_csv() -> pathlib.Path:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plot QFC efficiency-noise landscape from summary CSV.")
     parser.add_argument("--summary-csv", type=pathlib.Path, default=_default_summary_csv())
+    parser.add_argument(
+        "--smooth-sigma",
+        type=float,
+        default=DEFAULT_SMOOTH_SIGMA,
+        help="Gaussian smoothing sigma in grid-cell units (0 disables smoothing).",
+    )
+    parser.add_argument(
+        "--smooth-blend",
+        type=float,
+        default=DEFAULT_SMOOTH_BLEND,
+        help="Blend factor between raw and smoothed grids in [0, 1].",
+    )
     return parser.parse_args()
 
 
@@ -105,6 +119,65 @@ def _load_grid(summary_csv: pathlib.Path) -> tuple[np.ndarray, np.ndarray, np.nd
     return eta, noise, fidelity, p_success
 
 
+def _gaussian_kernel1d(sigma: float) -> np.ndarray:
+    if sigma <= 0.0:
+        return np.asarray([1.0], dtype=float)
+    radius = max(1, int(np.ceil(3.0 * sigma)))
+    x = np.arange(-radius, radius + 1, dtype=float)
+    kernel = np.exp(-0.5 * (x / sigma) ** 2)
+    kernel_sum = float(np.sum(kernel))
+    if kernel_sum <= 0.0:
+        return np.asarray([1.0], dtype=float)
+    return kernel / kernel_sum
+
+
+def _convolve1d_nan(arr: np.ndarray, kernel: np.ndarray, axis: int) -> np.ndarray:
+    if arr.size == 0:
+        return arr.copy()
+    pad = int(len(kernel) // 2)
+    pad_width = [(0, 0)] * arr.ndim
+    pad_width[axis] = (pad, pad)
+    arr_pad = np.pad(arr, pad_width, mode="edge")
+    val_pad = np.isfinite(arr_pad).astype(float)
+    arr_pad = np.nan_to_num(arr_pad, nan=0.0)
+
+    out = np.zeros_like(arr, dtype=float)
+    norm = np.zeros_like(arr, dtype=float)
+    for shift, weight in enumerate(kernel):
+        slicer = [slice(None)] * arr.ndim
+        slicer[axis] = slice(shift, shift + arr.shape[axis])
+        sl = tuple(slicer)
+        out += weight * arr_pad[sl]
+        norm += weight * val_pad[sl]
+    return np.where(norm > 1e-12, out / norm, np.nan)
+
+
+def _smooth_field(field: np.ndarray, sigma: float, blend: float) -> np.ndarray:
+    blend = float(np.clip(blend, 0.0, 1.0))
+    if sigma <= 0.0 or blend <= 0.0:
+        return field.copy()
+
+    kernel = _gaussian_kernel1d(float(sigma))
+    smoothed = _convolve1d_nan(_convolve1d_nan(field, kernel, axis=0), kernel, axis=1)
+    out = field.copy()
+    valid = np.isfinite(field) & np.isfinite(smoothed)
+    out[valid] = (1.0 - blend) * field[valid] + blend * smoothed[valid]
+    return out
+
+
+def _panel_label(ax: plt.Axes, label: str) -> None:
+    ax.text(
+        -0.12,
+        1.03,
+        label,
+        transform=ax.transAxes,
+        fontsize=12.0,
+        fontweight="bold",
+        ha="left",
+        va="bottom",
+    )
+
+
 def main() -> None:
     args = _parse_args()
 
@@ -118,8 +191,11 @@ def main() -> None:
     )
 
     eta_q, noise_sd, fidelity, p_success = _load_grid(args.summary_csv)
-    fidelity_m = np.ma.masked_invalid(fidelity)
-    p_success_m = np.ma.masked_invalid(p_success)
+    fidelity_plot = _smooth_field(fidelity, sigma=args.smooth_sigma, blend=args.smooth_blend)
+    p_success_plot = _smooth_field(p_success, sigma=args.smooth_sigma, blend=args.smooth_blend)
+
+    fidelity_m = np.ma.masked_invalid(fidelity_plot)
+    p_success_m = np.ma.masked_invalid(p_success_plot)
 
     fig = plt.figure(figsize=(9.8, 4.8), constrained_layout=True)
     gs = fig.add_gridspec(1, 2, width_ratios=[1.0, 1.0], wspace=0.26)
@@ -134,6 +210,7 @@ def main() -> None:
         aspect="auto",
         extent=extent,
         cmap="viridis",
+        interpolation="bicubic",
     )
     cs0 = ax0.contour(
         eta_q,
@@ -150,6 +227,7 @@ def main() -> None:
     ax0.set_title(r"Conditional fidelity map $F_t(\eta_q,\sigma_{\rm QFC})$")
     cb0 = fig.colorbar(im0, ax=ax0, fraction=0.05, pad=0.03)
     cb0.set_label(r"$F_t$")
+    _panel_label(ax0, "(a)")
 
     im1 = ax1.imshow(
         1e6 * p_success_m,
@@ -157,6 +235,7 @@ def main() -> None:
         aspect="auto",
         extent=extent,
         cmap="magma",
+        interpolation="bicubic",
     )
     cs1 = ax1.contour(
         eta_q,
@@ -173,6 +252,11 @@ def main() -> None:
     ax1.set_title(r"Herald probability map $p_s(\eta_q,\sigma_{\rm QFC})$")
     cb1 = fig.colorbar(im1, ax=ax1, fraction=0.05, pad=0.03)
     cb1.set_label(r"$p_s \times 10^{-6}$")
+    _panel_label(ax1, "(b)")
+
+    eta_mesh, noise_mesh = np.meshgrid(eta_q, noise_sd, indexing="xy")
+    ax0.scatter(eta_mesh, noise_mesh, s=5, color="white", alpha=0.30, linewidths=0.0, zorder=3)
+    ax1.scatter(eta_mesh, noise_mesh, s=5, color="white", alpha=0.25, linewidths=0.0, zorder=3)
 
     ax0.scatter(
         [DEFAULT_BASELINE_ETA_Q],

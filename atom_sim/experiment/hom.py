@@ -263,20 +263,9 @@ def _run_hom_run(
 
 
 def iter_hom_core_tasks(config: SimConfig) -> Iterator[dict]:
-    if config.hom is None:
-        raise ValueError("HOM 任务需要 --mode HOM 并提供 tau 参数")
-    tau_values = [float(v) for v in _build_hom_tau_values(config.hom)]
-    for tau in tau_values:
-        for run_index in range(config.run.runs):
-            yield {
-                "id": f"hom_tau_{tau:+.3f}_run_{run_index:06d}",
-                "experiment": "HOM",
-                "run_index": run_index,
-                "payload": {
-                    "tau_ns": float(tau),
-                    "window_ns": float(config.hom.window_ns),
-                },
-            }
+    from . import param_scan
+
+    yield from param_scan.iter_hom_scan_alias_core_tasks(config)
 
 
 def run_hom_task(

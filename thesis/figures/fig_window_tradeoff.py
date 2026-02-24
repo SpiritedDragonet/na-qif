@@ -27,7 +27,6 @@ RUNS_COLUMNS = {
 }
 PT11_CANDIDATES = (
     "p_success_true_given_arrival11_global",
-    "p_success_true_given_arrival11_mean",
 )
 
 
@@ -316,8 +315,8 @@ def _line_handles_labels(*axes: plt.Axes) -> tuple[list, list[str]]:
     labels: list[str] = []
     seen: set[str] = set()
     for ax in axes:
-        h, l = ax.get_legend_handles_labels()
-        for hh, ll in zip(h, l):
+        handles_raw, labels_raw = ax.get_legend_handles_labels()
+        for hh, ll in zip(handles_raw, labels_raw):
             if ll in seen:
                 continue
             seen.add(ll)
@@ -338,6 +337,45 @@ def _ci_fill(
     if np.allclose(lo, hi):
         return
     ax.fill_between(x, scale * lo, scale * hi, color=color, alpha=alpha, linewidth=0.0)
+
+
+def _make_dense_grid(x: np.ndarray, density: int = 6) -> np.ndarray:
+    if x.size < 2:
+        return x.copy()
+    n_pts = max(int((x.size - 1) * density) + 1, x.size)
+    return np.linspace(float(x[0]), float(x[-1]), n_pts)
+
+
+def _gaussian_smooth(x: np.ndarray, y: np.ndarray, sigma_x: float) -> np.ndarray:
+    if x.size < 3 or sigma_x <= 0.0:
+        return y.copy()
+    out = np.empty_like(y, dtype=float)
+    for i, xi in enumerate(x):
+        dx = (x - xi) / sigma_x
+        w = np.exp(-0.5 * dx * dx)
+        w_sum = float(np.sum(w))
+        if w_sum <= 0.0 or not np.isfinite(w_sum):
+            out[i] = y[i]
+        else:
+            out[i] = float(np.dot(w, y) / w_sum)
+    return out
+
+
+def _smooth_to_grid(
+    x: np.ndarray,
+    y: np.ndarray,
+    x_dense: np.ndarray,
+    sigma_x: float,
+    lo: float | None = None,
+    hi: float | None = None,
+) -> np.ndarray:
+    y_s = _gaussian_smooth(x, y, sigma_x)
+    y_dense = np.interp(x_dense, x, y_s)
+    if lo is not None:
+        y_dense = np.maximum(y_dense, lo)
+    if hi is not None:
+        y_dense = np.minimum(y_dense, hi)
+    return y_dense
 
 
 def main() -> None:
@@ -370,70 +408,115 @@ def main() -> None:
     c_pt11 = "#9467bd"
     c_work = "#f2c14e"
 
-    p_s = np.clip(summary["p_s"], np.finfo(float).tiny, None)
-    p_t = np.clip(summary["p_t"], np.finfo(float).tiny, None)
-    p_f = np.clip(summary["p_f"], np.finfo(float).tiny, None)
+    tiny = np.finfo(float).tiny
+    p_s = np.clip(summary["p_s"], tiny, None)
+    p_t = np.clip(summary["p_t"], tiny, None)
+    p_f = np.clip(summary["p_f"], tiny, None)
     f_t = np.clip(summary["f_t"], 0.0, 1.0)
     false_frac = np.clip(summary["false_frac"], 0.0, 1.0)
     p_t11 = np.clip(summary["p_t11"], 0.0, 1.0)
+    base_step = float(np.median(np.diff(w))) if w.size > 1 else 1.0
+    smooth_sigma = max(0.8 * base_step, 0.45)
+    w_plot = _make_dense_grid(w, density=8)
 
-    ax0.plot(w, 1e6 * p_s, color=c_all, lw=2.25, label=r"$p_s$: total herald")
-    ax0.plot(w, 1e6 * p_t, color=c_true, lw=2.2, label=r"$p_t$: true herald")
-    ax0.plot(w, 1e6 * p_f, color=c_false, lw=2.0, ls="--", label=r"$p_f$: false herald")
+    p_s_plot = _smooth_to_grid(w, p_s, w_plot, smooth_sigma, lo=tiny)
+    p_t_plot = _smooth_to_grid(w, p_t, w_plot, smooth_sigma, lo=tiny)
+    p_f_plot = _smooth_to_grid(w, p_f, w_plot, smooth_sigma, lo=tiny)
+    p_s_plot = np.maximum(p_s_plot, p_t_plot)
+    f_t_plot = _smooth_to_grid(w, f_t, w_plot, smooth_sigma, lo=0.0, hi=1.0)
+    p_t11_plot = _smooth_to_grid(w, p_t11, w_plot, smooth_sigma, lo=0.0, hi=1.0)
+    false_frac_plot = _smooth_to_grid(w, false_frac, w_plot, smooth_sigma, lo=0.0, hi=1.0)
+    false_pct = 100.0 * false_frac
+    false_pct_plot = 100.0 * false_frac_plot
+
+    ax0.plot(w_plot, 1e6 * p_s_plot, color=c_all, lw=2.25, label=r"$p_s$: accepted records")
+    ax0.plot(w_plot, 1e6 * p_t_plot, color=c_true, lw=2.2, label=r"$p_t$: genuine component")
+    ax0.plot(w_plot, 1e6 * p_f_plot, color=c_false, lw=2.0, ls="--", label=r"$p_f$: spurious component")
+    ax0.scatter(w, 1e6 * p_s, s=8, color=c_all, alpha=0.18, linewidths=0, zorder=3)
+    ax0.scatter(w, 1e6 * p_t, s=8, color=c_true, alpha=0.18, linewidths=0, zorder=3)
+    ax0.scatter(w, 1e6 * p_f, s=8, color=c_false, alpha=0.18, linewidths=0, zorder=3)
 
     if ci is not None:
-        _ci_fill(ax0, w, ci["p_s"][0], ci["p_s"][1], 1e6, c_all, 0.10)
-        _ci_fill(ax0, w, ci["p_t"][0], ci["p_t"][1], 1e6, c_true, 0.10)
-        _ci_fill(ax0, w, ci["p_f"][0], ci["p_f"][1], 1e6, c_false, 0.11)
+        ps_lo = _smooth_to_grid(w, ci["p_s"][0], w_plot, smooth_sigma, lo=tiny)
+        ps_hi = _smooth_to_grid(w, ci["p_s"][1], w_plot, smooth_sigma, lo=tiny)
+        pt_lo = _smooth_to_grid(w, ci["p_t"][0], w_plot, smooth_sigma, lo=tiny)
+        pt_hi = _smooth_to_grid(w, ci["p_t"][1], w_plot, smooth_sigma, lo=tiny)
+        pf_lo = _smooth_to_grid(w, ci["p_f"][0], w_plot, smooth_sigma, lo=tiny)
+        pf_hi = _smooth_to_grid(w, ci["p_f"][1], w_plot, smooth_sigma, lo=tiny)
+        _ci_fill(ax0, w_plot, np.minimum(ps_lo, ps_hi), np.maximum(ps_lo, ps_hi), 1e6, c_all, 0.10)
+        _ci_fill(ax0, w_plot, np.minimum(pt_lo, pt_hi), np.maximum(pt_lo, pt_hi), 1e6, c_true, 0.10)
+        _ci_fill(ax0, w_plot, np.minimum(pf_lo, pf_hi), np.maximum(pf_lo, pf_hi), 1e6, c_false, 0.11)
 
-    ax0.fill_between(w, 1e6 * p_t, 1e6 * p_s, color=c_false, alpha=0.10)
+    ax0.fill_between(w_plot, 1e6 * p_t_plot, 1e6 * p_s_plot, color=c_false, alpha=0.10)
     ax0.axvline(args.work_point_ns, color=c_work, lw=1.7, ls="--")
     ax0.set_yscale("log")
     ax0.set_xlabel("Acceptance window (ns)")
     ax0.set_ylabel(r"Probability per attempt ($\times 10^{-6}$)")
-    ax0.set_title("Rates: $p_s$ (all), $p_t$ (true), $p_f$ (false)")
+    ax0.set_title("Rate decomposition versus acceptance window")
     ax0.legend(frameon=False, loc="upper left")
     _panel_label(ax0, "(a)")
 
-    ax1.plot(w, f_t, color=c_fidelity, lw=2.25, label=r"$F_t$: conditional true fidelity")
     ax1.plot(
-        w,
-        p_t11,
+        w_plot,
+        f_t_plot,
+        color=c_fidelity,
+        lw=2.25,
+        label=r"$F_t$: conditional fidelity (genuine component)",
+    )
+    ax1.plot(
+        w_plot,
+        p_t11_plot,
         color=c_pt11,
         lw=2.05,
         ls="-.",
-        label=r"$p_{t|11}$: true-success given 11-arrival",
+        label=r"$p_{t|11}$: genuine success conditioned on two-photon arrival",
     )
+    ax1.scatter(w, f_t, s=8, color=c_fidelity, alpha=0.18, linewidths=0, zorder=3)
+    ax1.scatter(w, p_t11, s=8, color=c_pt11, alpha=0.18, linewidths=0, zorder=3)
 
-    false_pct = 100.0 * false_frac
-    ax1r.plot(w, false_pct, color="#d62728", lw=2.1, label=r"$p_f/p_s$ (right axis, %)")
+    ax1r.plot(w_plot, false_pct_plot, color="#d62728", lw=2.1, label=r"$p_f/p_s$ (spurious share, right axis, %)")
+    ax1r.scatter(w, false_pct, s=8, color="#d62728", alpha=0.18, linewidths=0, zorder=3)
 
     if ci is not None:
-        _ci_fill(ax1, w, ci["f_t"][0], ci["f_t"][1], 1.0, c_fidelity, 0.10)
-        _ci_fill(ax1, w, ci["p_t11"][0], ci["p_t11"][1], 1.0, c_pt11, 0.10)
-        _ci_fill(ax1r, w, ci["false_frac"][0], ci["false_frac"][1], 100.0, "#d62728", 0.12)
+        ft_lo = _smooth_to_grid(w, ci["f_t"][0], w_plot, smooth_sigma, lo=0.0, hi=1.0)
+        ft_hi = _smooth_to_grid(w, ci["f_t"][1], w_plot, smooth_sigma, lo=0.0, hi=1.0)
+        pt11_lo = _smooth_to_grid(w, ci["p_t11"][0], w_plot, smooth_sigma, lo=0.0, hi=1.0)
+        pt11_hi = _smooth_to_grid(w, ci["p_t11"][1], w_plot, smooth_sigma, lo=0.0, hi=1.0)
+        ff_lo_ci = _smooth_to_grid(w, ci["false_frac"][0], w_plot, smooth_sigma, lo=0.0, hi=1.0)
+        ff_hi_ci = _smooth_to_grid(w, ci["false_frac"][1], w_plot, smooth_sigma, lo=0.0, hi=1.0)
+        _ci_fill(ax1, w_plot, np.minimum(ft_lo, ft_hi), np.maximum(ft_lo, ft_hi), 1.0, c_fidelity, 0.10)
+        _ci_fill(ax1, w_plot, np.minimum(pt11_lo, pt11_hi), np.maximum(pt11_lo, pt11_hi), 1.0, c_pt11, 0.10)
+        _ci_fill(
+            ax1r,
+            w_plot,
+            np.minimum(ff_lo_ci, ff_hi_ci),
+            np.maximum(ff_lo_ci, ff_hi_ci),
+            100.0,
+            "#d62728",
+            0.12,
+        )
 
     ax1.axvline(args.work_point_ns, color=c_work, lw=1.7, ls="--", label=f"{args.work_point_ns:g} ns")
     ax1.set_ylim(0.0, 1.0)
     ax1.set_xlabel("Acceptance window (ns)")
     ax1.set_ylabel(r"$F_t$ and $p_{t|11}$")
 
-    ff_min = float(np.min(false_frac))
-    ff_max = float(np.max(false_frac))
+    ff_min = float(np.min(false_frac_plot))
+    ff_max = float(np.max(false_frac_plot))
     ff_pad = max(5e-5, 0.12 * (ff_max - ff_min))
     ff_lo = max(0.0, ff_min - ff_pad)
     ff_hi = ff_max + ff_pad
     ax1r.set_ylim(100.0 * ff_lo, 100.0 * ff_hi)
-    ax1r.set_ylabel(r"False-success fraction $p_f/p_s$ (%)", color="#d62728")
+    ax1r.set_ylabel(r"Spurious-share ratio $p_f/p_s$ (%)", color="#d62728")
     ax1r.tick_params(axis="y", colors="#d62728")
     ax1r.spines["top"].set_visible(False)
 
-    idx_ff_min = int(np.argmin(false_frac))
-    w_min = float(w[idx_ff_min])
-    ff_min_pct = float(false_pct[idx_ff_min])
+    idx_ff_min = int(np.argmin(false_frac_plot))
+    w_min = float(w_plot[idx_ff_min])
+    ff_min_pct = float(false_pct_plot[idx_ff_min])
     ax1r.scatter([w_min], [ff_min_pct], s=20, color="#d62728", zorder=5)
     ax1r.annotate(
-        f"local min: {ff_min_pct:.3f}% @ {w_min:g} ns",
+        f"local minimum: {ff_min_pct:.3f}% @ {w_min:g} ns",
         xy=(w_min, ff_min_pct),
         xytext=(w_min + 8.0, ff_min_pct + 0.02),
         textcoords="data",
@@ -442,12 +525,12 @@ def main() -> None:
         color="#9a1b1b",
     )
 
-    ax1.set_title("Quality: $F_t$, $p_{t|11}$, and $p_f/p_s$ (%)")
+    ax1.set_title("Quality metrics and spurious-share evolution")
     legend_handles, legend_labels = _line_handles_labels(ax1, ax1r)
     ax1.legend(legend_handles, legend_labels, frameon=False, loc="center right")
     _panel_label(ax1, "(b)")
 
-    y_work = float(np.interp(args.work_point_ns, w, f_t))
+    y_work = float(np.interp(args.work_point_ns, w_plot, f_t_plot))
     ax1.annotate(
         "recommended working point",
         xy=(args.work_point_ns, y_work),
@@ -458,11 +541,7 @@ def main() -> None:
     )
 
     fig.suptitle(
-        (
-            "Window scan tradeoff (real data): "
-            r"$p_s$=total herald, $p_t$=true herald, $p_f$=false herald, "
-            r"$F_t$=conditional true fidelity, $p_{t|11}$=true-success|11-arrival"
-        ),
+        "Acceptance-window tradeoff: event rate, conditional fidelity, and spurious share",
         fontsize=11.6,
         fontweight="bold",
     )

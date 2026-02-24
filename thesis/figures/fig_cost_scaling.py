@@ -4,6 +4,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
+def _panel_label(ax: plt.Axes, label: str) -> None:
+    ax.text(
+        -0.12,
+        1.03,
+        label,
+        transform=ax.transAxes,
+        fontsize=12.0,
+        fontweight="bold",
+        ha="left",
+        va="bottom",
+    )
+
+
 def main() -> None:
     plt.rcParams.update(
         {
@@ -29,12 +42,14 @@ def main() -> None:
     ax0.set_xlabel("Window bin upper bound")
     ax0.set_ylabel("Detection-stage runtime (a.u.)")
     ax0.set_title(r"$T_{\rm det}$ vs window bin upper bound")
+    _panel_label(ax0, "(a)")
 
     ax1.plot(window_bin_cap, wall_clock_proxy, color="#d62728", lw=2.3)
     ax1.scatter(window_bin_cap, wall_clock_proxy, color="#d62728", s=26, zorder=3)
     ax1.set_xlabel("Window bin upper bound")
     ax1.set_ylabel("Wall-clock proxy (a.u.)")
     ax1.set_title(r"$T_w$ proxy vs window bin upper bound")
+    _panel_label(ax1, "(b)")
 
     fig.suptitle(
         "Complexity Scaling with Window Bin Upper Bound",

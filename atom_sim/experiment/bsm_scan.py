@@ -50,35 +50,16 @@ def _classify_bsm_pattern(sample) -> str:
 
 
 def validate_bsm_scan_config(config: SimConfig) -> None:
-    if (
-        config.run.bs_sweep_start_theta is None
-        or config.run.bs_sweep_end_theta is None
-        or config.run.bs_sweep_step_theta is None
-    ):
-        raise ValueError(
-            "BSM_SCAN 需要 --bs-sweep-start-theta/--bs-sweep-end-theta/--bs-sweep-step-theta"
-        )
-    if config.run.bs_sweep_step_theta <= 0.0:
-        raise ValueError("bs_sweep_step_theta 必须 > 0")
-    if config.run.bs_sweep_end_theta < config.run.bs_sweep_start_theta:
-        raise ValueError("bs_sweep_end_theta 必须 >= bs_sweep_start_theta")
-    if config.run.bs_sweep_start_theta < 0.0 or config.run.bs_sweep_end_theta > float(np.pi / 2.0):
-        raise ValueError("BSM 扫描 theta 必须在 [0, pi/2] 内")
+    from . import param_scan
+
+    param_scan.validate_alias_scan_task(config, "BSM_SCAN")
 
 
 def build_bsm_scan_values(config: SimConfig) -> list[float]:
-    validate_bsm_scan_config(config)
-    start = float(config.run.bs_sweep_start_theta)
-    end = float(config.run.bs_sweep_end_theta)
-    step = float(config.run.bs_sweep_step_theta)
-    values = []
-    value = start
-    while value <= end + 1e-12:
-        values.append(round(value, 9))
-        value += step
-    if not values:
-        values = [start]
-    return values
+    from . import param_scan
+
+    _axis_keys, axis_values = param_scan.resolve_alias_axis_values(config, "BSM_SCAN")
+    return list(axis_values["bs_theta"])
 
 
 def run_bsm_scan_task(
@@ -229,18 +210,16 @@ def run_bsm_scan_task(
         rho_ff=getattr(enum_main, "rho_declared_ff", None),
         trace_raw=float(getattr(enum_main, "trace_declared_raw", 0.0)),
         trace_ff=float(getattr(enum_main, "trace_declared_ff", 0.0)),
+        rho_raw_by_bell=getattr(enum_main, "rho_declared_raw_by_bell", None),
+        rho_ff_by_bell=getattr(enum_main, "rho_declared_ff_by_bell", None),
+        trace_raw_by_bell=getattr(enum_main, "trace_declared_raw_by_bell", None),
+        trace_ff_by_bell=getattr(enum_main, "trace_declared_ff_by_bell", None),
     )
     return metrics
 
 
 def iter_bsm_scan_core_tasks(config: SimConfig) -> Iterator[dict]:
-    bs_values = build_bsm_scan_values(config)
-    for bs_idx, bs_theta in enumerate(bs_values):
-        for run_index in range(config.run.runs):
-            yield {
-                "id": f"bscan_theta_{bs_idx:04d}_run_{run_index:06d}",
-                "experiment": "BSM_SCAN",
-                "run_index": run_index,
-                "payload": {"bs_theta": float(bs_theta)},
-            }
+    from . import param_scan
+
+    yield from param_scan.iter_bsm_scan_alias_core_tasks(config)
 

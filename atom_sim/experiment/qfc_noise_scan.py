@@ -20,34 +20,16 @@ from .common import (
 
 
 def validate_qfc_noise_scan_config(config: SimConfig) -> None:
-    if (
-        config.run.qfc_noise_sweep_start_cps_per_mhz is None
-        or config.run.qfc_noise_sweep_end_cps_per_mhz is None
-        or config.run.qfc_noise_sweep_step_cps_per_mhz is None
-    ):
-        raise ValueError(
-            "QFC_NOISE_SCAN 需要 --qfc-noise-sweep-start-cps-per-mhz/"
-            "--qfc-noise-sweep-end-cps-per-mhz/--qfc-noise-sweep-step-cps-per-mhz"
-        )
-    if config.run.qfc_noise_sweep_step_cps_per_mhz <= 0.0:
-        raise ValueError("qfc_noise_sweep_step_cps_per_mhz 必须 > 0")
-    if config.run.qfc_noise_sweep_end_cps_per_mhz < config.run.qfc_noise_sweep_start_cps_per_mhz:
-        raise ValueError("qfc_noise_sweep_end_cps_per_mhz 必须 >= qfc_noise_sweep_start_cps_per_mhz")
+    from . import param_scan
+
+    param_scan.validate_alias_scan_task(config, "QFC_NOISE_SCAN")
 
 
 def build_qfc_noise_scan_values(config: SimConfig) -> list[float]:
-    validate_qfc_noise_scan_config(config)
-    start = float(config.run.qfc_noise_sweep_start_cps_per_mhz)
-    end = float(config.run.qfc_noise_sweep_end_cps_per_mhz)
-    step = float(config.run.qfc_noise_sweep_step_cps_per_mhz)
-    values = []
-    value = start
-    while value <= end + 1e-12:
-        values.append(round(value, 9))
-        value += step
-    if not values:
-        values = [start]
-    return values
+    from . import param_scan
+
+    _axis_keys, axis_values = param_scan.resolve_alias_axis_values(config, "QFC_NOISE_SCAN")
+    return list(axis_values["qfc_noise_sd_cps_per_mhz"])
 
 
 def run_qfc_noise_scan_task(
@@ -197,17 +179,15 @@ def run_qfc_noise_scan_task(
         rho_ff=getattr(enum_main, "rho_declared_ff", None),
         trace_raw=float(getattr(enum_main, "trace_declared_raw", 0.0)),
         trace_ff=float(getattr(enum_main, "trace_declared_ff", 0.0)),
+        rho_raw_by_bell=getattr(enum_main, "rho_declared_raw_by_bell", None),
+        rho_ff_by_bell=getattr(enum_main, "rho_declared_ff_by_bell", None),
+        trace_raw_by_bell=getattr(enum_main, "trace_declared_raw_by_bell", None),
+        trace_ff_by_bell=getattr(enum_main, "trace_declared_ff_by_bell", None),
     )
     return metrics
 
 
 def iter_qfc_noise_scan_core_tasks(config: SimConfig) -> Iterator[dict]:
-    values = build_qfc_noise_scan_values(config)
-    for noise_index, noise_sd in enumerate(values):
-        for run_index in range(config.run.runs):
-            yield {
-                "id": f"qscan_noise_{noise_index:04d}_run_{run_index:06d}",
-                "experiment": "QFC_NOISE_SCAN",
-                "run_index": run_index,
-                "payload": {"qfc_noise_sd_cps_per_mhz": float(noise_sd)},
-            }
+    from . import param_scan
+
+    yield from param_scan.iter_qfc_noise_scan_alias_core_tasks(config)

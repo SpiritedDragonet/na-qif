@@ -21,82 +21,22 @@ from .common import (
 )
 
 
-def _build_float_scan_values(start: float, end: float, step: float) -> list[float]:
-    values = []
-    value = float(start)
-    end = float(end)
-    step = float(step)
-    while value <= end + 1e-12:
-        values.append(round(value, 9))
-        value += step
-    return values if values else [round(float(start), 9)]
-
-
 def _qfc_eta_to_theta(qfc_eta: float) -> float:
     eta = float(np.clip(qfc_eta, 0.0, 1.0))
     return float(np.arcsin(np.sqrt(eta)))
 
 
 def validate_qfc_eff_noise_scan_config(config: SimConfig) -> None:
-    required = (
-        config.run.qfc_eta_sweep_start,
-        config.run.qfc_eta_sweep_end,
-        config.run.qfc_eta_sweep_step,
-        config.run.qfc_noise_sweep_start_cps_per_mhz,
-        config.run.qfc_noise_sweep_end_cps_per_mhz,
-        config.run.qfc_noise_sweep_step_cps_per_mhz,
-    )
-    if any(value is None for value in required):
-        raise ValueError(
-            "QFC_EFF_NOISE_SCAN 需要 --qfc-eta-sweep-start/--qfc-eta-sweep-end/--qfc-eta-sweep-step "
-            "和 --qfc-noise-sweep-start-cps-per-mhz/--qfc-noise-sweep-end-cps-per-mhz/--qfc-noise-sweep-step-cps-per-mhz"
-        )
-    if float(config.run.qfc_eta_sweep_step) <= 0.0:
-        raise ValueError("qfc_eta_sweep_step 必须 > 0")
-    if float(config.run.qfc_noise_sweep_step_cps_per_mhz) <= 0.0:
-        raise ValueError("qfc_noise_sweep_step_cps_per_mhz 必须 > 0")
-    if float(config.run.qfc_eta_sweep_end) < float(config.run.qfc_eta_sweep_start):
-        raise ValueError("qfc_eta_sweep_end 必须 >= qfc_eta_sweep_start")
-    if (
-        float(config.run.qfc_noise_sweep_end_cps_per_mhz)
-        < float(config.run.qfc_noise_sweep_start_cps_per_mhz)
-    ):
-        raise ValueError(
-            "qfc_noise_sweep_end_cps_per_mhz 必须 >= qfc_noise_sweep_start_cps_per_mhz"
-        )
-    for field_name, value in (
-        ("qfc_eta_sweep_start", config.run.qfc_eta_sweep_start),
-        ("qfc_eta_sweep_end", config.run.qfc_eta_sweep_end),
-    ):
-        if not (0.0 <= float(value) <= 1.0):
-            raise ValueError(f"{field_name} 必须在 [0,1] 内")
-    for field_name, value in (
-        (
-            "qfc_noise_sweep_start_cps_per_mhz",
-            config.run.qfc_noise_sweep_start_cps_per_mhz,
-        ),
-        (
-            "qfc_noise_sweep_end_cps_per_mhz",
-            config.run.qfc_noise_sweep_end_cps_per_mhz,
-        ),
-    ):
-        if float(value) < 0.0:
-            raise ValueError(f"{field_name} 必须 >= 0")
+    from . import param_scan
+
+    param_scan.validate_alias_scan_task(config, "QFC_EFF_NOISE_SCAN")
 
 
 def build_qfc_eff_noise_scan_values(config: SimConfig) -> tuple[list[float], list[float]]:
-    validate_qfc_eff_noise_scan_config(config)
-    eta_values = _build_float_scan_values(
-        float(config.run.qfc_eta_sweep_start),
-        float(config.run.qfc_eta_sweep_end),
-        float(config.run.qfc_eta_sweep_step),
-    )
-    noise_values = _build_float_scan_values(
-        float(config.run.qfc_noise_sweep_start_cps_per_mhz),
-        float(config.run.qfc_noise_sweep_end_cps_per_mhz),
-        float(config.run.qfc_noise_sweep_step_cps_per_mhz),
-    )
-    return eta_values, noise_values
+    from . import param_scan
+
+    _axis_keys, axis_values = param_scan.resolve_alias_axis_values(config, "QFC_EFF_NOISE_SCAN")
+    return list(axis_values["qfc_eta"]), list(axis_values["qfc_noise_sd_cps_per_mhz"])
 
 
 def run_qfc_eff_noise_scan_task(
@@ -273,24 +213,15 @@ def run_qfc_eff_noise_scan_task(
         rho_ff=getattr(enum_main, "rho_declared_ff", None),
         trace_raw=float(getattr(enum_main, "trace_declared_raw", 0.0)),
         trace_ff=float(getattr(enum_main, "trace_declared_ff", 0.0)),
+        rho_raw_by_bell=getattr(enum_main, "rho_declared_raw_by_bell", None),
+        rho_ff_by_bell=getattr(enum_main, "rho_declared_ff_by_bell", None),
+        trace_raw_by_bell=getattr(enum_main, "trace_declared_raw_by_bell", None),
+        trace_ff_by_bell=getattr(enum_main, "trace_declared_ff_by_bell", None),
     )
     return metrics
 
 
 def iter_qfc_eff_noise_scan_core_tasks(config: SimConfig) -> Iterator[dict]:
-    eta_values, noise_values = build_qfc_eff_noise_scan_values(config)
-    for eta_index, qfc_eta in enumerate(eta_values):
-        for noise_index, noise_sd in enumerate(noise_values):
-            for run_index in range(config.run.runs):
-                yield {
-                    "id": (
-                        f"qescan_eta_{eta_index:04d}_noise_{noise_index:04d}"
-                        f"_run_{run_index:06d}"
-                    ),
-                    "experiment": "QFC_EFF_NOISE_SCAN",
-                    "run_index": run_index,
-                    "payload": {
-                        "qfc_eta": float(qfc_eta),
-                        "qfc_noise_sd_cps_per_mhz": float(noise_sd),
-                    },
-                }
+    from . import param_scan
+
+    yield from param_scan.iter_qfc_eff_noise_scan_alias_core_tasks(config)

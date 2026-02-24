@@ -42,31 +42,16 @@ WINDOW_SCAN_METRIC_KEYS = (
 
 
 def validate_window_scan_config(config: SimConfig) -> None:
-    if (
-        config.run.window_sweep_start_ns is None
-        or config.run.window_sweep_end_ns is None
-        or config.run.window_sweep_step_ns is None
-    ):
-        raise ValueError("WINDOW_SCAN 需要 --window-sweep-start-ns/--window-sweep-end-ns/--window-sweep-step-ns")
-    if config.run.window_sweep_step_ns <= 0.0:
-        raise ValueError("window_sweep_step_ns 必须 > 0")
-    if config.run.window_sweep_end_ns < config.run.window_sweep_start_ns:
-        raise ValueError("window_sweep_end_ns 必须 >= window_sweep_start_ns")
+    from . import param_scan
+
+    param_scan.validate_alias_scan_task(config, "WINDOW_SCAN")
 
 
 def build_window_scan_values(config: SimConfig) -> list[float]:
-    validate_window_scan_config(config)
-    start = float(config.run.window_sweep_start_ns)
-    end = float(config.run.window_sweep_end_ns)
-    step = float(config.run.window_sweep_step_ns)
-    values = []
-    value = start
-    while value <= end + 1e-12:
-        values.append(round(value, 9))
-        value += step
-    if not values:
-        values = [start]
-    return values
+    from . import param_scan
+
+    _axis_keys, axis_values = param_scan.resolve_alias_axis_values(config, "WINDOW_SCAN")
+    return list(axis_values["window_ns"])
 
 
 def run_window_scan_task(
@@ -256,16 +241,15 @@ def run_window_scan_task(
         rho_ff=getattr(enum_main, "rho_declared_ff", None),
         trace_raw=float(getattr(enum_main, "trace_declared_raw", 0.0)),
         trace_ff=float(getattr(enum_main, "trace_declared_ff", 0.0)),
+        rho_raw_by_bell=getattr(enum_main, "rho_declared_raw_by_bell", None),
+        rho_ff_by_bell=getattr(enum_main, "rho_declared_ff_by_bell", None),
+        trace_raw_by_bell=getattr(enum_main, "trace_declared_raw_by_bell", None),
+        trace_ff_by_bell=getattr(enum_main, "trace_declared_ff_by_bell", None),
     )
     return metrics
 
 
 def iter_window_scan_core_tasks(config: SimConfig) -> Iterator[dict]:
-    _ = build_window_scan_values(config)
-    for run_index in range(config.run.runs):
-        yield {
-            "id": f"wscan_run_{run_index:06d}",
-            "experiment": "WINDOW_SCAN",
-            "run_index": run_index,
-            "payload": {},
-        }
+    from . import param_scan
+
+    yield from param_scan.iter_window_scan_alias_core_tasks(config)

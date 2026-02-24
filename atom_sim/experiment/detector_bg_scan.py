@@ -20,63 +20,16 @@ from .common import (
 
 
 def validate_detector_bg_scan_config(config: SimConfig) -> None:
-    required = (
-        config.run.eta_det_sweep_start,
-        config.run.eta_det_sweep_end,
-        config.run.eta_det_sweep_step,
-        config.run.bg_mean_sweep_start_hz,
-        config.run.bg_mean_sweep_end_hz,
-        config.run.bg_mean_sweep_step_hz,
-    )
-    if any(value is None for value in required):
-        raise ValueError(
-            "DETECTOR_BG_SCAN 需要 --eta-det-sweep-start/--eta-det-sweep-end/--eta-det-sweep-step "
-            "和 --bg-mean-sweep-start-hz/--bg-mean-sweep-end-hz/--bg-mean-sweep-step-hz"
-        )
-    if config.run.eta_det_sweep_step <= 0.0:
-        raise ValueError("eta_det_sweep_step 必须 > 0")
-    if config.run.bg_mean_sweep_step_hz <= 0.0:
-        raise ValueError("bg_mean_sweep_step_hz 必须 > 0")
-    if config.run.eta_det_sweep_end < config.run.eta_det_sweep_start:
-        raise ValueError("eta_det_sweep_end 必须 >= eta_det_sweep_start")
-    if config.run.bg_mean_sweep_end_hz < config.run.bg_mean_sweep_start_hz:
-        raise ValueError("bg_mean_sweep_end_hz 必须 >= bg_mean_sweep_start_hz")
-    for field_name, value in (
-        ("eta_det_sweep_start", config.run.eta_det_sweep_start),
-        ("eta_det_sweep_end", config.run.eta_det_sweep_end),
-    ):
-        if not (0.0 < float(value) <= 1.0):
-            raise ValueError(f"{field_name} 必须在 (0,1] 内")
-    for field_name, value in (
-        ("bg_mean_sweep_start_hz", config.run.bg_mean_sweep_start_hz),
-        ("bg_mean_sweep_end_hz", config.run.bg_mean_sweep_end_hz),
-    ):
-        if float(value) < 0.0:
-            raise ValueError(f"{field_name} 必须 >= 0")
+    from . import param_scan
+
+    param_scan.validate_alias_scan_task(config, "DETECTOR_BG_SCAN")
 
 
 def build_detector_bg_scan_values(config: SimConfig) -> tuple[list[float], list[float]]:
-    validate_detector_bg_scan_config(config)
-    eta_values = []
-    eta = float(config.run.eta_det_sweep_start)
-    eta_end = float(config.run.eta_det_sweep_end)
-    eta_step = float(config.run.eta_det_sweep_step)
-    while eta <= eta_end + 1e-12:
-        eta_values.append(round(eta, 9))
-        eta += eta_step
-    if not eta_values:
-        eta_values = [float(config.run.eta_det_sweep_start)]
+    from . import param_scan
 
-    bg_values = []
-    bg = float(config.run.bg_mean_sweep_start_hz)
-    bg_end = float(config.run.bg_mean_sweep_end_hz)
-    bg_step = float(config.run.bg_mean_sweep_step_hz)
-    while bg <= bg_end + 1e-12:
-        bg_values.append(round(bg, 9))
-        bg += bg_step
-    if not bg_values:
-        bg_values = [float(config.run.bg_mean_sweep_start_hz)]
-    return eta_values, bg_values
+    _axis_keys, axis_values = param_scan.resolve_alias_axis_values(config, "DETECTOR_BG_SCAN")
+    return list(axis_values["eta_det"]), list(axis_values["bg_rate_mean_hz"])
 
 
 def run_detector_bg_scan_task(
@@ -241,21 +194,15 @@ def run_detector_bg_scan_task(
         rho_ff=getattr(enum_main, "rho_declared_ff", None),
         trace_raw=float(getattr(enum_main, "trace_declared_raw", 0.0)),
         trace_ff=float(getattr(enum_main, "trace_declared_ff", 0.0)),
+        rho_raw_by_bell=getattr(enum_main, "rho_declared_raw_by_bell", None),
+        rho_ff_by_bell=getattr(enum_main, "rho_declared_ff_by_bell", None),
+        trace_raw_by_bell=getattr(enum_main, "trace_declared_raw_by_bell", None),
+        trace_ff_by_bell=getattr(enum_main, "trace_declared_ff_by_bell", None),
     )
     return metrics
 
 
 def iter_detector_bg_scan_core_tasks(config: SimConfig) -> Iterator[dict]:
-    eta_values, bg_values = build_detector_bg_scan_values(config)
-    for eta_index, eta_det in enumerate(eta_values):
-        for bg_index, bg_rate_mean_hz in enumerate(bg_values):
-            for run_index in range(config.run.runs):
-                yield {
-                    "id": f"dscan_eta_{eta_index:04d}_bg_{bg_index:04d}_run_{run_index:06d}",
-                    "experiment": "DETECTOR_BG_SCAN",
-                    "run_index": run_index,
-                    "payload": {
-                        "eta_det": float(eta_det),
-                        "bg_rate_mean_hz": float(bg_rate_mean_hz),
-                    },
-                }
+    from . import param_scan
+
+    yield from param_scan.iter_detector_bg_scan_alias_core_tasks(config)

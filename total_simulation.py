@@ -46,6 +46,7 @@ from atom_sim.experiment import (  # noqa: E402
     qfc_noise_scan,
     qfc_eff_noise_scan,
     detector_bg_scan,
+    param_scan,
     summary,
 )
 from atom_sim.simulation import run_detection_self_checks  # noqa: E402
@@ -61,6 +62,7 @@ WORKER_STALE_RECOVERY_SECS = 240
 SUPPORTED_EXPERIMENTS = {
     "SIM",
     "HOM",
+    "PARAM_SCAN",
     "WINDOW_SCAN",
     "BSM_SCAN",
     "LENGTH_SCAN",
@@ -81,17 +83,19 @@ RESUME_PASSTHROUGH_CLI_DESTS = {
 }
 CORE_TASK_BUILDERS = {
     "SIM": single_run.iter_sim_core_tasks,
-    "HOM": hom.iter_hom_core_tasks,
-    "WINDOW_SCAN": window_scan.iter_window_scan_core_tasks,
-    "BSM_SCAN": bsm_scan.iter_bsm_scan_core_tasks,
-    "LENGTH_SCAN": length_scan.iter_length_scan_core_tasks,
-    "QFC_NOISE_SCAN": qfc_noise_scan.iter_qfc_noise_scan_core_tasks,
-    "QFC_EFF_NOISE_SCAN": qfc_eff_noise_scan.iter_qfc_eff_noise_scan_core_tasks,
-    "DETECTOR_BG_SCAN": detector_bg_scan.iter_detector_bg_scan_core_tasks,
+    "HOM": param_scan.iter_hom_scan_alias_core_tasks,
+    "PARAM_SCAN": param_scan.iter_param_scan_core_tasks,
+    "WINDOW_SCAN": param_scan.iter_window_scan_alias_core_tasks,
+    "BSM_SCAN": param_scan.iter_bsm_scan_alias_core_tasks,
+    "LENGTH_SCAN": param_scan.iter_length_scan_alias_core_tasks,
+    "QFC_NOISE_SCAN": param_scan.iter_qfc_noise_scan_alias_core_tasks,
+    "QFC_EFF_NOISE_SCAN": param_scan.iter_qfc_eff_noise_scan_alias_core_tasks,
+    "DETECTOR_BG_SCAN": param_scan.iter_detector_bg_scan_alias_core_tasks,
 }
 CORE_TRIAL_TASK_RUNNERS = {
     "SIM": single_run.run_sim_task,
     "HOM": hom.run_hom_task,
+    "PARAM_SCAN": param_scan.run_param_scan_task,
     "WINDOW_SCAN": window_scan.run_window_scan_task,
     "BSM_SCAN": bsm_scan.run_bsm_scan_task,
     "LENGTH_SCAN": length_scan.run_length_scan_task,
@@ -132,7 +136,7 @@ def _parse_run_params(argv):
     # 目的：解析 CLI 参数并构造统一的 SimConfig。
     # 复杂点：mode/task_type/role 三套概念并存——
     #   - role: server/worker/both（调度角色）
-    #   - mode/task_type: SIM/HOM/WINDOW_SCAN/LENGTH_SCAN/BSM_SCAN（物理任务类型）
+    #   - mode/task_type: SIM/HOM/PARAM_SCAN 及其兼容 alias（物理任务类型）
     #   - queue_root/run_id: run_id 仅 server/both 使用，用于任务目录隔离与续算
     parser = argparse.ArgumentParser(
         prog="python total_simulation.py",
@@ -143,32 +147,25 @@ def _parse_run_params(argv):
         epilog=(
             "用法示例:\n"
             "  # 主节点（服务端）\n"
+            "  # PARAM_SCAN：QFC效率-噪声二维扫描（推荐）\n"
+            "  python total_simulation.py --role server --queue-root /mnt/quantum_sim/queue --run-id pscan_qfc "
+            "--task-type PARAM_SCAN --runs 5 "
+            "--scan-qfc-eta-start 0.40 --scan-qfc-eta-end 0.80 --scan-qfc-eta-step 0.05 "
+            "--scan-qfc-noise-sd-cps-per-mhz-start 10 --scan-qfc-noise-sd-cps-per-mhz-end 70 "
+            "--scan-qfc-noise-sd-cps-per-mhz-step 5 --shots 1\n"
+            "  # HOM：tau 一维扫描（canonical 扫参字段）\n"
             "  python total_simulation.py --role server --queue-root /mnt/quantum_sim/queue --run-id homA "
-            "--task-type HOM --runs 120 --tau-start -40 --tau-end 40 --tau-step 2 --shots 1\n"
+            "--task-type HOM --runs 120 --scan-tau-ns-start -40 --scan-tau-ns-end 40 --scan-tau-ns-step 2 --shots 1\n"
+            "  # WINDOW_SCAN：窗口一维扫描（canonical 扫参字段）\n"
+            "  python total_simulation.py --role server --queue-root /mnt/quantum_sim/queue --run-id wscanA "
+            "--task-type WINDOW_SCAN --runs 5 --scan-window-ns-start 40 --scan-window-ns-end 120 --scan-window-ns-step 10 --shots 1\n"
             "  # 抢占式节点（worker）：不指定 run-id，自动抢当前 queue 下可执行任务\n"
             "  python total_simulation.py --role worker --queue-root /mnt/quantum_sim/queue --cores 64\n"
             "  # 本地运行（server + worker）\n"
             "  python total_simulation.py --role both --queue-root /mnt/quantum_sim/queue --run-id simA --task-type SIM --runs 10\n"
-            "  # 窗口扫描任务（WINDOW_SCAN）\n"
-            "  python total_simulation.py --role both --queue-root /mnt/quantum_sim/queue --run-id simwA --task-type WINDOW_SCAN --runs 5 "
-            "--window-sweep-start-ns 40 --window-sweep-end-ns 120 --window-sweep-step-ns 10 --shots 1\n"
-            "  # 光纤长度扫描任务（LENGTH_SCAN）\n"
-            "  python total_simulation.py --role both --queue-root /mnt/quantum_sim/queue --run-id simlA --task-type LENGTH_SCAN --runs 5 "
-            "--length-sweep-start-km 10 --length-sweep-end-km 50 --length-sweep-step-km 10 --shots 1\n"
-            "  # BSM误差扫描任务（BSM_SCAN）\n"
-            "  python total_simulation.py --role both --queue-root /mnt/quantum_sim/queue --run-id simbsA --task-type BSM_SCAN --runs 5 "
-            "--bs-sweep-start-theta 0.55 --bs-sweep-end-theta 1.02 --bs-sweep-step-theta 0.05 --shots 1\n"
-            "  # QFC噪声扫描任务（QFC_NOISE_SCAN）\n"
-            "  python total_simulation.py --role both --queue-root /mnt/quantum_sim/queue --run-id simqA --task-type QFC_NOISE_SCAN --runs 5 "
-            "--qfc-noise-sweep-start-cps-per-mhz 10 --qfc-noise-sweep-end-cps-per-mhz 70 --qfc-noise-sweep-step-cps-per-mhz 5 --shots 1\n"
-            "  # QFC效率-噪声二维扫描任务（QFC_EFF_NOISE_SCAN）\n"
-            "  python total_simulation.py --role both --queue-root /mnt/quantum_sim/queue --run-id simqeA --task-type QFC_EFF_NOISE_SCAN --runs 5 "
-            "--qfc-eta-sweep-start 0.40 --qfc-eta-sweep-end 0.80 --qfc-eta-sweep-step 0.05 "
-            "--qfc-noise-sweep-start-cps-per-mhz 10 --qfc-noise-sweep-end-cps-per-mhz 70 --qfc-noise-sweep-step-cps-per-mhz 5 --shots 1\n"
-            "  # 探测效率-背景二维扫描任务（DETECTOR_BG_SCAN）\n"
-            "  python total_simulation.py --role both --queue-root /mnt/quantum_sim/queue --run-id simdA --task-type DETECTOR_BG_SCAN --runs 5 "
-            "--eta-det-sweep-start 0.60 --eta-det-sweep-end 0.95 --eta-det-sweep-step 0.05 "
-            "--bg-mean-sweep-start-hz 80 --bg-mean-sweep-end-hz 240 --bg-mean-sweep-step-hz 20 --shots 1\n"
+            "  # LENGTH_SCAN alias：长度一维扫描（canonical 扫参字段）\n"
+            "  python total_simulation.py --role both --queue-root /mnt/quantum_sim/queue --run-id lscanA "
+            "--task-type LENGTH_SCAN --runs 5 --scan-length-km-start 10 --scan-length-km-end 50 --scan-length-km-step 10 --shots 1\n"
         ),
     )
     parser.add_argument("--role", dest="role", choices=["server", "worker", "both"], default="both", help="运行角色：server/worker/both（默认 both）")
@@ -202,6 +199,7 @@ def _parse_run_params(argv):
         choices=[
             "SIM",
             "HOM",
+            "PARAM_SCAN",
             "WINDOW_SCAN",
             "LENGTH_SCAN",
             "BSM_SCAN",
@@ -210,7 +208,7 @@ def _parse_run_params(argv):
             "DETECTOR_BG_SCAN",
         ],
         help=(
-            "任务类型：SIM / HOM / WINDOW_SCAN / LENGTH_SCAN / BSM_SCAN / "
+            "任务类型：SIM / HOM / PARAM_SCAN / WINDOW_SCAN / LENGTH_SCAN / BSM_SCAN / "
             "QFC_NOISE_SCAN / QFC_EFF_NOISE_SCAN / DETECTOR_BG_SCAN（默认随 --mode）"
         ),
     )
@@ -227,7 +225,7 @@ def _parse_run_params(argv):
         "--trial-type",
         dest="mode",
         help=(
-            "运行模式：SIM / HOM / WINDOW_SCAN / LENGTH_SCAN / BSM_SCAN / "
+            "运行模式：SIM / HOM / PARAM_SCAN / WINDOW_SCAN / LENGTH_SCAN / BSM_SCAN / "
             "QFC_NOISE_SCAN / QFC_EFF_NOISE_SCAN / DETECTOR_BG_SCAN（默认 SIM）"
         ),
     )
@@ -272,6 +270,30 @@ def _parse_run_params(argv):
         ("--length-sweep-start-km", "length_sweep_start_km", float, "(LENGTH_SCAN) 扫描起点长度 (km)"),
         ("--length-sweep-end-km", "length_sweep_end_km", float, "(LENGTH_SCAN) 扫描终点长度 (km)"),
         ("--length-sweep-step-km", "length_sweep_step_km", float, "(LENGTH_SCAN) 扫描步长长度 (km)"),
+        ("--scan-window-ns-start", "scan_window_ns_start", float, "(PARAM_SCAN) 维度 window_ns 起点"),
+        ("--scan-window-ns-end", "scan_window_ns_end", float, "(PARAM_SCAN) 维度 window_ns 终点"),
+        ("--scan-window-ns-step", "scan_window_ns_step", float, "(PARAM_SCAN) 维度 window_ns 步长"),
+        ("--scan-tau-ns-start", "scan_tau_ns_start", float, "(PARAM_SCAN/HOM) 维度 tau_ns 起点"),
+        ("--scan-tau-ns-end", "scan_tau_ns_end", float, "(PARAM_SCAN/HOM) 维度 tau_ns 终点"),
+        ("--scan-tau-ns-step", "scan_tau_ns_step", float, "(PARAM_SCAN/HOM) 维度 tau_ns 步长"),
+        ("--scan-qfc-noise-sd-cps-per-mhz-start", "scan_qfc_noise_sd_cps_per_mhz_start", float, "(PARAM_SCAN) 维度 qfc_noise_sd_cps_per_mhz 起点"),
+        ("--scan-qfc-noise-sd-cps-per-mhz-end", "scan_qfc_noise_sd_cps_per_mhz_end", float, "(PARAM_SCAN) 维度 qfc_noise_sd_cps_per_mhz 终点"),
+        ("--scan-qfc-noise-sd-cps-per-mhz-step", "scan_qfc_noise_sd_cps_per_mhz_step", float, "(PARAM_SCAN) 维度 qfc_noise_sd_cps_per_mhz 步长"),
+        ("--scan-qfc-eta-start", "scan_qfc_eta_start", float, "(PARAM_SCAN) 维度 qfc_eta 起点"),
+        ("--scan-qfc-eta-end", "scan_qfc_eta_end", float, "(PARAM_SCAN) 维度 qfc_eta 终点"),
+        ("--scan-qfc-eta-step", "scan_qfc_eta_step", float, "(PARAM_SCAN) 维度 qfc_eta 步长"),
+        ("--scan-eta-det-start", "scan_eta_det_start", float, "(PARAM_SCAN) 维度 eta_det 起点"),
+        ("--scan-eta-det-end", "scan_eta_det_end", float, "(PARAM_SCAN) 维度 eta_det 终点"),
+        ("--scan-eta-det-step", "scan_eta_det_step", float, "(PARAM_SCAN) 维度 eta_det 步长"),
+        ("--scan-bg-rate-mean-hz-start", "scan_bg_rate_mean_hz_start", float, "(PARAM_SCAN) 维度 bg_rate_mean_hz 起点"),
+        ("--scan-bg-rate-mean-hz-end", "scan_bg_rate_mean_hz_end", float, "(PARAM_SCAN) 维度 bg_rate_mean_hz 终点"),
+        ("--scan-bg-rate-mean-hz-step", "scan_bg_rate_mean_hz_step", float, "(PARAM_SCAN) 维度 bg_rate_mean_hz 步长"),
+        ("--scan-bs-theta-start", "scan_bs_theta_start", float, "(PARAM_SCAN) 维度 bs_theta 起点"),
+        ("--scan-bs-theta-end", "scan_bs_theta_end", float, "(PARAM_SCAN) 维度 bs_theta 终点"),
+        ("--scan-bs-theta-step", "scan_bs_theta_step", float, "(PARAM_SCAN) 维度 bs_theta 步长"),
+        ("--scan-length-km-start", "scan_length_km_start", float, "(PARAM_SCAN) 维度 length_km 起点"),
+        ("--scan-length-km-end", "scan_length_km_end", float, "(PARAM_SCAN) 维度 length_km 终点"),
+        ("--scan-length-km-step", "scan_length_km_step", float, "(PARAM_SCAN) 维度 length_km 步长"),
         ("--attempt-rate-hz", "attempt_rate_hz", float, "(LENGTH_SCAN) 基础尝试率 (Hz)"),
         ("--attempt-overhead-us", "attempt_overhead_us", float, "(LENGTH_SCAN) 单次额外时延 (us)"),
     ):
@@ -501,6 +523,56 @@ def _parse_run_params(argv):
         ("cores", "cores"),
     ):
         _set_arg_if_present(arg_name, config.run, attr_name, int)
+    for arg_name, attr_name in (
+        # legacy sweep fields
+        ("window_sweep_start_ns", "window_sweep_start_ns"),
+        ("window_sweep_end_ns", "window_sweep_end_ns"),
+        ("window_sweep_step_ns", "window_sweep_step_ns"),
+        ("qfc_noise_sweep_start_cps_per_mhz", "qfc_noise_sweep_start_cps_per_mhz"),
+        ("qfc_noise_sweep_end_cps_per_mhz", "qfc_noise_sweep_end_cps_per_mhz"),
+        ("qfc_noise_sweep_step_cps_per_mhz", "qfc_noise_sweep_step_cps_per_mhz"),
+        ("qfc_eta_sweep_start", "qfc_eta_sweep_start"),
+        ("qfc_eta_sweep_end", "qfc_eta_sweep_end"),
+        ("qfc_eta_sweep_step", "qfc_eta_sweep_step"),
+        ("eta_det_sweep_start", "eta_det_sweep_start"),
+        ("eta_det_sweep_end", "eta_det_sweep_end"),
+        ("eta_det_sweep_step", "eta_det_sweep_step"),
+        ("bg_mean_sweep_start_hz", "bg_mean_sweep_start_hz"),
+        ("bg_mean_sweep_end_hz", "bg_mean_sweep_end_hz"),
+        ("bg_mean_sweep_step_hz", "bg_mean_sweep_step_hz"),
+        ("bs_sweep_start_theta", "bs_sweep_start_theta"),
+        ("bs_sweep_end_theta", "bs_sweep_end_theta"),
+        ("bs_sweep_step_theta", "bs_sweep_step_theta"),
+        ("length_sweep_start_km", "length_sweep_start_km"),
+        ("length_sweep_end_km", "length_sweep_end_km"),
+        ("length_sweep_step_km", "length_sweep_step_km"),
+        # canonical sweep fields
+        ("scan_window_ns_start", "scan_window_ns_start"),
+        ("scan_window_ns_end", "scan_window_ns_end"),
+        ("scan_window_ns_step", "scan_window_ns_step"),
+        ("scan_tau_ns_start", "scan_tau_ns_start"),
+        ("scan_tau_ns_end", "scan_tau_ns_end"),
+        ("scan_tau_ns_step", "scan_tau_ns_step"),
+        ("scan_qfc_noise_sd_cps_per_mhz_start", "scan_qfc_noise_sd_cps_per_mhz_start"),
+        ("scan_qfc_noise_sd_cps_per_mhz_end", "scan_qfc_noise_sd_cps_per_mhz_end"),
+        ("scan_qfc_noise_sd_cps_per_mhz_step", "scan_qfc_noise_sd_cps_per_mhz_step"),
+        ("scan_qfc_eta_start", "scan_qfc_eta_start"),
+        ("scan_qfc_eta_end", "scan_qfc_eta_end"),
+        ("scan_qfc_eta_step", "scan_qfc_eta_step"),
+        ("scan_eta_det_start", "scan_eta_det_start"),
+        ("scan_eta_det_end", "scan_eta_det_end"),
+        ("scan_eta_det_step", "scan_eta_det_step"),
+        ("scan_bg_rate_mean_hz_start", "scan_bg_rate_mean_hz_start"),
+        ("scan_bg_rate_mean_hz_end", "scan_bg_rate_mean_hz_end"),
+        ("scan_bg_rate_mean_hz_step", "scan_bg_rate_mean_hz_step"),
+        ("scan_bs_theta_start", "scan_bs_theta_start"),
+        ("scan_bs_theta_end", "scan_bs_theta_end"),
+        ("scan_bs_theta_step", "scan_bs_theta_step"),
+        ("scan_length_km_start", "scan_length_km_start"),
+        ("scan_length_km_end", "scan_length_km_end"),
+        ("scan_length_km_step", "scan_length_km_step"),
+    ):
+        _set_arg_if_present(arg_name, config.run, attr_name, float)
     # mode 与 task_type 的一致性约束：
     #   - mode 代表“当前命令意图”，task_type 代表“写入任务的类型”
     #   - 若两者同时给出，必须完全一致，否则会造成任务与执行逻辑错配
@@ -509,52 +581,13 @@ def _parse_run_params(argv):
     if args.task_type is not None and args.mode is not None and task_type != mode:
         parser.error("task-type 与 mode 冲突，请保持一致")
     config.mode = task_type
-    task_scan_attr_groups = {
-        "WINDOW_SCAN": (
-            "window_sweep_start_ns",
-            "window_sweep_end_ns",
-            "window_sweep_step_ns",
-        ),
-        "QFC_NOISE_SCAN": (
-            "qfc_noise_sweep_start_cps_per_mhz",
-            "qfc_noise_sweep_end_cps_per_mhz",
-            "qfc_noise_sweep_step_cps_per_mhz",
-        ),
-        "QFC_EFF_NOISE_SCAN": (
-            "qfc_eta_sweep_start",
-            "qfc_eta_sweep_end",
-            "qfc_eta_sweep_step",
-            "qfc_noise_sweep_start_cps_per_mhz",
-            "qfc_noise_sweep_end_cps_per_mhz",
-            "qfc_noise_sweep_step_cps_per_mhz",
-        ),
-        "DETECTOR_BG_SCAN": (
-            "eta_det_sweep_start",
-            "eta_det_sweep_end",
-            "eta_det_sweep_step",
-            "bg_mean_sweep_start_hz",
-            "bg_mean_sweep_end_hz",
-            "bg_mean_sweep_step_hz",
-        ),
-        "BSM_SCAN": (
-            "bs_sweep_start_theta",
-            "bs_sweep_end_theta",
-            "bs_sweep_step_theta",
-        ),
-        "LENGTH_SCAN": (
-            "length_sweep_start_km",
-            "length_sweep_end_km",
-            "length_sweep_step_km",
-        ),
-    }
-    for attr_name in task_scan_attr_groups.get(task_type, ()):
-        setattr(config.run, attr_name, getattr(args, attr_name))
+    try:
+        param_scan.sync_scan_alias_fields(config.run)
+    except ValueError as exc:
+        parser.error(str(exc))
 
-    if task_type == "WINDOW_SCAN":
-        pass
-    if task_type == "LENGTH_SCAN":
-        _set_arg_if_present("attempt_rate_hz", config.run, "attempt_rate_hz", float)
-        _set_arg_if_present("attempt_overhead_us", config.run, "attempt_overhead_us", float)
+    _set_arg_if_present("attempt_rate_hz", config.run, "attempt_rate_hz", float)
+    _set_arg_if_present("attempt_overhead_us", config.run, "attempt_overhead_us", float)
 
     # 光纤噪声开关（注意：这会影响到统计与物理可解释性）
     config.fiber.noise_enabled = not args.no_fiber_noise
@@ -692,12 +725,14 @@ def _parse_run_params(argv):
             config.run.window_ns = float(args.window_ns)
 
     scan_validators = {
-        "WINDOW_SCAN": window_scan.validate_window_scan_config,
-        "QFC_NOISE_SCAN": qfc_noise_scan.validate_qfc_noise_scan_config,
-        "QFC_EFF_NOISE_SCAN": qfc_eff_noise_scan.validate_qfc_eff_noise_scan_config,
-        "DETECTOR_BG_SCAN": detector_bg_scan.validate_detector_bg_scan_config,
-        "BSM_SCAN": bsm_scan.validate_bsm_scan_config,
-        "LENGTH_SCAN": length_scan.validate_length_scan_config,
+        "HOM": lambda cfg: param_scan.validate_alias_scan_task(cfg, "HOM"),
+        "PARAM_SCAN": param_scan.validate_param_scan_config,
+        "WINDOW_SCAN": lambda cfg: param_scan.validate_alias_scan_task(cfg, "WINDOW_SCAN"),
+        "QFC_NOISE_SCAN": lambda cfg: param_scan.validate_alias_scan_task(cfg, "QFC_NOISE_SCAN"),
+        "QFC_EFF_NOISE_SCAN": lambda cfg: param_scan.validate_alias_scan_task(cfg, "QFC_EFF_NOISE_SCAN"),
+        "DETECTOR_BG_SCAN": lambda cfg: param_scan.validate_alias_scan_task(cfg, "DETECTOR_BG_SCAN"),
+        "BSM_SCAN": lambda cfg: param_scan.validate_alias_scan_task(cfg, "BSM_SCAN"),
+        "LENGTH_SCAN": lambda cfg: param_scan.validate_alias_scan_task(cfg, "LENGTH_SCAN"),
     }
     validator = scan_validators.get(task_type)
     if validator is not None:
@@ -989,6 +1024,8 @@ def _validate_task_schema(task: dict, manifest: dict) -> None:
         if experiment == "DETECTOR_BG_SCAN":
             if "eta_det" not in payload or "bg_rate_mean_hz" not in payload:
                 raise ValueError("SCHEMA_ERROR: DETECTOR_BG_SCAN 缺少 payload.eta_det / payload.bg_rate_mean_hz")
+        if experiment == "PARAM_SCAN" and "scan_point" not in payload:
+            raise ValueError("SCHEMA_ERROR: PARAM_SCAN 缺少 payload.scan_point")
 
     if mode == SUMMARY_TASK_MODE:
         summary_for = str(task.get("summary_for", "")).upper()

@@ -21,35 +21,16 @@ from .common import (
 
 
 def validate_length_scan_config(config: SimConfig) -> None:
-    if (
-        config.run.length_sweep_start_km is None
-        or config.run.length_sweep_end_km is None
-        or config.run.length_sweep_step_km is None
-    ):
-        raise ValueError("LENGTH_SCAN 需要 --length-sweep-start-km/--length-sweep-end-km/--length-sweep-step-km")
-    if config.run.length_sweep_step_km <= 0.0:
-        raise ValueError("length_sweep_step_km 必须 > 0")
-    if config.run.length_sweep_end_km < config.run.length_sweep_start_km:
-        raise ValueError("length_sweep_end_km 必须 >= length_sweep_start_km")
-    if config.run.attempt_rate_hz <= 0.0:
-        raise ValueError("attempt_rate_hz 必须 > 0")
-    if config.run.attempt_overhead_us < 0.0:
-        raise ValueError("attempt_overhead_us 必须 >= 0")
+    from . import param_scan
+
+    param_scan.validate_alias_scan_task(config, "LENGTH_SCAN")
 
 
 def build_length_scan_values(config: SimConfig) -> list[float]:
-    validate_length_scan_config(config)
-    start = float(config.run.length_sweep_start_km)
-    end = float(config.run.length_sweep_end_km)
-    step = float(config.run.length_sweep_step_km)
-    values = []
-    value = start
-    while value <= end + 1e-12:
-        values.append(round(value, 9))
-        value += step
-    if not values:
-        values = [start]
-    return values
+    from . import param_scan
+
+    _axis_keys, axis_values = param_scan.resolve_alias_axis_values(config, "LENGTH_SCAN")
+    return list(axis_values["length_km"])
 
 
 def run_length_scan_task(
@@ -199,17 +180,15 @@ def run_length_scan_task(
         rho_ff=getattr(enum_main, "rho_declared_ff", None),
         trace_raw=float(getattr(enum_main, "trace_declared_raw", 0.0)),
         trace_ff=float(getattr(enum_main, "trace_declared_ff", 0.0)),
+        rho_raw_by_bell=getattr(enum_main, "rho_declared_raw_by_bell", None),
+        rho_ff_by_bell=getattr(enum_main, "rho_declared_ff_by_bell", None),
+        trace_raw_by_bell=getattr(enum_main, "trace_declared_raw_by_bell", None),
+        trace_ff_by_bell=getattr(enum_main, "trace_declared_ff_by_bell", None),
     )
     return metrics
 
 
 def iter_length_scan_core_tasks(config: SimConfig) -> Iterator[dict]:
-    length_values = build_length_scan_values(config)
-    for length_idx, length_km in enumerate(length_values):
-        for run_index in range(config.run.runs):
-            yield {
-                "id": f"lscan_len_{length_idx:04d}_run_{run_index:06d}",
-                "experiment": "LENGTH_SCAN",
-                "run_index": run_index,
-                "payload": {"length_km": float(length_km)},
-            }
+    from . import param_scan
+
+    yield from param_scan.iter_length_scan_alias_core_tasks(config)
