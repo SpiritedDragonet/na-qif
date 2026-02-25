@@ -232,8 +232,11 @@ class EmissionParams:
     dissipation_rate_unit: str = "hz"
     arm_A: AtomArmParams = field(default_factory=AtomArmParams)
     arm_B: AtomArmParams = field(default_factory=AtomArmParams)
+    # delay_ns=None 时固定按 0 ns 处理（不再做随机平移）；
+    # 随机性由 delay_jitter_ns 统一承载。
     delay_ns: Optional[float] = None
     delay_jitter_ns: float = DEFAULT_DELAY_JITTER_NS
+    # 兼容旧 run_manifest 字段；当前时延口径不再使用该随机区间。
     delay_random_range: Tuple[float, float] = (-10.0, 10.0)
 
 
@@ -456,13 +459,10 @@ def _resolve_emission_delay(
 ) -> tuple:
     # 统一解析 delay / delay_jitter：
     #   - 若调用方给了明确值，优先使用
-    #   - 否则用 config 默认（或随机范围）
+    #   - 否则 delay 固定为 0 ns，随机性仅由 jitter 承担
+    _ = rng
     if delay_ns is None:
-        if emission.delay_ns is None:
-            low, high = emission.delay_random_range
-            delay_ns = float(rng.uniform(low, high))
-        else:
-            delay_ns = float(emission.delay_ns)
+        delay_ns = 0.0 if emission.delay_ns is None else float(emission.delay_ns)
     if delay_jitter_ns is None:
         delay_jitter_ns = float(emission.delay_jitter_ns)
     return float(delay_ns), float(delay_jitter_ns)

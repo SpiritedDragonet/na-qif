@@ -17,7 +17,6 @@
 \contentsline {figure}{\numberline {4-9}{\ignorespaces 成功率与保真度随链路长度变化。}}{35}{figure.4.9}%
 \contentsline {figure}{\numberline {4-10}{\ignorespaces QFC 背景噪声对事件率与保真度的影响。}}{36}{figure.4.10}%
 \contentsline {figure}{\numberline {4-11}{\ignorespaces 探测效率-背景联合扫描下的保真度热图与成功率切片。}}{36}{figure.4.11}%
-\contentsline {figure}{\numberline {4-12}{\ignorespaces 速率-保真度工作点前沿（分束器混合角扫描）：（a）每次尝试宣告概率与条件保真度的工作点平面，并以颜色表示假成功占比；（b）条件保真度、每次尝试宣告概率与假成功占比随 $\theta _{\mathrm {BS}}$ 的变化。}}{37}{figure.4.12}%
-\contentsline {figure}{\numberline {4-13}{\ignorespaces 误差预算汇总图（真实 BSM 扫描）：（a）真成功/假成功宣告概率预算及 $F_t$、假成功占比、$S_{\max }/4$ 随 $\theta _{\mathrm {BS}}$ 的联合变化；（b）推荐工作点的假成功来源（背景辅助与内禀暗计数辅助）及其模式贡献分解。}}{38}{figure.4.13}%
-\contentsline {figure}{\numberline {4-14}{\ignorespaces 复杂度缩放图：（a）探测阶段耗时随窗口 bin 数增长；（b）墙钟代理量随 bin 个数上限增长。}}{39}{figure.4.14}%
+\contentsline {figure}{\numberline {4-12}{\ignorespaces 误差预算汇总图：（a）真成功/假成功宣告概率预算及 $F_t$、假成功占比、$S_{\max }/4$ 随 $\theta _{\mathrm {BS}}$ 的联合变化（右下角 inset 为速率-保真度工作点前沿，颜色表示假成功占比）；（b）推荐工作点的假成功来源（背景辅助与内禀暗计数辅助）及其模式贡献分解。}}{37}{figure.4.12}%
+\contentsline {figure}{\numberline {4-13}{\ignorespaces 复杂度缩放图：（a）探测阶段耗时随窗口 bin 数增长；（b）墙钟代理量随 bin 个数上限增长。}}{38}{figure.4.13}%
 \addvspace {10.0pt}

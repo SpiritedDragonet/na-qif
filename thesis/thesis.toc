@@ -2,7 +2,7 @@
 \contentsline {chapter}{\heiti 摘\hspace {\ccwd }要}{I}{section*.5}%
 \contentsline {chapter}{\heiti Abstract}{II}{section*.7}%
 \contentsline {chapter}{\heiti 插图索引}{V}{section*.11}%
-\contentsline {chapter}{\heiti 表格索引}{VIII}{section*.13}%
+\contentsline {chapter}{\heiti 表格索引}{VII}{section*.13}%
 \contentsline {chapter}{\numberline {第1章}绪论}{1}{chapter.1}%
 \contentsline {section}{\numberline {1.1}研究背景}{1}{section.1.1}%
 \contentsline {subsection}{\numberline {1.1.1}量子接口的功能任务、中性原子发展与网络化驱动}{2}{subsection.1.1.1}%
@@ -39,15 +39,15 @@
 \contentsline {section}{\numberline {4.4}端到端性能误差预算}{34}{section.4.4}%
 \contentsline {section}{\numberline {4.5}计算成本与部署判据}{37}{section.4.5}%
 \contentsline {section}{\numberline {4.6}本章小结}{39}{section.4.6}%
-\contentsline {chapter}{\heiti 结\hspace {\ccwd }论}{41}{section*.19}%
-\contentsline {chapter}{\heiti 参考文献}{43}{section*.22}%
-\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{46}{section*.24}%
-\contentsline {chapter}{\heiti 致\hspace {\ccwd }谢}{47}{section*.26}%
-\contentsline {chapter}{\numberline {附录 A}补充数学推导}{48}{appendix.A}%
-\contentsline {section}{\numberline {A.1}12维发射体的块结构与基序置换}{48}{section.A.1}%
-\contentsline {section}{\numberline {A.2}从 36 维子门到 60 维站点门的索引嵌入}{48}{section.A.2}%
-\contentsline {section}{\numberline {A.3}滤波记忆步进门的离散推导与幺正性}{49}{section.A.3}%
-\contentsline {section}{\numberline {A.4}交换调度的不变量与终态布局}{50}{section.A.4}%
-\contentsline {section}{\numberline {A.5}计时闭合关系与主导项判据}{50}{section.A.5}%
-\contentsline {chapter}{\heiti 攻读硕士学位期间发表的论文及其他成果}{52}{section*.29}%
-\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{53}{section*.31}%
+\contentsline {chapter}{\heiti 结\hspace {\ccwd }论}{40}{section*.19}%
+\contentsline {chapter}{\heiti 参考文献}{42}{section*.22}%
+\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{45}{section*.24}%
+\contentsline {chapter}{\heiti 致\hspace {\ccwd }谢}{46}{section*.26}%
+\contentsline {chapter}{\numberline {附录 A}补充数学推导}{47}{appendix.A}%
+\contentsline {section}{\numberline {A.1}12维发射体的块结构与基序置换}{47}{section.A.1}%
+\contentsline {section}{\numberline {A.2}从 36 维子门到 60 维站点门的索引嵌入}{47}{section.A.2}%
+\contentsline {section}{\numberline {A.3}滤波记忆步进门的离散推导与幺正性}{48}{section.A.3}%
+\contentsline {section}{\numberline {A.4}交换调度的不变量与终态布局}{49}{section.A.4}%
+\contentsline {section}{\numberline {A.5}计时闭合关系与主导项判据}{49}{section.A.5}%
+\contentsline {chapter}{\heiti 攻读硕士学位期间发表的论文及其他成果}{51}{section*.29}%
+\contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{52}{section*.31}%

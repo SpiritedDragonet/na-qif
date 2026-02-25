@@ -11,6 +11,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Iterator
 from collections import Counter
+from copy import deepcopy
 
 import numpy as np
 
@@ -239,6 +240,7 @@ def _run_single_simulation_core(
     run_index: int,
     config: SimConfig,
     show_plots: bool,
+    force_plot: bool = False,
     plot_dir: Optional[Path] = None,
     run_tag: Optional[str] = None,
     seed: Optional[int] = None,
@@ -458,11 +460,14 @@ def _run_single_simulation_core(
     def _plot_gate_allow() -> bool:
         # --------------------------------------------------------------
         # 逻辑：默认只保留一个 run 的图，避免 I/O 爆炸。
-        # plot_all=True 时不做限制；否则仅 run_index==0 允许绘图。
+        # plot_all=True 或 force_plot=True 时不做限制；
+        # 否则仅 run_index==0 允许绘图。
         # --------------------------------------------------------------
         if not plot_enabled:
             return False
         if plot_all:
+            return True
+        if force_plot:
             return True
         return run_index == 0
 
@@ -1115,11 +1120,35 @@ def run_sim_task(
     seed_raw = task.get("seed")
     seed = int(seed_raw) if seed_raw is not None else None
     run_index = int(task.get("run_index", 1))
+    payload = task.get("payload", {})
+    if not isinstance(payload, dict):
+        raise ValueError("SCHEMA_ERROR: SIM task payload 必须是对象")
+
+    run_config = config
+    force_plot = False
+    if payload:
+        run_config = deepcopy(config)
+        if "n_bins" in payload:
+            run_config.emission.n_bins = int(payload["n_bins"])
+        if "dt_ns" in payload:
+            run_config.emission.dt_ns = float(payload["dt_ns"])
+        if "delay_ns" in payload:
+            run_config.emission.delay_ns = (
+                None if payload["delay_ns"] is None else float(payload["delay_ns"])
+            )
+        if "delay_jitter_ns" in payload:
+            run_config.emission.delay_jitter_ns = float(payload["delay_jitter_ns"])
+        if "plot_enabled" in payload:
+            run_config.run.plot_enabled = bool(payload["plot_enabled"])
+        if "force_plot" in payload:
+            force_plot = bool(payload["force_plot"])
+
     run_stats, success_metrics, click_records = _run_single_simulation_core(
         output_dir=raw_dir,
         run_index=run_index,
-        config=config,
-        show_plots=config.run.plot_all,
+        config=run_config,
+        show_plots=run_config.run.plot_all,
+        force_plot=force_plot,
         plot_dir=plots_dir,
         run_tag=task_id,
         seed=seed,

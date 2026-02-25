@@ -243,6 +243,8 @@ def _parse_run_params(argv):
         ("--t-wait-overhead-us", "t_wait_overhead_us", float, "等待时间固定开销 (us)，会加到 L/v_g 上"),
         ("--t-wait-length-scale", "t_wait_length_scale", float, "等待时间线性系数：T_wait = scale*L/v_g + overhead（默认 2，单臂往返口径）"),
         ("--t2-us", "t2_us", float, "原子退相干时间 T2 (us)"),
+        ("--n-bins", "n_bins", int, "发射-传播离散时间 bin 数（默认 100）"),
+        ("--dt-ns", "dt_ns", float, "单个时间 bin 宽度 (ns，默认 1.0)"),
         ("--tau", "tau", float, "(HOM/SIM) 单一延迟 τ (ns)，SIM 下等价于 emission.delay_ns"),
         ("--tau-start", "tau_start", float, "(HOM) τ 起点 (ns)"),
         ("--tau-end", "tau_end", float, "(HOM) τ 终点 (ns)"),
@@ -452,6 +454,8 @@ def _parse_run_params(argv):
         ("bg_rate_mean_hz", config.noise, "bg_rate_mean_hz", float),
         ("bg_rate_std_hz", config.noise, "bg_rate_std_hz", float),
         ("detector_gate_ns", config.noise, "detector_gate_ns", float),
+        ("n_bins", config.emission, "n_bins", int),
+        ("dt_ns", config.emission, "dt_ns", float),
         ("omega_peak_a", config.emission.arm_A, "omega_peak", float),
         ("omega_peak_b", config.emission.arm_B, "omega_peak", float),
         ("drive_waveform_a", config.emission, "drive_waveform_A", lambda value: str(value).strip().lower()),
@@ -614,6 +618,10 @@ def _parse_run_params(argv):
         parser.error("shots_per_run 必须 >= 1")
     if config.run.cores < 1:
         parser.error("cores 必须 >= 1")
+    if config.emission.n_bins < 1:
+        parser.error("n_bins 必须 >= 1")
+    if config.emission.dt_ns <= 0.0:
+        parser.error("dt_ns 必须 > 0")
     if config.noise.detector_gate_ns <= 0.0:
         parser.error("detector_gate_ns 必须 > 0")
     if config.fiber.length_km < 0.0:
@@ -1010,6 +1018,36 @@ def _validate_task_schema(task: dict, manifest: dict) -> None:
         payload = task.get("payload", {})
         if not isinstance(payload, dict):
             raise ValueError("SCHEMA_ERROR: CORE_TRIAL 的 payload 必须是对象")
+        if experiment == "SIM":
+            if "n_bins" in payload:
+                try:
+                    n_bins = int(payload["n_bins"])
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("SCHEMA_ERROR: SIM payload.n_bins 必须是整数") from exc
+                if n_bins < 1:
+                    raise ValueError("SCHEMA_ERROR: SIM payload.n_bins 必须 >= 1")
+            if "dt_ns" in payload:
+                try:
+                    dt_ns = float(payload["dt_ns"])
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("SCHEMA_ERROR: SIM payload.dt_ns 必须是数值") from exc
+                if dt_ns <= 0.0:
+                    raise ValueError("SCHEMA_ERROR: SIM payload.dt_ns 必须 > 0")
+            if "delay_ns" in payload and payload["delay_ns"] is not None:
+                try:
+                    float(payload["delay_ns"])
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("SCHEMA_ERROR: SIM payload.delay_ns 必须是数值或 null") from exc
+            if "delay_jitter_ns" in payload:
+                try:
+                    delay_jitter = float(payload["delay_jitter_ns"])
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("SCHEMA_ERROR: SIM payload.delay_jitter_ns 必须是数值") from exc
+                if delay_jitter < 0.0:
+                    raise ValueError("SCHEMA_ERROR: SIM payload.delay_jitter_ns 必须 >= 0")
+            for flag_key in ("plot_enabled", "force_plot"):
+                if flag_key in payload and not isinstance(payload[flag_key], bool):
+                    raise ValueError(f"SCHEMA_ERROR: SIM payload.{flag_key} 必须是布尔值")
         if experiment == "HOM" and "tau_ns" not in payload:
             raise ValueError("SCHEMA_ERROR: HOM 缺少 payload.tau_ns")
         if experiment == "BSM_SCAN" and "bs_theta" not in payload:

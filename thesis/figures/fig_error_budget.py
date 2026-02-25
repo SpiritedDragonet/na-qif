@@ -4,6 +4,7 @@ import pathlib
 
 import matplotlib.pyplot as plt
 import numpy as np
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 
 PATTERN_ORDER = (
@@ -235,6 +236,39 @@ def main() -> None:
     ax0_r.plot(theta, chsh / 4.0, color="#111827", lw=1.3, marker="^", ms=3.2, ls="-.", label=r"$S_{\max}/4$")
     ax0_r.set_ylabel(r"Quality axis: $F_t$, spurious share (\%), and $S_{\max}/4$")
     ax0.axvline(theta_rec, color="#9ca3af", lw=1.0, ls=":")
+
+    # Inset: rate-fidelity operating-point frontier view (merged from old standalone figure).
+    inset = inset_axes(ax0, width="44%", height="44%", loc="lower right", borderpad=1.0)
+    rate_all_1e4 = 1e4 * np.clip(summary["rate_all"], np.finfo(float).tiny, None)
+    inset_sc = inset.scatter(
+        rate_all_1e4,
+        fidelity,
+        c=false_pct,
+        s=32.0,
+        cmap="Reds",
+        alpha=0.92,
+        edgecolors="#f8fafc",
+        linewidths=0.45,
+        zorder=2,
+    )
+    inset.scatter(
+        [rate_all_1e4[idx_rec]],
+        [fidelity[idx_rec]],
+        marker="*",
+        s=86.0,
+        color="#f97316",
+        edgecolors="#0f172a",
+        linewidths=0.6,
+        zorder=3,
+    )
+    inset.set_title("Rate-Fidelity inset", fontsize=7.2)
+    inset.set_xlabel(r"$p_s$ ($\times 10^{-4}$)", fontsize=6.8)
+    inset.set_ylabel(r"$F_t$", fontsize=6.8)
+    inset.tick_params(labelsize=6.4, length=2.2, pad=1.5)
+    inset.grid(True, alpha=0.18, linewidth=0.6)
+    cb_inset = fig.colorbar(inset_sc, ax=inset, fraction=0.16, pad=0.02)
+    cb_inset.set_label("spurious (%)", fontsize=6.4)
+    cb_inset.ax.tick_params(labelsize=6.2, length=2.0)
 
     lines = []
     labels = []

@@ -159,13 +159,13 @@ g^{(2)}(\tau)=b-a\exp\!\left[-\left(\frac{\tau-\tau_0}{\sigma}\right)^2\right]
 
 接下来汇总条件态结构与端到端可用纠缠质量。
 
-前两段联合诊断给出“源端时间结构—窗口筛选—干涉模式”的因果证据链，本节转入任务层汇总：在统一成功判据下同时报告 Bell 条件保真度、CHSH 与速率工作点。图 \ref{fig:chsh} 给出 $S$ 参数趋势；图 \ref{fig:distance}、图 \ref{fig:qfc_noise}、图 \ref{fig:detector_eff} 与图 \ref{fig:rate_fidelity} 给出链路尺度、QFC 噪声、探测效率和工作点前沿。在两臂等长 $L$ 且单臂衰减系数为 $\alpha_f$ 时，成功率满足
+前两段联合诊断给出“源端时间结构—窗口筛选—干涉模式”的因果证据链，本节转入任务层汇总：在统一成功判据下同时报告 Bell 条件保真度、CHSH 与速率工作点。图 \ref{fig:chsh} 给出 $S$ 参数趋势；图 \ref{fig:distance}、图 \ref{fig:qfc_noise} 与图 \ref{fig:detector_eff} 分别刻画链路尺度、QFC 噪声和探测效率影响；图 \ref{fig:error_budget} 汇总事件预算与质量预算。在两臂等长 $L$ 且单臂衰减系数为 $\alpha_f$ 时，成功率满足
 \begin{equation}
 p_s(L)\propto 10^{-\alpha_f L/5},
 \end{equation}
 该关系解释了长链路下“速率先退化、保真度后退化”的常见实验现象。
 
-图 \ref{fig:distance} 与图 \ref{fig:rate_fidelity} 对应不同分析坐标。前者固定物理链路长度，观察同一配置在空间尺度上的性能迁移；后者固定链路条件，观察参数调节下可达到的 Pareto 前沿。二者合并后可以回答两个不同层面的设计问题：给定部署距离时可达到何种纠缠质量，以及给定质量门槛时可以承受多大速率损失。这种“双坐标系”解释对于工程决策比单一保真度曲线更直接。
+图 \ref{fig:distance} 与图 \ref{fig:error_budget}(a) inset 对应两种互补坐标：前者固定物理链路长度，后者固定链路条件并考察参数调节下的 Pareto 前沿。二者联合回答“给定距离能达到什么质量”与“给定质量需付出多少速率”两个工程问题。
 
 \begin{figure}[htbp]
 \centering
@@ -207,14 +207,6 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \end{figure}
 图 \ref{fig:detector_eff} 将“探测效率影响”写成二维工作平面：图 \ref{fig:detector_eff}(a) 的热图给出不同背景计数下的条件保真度地形，图 \ref{fig:detector_eff}(b) 给出对应成功率切片。结果显示，在高背景区效率提升对保真度的边际改善更早受限，但成功率仍可继续上升。
 
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=0.9\linewidth]{fig_rate_fidelity.pdf}
-\caption{速率-保真度工作点前沿（分束器混合角扫描）：（a）每次尝试宣告概率与条件保真度的工作点平面，并以颜色表示假成功占比；（b）条件保真度、每次尝试宣告概率与假成功占比随 $\theta_{\mathrm{BS}}$ 的变化。}
-\label{fig:rate_fidelity}
-\end{figure}
-图 \ref{fig:rate_fidelity} 给出了速率-保真度-假成功的联合权衡关系：在本轮扫描中，最优工作点 $\theta_{\mathrm{BS}}=0.75$ rad 同时达到最高条件保真度 $F_t\approx 0.465$ 与最高每次尝试宣告概率 $p_s\approx 4.176\times10^{-4}$，对应假成功占比约 $0.390\%$。该图可用于在质量门槛约束下选择可接受的事件率工作点，并判定“提高事件率是否伴随不可接受的假成功抬升”。
-
 最后给出误差归因与部署判据。
 
 误差预算采用分组边际法。设 $g$ 表示噪声组（源端、QFC+滤波、光纤、探测），定义
@@ -229,7 +221,7 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.95\linewidth]{fig_error_budget.pdf}
-\caption{误差预算汇总图（真实 BSM 扫描）：（a）真成功/假成功宣告概率预算及 $F_t$、假成功占比、$S_{\max}/4$ 随 $\theta_{\mathrm{BS}}$ 的联合变化；（b）推荐工作点的假成功来源（背景辅助与内禀暗计数辅助）及其模式贡献分解。}
+\caption{误差预算汇总图：（a）真成功/假成功宣告概率预算及 $F_t$、假成功占比、$S_{\max}/4$ 随 $\theta_{\mathrm{BS}}$ 的联合变化（右下角 inset 为速率-保真度工作点前沿，颜色表示假成功占比）；（b）推荐工作点的假成功来源（背景辅助与内禀暗计数辅助）及其模式贡献分解。}
 \label{fig:error_budget}
 \end{figure}
 图 \ref{fig:error_budget} 将“事件预算”（$p_t$ 与 $p_f$）与“质量预算”（$F_t$、$S_{\max}$、假成功占比）统一到同一张图中。图 \ref{fig:error_budget}(b) 的分解进一步指出推荐工作点下假成功并非单一来源主导，而是由背景与内禀暗计数共同贡献，并在不同点击模式间分担，这为后续“先压背景还是先压暗计数”的工程优先级提供了直接依据。
