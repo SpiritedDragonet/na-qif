@@ -141,8 +141,8 @@ class SuccessEnumerationResult:
     fidelity_declared: float
     fidelity_true: float
     fidelity_false: float
-    p_success_signal_approx: float = 0.0
-    p_success_same_arm_approx: float = 0.0
+    p_success_signal_heuristic: float = 0.0
+    p_success_same_arm_heuristic: float = 0.0
     p_success_intrinsic_dark_assisted: float = 0.0
     p_success_bg_assisted: float = 0.0
     corr_exx: float = 0.0
@@ -229,7 +229,7 @@ def _build_feedforward_op_for_bell(bell_state: str) -> np.ndarray:
     return np.eye(4, dtype=complex)
 
 
-P_ARRIVE_EPS = 1e-8
+NUMERICAL_EPS = 1e-15
 
 
 def _order_two_port_detectors(detectors: List[str]) -> Tuple[str, ...]:
@@ -553,6 +553,11 @@ def run_detection_pipeline(
         proj_A=proj_A,
         proj_B=proj_B,
     )
+    p_arrive = float(max(0.0, p_arrive))
+    p_arrive_11 = float(max(0.0, p_arrive_11))
+    p_arrive_20 = float(max(0.0, p_arrive_20))
+    p_arrive_02 = float(max(0.0, p_arrive_02))
+    p_arrive_same_arm = float(max(0.0, p_arrive_same_arm))
 
     if verbose and compute_metrics:
         print(
@@ -560,16 +565,9 @@ def run_detection_pipeline(
             f"(1&1={p_arrive_11:.6f}, same_arm={p_arrive_same_arm:.6f})"
         )
 
-    if p_arrive < P_ARRIVE_EPS:
-        p_arrive = 0.0
-        p_arrive_11 = 0.0
-        p_arrive_20 = 0.0
-        p_arrive_02 = 0.0
-        p_arrive_same_arm = 0.0
-
-    if p_arrive <= P_ARRIVE_EPS and p_dark_intrinsic_scalar <= 0.0 and p_bg_scalar <= 0.0:
+    if p_arrive <= 0.0 and p_dark_intrinsic_scalar <= 0.0 and p_bg_scalar <= 0.0:
         if verbose:
-            print(f"  p_arrive<{P_ARRIVE_EPS:.1e} 且无暗计数/背景噪声，跳过POVM收缩")
+            print("  p_arrive=0 且无暗计数/背景噪声，跳过POVM收缩")
         metrics = None
         if compute_metrics:
             metrics = SuccessEnumerationResult(
@@ -794,7 +792,7 @@ def run_detection_pipeline(
         for bell_state, sigma_part in sigma_by_bell.items():
             trace_part_raw = float(np.trace(sigma_part).real)
             trace_declared_raw_by_bell[bell_state] = trace_part_raw
-            if trace_part_raw > P_ARRIVE_EPS:
+            if trace_part_raw > NUMERICAL_EPS:
                 rho_declared_raw_by_bell[bell_state] = sigma_part / trace_part_raw
             else:
                 rho_declared_raw_by_bell[bell_state] = np.zeros((4, 4), dtype=complex)
@@ -803,18 +801,18 @@ def run_detection_pipeline(
             sigma_part_ff = u_ff @ sigma_part @ u_ff.conj().T
             trace_part_ff = float(np.trace(sigma_part_ff).real)
             trace_declared_ff_by_bell[bell_state] = trace_part_ff
-            if trace_part_ff > P_ARRIVE_EPS:
+            if trace_part_ff > NUMERICAL_EPS:
                 rho_declared_ff_by_bell[bell_state] = sigma_part_ff / trace_part_ff
             else:
                 rho_declared_ff_by_bell[bell_state] = np.zeros((4, 4), dtype=complex)
             sigma_declared_ff += sigma_part_ff
         trace_declared_raw = float(np.trace(sigma_declared_raw).real)
         trace_declared_ff = float(np.trace(sigma_declared_ff).real)
-        if trace_declared_raw > P_ARRIVE_EPS:
+        if trace_declared_raw > NUMERICAL_EPS:
             rho_declared_raw = sigma_declared_raw / trace_declared_raw
         else:
             rho_declared_raw = np.zeros((4, 4), dtype=complex)
-        if trace_declared_ff > P_ARRIVE_EPS:
+        if trace_declared_ff > NUMERICAL_EPS:
             rho_declared_ff = sigma_declared_ff / trace_declared_ff
         else:
             rho_declared_ff = np.zeros((4, 4), dtype=complex)
@@ -840,8 +838,8 @@ def run_detection_pipeline(
             if p_success_false > 0
             else 0.0
         )
-        p_success_given_arrival = (p_success_true / p_arrive_11) if p_arrive_11 > P_ARRIVE_EPS else 0.0
-        if p_arrive > P_ARRIVE_EPS:
+        p_success_given_arrival = (p_success_true / p_arrive_11) if p_arrive_11 > NUMERICAL_EPS else 0.0
+        if p_arrive > NUMERICAL_EPS:
             frac_11 = p_arrive_11 / p_arrive
             frac_same = p_arrive_same_arm / p_arrive
         else:
@@ -862,8 +860,9 @@ def run_detection_pipeline(
             fidelity_declared=fidelity_declared,
             fidelity_true=fidelity_true,
             fidelity_false=fidelity_false,
-            p_success_signal_approx=p_success_true * frac_11,
-            p_success_same_arm_approx=p_success_true * frac_same,
+            # 诊断启发项：用于观察“真成功”在到达构成中的粗分配，不作为严格可加分解。
+            p_success_signal_heuristic=p_success_true * frac_11,
+            p_success_same_arm_heuristic=p_success_true * frac_same,
             p_success_intrinsic_dark_assisted=p_success_intrinsic_dark_assisted,
             p_success_bg_assisted=p_success_bg_assisted,
             corr_exx=corr_exx,

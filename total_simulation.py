@@ -713,7 +713,7 @@ def _parse_run_params(argv):
     if task_type == "HOM":
         config.hom = parse_hom_cli(args, parser)
     elif task_type == "SIM":
-        # SIM 允许 --tau 单点覆盖 delay；未提供时沿用默认口径（配置值或随机范围）。
+        # SIM 允许 --tau 单点覆盖 delay；未提供时沿用默认口径（当前为 delay=0，仅 jitter 随机）。
         if (
             args.tau_start is not None
             or args.tau_end is not None

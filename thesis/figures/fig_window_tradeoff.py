@@ -395,8 +395,8 @@ def main() -> None:
 
     _set_style()
 
-    fig = plt.figure(figsize=(10.0, 4.5), constrained_layout=True)
-    gs = fig.add_gridspec(1, 2, width_ratios=[1.35, 1.0], wspace=0.24)
+    fig = plt.figure(figsize=(12.8, 4.8), constrained_layout=True)
+    gs = fig.add_gridspec(1, 2, width_ratios=[1.08, 1.08], wspace=0.30)
     ax0 = fig.add_subplot(gs[0, 0])
     ax1 = fig.add_subplot(gs[0, 1])
     ax1r = ax1.twinx()
@@ -453,7 +453,12 @@ def main() -> None:
     ax0.set_xlabel("Acceptance window (ns)")
     ax0.set_ylabel(r"Probability per attempt ($\times 10^{-6}$)")
     ax0.set_title("Rate decomposition versus acceptance window")
-    ax0.legend(frameon=False, loc="upper left")
+    ax0.legend(
+        frameon=False,
+        loc="lower left",
+        bbox_to_anchor=(0.0, 1.01),
+        borderaxespad=0.0,
+    )
     _panel_label(ax0, "(a)")
 
     ax1.plot(
@@ -527,7 +532,14 @@ def main() -> None:
 
     ax1.set_title("Quality metrics and spurious-share evolution")
     legend_handles, legend_labels = _line_handles_labels(ax1, ax1r)
-    ax1.legend(legend_handles, legend_labels, frameon=False, loc="center right")
+    ax1.legend(
+        legend_handles,
+        legend_labels,
+        frameon=False,
+        loc="lower left",
+        bbox_to_anchor=(0.0, 1.01),
+        borderaxespad=0.0,
+    )
     _panel_label(ax1, "(b)")
 
     y_work = float(np.interp(args.work_point_ns, w_plot, f_t_plot))

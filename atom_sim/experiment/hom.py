@@ -24,7 +24,7 @@ DEFAULT_TAU_RANDOM_RANGE_NS = (-10.0, 10.0)
 
 def _build_hom_tau_values(hom_cfg: HomConfig) -> list:
     # 构造 τ 列表的优先级：
-    #   1) random 模式：每次生成一个随机 τ
+    #   1) random 模式：每次生成一个随机 τ（仅用于显式开启的旧口径）
     #   2) 单点 τ：直接返回 [τ]
     #   3) 扫描：使用 (start, end, step) 或 (start, end, points)
     if hom_cfg.tau_random:
@@ -63,7 +63,7 @@ def _build_hom_tau_values(hom_cfg: HomConfig) -> list:
 def parse_hom_cli(args, parser) -> HomConfig:
     # 解析 HOM 参数并做一致性校验：
     #   - 只能在 (tau) 与 (tau_start/tau_end/tau_step|points) 之间二选一
-    #   - 若完全未给 tau 参数，默认随机 tau 进行 smoke
+    #   - 若完全未给 tau 参数，默认使用确定性单点 tau=0（保证可复现）
     tau = args.tau
     tau_start = args.tau_start
     tau_end = args.tau_end
@@ -78,12 +78,12 @@ def parse_hom_cli(args, parser) -> HomConfig:
     ):
         window_ns = args.window_ns if args.window_ns is not None else 70.0
         return HomConfig(
-            tau=None,
+            tau=0.0,
             tau_start=None,
             tau_end=None,
             tau_step=None,
             tau_points=None,
-            tau_random=True,
+            tau_random=False,
             tau_random_range=DEFAULT_TAU_RANDOM_RANGE_NS,
             window_ns=window_ns,
         )

@@ -24,7 +24,7 @@ DEFAULT_QFC_EFFICIENCY = 0.57
 DEFAULT_QFC_THETA_RAD = float(np.arcsin(np.sqrt(DEFAULT_QFC_EFFICIENCY)))
 DEFAULT_QFC_NOISE_SD_CPS_PER_MHZ = 41.1
 DEFAULT_EMISSION_SIGMA_NS = 18.5
-# 目标：在 n_bins=100, dt=1ns 且 delay∈[-10,10]ns 的默认口径下，
+# 目标：在 n_bins=100, dt=1ns 且默认 delay=0ns（仅 jitter 抖动）口径下，
 # after_bs 的非真空波包应完整落在窗口内（首尾均接近 0）。
 DEFAULT_EMISSION_T0_NS = 40.0
 DEFAULT_EMISSION_OMEGA_PEAK_RAD_S = float(2.0 * np.pi * 20e6 * 0.65)

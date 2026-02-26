@@ -363,14 +363,14 @@ def _run_single_simulation_core(
                 file.write(f"p_success_false_abs = {metrics['p_success_false_abs']:.8f}\n")
             else:
                 file.write("p_success_false_abs = N/A\n")
-            if metrics.get("p_success_signal_approx") is not None:
-                file.write(f"p_success_signal_approx = {metrics['p_success_signal_approx']:.8f}\n")
+            if metrics.get("p_success_signal_heuristic") is not None:
+                file.write(f"p_success_signal_heuristic = {metrics['p_success_signal_heuristic']:.8f}\n")
             else:
-                file.write("p_success_signal_approx = N/A\n")
-            if metrics.get("p_success_same_arm_approx") is not None:
-                file.write(f"p_success_same_arm_approx = {metrics['p_success_same_arm_approx']:.8f}\n")
+                file.write("p_success_signal_heuristic = N/A\n")
+            if metrics.get("p_success_same_arm_heuristic") is not None:
+                file.write(f"p_success_same_arm_heuristic = {metrics['p_success_same_arm_heuristic']:.8f}\n")
             else:
-                file.write("p_success_same_arm_approx = N/A\n")
+                file.write("p_success_same_arm_heuristic = N/A\n")
             if metrics.get("p_success_intrinsic_dark_assisted") is not None:
                 file.write(
                     f"p_success_intrinsic_dark_assisted = {metrics['p_success_intrinsic_dark_assisted']:.8f}\n"
@@ -812,8 +812,8 @@ def _run_single_simulation_core(
             "p_success_abs": enum_main.p_success,
             "p_success_true_abs": enum_main.p_success_true,
             "p_success_false_abs": enum_main.p_success_false,
-            "p_success_signal_approx": enum_main.p_success_signal_approx,
-            "p_success_same_arm_approx": enum_main.p_success_same_arm_approx,
+            "p_success_signal_heuristic": enum_main.p_success_signal_heuristic,
+            "p_success_same_arm_heuristic": enum_main.p_success_same_arm_heuristic,
             "p_success_intrinsic_dark_assisted": enum_main.p_success_intrinsic_dark_assisted,
             "p_success_bg_assisted": enum_main.p_success_bg_assisted,
             "p_success_true_given_arrival": enum_main.p_success_given_arrival,
