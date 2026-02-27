@@ -468,6 +468,8 @@ def run_detection_pipeline(
     fiber_sample: Optional[tuple] = None,
     bs_theta: float = np.pi / 4,
     v_res: float = 1.0,
+    filter_eta_peak_A: float = 1.0,
+    filter_eta_peak_B: float = 1.0,
     qubit_levels: Tuple[int, int] = (0, 1),
     should_abort: Optional[Callable[[], bool]] = None,
 ) -> DetectionPipelineResult:
@@ -527,6 +529,8 @@ def run_detection_pipeline(
 
     bs_unitary_6d = _validate_bs_unitary(bs_unitary)
     U_A, U_B, eta_H_A, eta_V_A, eta_H_B, eta_V_B, phase_slope, phase_jitter_std = _parse_fiber_sample(fiber_sample)
+    filter_eta_peak_A = float(np.clip(filter_eta_peak_A, 0.0, 1.0))
+    filter_eta_peak_B = float(np.clip(filter_eta_peak_B, 0.0, 1.0))
     p_bg_scalar = max(p_bg_map.values())
 
     if verbose and n_samples > 0:
@@ -543,6 +547,8 @@ def run_detection_pipeline(
         eta_V_A=eta_V_A,
         eta_H_B=eta_H_B,
         eta_V_B=eta_V_B,
+        filter_eta_peak_A=filter_eta_peak_A,
+        filter_eta_peak_B=filter_eta_peak_B,
         U_A=U_A,
         U_B=U_B,
     )
@@ -606,6 +612,8 @@ def run_detection_pipeline(
         eta_V_A=eta_V_A,
         eta_H_B=eta_H_B,
         eta_V_B=eta_V_B,
+        filter_eta_peak_A=filter_eta_peak_A,
+        filter_eta_peak_B=filter_eta_peak_B,
         phase_slope=phase_slope,
         phase_jitter_std=phase_jitter_std,
         rng=rng,

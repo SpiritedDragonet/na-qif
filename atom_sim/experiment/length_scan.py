@@ -8,8 +8,6 @@ from __future__ import annotations
 import numpy as np
 from pathlib import Path
 from typing import Iterator
-
-from ..simulation import compute_pauli_correlators_and_chsh
 from .common import (
     SimConfig,
     run_trial_detection_core,
@@ -91,10 +89,6 @@ def run_length_scan_task(
     if enum_main is None:
         raise RuntimeError("LENGTH_SCAN 需要 compute_metrics=True 且返回有效枚举结果")
 
-    corr_exx_vals = []
-    corr_eyy_vals = []
-    corr_ezz_vals = []
-    chsh_vals = []
     click_records = []
     for shot_index, sample in enumerate(pipeline.samples):
         p_true_given_record = float(np.clip(getattr(sample, "p_true_given_record", 0.0), 0.0, 1.0))
@@ -128,12 +122,6 @@ def run_length_scan_task(
                 "p_intrinsic_dark_assist_given_record": p_intrinsic_dark_assist_given_record,
             }
         )
-        if sample.success:
-            corr = compute_pauli_correlators_and_chsh(sample.qubit_state)
-            corr_exx_vals.append(float(corr["corr_exx"]))
-            corr_eyy_vals.append(float(corr["corr_eyy"]))
-            corr_ezz_vals.append(float(corr["corr_ezz"]))
-            chsh_vals.append(float(corr["chsh_s_max"]))
 
     p_success_abs = float(enum_main.p_success)
     event_rate_hz = float(p_success_abs * attempt_rate_hz_eff)
@@ -163,10 +151,12 @@ def run_length_scan_task(
             if enum_main.p_success > 0
             else 0.0
         ),
-        "corr_exx": float(np.mean(corr_exx_vals)) if corr_exx_vals else 0.0,
-        "corr_eyy": float(np.mean(corr_eyy_vals)) if corr_eyy_vals else 0.0,
-        "corr_ezz": float(np.mean(corr_ezz_vals)) if corr_ezz_vals else 0.0,
-        "chsh_s_max": float(np.mean(chsh_vals)) if chsh_vals else 0.0,
+        # 使用枚举态口径（非单次抽样口径），避免 shots_per_run=1 时
+        # "无成功抽样 -> CHSH=0" 对 run 级统计产生系统性悲观偏置。
+        "corr_exx": float(enum_main.corr_exx),
+        "corr_eyy": float(enum_main.corr_eyy),
+        "corr_ezz": float(enum_main.corr_ezz),
+        "chsh_s_max": float(enum_main.chsh_s_max),
     }
 
     metrics = {

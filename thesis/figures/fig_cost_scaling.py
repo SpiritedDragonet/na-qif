@@ -3,6 +3,8 @@ import pathlib
 import matplotlib.pyplot as plt
 import numpy as np
 
+EXPORT_PNG = False
+
 
 def _panel_label(ax: plt.Axes, label: str) -> None:
     ax.text(
@@ -59,7 +61,8 @@ def main() -> None:
 
     base = pathlib.Path(__file__).with_suffix("")
     fig.savefig(base.with_suffix(".pdf"), dpi=240)
-    fig.savefig(base.with_suffix(".png"), dpi=220)
+    if EXPORT_PNG:
+        fig.savefig(base.with_suffix(".png"), dpi=220)
     plt.close(fig)
 
 

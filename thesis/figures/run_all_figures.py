@@ -5,8 +5,26 @@ import sys
 
 def main() -> None:
     figures_dir = pathlib.Path(__file__).resolve().parent
-    scripts = sorted(figures_dir.glob("fig_*.py"))
-    for script in scripts:
+    scripts = [
+        "fig_sim_pipeline.py",
+        "fig_calibration_pipeline.py",
+        "fig_wavepacket.py",
+        "fig_accept_hist.py",
+        "fig_window_tradeoff.py",
+        "fig_hom.py",
+        "fig_bsm_patterns.py",
+        "fig_bell_density_3d.py",
+        "fig_chsh.py",
+        "fig_distance.py",
+        "fig_qfc_noise.py",
+        "fig_detector_eff.py",
+        "fig_error_budget.py",
+        "fig_cost_scaling.py",
+    ]
+    for script_name in scripts:
+        script = figures_dir / script_name
+        if not script.exists():
+            raise FileNotFoundError(f"figure script not found: {script}")
         subprocess.run([sys.executable, str(script)], check=True)
 
 

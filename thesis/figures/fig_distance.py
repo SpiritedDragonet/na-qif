@@ -5,6 +5,8 @@ import pathlib
 import matplotlib.pyplot as plt
 import numpy as np
 
+EXPORT_PNG = False
+
 
 def _repo_root() -> pathlib.Path:
     return pathlib.Path(__file__).resolve().parents[2]
@@ -283,7 +285,8 @@ def main() -> None:
 
     out_base = pathlib.Path(__file__).with_suffix("")
     fig.savefig(out_base.with_suffix(".pdf"), dpi=260)
-    fig.savefig(out_base.with_suffix(".png"), dpi=230)
+    if EXPORT_PNG:
+        fig.savefig(out_base.with_suffix(".png"), dpi=230)
     plt.close(fig)
 
 

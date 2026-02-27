@@ -4,6 +4,8 @@ import pathlib
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+EXPORT_PNG = False
 from matplotlib.colors import LinearSegmentedColormap
 
 
@@ -292,7 +294,8 @@ def main() -> None:
 
     out_base = pathlib.Path(__file__).with_suffix("")
     fig.savefig(out_base.with_suffix(".pdf"), dpi=260)
-    fig.savefig(out_base.with_suffix(".png"), dpi=220)
+    if EXPORT_PNG:
+        fig.savefig(out_base.with_suffix(".png"), dpi=220)
     plt.close(fig)
 
 

@@ -513,10 +513,10 @@ $W$ 为窗口宽度对应的 bin 数，$C(\chi)$ 表示给定键维下的单次�
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.96\linewidth]{fig_sim_pipeline.pdf}
-\caption{端到端单次任务仿真流程图：从参数与离散设置输入，经发射 TEBD、QFC+记忆门、光纤与 BSM 对偶推回、POVM 收缩，输出任务指标与中间可观测量。}
+\caption{端到端单次任务仿真流程图：上层为状态侧物理链路（发射 TEBD$\rightarrow$QFC+滤波记忆$\rightarrow$光纤采样$\rightarrow$原子退相干），下层为测量侧统计链路（到达概率、POVM effect 构造、背景 OR 卷积、四阶段成功枚举、窗口化抽样与指标汇总）；其中分束器在测量侧并入 effect，而不在态端显式施加 BS 门。}
 \label{fig:sim_pipeline}
 \end{figure}
-图 \ref{fig:sim_pipeline} 将本章的门化建模、对偶推回与收缩统计统一为一条可执行流程线，便于在后续结果章节中将“物理归因”与“计算开销”对齐到同一处理阶段。
+图 \ref{fig:sim_pipeline} 以“双泳道”方式把状态演化与测量统计显式分离，避免将 effect 推回误读为态端时间步循环。枚举侧同时标注了 \texttt{enum\_mode} 分支：\texttt{both} 生成无暗计数基线与含噪主流程，\texttt{dark}/\texttt{no-dark} 分别保留其一。这样可以在后续结果章节中把物理归因、统计口径与计算开销精确映射到同一处理阶段。
 
 \section{本章小结}[Chapter Summary]
 

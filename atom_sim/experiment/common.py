@@ -995,6 +995,7 @@ class PipelineResult:
 def _build_detection_kwargs(
     pipe: PipelineResult,
     *,
+    config: SimConfig,
     param_store: RunParameterStore,
     rng: np.random.Generator,
     verbose: bool,
@@ -1015,6 +1016,8 @@ def _build_detection_kwargs(
         "bs_theta": float(bs_theta),
         "fiber_sample": pipe.fiber_sample,
         "v_res": float(param_store.v_res),
+        "filter_eta_peak_A": float(config.qfc.filter_cavity.eta_peak_A),
+        "filter_eta_peak_B": float(config.qfc.filter_cavity.eta_peak_B),
     }
 
 
@@ -1111,6 +1114,7 @@ def run_detection_core_from_pipe(
     bs_theta_value = float(config.detector.bs_theta if bs_theta is None else bs_theta)
     detect_common = _build_detection_kwargs(
         pipe=pipe,
+        config=config,
         param_store=param_store,
         rng=rng,
         verbose=verbose,
@@ -1306,8 +1310,6 @@ def run_emission_to_bs(
         filter_fwhm_mhz=float(qfc.filter_cavity.fwhm_mhz),
         filter_detuning_mhz_A=float(qfc.filter_cavity.detuning_mhz_A),
         filter_detuning_mhz_B=float(qfc.filter_cavity.detuning_mhz_B),
-        filter_eta_peak_A=float(qfc.filter_cavity.eta_peak_A),
-        filter_eta_peak_B=float(qfc.filter_cavity.eta_peak_B),
         chi_max=emission_chi_max,
         verbose=verbose,
     )
@@ -1321,7 +1323,7 @@ def run_emission_to_bs(
             qfc_params=(qfc_theta_H, qfc_theta_V),
         )
         if verbose:
-            print("QFC/滤波记忆已在态端显式作用。")
+            print("QFC与滤波记忆在态端显式作用；峰值透过在测量端按平均信道处理。")
     _raise_if_should_abort(should_abort)
 
     _raise_if_should_abort(should_abort)

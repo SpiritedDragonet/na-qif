@@ -22,7 +22,6 @@ from ..physics.gates import (
     filter_cavity_rt,
     filter_cavity_step_unitary_5d3d,
 )
-from ..physics.channels import loss_channel_both_subspaces
 
 
 # 维度常量，便于代码阅读
@@ -249,8 +248,6 @@ def apply_qfc_filter_memory_chain(
     filter_fwhm_mhz: float,
     filter_detuning_mhz_A: float,
     filter_detuning_mhz_B: float,
-    filter_eta_peak_A: float,
-    filter_eta_peak_B: float,
     chi_max: int,
     verbose: bool = True,
 ) -> MPSState:
@@ -266,6 +263,7 @@ def apply_qfc_filter_memory_chain(
 
     物理口径：
     - 跨 bin 关联由滤波腔记忆模携带（A/B 各一条）。
+    - 峰值透过(eta_peak)统一在测量端 effect 中做平均信道，不在态端做轨迹抽样。
     - memA/memB 与 bins 逐步相邻作用，不附着在 atomA/atomB 内部自由度。
     """
     _print_header("QFC + Filter Memory (state-side)", verbose)
@@ -277,19 +275,6 @@ def apply_qfc_filter_memory_chain(
     u_qfc = qfc_gate(theta_H=theta_H, theta_V=theta_V, phi_H=phi_H, phi_V=phi_V)
     if rng is None:
         rng = np.random.default_rng()
-
-    eta_peak_a = float(filter_eta_peak_A)
-    eta_peak_b = float(filter_eta_peak_B)
-    k_filter_a = loss_channel_both_subspaces(
-        eta_780=0.0,
-        eta_H_1517=eta_peak_a,
-        eta_V_1517=eta_peak_a,
-    )
-    k_filter_b = loss_channel_both_subspaces(
-        eta_780=0.0,
-        eta_H_1517=eta_peak_b,
-        eta_V_1517=eta_peak_b,
-    )
 
     # 显式记忆路径：在链尾添加两条记忆模（A/B），并通过 bin<->mem 邻接门产生跨 bin 关联。
     local_dims = mps.d.copy() + [3, 3]
@@ -348,11 +333,7 @@ def apply_qfc_filter_memory_chain(
         mps_aug.apply_kraus_one_site(pos[label_a], [u_qfc], rng=rng)
         mps_aug.apply_kraus_one_site(pos[label_b], [u_qfc], rng=rng)
 
-        # 2.2 780 滤波 + 1517 峰值透过
-        mps_aug.apply_kraus_one_site(pos[label_a], k_filter_a, rng=rng)
-        mps_aug.apply_kraus_one_site(pos[label_b], k_filter_b, rng=rng)
-
-        # 2.3 记忆门（bin 与 mem 需相邻，先把 mem 移到 bin 右侧）
+        # 2.2 记忆门（bin 与 mem 需相邻，先把 mem 移到 bin 右侧）
         while pos["memA"] > pos[label_a] + 1:
             _swap_and_track(pos["memA"] - 1)
         while pos["memB"] > pos[label_b] + 1:

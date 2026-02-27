@@ -741,6 +741,8 @@ def build_arrival_projectors_5d(
     eta_V_A: float,
     eta_H_B: float,
     eta_V_B: float,
+    filter_eta_peak_A: float = 1.0,
+    filter_eta_peak_B: float = 1.0,
     U_A: Optional[np.ndarray] = None,
     U_B: Optional[np.ndarray] = None,
 ) -> Tuple[Tuple[np.ndarray, np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray, np.ndarray]]:
@@ -770,8 +772,10 @@ def build_arrival_projectors_5d(
 
         return p0, p1, p2
 
-    proj_a = _build_one_arm(eta_H_A, eta_V_A, u_a_3)
-    proj_b = _build_one_arm(eta_H_B, eta_V_B, u_b_3)
+    eta_peak_a = float(np.clip(filter_eta_peak_A, 0.0, 1.0))
+    eta_peak_b = float(np.clip(filter_eta_peak_B, 0.0, 1.0))
+    proj_a = _build_one_arm(eta_H_A * eta_peak_a, eta_V_A * eta_peak_a, u_a_3)
+    proj_b = _build_one_arm(eta_H_B * eta_peak_b, eta_V_B * eta_peak_b, u_b_3)
     return proj_a, proj_b
 
 
@@ -787,6 +791,8 @@ def build_detection_effects_5d_by_bin(
     eta_V_A: float,
     eta_H_B: float,
     eta_V_B: float,
+    filter_eta_peak_A: float,
+    filter_eta_peak_B: float,
     phase_slope: float,
     phase_jitter_std: float,
     rng: np.random.Generator,
@@ -828,8 +834,10 @@ def build_detection_effects_5d_by_bin(
         effects_true_3d = effects_true_3d_int
         effects_mask_3d = effects_mask_3d_int
 
-    k_a_3 = loss_channel_1517_single_photon(float(eta_H_A), float(eta_V_A))
-    k_b_3 = loss_channel_1517_single_photon(float(eta_H_B), float(eta_V_B))
+    eta_peak_a = float(np.clip(filter_eta_peak_A, 0.0, 1.0))
+    eta_peak_b = float(np.clip(filter_eta_peak_B, 0.0, 1.0))
+    k_a_3 = loss_channel_1517_single_photon(float(eta_H_A) * eta_peak_a, float(eta_V_A) * eta_peak_a)
+    k_b_3 = loss_channel_1517_single_photon(float(eta_H_B) * eta_peak_b, float(eta_V_B) * eta_peak_b)
     effects_all_3d = apply_local_channel_adjoint(effects_all_3d, k_a_3, k_b_3)
     effects_true_3d = apply_local_channel_adjoint(effects_true_3d, k_a_3, k_b_3)
     effects_mask_3d = apply_local_channel_adjoint_masked(effects_mask_3d, k_a_3, k_b_3)

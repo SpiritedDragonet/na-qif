@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
+EXPORT_PNG = False
+
 
 PATTERN_ORDER = (
     "pattern_h1v2",
@@ -345,7 +347,8 @@ def main() -> None:
 
     out_base = pathlib.Path(__file__).with_suffix("")
     fig.savefig(out_base.with_suffix(".pdf"), dpi=260)
-    fig.savefig(out_base.with_suffix(".png"), dpi=220)
+    if EXPORT_PNG:
+        fig.savefig(out_base.with_suffix(".png"), dpi=220)
     plt.close(fig)
 
 

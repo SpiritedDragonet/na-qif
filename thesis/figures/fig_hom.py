@@ -4,6 +4,8 @@ import pathlib
 import matplotlib.pyplot as plt
 import numpy as np
 
+EXPORT_PNG = False
+
 
 def _default_summary_csv() -> pathlib.Path:
     data_root = pathlib.Path(__file__).resolve().parents[1] / "data"
@@ -167,7 +169,8 @@ def main() -> None:
 
     out_base = pathlib.Path(__file__).with_suffix("")
     plt.savefig(out_base.with_suffix(".pdf"), dpi=220)
-    plt.savefig(out_base.with_suffix(".png"), dpi=220)
+    if EXPORT_PNG:
+        plt.savefig(out_base.with_suffix(".png"), dpi=220)
     plt.close()
 
 
