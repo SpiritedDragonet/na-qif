@@ -32,9 +32,7 @@ $F_t$ & 真成功口径条件保真度 & 仅以真成功事件构造的条件保
 \end{tabularx}
 \end{table}
 其中 $p_f$ 继续分解为本征暗计数分量与背景分量
-\begin{equation}
-p_f=p_{\mathrm{id}}+p_{\mathrm{bg}},
-\end{equation}
+$p_f=p_{\mathrm{id}}+p_{\mathrm{bg}}$，
 该分解直接对应实验中的误触发来源区分。
 
 为避免“只拟合末端指标”，参数先锚定到文献中可独立测量量，再进入仿真。表 \ref{tab:param-anchor} 给出本章主用锚点；这些量与后续洪-欧-曼德尔干涉（Hong-Ou-Mandel interference，HOM）拟合和误差预算一一对应。其中探测端暗计数参数采用超导纳米线单光子探测器（superconducting nanowire single-photon detector，SNSPD）口径。
@@ -138,8 +136,10 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 \end{figure}
 图 \ref{fig:hom} 纵轴采用二阶关联量
 \begin{equation}
-g^{(2)}_{HH,VV}(\tau)=\frac{P_{2}(\tau)}{\langle P_{2}(|\tau|\ge\tau_{\mathrm{edge}})\rangle},\qquad
-P_{2}(\tau)=\frac{C_{2}(\tau)}{N_{\mathrm{shot}}(\tau)},
+\begin{aligned}
+g^{(2)}_{HH,VV}(\tau)&=\frac{P_{2}(\tau)}{\langle P_{2}(|\tau|\ge\tau_{\mathrm{edge}})\rangle},\\
+P_{2}(\tau)&=\frac{C_{2}(\tau)}{N_{\mathrm{shot}}(\tau)},
+\end{aligned}
 \end{equation}
 其中 $C_2(\tau)$ 表示时延为 $\tau$ 时同偏振跨端口双点击计数（$H1$-$H2$ 或 $V1$-$V2$），$N_{\mathrm{shot}}(\tau)$ 为对应时延采样的总尝试数，$\tau_{\mathrm{edge}}$ 取 $|\tau|$ 外侧 $15\%$ 区间的阈值。曲线采用
 \begin{equation}
@@ -210,10 +210,10 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 最后给出误差归因与部署判据。
 
 误差预算采用分组边际法。设 $g$ 表示噪声组（源端、QFC+滤波、光纤、探测），定义
-\begin{equation}
-\Delta F_g=F_{\mathrm{ideal}}-F_{g\ \mathrm{only}},\qquad
-\Delta p_g=p_{\mathrm{ideal}}-p_{g\ \mathrm{only}}.
-\end{equation}
+\begin{align}
+\Delta F_g &= F_{\mathrm{ideal}}-F_{g\ \mathrm{only}},\\
+\Delta p_g &= p_{\mathrm{ideal}}-p_{g\ \mathrm{only}}.
+\end{align}
 与“全开”运行联合分析，可判断瓶颈是否发生迁移，例如从源端退相干主导迁移到暗计数主导。真假成功分解的价值在于：若 $p_s$ 上升同时 $F_t$ 稳定而 $p_f/p_s$ 抬升，则主要问题是误触发；若 $p_f$ 低而 $F_t$ 下降，则主要问题在真实干涉质量（不可分辨性、相位与偏振链路）。
 
 在该分解下，误差归因可按“触发链路”和“干涉链路”两类展开：前者由背景、暗计数与窗口主导，后者由波包匹配、相位稳定与偏振补偿主导。分组后参数扫描空间显著收敛，实验-仿真闭环的调参轮次可控。
@@ -256,9 +256,7 @@ T_w = T_{\rm em}+T_{\rm qm}+T_{\rm fib}+T_{\rm dep}+T_{\rm det}+T_{\rm aux}+T_{\
 \label{eq:timing-closure}
 \end{equation}
 据此有
-\begin{equation}
-\frac{T_{\rm det}}{T_w}=99.42\%,
-\end{equation}
+$\frac{T_{\rm det}}{T_w}=99.42\%$，
 即当前瓶颈明确位于探测阶段，态端动力学阶段占比很小。
 
 \begin{figure}[htbp]
@@ -275,9 +273,7 @@ T_w = T_{\rm em}+T_{\rm qm}+T_{\rm fib}+T_{\rm dep}+T_{\rm det}+T_{\rm aux}+T_{\
 \end{equation}
 再在 $\mathcal{C}_{\rm hard}$ 内优化软目标（如单位墙钟真成功数）。该顺序可避免“仅压缩墙钟却牺牲可用纠缠质量”的误优化。
 在本论文的代表性部署口径下，可采用示例阈值
-\begin{equation}
-F_{\min}=0.80,\qquad S_{\min}=2.0,\qquad T_{\max}=3600\,\mathrm{s},
-\end{equation}
+$F_{\min}=0.80$、$S_{\min}=2.0$ 与 $T_{\max}=3600\,\mathrm{s}$，
 并据此筛选满足任务约束的工作点集合。
 
 \section{本章小结}[Chapter Summary]

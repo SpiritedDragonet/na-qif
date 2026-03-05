@@ -91,8 +91,10 @@ R_{\mathrm{ent}}=f_{\mathrm{rep}}\,p_s,
 
 承接前述问题链条与方法必要性，本文聚焦于中性原子量子计算体系中的光子—原子量子接口，并将研究重心放在一个面向近期实验迭代的核心问题上：如何在同时包含频率转换、长光纤偏振演化/PMD、滤波器件记忆效应和真实探测器噪声的端到端链路中，定量预测远程纠缠建立的成功率与条件态保真度，并把这些结果与可调实验参数建立可追溯的一一对应关系。为此，本文将接口链路统一写成“随时间 bin 演化的量子线路（quantum circuit）+ 测量条件化（heralding）”过程：源端将原子态信息编码到光子偏振/时间模式，链路器件以幺正变换或量子信道形式作用于光子态，中继站通过干涉与探测生成点击记录并在成功事件集合 $\mathcal{S}$ 上完成条件化推断；我们最终关注的是条件后验原子态及其保真度、纠缠度量与参数漂移鲁棒性，并将该问题抽象为
 \begin{equation}
-p_{\mathrm{succ}}=\sum_{m\in\mathcal{S}}\mathrm{Tr}\!\left(E_m\,\rho_0\right),\qquad
-\rho_{\mathrm{at}\mid\mathrm{succ}}=\frac{1}{p_{\mathrm{succ}}}\sum_{m\in\mathcal{S}}\mathrm{Tr}_{\mathrm{field}}\!\left(M_m\,\rho_0\,M_m^\dagger\right),
+p_{\mathrm{succ}}=\sum_{m\in\mathcal{S}}\mathrm{Tr}\!\left(E_m\,\rho_0\right).
+\end{equation}
+\begin{equation}
+\rho_{\mathrm{at}\mid\mathrm{succ}}=\frac{1}{p_{\mathrm{succ}}}\sum_{m\in\mathcal{S}}\mathrm{Tr}_{\mathrm{field}}\!\left(M_m\,\rho_0\,M_m^\dagger\right).
 \end{equation}
 其中 $\rho_0$ 是原子—光场初态，$M_m$ 为测量 Kraus，$E_m=M_m^\dagger M_m$ 为对应 POVM effect；链路中的损耗与频率转换等非幺正过程通过对偶映射推回 effect：若 $\Lambda$ 为信道，则 $\mathrm{Tr}(\Lambda(\rho)E)=\mathrm{Tr}(\rho\,\Lambda^\dagger(E))$。这一写法把发射与偏振映射、量子频率转换、滤波记忆、光纤偏振演化与 PMD、干涉与贝尔态测量、以及探测器效率/暗计数等因素统一纳入同一条时间序列量子演化，并与第一性原理数值框架（时间 bin 离散 + MPS/TEBD 演化 + POVM 收缩与 Heisenberg 推回 + 可选点击抽样）直接对接，使系统能够在可控算力下处理数百量级时间 bin 的脉冲与测量条件化问题，输出成功率、条件态密度矩阵、保真度与误差分解等实验可对齐统计量，从而把“接口器件指标”与“分布式量子计算/量子网络协议资源指标”连接为可审计的定量链路。\cite{Pichler2016TimeDelaysMPS,Yanagimoto2021MPSQuantumPulsePropagation,vanleent2022entangling,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}。%
 

@@ -62,10 +62,10 @@ S_n\le \log \chi_n,
 规范自由度与正则化计算是这一表示可稳定落地的第一步。
 
 MPS 在相邻张量间存在规范变换
-\begin{equation}
-A^{[n]}\rightarrow A^{[n]}X,\qquad
-A^{[n+1]}\rightarrow X^{-1}A^{[n+1]},
-\end{equation}
+\begin{align}
+A^{[n]} &\rightarrow A^{[n]}X,\\
+A^{[n+1]} &\rightarrow X^{-1}A^{[n+1]}.
+\end{align}
 其物理态不变。利用该自由度可构造混合正则形式：左侧张量满足左等距，右侧张量满足右等距，中心站点携带 Schmidt 谱。记中心左侧对角矩阵为 $\Lambda^{[n]}$，则该键纠缠谱直接由 $\Lambda^{[n]}$ 读出。
 
 正则形式带来两点收益：一是局域期望值和关联函数可在稳定条件下逐步收缩；二是局域门更新后只需局域重分解即可恢复数值稳定性。
@@ -145,17 +145,18 @@ O(Nd^3\chi^3),
 
 开放系统演化写为完全正且保持迹映射（completely positive and trace-preserving，CPTP）
 \begin{equation}
-\mathcal{E}(\rho)=\sum_{\mu}K_\mu \rho K_\mu^\dagger,\qquad
-\sum_{\mu}K_\mu^\dagger K_\mu=I.
+\begin{aligned}
+\mathcal{E}(\rho)&=\sum_{\mu}K_\mu \rho K_\mu^\dagger,\\
+\sum_{\mu}K_\mu^\dagger K_\mu&=I.
+\end{aligned}
 \label{eq:ch2-kraus}
 \end{equation}
 纯态框架下可采用量子轨迹表述：
 \begin{equation}
 |\psi\rangle\rightarrow
-|\psi_\mu\rangle=\frac{K_\mu|\psi\rangle}{\|K_\mu|\psi\rangle\|},
-\qquad
-p_\mu=\|K_\mu|\psi\rangle\|^2.
+|\psi_\mu\rangle=\frac{K_\mu|\psi\rangle}{\|K_\mu|\psi\rangle\|}.
 \end{equation}
+并且轨迹概率为 $p_\mu=\|K_\mu|\psi\rangle\|^2$。
 轨迹平均恢复式 \eqref{eq:ch2-kraus} 的统计结果。该表示与“单次实验随机记录”的物理过程同构，适合输出事件级观测量。
 
 Heisenberg 对偶映射把开放系统噪声统一推回到 effect 端。
@@ -164,11 +165,10 @@ Heisenberg 对偶映射把开放系统噪声统一推回到 effect 端。
 \begin{equation}
 \mathrm{Tr}\!\left[\Lambda(\rho)E\right]
 \;=\;
-\mathrm{Tr}\!\left[\rho\,\Lambda^\dagger(E)\right],
-\qquad
-\Lambda^\dagger(E)=\sum_k K_k^\dagger E K_k.
+\mathrm{Tr}\!\left[\rho\,\Lambda^\dagger(E)\right].
 \label{eq:ch2-adjoint}
 \end{equation}
+其中 $\Lambda^\dagger(E)=\sum_k K_k^\dagger E K_k$。
 式 \eqref{eq:ch2-adjoint} 允许把链路中的损耗、旋转、相位噪声和探测效率全部推回到测量端 effect，而态端仍维持纯态 MPS 演化。对幺正门 $U$，对偶映射即
 \begin{equation}
 E\mapsto U^\dagger E U.
@@ -178,17 +178,19 @@ E\mapsto U^\dagger E U.
 在得到对偶映射后，POVM 条件化用于定义成功事件与后验态。
 
 广义测量由 POVM $\{\Pi_m\}$ 给出，
-\begin{equation}
-\Pi_m\succeq 0,\qquad \sum_m \Pi_m=I,\qquad
-p_m=\mathrm{Tr}(\Pi_m\rho).
-\end{equation}
+\begin{align}
+\Pi_m &\succeq 0,\\
+\sum_m \Pi_m &= I,\\
+p_m &= \mathrm{Tr}(\Pi_m\rho).
+\end{align}
 若 $m\in\mathcal{S}$ 定义为成功记录集，则
 \begin{equation}
-p_{\mathcal{S}}=\sum_{m\in\mathcal{S}}p_m,
-\qquad
+p_{\mathcal{S}}=\sum_{m\in\mathcal{S}}p_m.
+\end{equation}
+\begin{equation}
 \rho_{\mathcal{S}}=
 \frac{1}{p_{\mathcal{S}}}
-\sum_{m\in\mathcal{S}}M_m\rho M_m^\dagger,
+\sum_{m\in\mathcal{S}}M_m\rho M_m^\dagger.
 \end{equation}
 其中 $\Pi_m=M_m^\dagger M_m$。这一条件化公式给出后续 Bell 保真度、CHSH 与真假成功分解的统一理论起点，并把“事件定义差异”从经验口径提升为可审计的算符层差异。
 
@@ -206,9 +208,7 @@ p_{\mathcal{S}}=\sum_{m\in\mathcal{S}}p_m,
 式 \eqref{eq:ch2-op-impl-consistency} 是式 \eqref{eq:ch2-adjoint} 在端到端链路上的直接扩展，保证“态端演化 + effect 端推回”与“全链路正向演化”在概率层面完全等价。换言之，第3章对测量链路的推回不是近似技巧，而是同一物理模型在 Heisenberg 图像下的等价表达。
 
 为了使这一等价在离散时间实现中保持稳定，还需要约束时间步口径与无量纲组合的一致性。对于发射与耗散主导的离散门，决定动力学的关键组合可写为
-\begin{equation}
-g\sqrt{\Delta t},\qquad \kappa\Delta t,\qquad \gamma\Delta t.
-\end{equation}
+$g\sqrt{\Delta t}$、$\kappa\Delta t$ 与 $\gamma\Delta t$。
 当 $\Delta t$ 改变时，上述组合必须维持与连续模型同一解释，不能由网格本身重定义物理时间尺度。这一约束把第3章中的参数标定、波包时间常数与窗口扫描统一到同一口径下。
 
 同理，索引重排与子门嵌入也必须满足“概率不变、语义可追踪”的实现条件。无论是 12 维发射体的基序置换，还是 36 维子门到 60 维站点门的分块嵌入，本质都应保持等价变换或恒等扩展，从而保证统计量只受物理参数影响，而不受索引约定影响。第3章将对此给出逐元素可核查的表达，目的是把“实现细节”提升为可审计的数学对象。
