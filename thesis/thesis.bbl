@@ -11,13 +11,6 @@
   \let\eprint\href
 \fi
 
-\bibitem[Wang et~al.(2017)Wang and Clerk]{Wang2017MPSCascadedQuantumSystems}
-WANG C, CLERK A~A.
-\newblock Quantum theory of driven-dissipative cascaded quantum systems:
-  Application to photon-mediated entanglement generation\allowbreak[J/OL].
-\newblock New Journal of Physics, 2017, 19: 113021.
-\newblock DOI: \doi{10.1088/1367-2630/aa8f09}.
-
 \bibitem[Wehner et~al.(2018)Wehner, Elkouss, and
   Hanson]{Wehner2018QuantumInternetVision}
 WEHNER S, ELKOUSS D, HANSON R.
@@ -148,6 +141,13 @@ YANAGIMOTO R, OTHERS.
 Proceedings of SPIE.
 \newblock SPIE, 2021.
 \newblock DOI: \doi{10.1117/12.2576098}.
+
+\bibitem[Wang et~al.(2017)Wang and Clerk]{Wang2017MPSCascadedQuantumSystems}
+WANG C, CLERK A~A.
+\newblock Quantum theory of driven-dissipative cascaded quantum systems:
+  Application to photon-mediated entanglement generation\allowbreak[J/OL].
+\newblock New Journal of Physics, 2017, 19: 113021.
+\newblock DOI: \doi{10.1088/1367-2630/aa8f09}.
 
 \bibitem[Jaynes et~al.(1963)Jaynes and Cummings]{JaynesCummings1963}
 JAYNES E~T, CUMMINGS F~W.

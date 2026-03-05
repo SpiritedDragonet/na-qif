@@ -2,7 +2,7 @@
 
 \chapter{张量网络与开放系统仿真基础}[Foundations of Tensor-Network and Open-System Simulation]
 
-本章建立后续端到端仿真的数学底座。问题的起点是高维量子态表示：若系统由 $N$ 个局域自由度组成、每个局域维度为 $d$，则态空间维数为 $d^N$，直接表示和演化在计算上呈指数增长。张量网络的核心思想是把“全局高阶张量”分解为“局域低阶张量与有限维连接”，并利用物理系统纠缠结构的稀疏性，把可计算域限制在低秩流形上。对于一维链及其顺序相互作用过程，这一结构由矩阵乘积态（MPS）给出最自然表达。
+本章建立后续端到端仿真的数学底座。问题的起点是高维量子态表示：若系统由 $N$ 个局域自由度组成、每个局域维度为 $d$，则态空间维数为 $d^N$，直接表示和演化在计算上呈指数增长。张量网络的核心思想是把“全局高阶张量”分解为“局域低阶张量与有限维连接”，并利用物理系统纠缠结构的稀疏性，把可计算域限制在低秩流形上。对于一维链及其顺序相互作用过程，这一结构由 MPS 给出最自然表达。
 
 \section{从系数张量到低秩结构}[From Coefficient Tensors to Low-Rank Structure]
 
@@ -13,7 +13,7 @@
 \end{equation}
 其中 $C_{s_1\cdots s_N}$ 是 $N$ 阶复张量。式 \eqref{eq:ch2-full-state} 的直接存储量为 $d^N$，因此必须引入结构化分解。
 
-对任意切分 $[1,\ldots,n]\ |\ [n+1,\ldots,N]$，把张量重排为矩阵 $M^{(n)}$ 后做奇异值分解，可得 Schmidt 展开
+对任意切分 $[1,\ldots,n]\ |\ [n+1,\ldots,N]$，把张量重排为矩阵 $M^{(n)}$ 后做奇异值分解（singular value decomposition，SVD），可得 Schmidt 展开
 \begin{equation}
 |\psi\rangle=\sum_{\alpha=1}^{r_n}\lambda_\alpha^{(n)}\,
 |\alpha\rangle_{[1:n]}\otimes|\alpha\rangle_{[n+1:N]},
@@ -143,7 +143,7 @@ O(Nd^3\chi^3),
 
 这一点在实验-仿真闭环中尤为关键：实验记录天然是“点击事件”，而理论模型天然是“态演化”。若两者之间缺乏一致的条件化映射，任何参数反演都可能出现多解退化。通过在本章先给出统一算符框架，后续章节才能把参数扫描结果稳定地解释为具体物理机制，避免仅停留在经验拟合。
 
-开放系统演化写为 CPTP 映射
+开放系统演化写为完全正且保持迹映射（completely positive and trace-preserving，CPTP）
 \begin{equation}
 \mathcal{E}(\rho)=\sum_{\mu}K_\mu \rho K_\mu^\dagger,\qquad
 \sum_{\mu}K_\mu^\dagger K_\mu=I.

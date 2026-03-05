@@ -103,16 +103,18 @@
 \input{front/cover} % 封面和扉页
 %%\authorization[auscan.pdf] % 使用签字扫描版的原创性与授权声明页
 \makecover
+\authorization %授权（前置）
+% \authorization[scan.pdf] %添加扫描页的命令，与上互斥
 \cleardoublepage   % 控制右开页，与前文连续开页时注释掉
 
 \cleardoublepage   % 控制右开页，与前文连续开页时注释掉
 \tableofcontents   % 论文目录
 
 %%\cleardoublepage % 控制右开页，与前文连续开页时注释掉
-\listoffigures     % 插图目录, 如不需要可用 % 注释掉下面两行
+% \listoffigures   % 插图目录（按模板要求可关闭）
 
 %%\cleardoublepage % 控制右开页，与前文连续开页时注释掉
-\listoftables      % 表格目录, 如不需要可用 % 注释掉下面两行
+% \listoftables    % 表格目录（按模板要求可关闭）
 
 %%----------  论文主体，可以根据需要添加章节 --------------
 \cleardoublepage % 控制右开页，后续论文正文一般采用此格式
@@ -133,14 +135,14 @@
 % 本科书序（哈尔滨、深圳校区）
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \bibliography{reference} % 参考文献
-\authorization %授权
+% \authorization %授权（后置关闭）
 % \authorization[scan.pdf] %添加扫描页的命令，与上互斥
 \include{back/acknowledgements} %致谢
 %\include{back/publications}    % 所发文章
 %\include{back/resume}          % 个人简介
 
 \include{back/publications}    % 所发文章
-\authorization %授权
+% \authorization %授权（后置关闭）
 % \authorization[scan.pdf] %添加扫描页的命令，与上互斥
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \end{document}
