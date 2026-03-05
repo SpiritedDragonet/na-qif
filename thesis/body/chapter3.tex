@@ -151,6 +151,77 @@ g\,\sigma_V & 0 & H_{\mathrm{atom}}(t)+\delta_{c,V}I_4
 \end{equation}
 其中 $\tilde H_{\mathrm{em}}=P\,H_{\mathrm{em}}\,P^\dagger$，$P$ 为 atom-major 与 cavity-major 间的置换矩阵。该写法明确显示：对角块是“原子本征演化+腔失谐”，非对角块是“真空与单光子腔模间的受激交换”。
 
+\subsection{12维发射体块结构与基序重排的索引化表达}[Indexed Expression for 12D Emitter Block Structure and Basis Reordering]
+
+为把式 \eqref{eq:emitter-hamiltonian-12d} 与实现中的线性索引一一对应，这里给出 atom-major 与 cavity-major 的显式映射。采用 atom-major 编码时，
+\begin{equation}
+p=3i_a+i_c,\qquad i_a\in\{0,1,2,3\},\ i_c\in\{0,1,2\},
+\label{eq:app-index-atom-major}
+\end{equation}
+其中 $i_a$ 对应 $(|0\rangle,|1\rangle,|e\rangle,|u\rangle)$，$i_c$ 对应 $(|{\rm vac}\rangle,|H\rangle,|V\rangle)$。改用 cavity-major 编码时，
+\begin{equation}
+q=4i_c+i_a.
+\label{eq:app-index-cavity-major}
+\end{equation}
+定义置换矩阵 $P\in\mathbb{C}^{12\times 12}$ 为
+\begin{equation}
+P_{q,p}=
+\begin{cases}
+1,& q=4i_c+i_a,\ p=3i_a+i_c,\\
+0,& \text{其他}.
+\end{cases}
+\label{eq:app-perm}
+\end{equation}
+则两种编码下的发射体哈密顿量满足
+\begin{equation}
+\tilde H_{\rm em}=P\,H_{\rm em}\,P^\dagger.
+\label{eq:app-heqv}
+\end{equation}
+
+将式 \eqref{eq:app-heqv} 展开为 $3\times 3$ 的 $4\times 4$ 块后可得
+\begin{equation}
+\tilde H_{\mathrm{em}}(t)=
+\begin{bmatrix}
+H_{\mathrm{atom}}(t) & g\,\sigma_H^\dagger & g\,\sigma_V^\dagger\\
+g\,\sigma_H & H_{\mathrm{atom}}(t)+\delta_{c,H}I_4 & 0\\
+g\,\sigma_V & 0 & H_{\mathrm{atom}}(t)+\delta_{c,V}I_4
+\end{bmatrix}.
+\label{eq:app-hem-block}
+\end{equation}
+这与式 \eqref{eq:hem-12d-block4} 在物理内容上等价，但这里给出的是“索引到块结构”的显式推导路径。由此可直接区分三类项：原子内部演化（对角）、真空-单光子腔模交换（非对角）以及偏振失谐修正（对角偏移）。
+
+\subsection{36维子门到60维站点门的索引嵌入}[Index Embedding from 36D Sub-Gate to 60D Site Gate]
+
+式 \eqref{eq:g36-emission} 与式 \eqref{eq:u60-embed} 给出了门构造结果。为便于实现核查，这里把两者写成可逐元素检查的索引版本。发射生成元在 $(12\times 3)$ 子空间可写为
+\begin{equation}
+G_{36}
+=
+\sqrt{\Delta t}\sum_{\mu\in\{H,V\}}
+\left(L_{{\rm out},\mu}\otimes b_\mu^\dagger-L_{{\rm out},\mu}^\dagger\otimes b_\mu\right)
+-i\Delta t\,H_{\rm em}\otimes I_3.
+\label{eq:app-g36}
+\end{equation}
+由于每项均为反厄米，$G_{36}^\dagger=-G_{36}$，故
+\begin{equation}
+U_{36}=e^{G_{36}}
+\end{equation}
+严格幺正。
+
+设完整两站点基序为 $(12\mathrm{D}\otimes 5\mathrm{D})$，索引
+\begin{equation}
+r=5i_e+i_b,\qquad c=5j_e+j_b,
+\end{equation}
+其中 $i_e,j_e\in\{0,\dots,11\}$，$i_b,j_b\in\{0,\dots,4\}$。定义 60 维门 $U_{60}$：
+\begin{equation}
+U_{60}[r,c]=
+\begin{cases}
+U_{36}[3i_e+i_b,\ 3j_e+j_b], & i_b<3,\ j_b<3,\\
+\delta_{rc}, & \text{否则}.
+\end{cases}
+\label{eq:app-u60-piecewise}
+\end{equation}
+式 \eqref{eq:app-u60-piecewise} 即“780 子块更新、1517 子块恒等”的精确索引表达。由此也可得到实现检查条件：若输入或输出索引落在 $i_b\ge 3$，矩阵元必须与单位阵对应元一致。
+
 \subsection{连续输出场到时间 bin 发射门}[From Continuous Output Field to Time-Bin Emission Gates]
 
 接口输出场满足输入输出框架 \cite{GardinerCollett1985}。对每个偏振 $\mu\in\{H,V\}$，定义连续场算符 $b_\mu(t)$ 并离散为
@@ -320,6 +391,46 @@ t&r^*
 \end{equation}
 因此“当前 bin 的 1517 分量”和“记忆模占据”在每步进行相干交换并积累跨 bin 相关，形成非马尔可夫尾迹 \cite{ArranzRegidor2021WaveguideQED,Garraway1997DecayStrongReservoir}。
 
+\subsection{滤波记忆步进门的离散推导与幺正性证明}[Discrete Derivation and Unitarity Proof for Memory-Filter Step Gate]
+
+为避免把式 \eqref{eq:filter-recursion-discrete} 仅视为经验更新，这里给出从连续滤波方程到离散步进门的推导与幺正性验证。先从单极点滤波模型
+\begin{equation}
+\dot a_f(t)= -\left(\frac{\kappa_f}{2}+i\delta\right)a_f(t)+\sqrt{\kappa_f}\,b_{\rm in}(t)
+\label{eq:app-filter-ode}
+\end{equation}
+出发，在步长 $\Delta t$ 上做一阶精确离散，可得
+\begin{equation}
+a_{n+1}=r\,a_n+t\,b_n,\qquad
+\tilde b_n=r^*\,b_n-t\,a_n,
+\label{eq:app-filter-discrete}
+\end{equation}
+其中
+\begin{equation}
+r=\exp\!\left[-(\pi\Delta\nu+i2\pi\delta)\Delta t\right],\qquad
+t=\sqrt{1-|r|^2}.
+\label{eq:app-rt}
+\end{equation}
+
+对应二维子块矩阵
+\begin{equation}
+B=
+\begin{bmatrix}
+r&-t\\
+t&r^*
+\end{bmatrix}
+\label{eq:app-B}
+\end{equation}
+满足
+\begin{equation}
+B^\dagger B=
+\begin{bmatrix}
+|r|^2+t^2&0\\
+0&|r|^2+t^2
+\end{bmatrix}
+=I_2.
+\end{equation}
+因此 $B$ 幺正；H/V 两个偏振子块直和后仍幺正，进而整个 $(5\times 3)=15$ 维步进门幺正。该推导与式 \eqref{eq:filter-step-subblock}、式 \eqref{eq:filter-step-tensor} 完全一致。
+
 链布局与唯一路径实现如下。
 
 本工作固定采用显式记忆路径。发射结束布局为
@@ -357,6 +468,25 @@ p_{\mathrm{memA}}\rightarrow 2,\qquad p_{\mathrm{memB}}\rightarrow 3,
 ({\rm atomA,atomB,memA,memB}).
 \end{equation}
 该布局直接服务后续收缩：原子与记忆核在链首，时间 bin 区域结构规则，降低索引管理与 SWAP 调度复杂度。
+
+\subsection{交换调度不变量与终态布局证明}[Swap-Schedule Invariants and Final Layout Proof]
+
+发射阶段与记忆阶段都依赖“相邻交换 + 局部门”的调度模式。其正确性的核心不变量可写为
+\begin{equation}
+\mathcal{I}_1:\ \text{每轮门作用前，系统体右邻/左邻关系满足预设的相邻约束},
+\end{equation}
+\begin{equation}
+\mathcal{I}_2:\ \text{每轮结束后，仅系统体索引改变，bin 相对时序不改变}.
+\end{equation}
+
+以发射阶段为例，若某轮前 atomA、atomB 站点分别为 $p_A,p_B$，则门作用后采用固定交换模板
+\begin{equation}
+\mathsf{S}_{p_A-1}\mathsf{S}_{p_A-2},\qquad
+\mathsf{S}_{p_B-1}\mathsf{S}_{p_B-2}
+\end{equation}
+（末轮对 atomA 保留一次交换），可归纳得到最终前缀必为 $(\mathrm{atomA,atomB})$。记忆阶段同理：每轮先把 $\mathrm{memA},\mathrm{memB}$ 交换到目标 bin 右侧，再施加步进门，最终收拢到前缀 $(\mathrm{atomA,atomB,memA,memB})$。
+
+该归纳的关键不在具体交换次数，而在“目标相邻关系 + 单调移动方向”两条约束同时成立。只要两者保持，链长与窗口变化不会改变终态布局结论。
 
 \section{光纤 BSM Heisenberg-POVM 统一建模}[Unified Heisenberg-POVM Modeling for Fiber BSM]
 
@@ -509,6 +639,32 @@ T_w\approx T_e+T_q+T_n+T_m,
 T_n\propto O\!\left(N\cdot W\cdot C(\chi)\right),
 \end{equation}
 $W$ 为窗口宽度对应的 bin 数，$C(\chi)$ 表示给定键维下的单次收缩成本。该结构解释了“参数几乎不变但窗口或枚举口径改变时墙钟显著变化”的现象。进一步地，若把状态更新、effect 推回与最终枚举看成三层管线，则墙钟时间的主导项在不同任务类型下会迁移：参数扫描任务通常受 $T_n$ 主导，而单次高精度结构分析则更受 $C(\chi)$ 的局域高秩峰值主导。这一分解直接指导第四章中的性能诊断与优化优先级设定。
+
+\subsection{计时闭合关系与主导项判据}[Timing Closure and Dominant-Term Criterion]
+
+为与运行剖面保持一致，定义总墙钟时间的计时闭合关系
+\begin{equation}
+T_w=T_{\rm phy}+T_{\rm det,b}+T_{\rm det,m}+T_{\rm aux}+T_{\rm res},
+\label{eq:app-time-closure}
+\end{equation}
+其中
+\begin{equation}
+T_{\rm phy}=T_{\rm em}+T_{\rm qm}+T_{\rm fib}+T_{\rm dep},
+\end{equation}
+\begin{equation}
+T_{\rm det,b}=T_{\rm b,eff}+T_{\rm b,enum}+T_{\rm b,samp},\qquad
+T_{\rm det,m}=T_{\rm m,eff}+T_{\rm m,enum}+T_{\rm m,samp},
+\end{equation}
+\begin{equation}
+T_{\rm aux}=T_{\rm chk}+T_{\rm hk,p}+T_{\rm hk,s}+T_{\rm par}+T_{\rm met}+T_{\rm io,s}+T_{\rm io,d}+T_{\rm post}.
+\end{equation}
+
+式 \eqref{eq:app-time-closure} 与前述粗粒度表达 $T_w\approx T_e+T_q+T_n+T_m$ 一致，只是把检测与管理阶段进一步拆分到可诊断项。由此可定义无量纲主导比
+\begin{equation}
+\rho_{\rm enum}=\frac{T_{\rm b,enum}+T_{\rm m,enum}}{T_w},\qquad
+\rho_{\rm phy}=\frac{T_{\rm phy}}{T_w}.
+\end{equation}
+当 $\rho_{\rm enum}\gg \rho_{\rm phy}$ 时，优化优先级应落在 effect 枚举与收缩；反之才应优先优化态端动力学。该判据比只观察 $T_w$ 更能避免瓶颈误判。
 
 \begin{figure}[htbp]
 \centering

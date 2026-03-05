@@ -125,6 +125,7 @@
 \DeclareBoolOption[true]{newtxmath}
 \DeclareBoolOption[false]{splitbibitem}
 \DeclareBoolOption[false]{engtoc}
+\DeclareBoolOption[false]{eqfullwidthparen}
 \DeclareStringOption{fontset}
 \DeclareDefaultOption{\PassOptionsToClass{\CurrentOption}{ctexbook}}
 \ProcessKeyvalOptions*
@@ -363,11 +364,14 @@
   \clearpage{\pagestyle{hit@empty}\hit@cleardoublepage}
 }
 \let\cleardoublepage\hit@clearemptydoublepage
+\newif\ifhit@docxheadermain
+\hit@docxheadermainfalse
 \renewcommand\frontmatter{%
   \ifhit@openright\cleardoublepage\else\clearpage\fi
   \@mainmatterfalse
   \pagenumbering{Roman}
   \pagestyle{hit@empty}
+  \hit@docxheadermainfalse
 \ifhit@openright\cleardoublepage\else\clearpage\fi
 \ifhit@zijvword
 \ziju{0.05416667}
@@ -394,10 +398,12 @@
   \@mainmattertrue
   \pagenumbering{arabic}
   \pagestyle{hit@headings}
+  \hit@docxheadermaintrue
 }
 \renewcommand\backmatter{%
   \ifhit@openright\cleardoublepage\else\clearpage\fi
-  \@mainmattertrue}
+  \@mainmattertrue
+  \hit@docxheadermainfalse}
 \renewcommand\normalsize{%
   \@setfontsize\normalsize{12bp}{\ifhit@glue 20.50394bp \@plus 2.834646bp \@minus 0bp\else 20.50394bp\fi}%
   \abovedisplayskip=8pt
@@ -468,7 +474,7 @@
     \else
       \ifhit@master
         \ifhit@harbin
-          \fancyhead[C]{\songti\xiaowu[0]\hit@cschoolname\hit@cxuewei\hit@cthesisname}
+          \fancyhead[C]{\songti\xiaowu[0]\ifodd\value{page}\ifhit@docxheadermain\leftmark\else\hit@ctitle\fi\else\hit@cschoolname\hit@cxuewei\hit@cthesisname\fi}
         \fi
         \ifhit@shenzhen
           \if@mainmatter
@@ -580,9 +586,15 @@
     (\ignorespaces\text{\equationname\hskip0.5em}#1\unskip\@@italiccorr)\equcaption{#1}}}
 \fi
 \fi
+\ifhit@eqfullwidthparen
+\def\hit@maketag#1{\maketag@@@{（\ignorespaces #1\unskip\@@italiccorr）}}
+\def\tagform@#1{\maketag@@@{（\ignorespaces #1\unskip\@@italiccorr）\equcaption{#1}}}
+\renewcommand{\eqref}[1]{\textup{（\ref{#1}）}}
+\else
 \def\hit@maketag#1{\maketag@@@{(\ignorespaces #1\unskip\@@italiccorr)}}
 \def\tagform@#1{\maketag@@@{(\ignorespaces #1\unskip\@@italiccorr)\equcaption{#1}}}
 \renewcommand{\eqref}[1]{\textup{(\ref{#1})}}
+\fi
 \ifhit@postdoc
 \setlength{\intextsep}{10.5bp}
 \setlength{\textfloatsep}{10.5bp}
@@ -1064,6 +1076,16 @@
 
 \hit@def@term{cstudentid}%
 \hit@def@term{cstudenttype}%
+\newif\ifhit@showcstudenttype
+\hit@showcstudenttypetrue
+\define@key{hit}{showcstudenttype}[true]{%
+  \def\hit@tmp@showcstudenttype{#1}%
+  \expandafter\ifx\csname hit@showcstudenttype\hit@tmp@showcstudenttype\endcsname\relax
+    \ClassWarning{hithesisbook}{Invalid value '#1' for key 'showcstudenttype'. Use true or false.}%
+  \else
+    \csname hit@showcstudenttype\hit@tmp@showcstudenttype\endcsname
+  \fi
+}
 \hit@def@term{ctitleone}%
 \hit@def@term{ctitletwo}%
 
@@ -1375,7 +1397,11 @@
           bool {hit@fulltime}
         }{}
         {
-          \hit@cbraceleft\hit@cstudenttype\hit@cbraceright
+          \ifhit@showcstudenttype
+            \ifx\hit@cstudenttype\@empty\else
+              \hit@cbraceleft\hit@cstudenttype\hit@cbraceright
+            \fi
+          \fi
         }
       \end{center}
       \ifboolexpr{bool {hit@harbin} and bool {hit@bachelor}}

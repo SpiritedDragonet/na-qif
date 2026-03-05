@@ -12,7 +12,7 @@
 %                  https://gitee.com/liwenhui/heuthesis
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\documentclass[fontset=windows,type=master,campus=harbin]{hithesisbook}
+\documentclass[fontset=windows,type=master,campus=harbin,eqfullwidthparen=true]{hithesisbook}
 % 此处选项中不要有空格
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 必填选项
@@ -101,7 +101,6 @@
 \begin{document}
 \frontmatter
 \input{front/cover} % 封面和扉页
-\authorization               % 使用模板生成的原始原创性与授权声明页
 %%\authorization[auscan.pdf] % 使用签字扫描版的原创性与授权声明页
 \makecover
 \cleardoublepage   % 控制右开页，与前文连续开页时注释掉
@@ -140,9 +139,6 @@
 %\include{back/publications}    % 所发文章
 %\include{back/resume}          % 个人简介
 
-\begin{appendix}%附录
-\input{back/appA.tex}
-\end{appendix}
 \include{back/publications}    % 所发文章
 \authorization %授权
 % \authorization[scan.pdf] %添加扫描页的命令，与上互斥
