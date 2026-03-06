@@ -2,7 +2,7 @@
 
 本章给出与当前模型路径一一对应的物理描述与数值流程。目标是建立从第一性原理出发、到可计算门操作结束的闭环：同一组参数既进入哈密顿量与信道，也进入最终可观测指标（成功率、真假成功分解、条件保真度、CHSH）。本章叙述严格对应当前主路径：发射态端演化 + 显式 QFC/滤波记忆链 + 光纤/BSM 在 Heisenberg 端推回 POVM。
 
-\section{从量子电动力学（quantum electrodynamics，QED）到四能级原子-腔有效模型}[From Quantum Electrodynamics (QED) to the Four-Level Atom-Cavity Effective Model]
+\section{从量子电动力学（QED）到四能级原子-腔有效模型}[From Quantum Electrodynamics (QED) to the Four-Level Atom-Cavity Effective Model]
 
 本节先给出从场论描述到可计算离散模型的映射主线，再进入具体门构造。核心目标是把连续时间、开放系统的原子-光场耦合问题，压缩为可在时间 bin 链上逐步施加的局域更新：先由 QED 拉氏量经过低能与偶极近似、有限能级截断和旋转波近似，得到四能级原子与偏振腔模的有效哈密顿量；再把相干项与耗散项分离，分别对应幺正更新与塌缩通道；最终在离散时间步长 $\Delta t$ 下形成可直接进入 MPS/TEBD 的门算符。本节的输出对象按维度依次为 4 维原子相干块、12 维发射体哈密顿量与 60 维发射体-单 bin 两站点门，它们共同构成后续 QFC、光纤与 POVM 推回建模的统一起点。
 
@@ -458,7 +458,7 @@ QFC+滤波阶段引入两臂记忆模，逐 bin 相邻作用后收拢为唯一�
 {\rm atomA,\ atomB,\ memA,\ memB,\ A1,\ B1,\ldots, AN,\ BN}.
 \label{eq:final-chain-layout}
 \end{equation}
-其 SWAP 调度同样可写成显式形式。先在链尾追加记忆模：
+其交换门（swap gate，SWAP）调度同样可写成显式形式。先在链尾追加记忆模：
 \begin{equation}
 \mathcal{L}_{\mathrm{q},0}=
 ({\rm atomA,atomB,A_1,B_1,\ldots,A_N,B_N,memA,memB}).
@@ -680,3 +680,4 @@ T_w=T_{\rm phy}+T_{\rm det}+T_{\rm aux}+T_{\rm res},
 \section{本章小结}[Chapter Summary]
 
 本章从 QED 出发，建立了端到端模型：四能级原子-腔发射门、5D QFC 门、5D$\times$3D 滤波记忆门、以及 Heisenberg 端的光纤与 BSM-POVM 收缩。核心技术路线为“态端保留发射与记忆核，线性光学和损耗推回 effect”。在不牺牲物理可解释性的前提下，该路线将复杂链路压缩为可枚举、可分解、可做误差预算的计算流程，为下一章的实验对照结果与参数扫描提供统一基线。
+

@@ -90,12 +90,6 @@ WEHNER S, ELKOUSS D, HANSON R.
 \newblock Science, 2018, 362\allowbreak (6412): eaam9288.
 \newblock DOI: \doi{10.1126/science.aam9288}.
 
-\bibitem[Kimble(2008)]{kimble2008quantum}
-KIMBLE H~J.
-\newblock The quantum internet\allowbreak[J/OL].
-\newblock Nature, 2008, 453\allowbreak (7198): 1023-1030.
-\newblock DOI: \doi{10.1038/nature07127}.
-
 \bibitem[{NTT DOCOMO, INC.}(2026)]{Docomo2026TAListOptimization}
 {NTT DOCOMO, INC.}
 \newblock
@@ -134,6 +128,12 @@ FOWLER A~G, MARIANTONI M, MARTINIS J~M, et~al.
   computation\allowbreak[J/OL].
 \newblock Physical Review A, 2012, 86\allowbreak (3): 032324.
 \newblock DOI: \doi{10.1103/PhysRevA.86.032324}.
+
+\bibitem[Kimble(2008)]{kimble2008quantum}
+KIMBLE H~J.
+\newblock The quantum internet\allowbreak[J/OL].
+\newblock Nature, 2008, 453\allowbreak (7198): 1023-1030.
+\newblock DOI: \doi{10.1038/nature07127}.
 
 \bibitem[Reiserer(2022)]{Reiserer2022CavityEnhancedNetworkNodes}
 REISERER A.
