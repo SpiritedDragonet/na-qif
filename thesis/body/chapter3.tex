@@ -45,23 +45,23 @@ S_- &= |1\rangle\langle e|.
 \end{align}
 其矩阵形式为
 \begin{equation}
-\begin{aligned}
-S_+&=
+S_+=
 \begin{bmatrix}
 0&0&1&0\\
 0&0&0&0\\
 0&0&0&0\\
 0&0&0&0
-\end{bmatrix},\\
-S_-&=
+\end{bmatrix},
+\label{eq:splus-sminus-matrix}
+\end{equation}
+\begin{equation}
+S_-=
 \begin{bmatrix}
 0&0&0&0\\
 0&0&1&0\\
 0&0&0&0\\
 0&0&0&0
 \end{bmatrix}.
-\end{aligned}
-\label{eq:splus-sminus-matrix}
 \end{equation}
 将 Clebsch-Gordan 系数和偏振映射吸收入矩阵 $\boldsymbol{\alpha}\in\mathbb{C}^{2\times 2}$，定义
 \begin{align}
@@ -71,44 +71,43 @@ S_-&=
 \end{align}
 即
 \begin{equation}
-\begin{aligned}
-\sigma_H&=
+\sigma_H=
 \begin{bmatrix}
 0&0&\alpha_{H,+}&0\\
 0&0&\alpha_{H,-}&0\\
 0&0&0&0\\
 0&0&0&0
-\end{bmatrix},\\
-\sigma_V&=
+\end{bmatrix},
+\label{eq:sigma-hv-matrix}
+\end{equation}
+\begin{equation}
+\sigma_V=
 \begin{bmatrix}
 0&0&\alpha_{V,+}&0\\
 0&0&\alpha_{V,-}&0\\
 0&0&0&0\\
 0&0&0&0
 \end{bmatrix}.
-\end{aligned}
-\label{eq:sigma-hv-matrix}
 \end{equation}
 当某通道在选择定则下禁阻时，对应 $\alpha_{\mu,\pm}$ 或塌缩率 $\gamma_\pm$ 取零（或实验标定极小值），该通道在门构造中自动抑制。
 
 腔体采用三维截断基 $\{|{\rm vac}\rangle,|H\rangle,|V\rangle\}$，其湮灭算符为
 \begin{equation}
-\begin{aligned}
-a_H&=
+a_H=
 \begin{bmatrix}
 0&1&0\\
 0&0&0\\
 0&0&0
 \end{bmatrix},
-\\
-a_V&=
+\label{eq:cavity-annihilation-3d}
+\end{equation}
+\begin{equation}
+a_V=
 \begin{bmatrix}
 0&0&1\\
 0&0&0\\
 0&0&0
 \end{bmatrix}.
-\end{aligned}
-\label{eq:cavity-annihilation-3d}
 \end{equation}
 定义 12 维发射体基序
 \begin{equation}
@@ -338,29 +337,29 @@ U_{\mathrm{QFC}}=
 
 参照波导 QED 的离散记忆表示 \cite{ArranzRegidor2021WaveguideQED}，先写单偏振滤波腔的输入输出方程
 \begin{equation}
-\begin{aligned}
-\dot a_f(t)&= -\left(\frac{\kappa_f}{2}+i\delta\right)a_f(t)+\sqrt{\kappa_f}\,b_{\mathrm{in}}(t),\\
-b_{\mathrm{out}}(t)&=b_{\mathrm{in}}(t)-\sqrt{\kappa_f}\,a_f(t).
-\end{aligned}
+\dot a_f(t)= -\left(\frac{\kappa_f}{2}+i\delta\right)a_f(t)+\sqrt{\kappa_f}\,b_{\mathrm{in}}(t),
 \label{eq:filter-io-continuous}
+\end{equation}
+\begin{equation}
+b_{\mathrm{out}}(t)=b_{\mathrm{in}}(t)-\sqrt{\kappa_f}\,a_f(t).
 \end{equation}
 其中 $\delta$ 表示滤波腔与信号中心频率之间的失谐。
 在时间 bin 离散后，令 $\Delta\nu=\kappa_f/(2\pi)$，可写成
 \begin{equation}
-\begin{aligned}
-a_{n+1}&=r\,a_n+t\,b_n,\\
-\tilde b_n&=r^*\,b_n-t\,a_n,
-\end{aligned}
+a_{n+1}=r\,a_n+t\,b_n,
 \label{eq:filter-recursion-discrete}
+\end{equation}
+\begin{equation}
+\tilde b_n=r^*\,b_n-t\,a_n.
 \end{equation}
 这里 $b_n$ 与 $\tilde b_n$ 分别表示第 $n$ 个时间 bin 的输入场与输出场算符。
 其中
 \begin{equation}
-\begin{aligned}
-r&=\exp\!\left[-\left(\pi\Delta\nu+i2\pi\delta\right)\Delta t\right],\\
-t&=\sqrt{1-|r|^2},
-\end{aligned}
+r=\exp\!\left[-\left(\pi\Delta\nu+i2\pi\delta\right)\Delta t\right],
 \label{eq:filter-rt}
+\end{equation}
+\begin{equation}
+t=\sqrt{1-|r|^2}.
 \end{equation}
 满足 $|r|^2+t^2=1$。
 
@@ -413,19 +412,19 @@ t&r^*
 \end{equation}
 出发，在步长 $\Delta t$ 上做一阶精确离散，可得
 \begin{equation}
-\begin{aligned}
-a_{n+1}&=r\,a_n+t\,b_n,\\
-\tilde b_n&=r^*\,b_n-t\,a_n,
-\end{aligned}
+a_{n+1}=r\,a_n+t\,b_n,
 \label{eq:app-filter-discrete}
+\end{equation}
+\begin{equation}
+\tilde b_n=r^*\,b_n-t\,a_n.
 \end{equation}
 其中
 \begin{equation}
-\begin{aligned}
-r&=\exp\!\left[-(\pi\Delta\nu+i2\pi\delta)\Delta t\right],\\
-t&=\sqrt{1-|r|^2}.
-\end{aligned}
+r=\exp\!\left[-(\pi\Delta\nu+i2\pi\delta)\Delta t\right],
 \label{eq:app-rt}
+\end{equation}
+\begin{equation}
+t=\sqrt{1-|r|^2}.
 \end{equation}
 
 对应二维子块矩阵

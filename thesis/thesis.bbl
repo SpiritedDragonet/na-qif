@@ -1,4 +1,4 @@
-\begin{thebibliography}{23}
+\begin{thebibliography}{52}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{#1}
 \expandafter\ifx\csname urlstyle\endcsname\relax\else
@@ -11,6 +11,94 @@
   \let\eprint\href
 \fi
 
+\bibitem[Preskill(2018)]{Preskill2018NISQ}
+PRESKILL J.
+\newblock Quantum computing in the nisq era and beyond\allowbreak[J/OL].
+\newblock Quantum, 2018, 2: 79.
+\newblock DOI: \doi{10.22331/q-2018-08-06-79}.
+
+\bibitem[{NTT DOCOMO} et~al.(2024){NTT DOCOMO} and {D-Wave Quantum
+  Inc.}]{NTTDocomoDWave2024QuantumOptimization}
+{NTT DOCOMO}, {D-Wave Quantum Inc.}
+\newblock Ntt docomo and d-wave improve mobile network performance by 15\% with
+  quantum optimization technology\allowbreak[EB/OL].
+\newblock 2024.
+\newblock
+  \url{https://www.businesswire.com/news/home/20240820439869/en/NTT-DOCOMO-and-D-Wave-Improve-Mobile-Network-Performance-by-15-With-Quantum-Optimization-Technology}.
+
+\bibitem[Dent et~al.(2026)Dent, Stoddard, Smith,
+  et~al.]{Dent2026WildfireFuelbreak}
+DENT S, STODDARD K, SMITH M, et~al.
+\newblock Network separation modeling and quantum computing for developing
+  wildfire fuelbreak strategy\allowbreak[J/OL].
+\newblock Communications Engineering, 2026, 5: 32.
+\newblock DOI: \doi{10.1038/s44172-026-00585-9}.
+
+\bibitem[{National Academies of Sciences, Engineering, and
+  Medicine}(2019)]{NationalAcademies2019QC}
+{National Academies of Sciences, Engineering, and Medicine}.
+\newblock Quantum computing: Progress and prospects\allowbreak[M/OL].
+\newblock Washington, DC: The National Academies Press, 2019.
+\newblock DOI: \doi{10.17226/25196}.
+
+\bibitem[Awschalom et~al.(2021)Awschalom, Berggren, Bernien,
+  et~al.]{Awschalom2021QuIC}
+AWSCHALOM D, BERGGREN K, BERNIEN H, et~al.
+\newblock Development of quantum interconnects (quics) for next-generation
+  information technologies\allowbreak[J/OL].
+\newblock PRX Quantum, 2021, 2: 017002.
+\newblock DOI: \doi{10.1103/PRXQuantum.2.017002}.
+
+\bibitem[Jiang et~al.(2007)Jiang, Taylor, S{\o}rensen, and
+  Lukin]{Jiang2007DistributedQC}
+JIANG L, TAYLOR J~M, S{\O}RENSEN A~S, et~al.
+\newblock Distributed quantum computation based on small quantum
+  registers\allowbreak[J/OL].
+\newblock Physical Review A, 2007, 76: 062323.
+\newblock DOI: \doi{10.1103/PhysRevA.76.062323}.
+
+\bibitem[Monroe et~al.(2014)Monroe, Raussendorf, Ruthven, Brown, Maunz, Duan,
+  and Kim]{Monroe2014ModularQC}
+MONROE C, RAUSSENDORF R, RUTHVEN A, et~al.
+\newblock Large-scale modular quantum-computer architecture with atomic memory
+  and photonic interconnects\allowbreak[J/OL].
+\newblock Physical Review A, 2014, 89: 022317.
+\newblock DOI: \doi{10.1103/PhysRevA.89.022317}.
+
+\bibitem[Covey et~al.(2023)Covey, Weinfurter, and
+  Bernien]{Covey2023QuantumNetworksNeutralAtomNodes}
+COVEY J~P, WEINFURTER H, BERNIEN H.
+\newblock Quantum networks with neutral atom processing nodes\allowbreak[J/OL].
+\newblock npj Quantum Information, 2023, 9: 90.
+\newblock DOI: \doi{10.1038/s41534-023-00759-9}.
+
+\bibitem[Kimble(2008)]{kimble2008quantum}
+KIMBLE H~J.
+\newblock The quantum internet\allowbreak[J/OL].
+\newblock Nature, 2008, 453\allowbreak (7198): 1023-1030.
+\newblock DOI: \doi{10.1038/nature07127}.
+
+\bibitem[Northup et~al.(2014)Northup and
+  Blatt]{NorthupBlatt2014QuantumInfoTransfer}
+NORTHUP T~E, BLATT R.
+\newblock Quantum information transfer using photons\allowbreak[J/OL].
+\newblock Nature Photonics, 2014, 8: 356-363.
+\newblock DOI: \doi{10.1038/nphoton.2014.53}.
+
+\bibitem[Reiserer(2022)]{Reiserer2022CavityEnhancedNetworkNodes}
+REISERER A.
+\newblock Colloquium: Cavity-enhanced quantum network nodes\allowbreak[J/OL].
+\newblock Reviews of Modern Physics, 2022, 94\allowbreak (4): 041003.
+\newblock DOI: \doi{10.1103/RevModPhys.94.041003}.
+
+\bibitem[Cao et~al.(2019)Cao, Romero, Olson, Degroote, Johnson, Kieferov\'a,
+  Kivlichan, Menke, Peropadre, Sawaya, Sim, Veis, and
+  Aspuru-Guzik]{Cao2019QuantumChemistry}
+CAO Y, ROMERO J, OLSON J~P, et~al.
+\newblock Quantum chemistry in the age of quantum computing\allowbreak[J/OL].
+\newblock Chemical Reviews, 2019, 119\allowbreak (19): 10856-10915.
+\newblock DOI: \doi{10.1021/acs.chemrev.8b00803}.
+
 \bibitem[Wehner et~al.(2018)Wehner, Elkouss, and
   Hanson]{Wehner2018QuantumInternetVision}
 WEHNER S, ELKOUSS D, HANSON R.
@@ -18,26 +106,29 @@ WEHNER S, ELKOUSS D, HANSON R.
 \newblock Science, 2018, 362\allowbreak (6412): eaam9288.
 \newblock DOI: \doi{10.1126/science.aam9288}.
 
-\bibitem[Azuma et~al.(2023)Azuma, Economou, and
-  et~al.]{Azuma2023QuantumRepeatersReview}
-AZUMA K, ECONOMOU S~E, ET~AL.
-\newblock Quantum repeaters: From quantum networks to the quantum
-  internet\allowbreak[J/OL].
-\newblock Reviews of Modern Physics, 2023, 95\allowbreak (4): 045006.
-\newblock DOI: \doi{10.1103/RevModPhys.95.045006}.
+\bibitem[Sinclair et~al.(2025)Sinclair, Liang, Lv, Liu, Lee, Yao, Sipahigil,
+  and Lukin]{Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
+SINCLAIR N~J, LIANG Y, LV D, et~al.
+\newblock Fault-tolerant optical interconnects for neutral-atom
+  arrays\allowbreak[J/OL].
+\newblock Physical Review Research, 2025, 7: 013313.
+\newblock DOI: \doi{10.1103/PhysRevResearch.7.013313}.
 
-\bibitem[Zhu et~al.(2025)Zhu, Liu, Zhou, and
-  Li]{Zhu2025RemoteQuantumNetworksQuantumMemories}
-ZHU T~X, LIU X, ZHOU Z~Q, et~al.
-\newblock Remote quantum networks based on quantum memories\allowbreak[J/OL].
-\newblock Nanophotonics, 2025, 14\allowbreak (11): 1975-1992.
-\newblock DOI: \doi{10.1515/nanoph-2024-0487}.
+\bibitem[Simon et~al.(2003)Simon and
+  Irvine]{SimonIrvine2003RobustLongDistanceEntanglement}
+SIMON C, IRVINE W~T~M.
+\newblock Robust long-distance entanglement and a loophole-free bell test with
+  ions and photons\allowbreak[J/OL].
+\newblock Physical Review Letters, 2003, 91: 110405.
+\newblock DOI: \doi{10.1103/PhysRevLett.91.110405}.
 
-\bibitem[Reiserer(2022)]{Reiserer2022CavityEnhancedNetworkNodes}
-REISERER A.
-\newblock Colloquium: Cavity-enhanced quantum network nodes\allowbreak[J/OL].
-\newblock Reviews of Modern Physics, 2022, 94\allowbreak (4): 041003.
-\newblock DOI: \doi{10.1103/RevModPhys.94.041003}.
+\bibitem[Cabrillo et~al.(1999)Cabrillo, Cirac, Garc\'ia-Fern\'andez, and
+  Zoller]{Cabrillo1999CreationEntangledStates}
+CABRILLO C, CIRAC J~I, GARC\'IA-FERN\'ANDEZ P, et~al.
+\newblock Creation of entangled states of distant atoms by
+  interference\allowbreak[J/OL].
+\newblock Physical Review A, 1999, 59: 1025-1033.
+\newblock DOI: \doi{10.1103/PhysRevA.59.1025}.
 
 \bibitem[van Leent et~al.(2022)van Leent, Bock, Fertig, Garthoff, Eppelt, Zhou,
   Malik, Seubert, Bauer, Rosenfeld, Zhang, Becher, and
@@ -47,12 +138,147 @@ VAN LEENT T, BOCK M, FERTIG F, et~al.
 \newblock Nature, 2022, 607\allowbreak (7917): 69-73.
 \newblock DOI: \doi{10.1038/s41586-022-04764-4}.
 
-\bibitem[Covey et~al.(2023)Covey, Weinfurter, and
-  Bernien]{Covey2023QuantumNetworksNeutralAtomNodes}
-COVEY J~P, WEINFURTER H, BERNIEN H.
-\newblock Quantum networks with neutral atom processing nodes\allowbreak[J/OL].
-\newblock npj Quantum Information, 2023, 9: 90.
-\newblock DOI: \doi{10.1038/s41534-023-00759-9}.
+\bibitem[Duan et~al.(2001)Duan, Lukin, Cirac, and
+  Zoller]{Duan2001LongDistanceQuantumCommunication}
+DUAN L~M, LUKIN M~D, CIRAC J~I, et~al.
+\newblock Long-distance quantum communication with atomic ensembles and linear
+  optics\allowbreak[J/OL].
+\newblock Nature, 2001, 414: 413-418.
+\newblock DOI: \doi{10.1038/35106500}.
+
+\bibitem[Sangouard et~al.(2011)Sangouard, Simon, de~Riedmatten, and
+  Gisin]{Sangouard2011QuantumRepeatersAtomicEnsembles}
+SANGOUARD N, SIMON C, DE~RIEDMATTEN H, et~al.
+\newblock Quantum repeaters based on atomic ensembles and linear
+  optics\allowbreak[J/OL].
+\newblock Reviews of Modern Physics, 2011, 83: 33-80.
+\newblock DOI: \doi{10.1103/RevModPhys.83.33}.
+
+\bibitem[Grinkemeyer et~al.(2025)Grinkemeyer, Guardado-Sanchez, and other
+  contributors]{Grinkemeyer2025ErrorDetectedCavityNeutralAtoms}
+GRINKEMEYER B, GUARDADO-SANCHEZ E, OTHER CONTRIBUTORS.
+\newblock Error-detected quantum operations with neutral atoms mediated by an
+  optical cavity\allowbreak[J/OL].
+\newblock Science, 2025, 387: 1301-1305.
+\newblock DOI: \doi{10.1126/science.adr7075}.
+
+\bibitem[Barrett et~al.(2005)Barrett and
+  Kok]{BarrettKok2005EfficientHighFidelityQC}
+BARRETT S~D, KOK P.
+\newblock Efficient high-fidelity quantum computation using matter qubits and
+  linear optics\allowbreak[J/OL].
+\newblock Physical Review A, 2005, 71: 060310.
+\newblock DOI: \doi{10.1103/PhysRevA.71.060310}.
+
+\bibitem[Azuma et~al.(2023)Azuma, Economou, and
+  et~al.]{Azuma2023QuantumRepeatersReview}
+AZUMA K, ECONOMOU S~E, ET~AL.
+\newblock Quantum repeaters: From quantum networks to the quantum
+  internet\allowbreak[J/OL].
+\newblock Reviews of Modern Physics, 2023, 95\allowbreak (4): 045006.
+\newblock DOI: \doi{10.1103/RevModPhys.95.045006}.
+
+\bibitem[Ikuta et~al.(2018)Ikuta, Kobayashi, Kawakami, Miki, Yamashita, Terai,
+  Yamamoto, Koashi, and Imoto]{Ikuta2018PolarizationInsensitiveQFC}
+IKUTA R, KOBAYASHI T, KAWAKAMI R, et~al.
+\newblock Polarization insensitive frequency conversion for an atom-photon
+  entanglement distribution via a telecom network\allowbreak[J/OL].
+\newblock Nature Communications, 2018, 9: 1997.
+\newblock DOI: \doi{10.1038/s41467-018-04338-x}.
+
+\bibitem[Zhou et~al.(2023)Zhou, Jiang, and Liang]{Zhou2023QuantumNetworkNoise}
+ZHOU Y, JIANG L, LIANG L.
+\newblock Noise analysis for quantum network links connecting processing
+  nodes\allowbreak[Z].
+\newblock 2023.
+
+\bibitem[Zhu et~al.(2025)Zhu, Liu, Zhou, and
+  Li]{Zhu2025RemoteQuantumNetworksQuantumMemories}
+ZHU T~X, LIU X, ZHOU Z~Q, et~al.
+\newblock Remote quantum networks based on quantum memories\allowbreak[J/OL].
+\newblock Nanophotonics, 2025, 14\allowbreak (11): 1975-1992.
+\newblock DOI: \doi{10.1515/nanoph-2024-0487}.
+
+\bibitem[Bao et~al.(2012)Bao, Xu, Li, Yuan, Lu, and
+  Pan]{Bao2012TeleportationRemoteMemories}
+BAO X~H, XU X~F, LI C~M, et~al.
+\newblock Quantum teleportation between remote atomic-ensemble quantum
+  memories\allowbreak[J/OL].
+\newblock Proceedings of the National Academy of Sciences of the United States
+  of America, 2012, 109\allowbreak (50): 20347-20351.
+\newblock DOI: \doi{10.1073/pnas.1207329109}.
+
+\bibitem[Liu et~al.(2024)]{Liu2024MemoryMemoryEntanglementMetropolitanNetwork}
+LIU J~L, et~al.
+\newblock Creation of memory--memory entanglement in a metropolitan quantum
+  network\allowbreak[J/OL].
+\newblock Nature, 2024, 629\allowbreak (8012): 579-585.
+\newblock DOI: \doi{10.1038/s41586-024-07308-0}.
+
+\bibitem[Hucul et~al.(2015)Hucul, Inlek, Vittorini, Crocker, Debnath, Clark,
+  and Monroe]{Hucul2015ModularEntanglement}
+HUCUL D, INLEK I~V, VITTORINI G, et~al.
+\newblock Modular entanglement of atomic qubits using photons and
+  phonons\allowbreak[J/OL].
+\newblock Nature Physics, 2015, 11: 37-42.
+\newblock DOI: \doi{10.1038/nphys3150}.
+
+\bibitem[Bernien et~al.(2013)Bernien, Hensen, Pfaff, Koolstra, Blok, Robledo,
+  Taminiau, Markham, Twitchen, Childress, and
+  Hanson]{Bernien2013HeraldedEntanglement}
+BERNIEN H, HENSEN B, PFAFF W, et~al.
+\newblock Heralded entanglement between solid-state qubits separated by three
+  metres\allowbreak[J/OL].
+\newblock Nature, 2013, 497\allowbreak (7447): 86-90.
+\newblock DOI: \doi{10.1038/nature12016}.
+
+\bibitem[Pompili et~al.(2021)Pompili, Hermans, Baier, Beukers, Humphreys,
+  Schouten, Vermeulen, Tiggelman, Martins, Dirkse, Wehner, and
+  Hanson]{Pompili2021MultinodeQuantumNetwork}
+POMPILI M, HERMANS S~L~N, BAIER S, et~al.
+\newblock Realization of a multinode quantum network of remote solid-state
+  qubits\allowbreak[J/OL].
+\newblock Science, 2021, 372\allowbreak (6539): 259-264.
+\newblock DOI: \doi{10.1126/science.abg1919}.
+
+\bibitem[Knaut et~al.(2024)Knaut, Suleymanzade, Wei, Assumpcao, Stas, Huan,
+  Machielse, Knall, Sutula, Baranes, Sinclair, De-Eknamkul, Levonian, Bhaskar,
+  Park, Lon\v{c}ar, and Lukin]{Knaut2024NanophotonicNetwork}
+KNAUT C~M, SULEYMANZADE A, WEI Y~C, et~al.
+\newblock Entanglement of nanophotonic quantum memory nodes in a
+  telecommunication network\allowbreak[J/OL].
+\newblock Nature, 2024, 629: 573-578.
+\newblock DOI: \doi{10.1038/s41586-024-07252-z}.
+
+\bibitem[Bersin et~al.(2024)Bersin, Sutula, Huan, Suleymanzade, Assumpcao, Wei,
+  Stas, Knaut, Knall, Langrock, et~al.]{Bersin2024DiamondQuantumMemory}
+BERSIN E, SUTULA M, HUAN Y~Q, et~al.
+\newblock Telecom networking with a diamond quantum memory\allowbreak[J/OL].
+\newblock PRX Quantum, 2024, 5: 010303.
+\newblock DOI: \doi{10.1103/PRXQuantum.5.010303}.
+
+\bibitem[De~Greve et~al.(2012)De~Greve, Yu, McMahon,
+  et~al.]{DeGreve2012QuantumDotTelecom}
+DE~GREVE K, YU L, MCMAHON P, et~al.
+\newblock Quantum-dot spin-photon entanglement via frequency downconversion to
+  telecom wavelength\allowbreak[J/OL].
+\newblock Nature, 2012, 491: 421-425.
+\newblock DOI: \doi{10.1038/nature11577}.
+
+\bibitem[Rakonjac et~al.(2021)Rakonjac, Lago-Rivera, Seri, Mazzera, Grandi, and
+  de~Riedmatten]{Rakonjac2021TelecomPhotonSolidStateMemory}
+RAKONJAC J~V, LAGO-RIVERA D, SERI A, et~al.
+\newblock Entanglement between a telecom photon and an on-demand multimode
+  solid-state quantum memory\allowbreak[J/OL].
+\newblock Physical Review Letters, 2021, 127: 210502.
+\newblock DOI: \doi{10.1103/PhysRevLett.127.210502}.
+
+\bibitem[Saffman et~al.(2010)Saffman, Walker, and
+  M{\o}lmer]{Saffman2010QuantumInfoRydberg}
+SAFFMAN M, WALKER T~G, M{\O}LMER K.
+\newblock Quantum information with rydberg atoms\allowbreak[J/OL].
+\newblock Reviews of Modern Physics, 2010, 82: 2313-2363.
+\newblock DOI: \doi{10.1103/RevModPhys.82.2313}.
 
 \bibitem[Kaufman et~al.(2021)Kaufman and
   Ni]{KaufmanNi2021OpticalTweezerArraysNatPhys}
@@ -61,6 +287,15 @@ KAUFMAN A~M, NI K~K.
   molecules\allowbreak[J/OL].
 \newblock Nature Physics, 2021, 17\allowbreak (12): 1324-1333.
 \newblock DOI: \doi{10.1038/s41567-021-01357-2}.
+
+\bibitem[Ritter et~al.(2012)Ritter, N{\"o}lleke, Hahn, Reiserer, Neuzner,
+  Uphoff, M{\"u}cke, Figueroa, Bochmann, and
+  Rempe]{Ritter2012ElementaryQuantumNetwork}
+RITTER S, N{\"O}LLEKE C, HAHN C, et~al.
+\newblock An elementary quantum network of single atoms in optical
+  cavities\allowbreak[J/OL].
+\newblock Nature, 2012, 484\allowbreak (7393): 195-200.
+\newblock DOI: \doi{10.1038/nature11023}.
 
 \bibitem[Evered et~al.(2023)Evered, Bluvstein, Kalinowski, Ebadi, Manovitz,
   Zhou, Li, Geim, Wang, Maskara, Levine, Semeghini, Greiner, Vuleti{\'c}, and
@@ -71,6 +306,16 @@ EVERED S~J, BLUVSTEIN D, KALINOWSKI M, et~al.
 \newblock Nature, 2023.
 \newblock DOI: \doi{10.1038/s41586-023-06481-y}.
 
+\bibitem[Bluvstein et~al.(2024)Bluvstein, Evered, Geim, Li, Zhou, Manovitz,
+  Ebadi, Cain, Kalinowski, Hangleiter, Ataides, Maskara, Cong, Gao,
+  Sales~Rodriguez, Karolyshyn, Semeghini, Gullans, Greiner, Vuleti\'c, and
+  Lukin]{Bluvstein2024LogicalQuantumProcessor}
+BLUVSTEIN D, EVERED S~J, GEIM A~A, et~al.
+\newblock Logical quantum processor based on reconfigurable atom
+  arrays\allowbreak[J/OL].
+\newblock Nature, 2024, 626\allowbreak (7997): 58-65.
+\newblock DOI: \doi{10.1038/s41586-023-06927-3}.
+
 \bibitem[Chiu et~al.(2025)Chiu, Trapp, Guo, Abobeih,
   et~al.]{Chiu2025ContinuousOperation3000Qubits}
 CHIU N~C, TRAPP E~C, GUO J, et~al.
@@ -79,22 +324,21 @@ CHIU N~C, TRAPP E~C, GUO J, et~al.
 \newblock Nature, 2025, 646: 1075-1080.
 \newblock DOI: \doi{10.1038/s41586-025-09596-6}.
 
-\bibitem[Li et~al.(2025)Li, Fu, Hu, Zhang, Zhu, Zhu, Han, Wang, Zhang, Chen,
-  Wang, Zhang, Lin, Jiang, Yan, Wang, Du, Hu, and
-  Peng]{Li2025FiberArrayArchitectureAtomQC}
-LI L, FU W, HU W, et~al.
-\newblock Parallel coherent manipulation of atomic qubits in a scalable optical
-  fiber array architecture\allowbreak[J/OL].
-\newblock Nature Communications, 2025, 16: 9769.
-\newblock DOI: \doi{10.1038/s41467-025-64094-x}.
+\bibitem[van Leent et~al.(2020)van Leent, Bock, Garthoff, Redeker, Zhang,
+  Bauer, Rosenfeld, Becher, and Weinfurter]{vanleent2020longdistance}
+VAN LEENT T, BOCK M, GARTHOFF R, et~al.
+\newblock Long-distance distribution of atom-photon entanglement at telecom
+  wavelength\allowbreak[J/OL].
+\newblock Physical Review Letters, 2020, 124\allowbreak (1): 010510.
+\newblock DOI: \doi{10.1103/PhysRevLett.124.010510}.
 
-\bibitem[Sinclair et~al.(2025)Sinclair, Liang, Lv, Liu, Lee, Yao, Sipahigil,
-  and Lukin]{Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
-SINCLAIR N~J, LIANG Y, LV D, et~al.
-\newblock Fault-tolerant optical interconnects for neutral-atom
-  arrays\allowbreak[J/OL].
-\newblock Physical Review Research, 2025, 7: 013313.
-\newblock DOI: \doi{10.1103/PhysRevResearch.7.013313}.
+\bibitem[Zhou et~al.(2024)Zhou, Malik, Fertig, Bock, Bauer, van Leent, Zhang,
+  Becher, and Weinfurter]{zhou2024longlived}
+ZHOU Y, MALIK P, FERTIG F, et~al.
+\newblock Long-lived quantum memory enabling atom-photon entanglement over 101
+  km of telecom fiber\allowbreak[J/OL].
+\newblock PRX Quantum, 2024, 5\allowbreak (2): 020307.
+\newblock DOI: \doi{10.1103/PRXQuantum.5.020307}.
 
 \bibitem[Hartung et~al.(2024)Hartung, Reitz, Ullrich, K{\"u}bler, Rempe, Li,
   Northup, da~Silva, S{\"o}llner, and other
@@ -113,48 +357,12 @@ MENON S~G, GLACHMAN N, POMPILI M, et~al.
 \newblock Nature Communications, 2024, 15: 7435.
 \newblock DOI: \doi{10.1038/s41467-024-50355-4}.
 
-\bibitem[Liu et~al.(2024)]{Liu2024MemoryMemoryEntanglementMetropolitanNetwork}
-LIU J~L, et~al.
-\newblock Creation of memory--memory entanglement in a metropolitan quantum
-  network\allowbreak[J/OL].
-\newblock Nature, 2024, 629\allowbreak (8012): 579-585.
-\newblock DOI: \doi{10.1038/s41586-024-07308-0}.
-
-\bibitem[Zhou et~al.(2023)Zhou, Jiang, and Liang]{Zhou2023QuantumNetworkNoise}
-ZHOU Y, JIANG L, LIANG L.
-\newblock Noise analysis for quantum network links connecting processing
-  nodes\allowbreak[Z].
-\newblock 2023.
-
 \bibitem[Pichler et~al.(2016)Pichler and Zoller]{Pichler2016TimeDelaysMPS}
 PICHLER H, ZOLLER P.
 \newblock Photonic quantum circuits with time delays and quantum
   feedback\allowbreak[J/OL].
 \newblock Physical Review Letters, 2016, 116: 093601.
 \newblock DOI: \doi{10.1103/PhysRevLett.116.093601}.
-
-\bibitem[Yanagimoto et~al.(2021)Yanagimoto and
-  Others]{Yanagimoto2021MPSQuantumPulsePropagation}
-YANAGIMOTO R, OTHERS.
-\newblock Quantum pulse propagation through a nonlinear medium modeled as
-  interacting quantum fields on discretized space\allowbreak[C/OL]//\allowbreak
-Proceedings of SPIE.
-\newblock SPIE, 2021.
-\newblock DOI: \doi{10.1117/12.2576098}.
-
-\bibitem[Wang et~al.(2017)Wang and Clerk]{Wang2017MPSCascadedQuantumSystems}
-WANG C, CLERK A~A.
-\newblock Quantum theory of driven-dissipative cascaded quantum systems:
-  Application to photon-mediated entanglement generation\allowbreak[J/OL].
-\newblock New Journal of Physics, 2017, 19: 113021.
-\newblock DOI: \doi{10.1088/1367-2630/aa8f09}.
-
-\bibitem[Jaynes et~al.(1963)Jaynes and Cummings]{JaynesCummings1963}
-JAYNES E~T, CUMMINGS F~W.
-\newblock Comparison of quantum and semiclassical radiation theories with
-  application to the beam maser\allowbreak[J/OL].
-\newblock Proceedings of the IEEE, 1963, 51\allowbreak (1): 89-109.
-\newblock DOI: \doi{10.1109/PROC.1963.1664}.
 
 \bibitem[Gardiner et~al.(1985)Gardiner and Collett]{GardinerCollett1985}
 GARDINER C~W, COLLETT M~J.
@@ -163,13 +371,12 @@ GARDINER C~W, COLLETT M~J.
 \newblock Physical Review A, 1985, 31\allowbreak (6): 3761-3774.
 \newblock DOI: \doi{10.1103/PhysRevA.31.3761}.
 
-\bibitem[Ikuta et~al.(2018)Ikuta, Kobayashi, Kawakami, Miki, Yamashita, Terai,
-  Yamamoto, Koashi, and Imoto]{Ikuta2018PolarizationInsensitiveQFC}
-IKUTA R, KOBAYASHI T, KAWAKAMI R, et~al.
-\newblock Polarization insensitive frequency conversion for an atom-photon
-  entanglement distribution via a telecom network\allowbreak[J/OL].
-\newblock Nature Communications, 2018, 9: 1997.
-\newblock DOI: \doi{10.1038/s41467-018-04338-x}.
+\bibitem[Wang et~al.(2017)Wang and Clerk]{Wang2017MPSCascadedQuantumSystems}
+WANG C, CLERK A~A.
+\newblock Quantum theory of driven-dissipative cascaded quantum systems:
+  Application to photon-mediated entanglement generation\allowbreak[J/OL].
+\newblock New Journal of Physics, 2017, 19: 113021.
+\newblock DOI: \doi{10.1088/1367-2630/aa8f09}.
 
 \bibitem[Arranz~Regidor et~al.(2021)Arranz~Regidor, Crowder, Carmichael, and
   Hughes]{ArranzRegidor2021WaveguideQED}
@@ -179,6 +386,29 @@ ARRANZ~REGIDOR S, CROWDER G, CARMICHAEL H, et~al.
   product states versus a space-discretized waveguide model\allowbreak[J/OL].
 \newblock Physical Review Research, 2021, 3\allowbreak (2): 023030.
 \newblock DOI: \doi{10.1103/PhysRevResearch.3.023030}.
+
+\bibitem[Yanagimoto et~al.(2021{\natexlab{a}})Yanagimoto and
+  Others]{Yanagimoto2021MPSQuantumPulsePropagation}
+YANAGIMOTO R, OTHERS.
+\newblock Quantum pulse propagation through a nonlinear medium modeled as
+  interacting quantum fields on discretized space\allowbreak[C/OL]//\allowbreak
+Proceedings of SPIE.
+\newblock SPIE, 2021{\natexlab{a}}.
+\newblock DOI: \doi{10.1117/12.2576098}.
+
+\bibitem[Yanagimoto et~al.(2021{\natexlab{b}})Yanagimoto and
+  Others]{Yanagimoto2021UltrafastQuantumNonlinearOptics}
+YANAGIMOTO R, OTHERS.
+\newblock Towards an engineering framework for ultrafast quantum nonlinear
+  optics\allowbreak[Z].
+\newblock 2021{\natexlab{b}}.
+
+\bibitem[Jaynes et~al.(1963)Jaynes and Cummings]{JaynesCummings1963}
+JAYNES E~T, CUMMINGS F~W.
+\newblock Comparison of quantum and semiclassical radiation theories with
+  application to the beam maser\allowbreak[J/OL].
+\newblock Proceedings of the IEEE, 1963, 51\allowbreak (1): 89-109.
+\newblock DOI: \doi{10.1109/PROC.1963.1664}.
 
 \bibitem[Garraway(1997)]{Garraway1997DecayStrongReservoir}
 GARRAWAY B~M.

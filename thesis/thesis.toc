@@ -2,46 +2,63 @@
 \contentsline {chapter}{\heiti Abstract}{II}{section*.5}%
 \contentsline {chapter}{\heiti 哈尔滨工程大学学位论文原创性声明和使用权限}{III}{section*.7}%
 \contentsline {chapter}{\numberline {第1章}绪论}{1}{chapter.1}%
-\contentsline {section}{\numberline {1.1}量子接口的功能任务、中性原子发展与网络化驱动}{2}{section.1.1}%
-\contentsline {section}{\numberline {1.2}中性原子处理节点的光子—原子量子接口}{3}{section.1.2}%
-\contentsline {section}{\numberline {1.3}接口端到端可用性的关键瓶颈}{5}{section.1.3}%
-\contentsline {section}{\numberline {1.4}第一性原理端到端仿真的必要性与本文创新}{7}{section.1.4}%
-\contentsline {section}{\numberline {1.5}本文研究内容与结构安排}{8}{section.1.5}%
+\contentsline {section}{\numberline {1.1}可扩展量子计算：为何需要互连}{2}{section.1.1}%
+\contentsline {subsection}{\numberline {1.1.1}从应用案例到“规模化压力”}{2}{subsection.1.1.1}%
+\contentsline {subsection}{\numberline {1.1.2}模块化与分布式量子计算简介}{3}{subsection.1.1.2}%
+\contentsline {section}{\numberline {1.2}量子接口：概念、任务与评价指标}{4}{section.1.2}%
+\contentsline {subsection}{\numberline {1.2.1}量子接口在网络化体系中的位置}{4}{subsection.1.2.1}%
+\contentsline {subsection}{\numberline {1.2.2}两类互连路线及评价口径}{4}{subsection.1.2.2}%
+\contentsline {section}{\numberline {1.3}量子接口研究现状：主要平台与技术路线}{5}{section.1.3}%
+\contentsline {subsection}{\numberline {1.3.1}原子系综与量子存储：研究现状}{5}{subsection.1.3.1}%
+\contentsline {subsection}{\numberline {1.3.2}离子模块化节点：研究进展}{6}{subsection.1.3.2}%
+\contentsline {subsection}{\numberline {1.3.3}固态缺陷与量子点：进展与特点}{6}{subsection.1.3.3}%
+\contentsline {subsection}{\numberline {1.3.4}单原子与中性原子接口：腔增强与纳米光子路线}{7}{subsection.1.3.4}%
+\contentsline {section}{\numberline {1.4}处理中性原子节点：本文选取的接口链路}{8}{section.1.4}%
+\contentsline {subsection}{\numberline {1.4.1}处理中性原子节点的概念与需求}{8}{subsection.1.4.1}%
+\contentsline {subsection}{\numberline {1.4.2}选取 $^{87}$Rb--cavity--QFC--telecom--BSM 链路的理由}{8}{subsection.1.4.2}%
+\contentsline {subsection}{\numberline {1.4.3}面向模块化量子计算的适配性}{9}{subsection.1.4.3}%
+\contentsline {section}{\numberline {1.5}端到端性能瓶颈：误差链条如何影响 Bell 对质量}{9}{section.1.5}%
+\contentsline {subsection}{\numberline {1.5.1}成功率：乘法塌缩与距离代价}{9}{subsection.1.5.1}%
+\contentsline {subsection}{\numberline {1.5.2}条件态退化：不可区分性、模式失配与假宣告}{10}{subsection.1.5.2}%
+\contentsline {subsection}{\numberline {1.5.3}时间相关效应：滤波记忆、等待与存储退相干}{10}{subsection.1.5.3}%
+\contentsline {section}{\numberline {1.6}本文工作：端到端第一性原理仿真框架与论文结构}{11}{section.1.6}%
+\contentsline {subsection}{\numberline {1.6.1}为何采用 time-bin 张量网络建模}{11}{subsection.1.6.1}%
+\contentsline {subsection}{\numberline {1.6.2}研究内容、边界与章节安排}{12}{subsection.1.6.2}%
 \vspace {\baselineskip }
-\contentsline {chapter}{\numberline {第2章}张量网络与开放系统仿真基础}{11}{chapter.2}%
-\contentsline {section}{\numberline {2.1}从系数张量到低秩结构}{11}{section.2.1}%
-\contentsline {section}{\numberline {2.2}矩阵乘积态表示与规范结构}{11}{section.2.2}%
-\contentsline {subsection}{\numberline {2.2.1}MPS 表示、规范与收缩}{12}{subsection.2.2.1}%
-\contentsline {section}{\numberline {2.3}局域门更新与 TEBD 推进}{13}{section.2.3}%
-\contentsline {subsection}{\numberline {2.3.1}局域门推进、误差控制与复杂度}{13}{subsection.2.3.1}%
-\contentsline {section}{\numberline {2.4}开放系统、Kraus 信道与 POVM 对偶映射}{14}{section.2.4}%
-\contentsline {subsection}{\numberline {2.4.1}开放系统信道与条件化测量}{15}{subsection.2.4.1}%
-\contentsline {subsection}{\numberline {2.4.2}从算符框架到实现映射：第3章技术约束}{16}{subsection.2.4.2}%
-\contentsline {section}{\numberline {2.5}本章小结}{17}{section.2.5}%
-\contentsline {chapter}{\numberline {第3章}量子接口的端到端仿真模型与实现}{18}{chapter.3}%
-\contentsline {section}{\numberline {3.1}从量子电动力学（quantum electrodynamics，QED）到四能级原子-腔有效模型}{18}{section.3.1}%
-\contentsline {subsection}{\numberline {3.1.1}发射模型与时间离散化门构造}{18}{subsection.3.1.1}%
-\contentsline {subsection}{\numberline {3.1.2}12维发射体块结构与基序重排的索引化表达}{21}{subsection.3.1.2}%
-\contentsline {subsection}{\numberline {3.1.3}36维子门到60维站点门的索引嵌入}{22}{subsection.3.1.3}%
-\contentsline {subsection}{\numberline {3.1.4}连续输出场到时间 bin 发射门}{22}{subsection.3.1.4}%
-\contentsline {section}{\numberline {3.2}QFC 与滤波记忆核的显式张量门}{24}{section.3.2}%
-\contentsline {subsection}{\numberline {3.2.1}滤波记忆步进门的离散推导与幺正性证明}{26}{subsection.3.2.1}%
-\contentsline {subsection}{\numberline {3.2.2}交换调度不变量与终态布局证明}{27}{subsection.3.2.2}%
-\contentsline {section}{\numberline {3.3}光纤 BSM Heisenberg-POVM 统一建模}{28}{section.3.3}%
-\contentsline {subsection}{\numberline {3.3.1}Heisenberg-POVM 推回及成功判据}{28}{subsection.3.3.1}%
-\contentsline {section}{\numberline {3.4}实现口径、复杂度与可扩展性}{31}{section.3.4}%
-\contentsline {subsection}{\numberline {3.4.1}计时闭合关系与主导项判据}{31}{subsection.3.4.1}%
-\contentsline {section}{\numberline {3.5}本章小结}{32}{section.3.5}%
-\contentsline {chapter}{\numberline {第4章}仿真结果与参数依赖性分析}{33}{chapter.4}%
-\contentsline {section}{\numberline {4.1}实验对照口径与参数锚点}{33}{section.4.1}%
-\contentsline {subsection}{\numberline {4.1.1}指标口径参数锚定}{33}{subsection.4.1.1}%
-\contentsline {section}{\numberline {4.2}分层标定流程}{35}{section.4.2}%
-\contentsline {section}{\numberline {4.3}结果图谱物理归因}{35}{section.4.3}%
-\contentsline {subsection}{\numberline {4.3.1}关键结果与物理解释}{35}{subsection.4.3.1}%
-\contentsline {section}{\numberline {4.4}端到端性能误差预算}{39}{section.4.4}%
-\contentsline {section}{\numberline {4.5}计算成本与部署判据}{42}{section.4.5}%
-\contentsline {section}{\numberline {4.6}本章小结}{44}{section.4.6}%
-\contentsline {chapter}{\heiti 结\hspace {\ccwd }论}{45}{section*.15}%
-\contentsline {chapter}{\heiti 参考文献}{47}{section*.18}%
-\contentsline {chapter}{\heiti 致\hspace {\ccwd }谢}{50}{section*.20}%
-\contentsline {chapter}{\heiti 攻读硕士学位期间发表的论文及其他成果}{51}{section*.22}%
+\contentsline {chapter}{\numberline {第2章}张量网络与开放系统仿真基础}{13}{chapter.2}%
+\contentsline {section}{\numberline {2.1}从系数张量到低秩结构}{13}{section.2.1}%
+\contentsline {section}{\numberline {2.2}矩阵乘积态表示与规范结构}{13}{section.2.2}%
+\contentsline {subsection}{\numberline {2.2.1}MPS 表示、规范与收缩}{14}{subsection.2.2.1}%
+\contentsline {section}{\numberline {2.3}局域门更新与 TEBD 推进}{15}{section.2.3}%
+\contentsline {subsection}{\numberline {2.3.1}局域门推进、误差控制与复杂度}{15}{subsection.2.3.1}%
+\contentsline {section}{\numberline {2.4}开放系统、Kraus 信道与 POVM 对偶映射}{16}{section.2.4}%
+\contentsline {subsection}{\numberline {2.4.1}开放系统信道与条件化测量}{17}{subsection.2.4.1}%
+\contentsline {subsection}{\numberline {2.4.2}从算符框架到实现映射：第3章技术约束}{18}{subsection.2.4.2}%
+\contentsline {section}{\numberline {2.5}本章小结}{19}{section.2.5}%
+\contentsline {chapter}{\numberline {第3章}量子接口的端到端仿真模型与实现}{20}{chapter.3}%
+\contentsline {section}{\numberline {3.1}从量子电动力学（quantum electrodynamics，QED）到四能级原子-腔有效模型}{20}{section.3.1}%
+\contentsline {subsection}{\numberline {3.1.1}发射模型与时间离散化门构造}{20}{subsection.3.1.1}%
+\contentsline {subsection}{\numberline {3.1.2}12维发射体块结构与基序重排的索引化表达}{23}{subsection.3.1.2}%
+\contentsline {subsection}{\numberline {3.1.3}36维子门到60维站点门的索引嵌入}{24}{subsection.3.1.3}%
+\contentsline {subsection}{\numberline {3.1.4}连续输出场到时间 bin 发射门}{24}{subsection.3.1.4}%
+\contentsline {section}{\numberline {3.2}QFC 与滤波记忆核的显式张量门}{26}{section.3.2}%
+\contentsline {subsection}{\numberline {3.2.1}滤波记忆步进门的离散推导与幺正性证明}{28}{subsection.3.2.1}%
+\contentsline {subsection}{\numberline {3.2.2}交换调度不变量与终态布局证明}{30}{subsection.3.2.2}%
+\contentsline {section}{\numberline {3.3}光纤 BSM Heisenberg-POVM 统一建模}{30}{section.3.3}%
+\contentsline {subsection}{\numberline {3.3.1}Heisenberg-POVM 推回及成功判据}{30}{subsection.3.3.1}%
+\contentsline {section}{\numberline {3.4}实现口径、复杂度与可扩展性}{33}{section.3.4}%
+\contentsline {subsection}{\numberline {3.4.1}计时闭合关系与主导项判据}{34}{subsection.3.4.1}%
+\contentsline {section}{\numberline {3.5}本章小结}{35}{section.3.5}%
+\contentsline {chapter}{\numberline {第4章}仿真结果与参数依赖性分析}{36}{chapter.4}%
+\contentsline {section}{\numberline {4.1}实验对照口径与参数锚点}{36}{section.4.1}%
+\contentsline {subsection}{\numberline {4.1.1}指标口径参数锚定}{36}{subsection.4.1.1}%
+\contentsline {section}{\numberline {4.2}分层标定流程}{38}{section.4.2}%
+\contentsline {section}{\numberline {4.3}结果图谱物理归因}{38}{section.4.3}%
+\contentsline {subsection}{\numberline {4.3.1}关键结果与物理解释}{38}{subsection.4.3.1}%
+\contentsline {section}{\numberline {4.4}端到端性能误差预算}{42}{section.4.4}%
+\contentsline {section}{\numberline {4.5}计算成本与部署判据}{45}{section.4.5}%
+\contentsline {section}{\numberline {4.6}本章小结}{47}{section.4.6}%
+\contentsline {chapter}{\heiti 结\hspace {\ccwd }论}{48}{section*.15}%
+\contentsline {chapter}{\heiti 参考文献}{50}{section*.18}%
+\contentsline {chapter}{\heiti 致\hspace {\ccwd }谢}{55}{section*.20}%
+\contentsline {chapter}{\heiti 攻读硕士学位期间发表的论文及其他成果}{56}{section*.22}%
