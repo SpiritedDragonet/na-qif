@@ -27,47 +27,44 @@ Reallocating 'singl_function' (item size: 4) to 100 items.
 Reallocating 'singl_function' (item size: 4) to 100 items.
 Reallocating 'singl_function' (item size: 4) to 100 items.
 Database file #1: reference.bib
-Warning--I didn't find a database entry for "Docomo2026TAListOptimization"
-Warning--I didn't find a database entry for "DWave2024DocomoCaseStory"
-You've used 52 entries,
+You've used 54 entries,
             5265 wiz_defined-function locations,
-            1451 strings with 22976 characters,
-and the built_in function-call counts, 589213 in all, are:
-= -- 12657
-> -- 67936
-< -- 84557
-+ -- 23202
-- -- 4513
-* -- 4211
-:= -- 82061
-add.period$ -- 206
-call.type$ -- 52
-change.case$ -- 396
-chr.to.int$ -- 20787
-cite$ -- 52
-duplicate$ -- 1342
-empty$ -- 6025
-format.name$ -- 1859
-if$ -- 152335
+            1463 strings with 23121 characters,
+and the built_in function-call counts, 591022 in all, are:
+= -- 12717
+> -- 67996
+< -- 84830
++ -- 23328
+- -- 4486
+* -- 4212
+:= -- 82289
+add.period$ -- 214
+call.type$ -- 54
+change.case$ -- 393
+chr.to.int$ -- 20894
+cite$ -- 54
+duplicate$ -- 1389
+empty$ -- 6120
+format.name$ -- 1838
+if$ -- 152902
 int.to.chr$ -- 2
-int.to.str$ -- 53
+int.to.str$ -- 55
 missing$ -- 0
-newline$ -- 325
-num.names$ -- 156
-pop$ -- 29494
+newline$ -- 338
+num.names$ -- 162
+pop$ -- 29528
 preamble$ -- 1
-purify$ -- 52
+purify$ -- 54
 quote$ -- 0
-skip$ -- 62795
+skip$ -- 62889
 stack$ -- 0
-substring$ -- 29970
-swap$ -- 54
-text.length$ -- 1289
+substring$ -- 30037
+swap$ -- 56
+text.length$ -- 1294
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 568
+type$ -- 586
 warning$ -- 0
-while$ -- 1415
+while$ -- 1424
 width$ -- 0
-write$ -- 848
-(There were 2 warnings)
+write$ -- 880
