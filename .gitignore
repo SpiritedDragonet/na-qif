@@ -51,6 +51,8 @@ tmpclaude-*
 outputs/
 queue/
 thesis/data/
+thesis/
+thesis_legacy/
 
 # Test outputs in root directory (but keep notebooks/*.png)
 /test_*.png
