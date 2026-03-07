@@ -1,0 +1,39 @@
+% !Mode:: "TeX:UTF-8"
+
+\heusetup{
+  statesecrets={公开},
+  cnumber={no9527},
+  natclassifiedindex={TM301.2},
+  intclassifiedindex={62-5},
+  ctitlecover={中性原子量子计算体系的\\光子—原子量子接口仿真研究},
+  ctitle={中性原子量子计算体系的光子—原子量子接口仿真研究},
+  csubtitle={基于时间bin离散化与MPS张量网络的端到端建模},
+  cxueke={工学},
+  csubject={光学工程},
+  caffil={物理与光电工程学院},
+  cauthor={李铀},
+  csupervisor={任晶\ 教授},
+  cassosupervisor={刘哲\ 讲师},
+  csubmitdate={2026年3月},
+  cstudentid={S322250055},
+  etitle={Simulation of Photon--Atom Quantum Interfaces for Neutral-Atom Quantum Computing Systems},
+  esubtitle={End-to-End Modeling Based on Time-Bin Discretization and MPS Tensor Networks},
+  exueke={Engineering},
+  esubject={Optical Engineering},
+  eaffil={School of Physics and Optoelectronic Engineering},
+  eauthor={Li You},
+  esupervisor={Professor Ren Jing},
+  esubmitdate={March, 2026},
+  estudenttype={Master of Engineering},
+  ckeywords={量子接口, 中性原子, 量子网络, 矩阵乘积态, 时间bin离散化, 量子频率转换, 远程纠缠},
+  ekeywords={Quantum Interface, Neutral Atom, Quantum Network, Matrix Product State, Time-Bin Discretization, Quantum Frequency Conversion, Remote Entanglement},
+}
+
+\begin{cabstract}
+本文针对中性原子量子计算体系的光子—原子量子接口，建立了基于时间分箱离散化与矩阵乘积态（MPS）张量网络的第一性原理端到端仿真框架。在量子网络与分布式量子计算背景下，远程纠缠建立的成功率与条件态保真度受到链路中多种非理想因素的耦合影响，传统经验参数模型难以给出可追溯的定量预测。本文将整条接口链路——包括原子发射与偏振映射、量子频率转换（QFC）及其噪声、光纤偏振演化与色散、分束干涉与贝尔态测量、以及真实探测器响应——统一表述为时间分箱序列上的量子线路演化与测量条件化过程。在数值实现上，采用 MPS 表示联合量子态，通过时间演化块解耦算法（TEBD）实现逐分箱的局域门演化与交换门（SWAP）传送带调度，并以量子轨迹采样与 Kraus 算符投影完成探测器响应仿真，最终重建成功条件下的原子约化密度矩阵并评估保真度与纠缠度量。该框架能够在可控计算资源下处理数百量级时间分箱的脉冲演化与条件化统计，为接口参数优化、误差来源分解以及不同方案的系统级比较提供可解释、可复现的第一性原理工具。
+\end{cabstract}
+
+\begin{eabstract}
+This thesis develops a first-principles, end-to-end simulation framework for photon--atom quantum interfaces in neutral-atom quantum computing systems, based on time-bin discretization and matrix product state (MPS) tensor network methods. In the context of quantum networks and distributed quantum computing, the success rate and conditional-state fidelity of remote entanglement generation are jointly affected by multiple non-ideal factors along the interface link, which are difficult to predict quantitatively using traditional empirical models. This work formulates the entire interface link---including atomic emission and polarization mapping, quantum frequency conversion (QFC) with associated noise, fiber polarization evolution and dispersion, beam-splitter interference and Bell-state measurement, as well as realistic detector response---as a quantum circuit evolution over a time-bin sequence combined with measurement conditioning. Numerically, the joint quantum state is represented as an MPS, evolved via the time-evolving block decimation (TEBD) algorithm with per-bin local gates and a swap gate (SWAP) conveyor-belt scheduling scheme; detector response is simulated through quantum trajectory sampling and Kraus operator projection, ultimately reconstructing the atomic reduced density matrix conditioned on successful detection events and evaluating fidelity and entanglement metrics. This framework can handle pulse evolution and conditional statistics over hundreds of time bins within manageable computational resources, providing an interpretable and reproducible first-principles tool for interface parameter optimization, error-source decomposition, and system-level comparison of different schemes.
+\end{eabstract}
+
