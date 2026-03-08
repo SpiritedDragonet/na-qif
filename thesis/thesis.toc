@@ -48,14 +48,14 @@
 \contentsline {section}{\numberline {3.4}实现口径、复杂度与可扩展性}{41}{section.3.4}%
 \contentsline {subsection}{\numberline {3.4.1}计时闭合关系与主导项判据}{42}{subsection.3.4.1}%
 \contentsline {section}{\numberline {3.5}本章小结}{43}{section.3.5}%
-\contentsline {chapter}{\numberline {第4章}仿真结果与参数依赖性分析}{45}{chapter.4}%
-\contentsline {section}{\numberline {4.1}实验对照口径与参数锚点}{45}{section.4.1}%
+\contentsline {chapter}{\numberline {第4章}量子接口噪声建模下的保真度损失量化分析}{45}{chapter.4}%
+\contentsline {section}{\numberline {4.1}实验口径下的参数锚定}{45}{section.4.1}%
 \contentsline {subsection}{\numberline {4.1.1}指标口径参数锚定}{45}{subsection.4.1.1}%
-\contentsline {section}{\numberline {4.2}分层标定流程}{46}{section.4.2}%
-\contentsline {section}{\numberline {4.3}结果图谱物理归因}{47}{section.4.3}%
+\contentsline {section}{\numberline {4.2}分层噪声标定流程}{46}{section.4.2}%
+\contentsline {section}{\numberline {4.3}关键噪声来源归因}{47}{section.4.3}%
 \contentsline {subsection}{\numberline {4.3.1}关键结果与物理解释}{47}{subsection.4.3.1}%
-\contentsline {section}{\numberline {4.4}端到端性能误差预算}{51}{section.4.4}%
-\contentsline {section}{\numberline {4.5}计算成本与部署判据}{54}{section.4.5}%
+\contentsline {section}{\numberline {4.4}保真度损失量化结果}{51}{section.4.4}%
+\contentsline {section}{\numberline {4.5}单轨迹仿真开销测算}{54}{section.4.5}%
 \contentsline {section}{\numberline {4.6}本章小结}{56}{section.4.6}%
 \contentsline {chapter}{结论}{57}{section.4.6}%
 \contentsline {chapter}{参考文献}{59}{section*.8}%

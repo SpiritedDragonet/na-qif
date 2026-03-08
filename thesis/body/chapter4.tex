@@ -1,8 +1,8 @@
-\chapter{仿真结果与参数依赖性分析}[Simulation Results and Parameter Dependence Analysis]
+\chapter{量子接口噪声建模下的保真度损失量化分析}[Quantitative Analysis of Fidelity Loss Under Quantum-Interface Noise Modeling]
 
 本章采用“分层可观测量”的报告框架：先给出可独立标定的中间量，再给出端到端任务量。这样做的核心是把参数识别和性能评估拆开处理，避免把所有误差都压缩到一个末端保真度数字。对应本工作的物理链路，结果解释按“源端发射与波包、链路传输与干涉、BSM 宣告与条件态”三层展开，并在同一统计口径下统一输出成功率、真假成功分量、条件保真度和 CHSH 指标。
 
-\section{实验对照口径与参数锚点}[Experiment-Aligned Metrics and Anchored Parameters]
+\section{实验口径下的参数锚定}[Parameter Anchoring Under Experimental Metrics]
 
 \subsection{指标口径参数锚定}[Metrics and parameter anchoring]
 
@@ -61,7 +61,7 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 
 离散侧固定 $N=100$，并使用统一单位口径：哈密顿量参数采用 $\mathrm{rad/s}$，耗散参数采用 $\mathrm{1/s}$。这一口径保证在改变 $\Delta t$ 时，连续模型的无量纲组合（如 $g\sqrt{\Delta t}$、$\kappa \Delta t$、$\gamma \Delta t$）保持一致，从而避免离散化引入的伪时间尺度漂移。
 
-\section{分层标定流程}[Layered Calibration Pipeline]
+\section{分层噪声标定流程}[Layered Noise Calibration Pipeline]
 
 标定顺序采用“先中间量后终态量”。首先用单臂波包拟合约束 $(\Omega(t),g,\kappa)$，使波包主瓣宽度与尾部时间常数同时落入实验区间；其次用双臂到达直方图与窗口扫描确定 $\Delta t_w$；随后用 HOM 曲线识别可分辨性与相位噪声参数；最后才进入 BSM 模式统计与条件态指标评估。该顺序将参数识别问题写成分层约束：
 \begin{equation}
@@ -79,7 +79,7 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 \end{figure}
 图 \ref{fig:calibration_pipeline} 强调了“观测量到参数”的逐层映射关系，避免把全部参数一次性并入单一目标函数导致的退化解与可解释性下降。
 
-\section{结果图谱物理归因}[Result Atlas and Physical Attribution]
+\section{关键噪声来源归因}[Attribution of Key Noise Sources]
 
 本节围绕同一条物理链路报告结果：源端脉冲决定波包时域结构，窗口策略决定有效事件采样，HOM 与 BSM 共同约束干涉质量，最终体现在条件态保真度、CHSH 与可用速率上。按照这一链路组织结果后，不同图之间的因果关系可以直接对齐。
 
@@ -155,7 +155,7 @@ g^{(2)}(\tau)=b-a\exp\!\left[-\left(\frac{\tau-\tau_0}{\sigma}\right)^2\right]
 \end{figure}
 图 \ref{fig:bsm_patterns} 显示该工作点下真成功质量主要集中在四类正交偏振模式（H1V2、V1H2、H1V1、H2V2）；假成功质量可进一步分为背景辅助与内禀暗计数辅助，其中背景辅助约占 $58.7\%$，内禀暗计数约占 $41.3\%$。在时域上，真成功权重更集中于小 $|\Delta n|$（其中 $\Delta n$ 为两端口时间仓索引差，例如 $|\Delta n|\le 10$ 的累计占比约 $47.6\%$），假成功权重则呈更长尾分布并在较大 $\Delta n$ 区域出现峰值，说明“长尾时差记录”更容易承载假成功成分。
 
-\section{端到端性能误差预算}[End-to-End Performance Error Budget]
+\section{保真度损失量化结果}[Quantified Fidelity-Loss Results]
 
 接下来汇总条件态结构与端到端可用纠缠质量。
 
@@ -226,7 +226,7 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \end{figure}
 图 \ref{fig:error_budget} 将“事件预算”（$p_t$ 与 $p_f$）与“质量预算”（$F_t$、$S_{\max}$、假成功占比）统一到同一张图中。图 \ref{fig:error_budget}(b) 的分解进一步指出推荐工作点下假成功并非单一来源主导，而是由背景与内禀暗计数共同贡献，并在不同点击模式间分担，这为后续“先压背景还是先压暗计数”的工程优先级提供了直接依据。
 
-\section{计算成本与部署判据}[Computational Cost and Deployment Criteria]
+\section{单轨迹仿真开销测算}[Single-Trajectory Simulation Cost Profiling]
 
 测试硬件为 Intel(R) Xeon(R) E-2176M CPU，标称主频 $2.70$ GHz（系统可见 12 逻辑线程）；本次单跑按单核、单并发任务执行（1 个工作线程）。在基线参数 $N=100,\ \Delta t=1$ ns，窗口 $70$ ns，$\chi_{\max}=50$，单次任务（1 shot）下，时间量定义与代表性运行结果统一列于表 \ref{tab:timing-breakdown}。
 
