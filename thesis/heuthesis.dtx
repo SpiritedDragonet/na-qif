@@ -3509,6 +3509,10 @@ EXECUTE {end.bib}                                 %   end_bib();
 %    \begin{macrocode}
 \DeclareBoolOption[false]{splitbibitem}
 %    \end{macrocode}
+% 公式编号括号是否使用全角（默认开启）。
+%    \begin{macrocode}
+\DeclareBoolOption[true]{eqnumfullwidth}
+%    \end{macrocode}
 % 此处添加英文目录开关
 %    \begin{macrocode}
 \DeclareBoolOption[false]{engtoc}
@@ -4297,12 +4301,14 @@ delim_1 "\\hspace*{\\fill}"
     (\ignorespaces\text{\equationname\hskip0.5em}#1\unskip\@@italiccorr)\equcaption{#1}}}
 \fi
 \fi
-\def\heu@maketag#1{\maketag@@@{(\ignorespaces #1\unskip\@@italiccorr)}}
-\def\tagform@#1{\maketag@@@{(\ignorespaces #1\unskip\@@italiccorr)\equcaption{#1}}}
+\def\heu@eqnumlparen{\ifheu@eqnumfullwidth （\else(\fi}
+\def\heu@eqnumrparen{\ifheu@eqnumfullwidth ）\else)\fi}
+\def\heu@maketag#1{\maketag@@@{\heu@eqnumlparen\ignorespaces #1\unskip\@@italiccorr\heu@eqnumrparen}}
+\def\tagform@#1{\maketag@@@{\heu@eqnumlparen\ignorespaces #1\unskip\@@italiccorr\heu@eqnumrparen\equcaption{#1}}}
 %    \end{macrocode}
 % 修改 \cs{tagform} 会影响 \cs{eqref}。
 %    \begin{macrocode}
-\renewcommand{\eqref}[1]{\textup{(\ref{#1})}}
+\renewcommand{\eqref}[1]{\textup{\heu@eqnumlparen\ref{#1}\heu@eqnumrparen}}
 %</bookcls>
 %    \end{macrocode}
 % 定理标题使用黑体，正文使用宋体，冒号隔开。

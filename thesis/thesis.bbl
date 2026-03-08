@@ -1,4 +1,4 @@
-\begin{thebibliography}{54}
+\begin{thebibliography}{71}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{#1}
 \expandafter\ifx\csname urlstyle\endcsname\relax\else
@@ -413,6 +413,129 @@ YANAGIMOTO R, OTHERS.
 \newblock Towards an engineering framework for ultrafast quantum nonlinear
   optics\allowbreak[Z].
 \newblock 2021{\natexlab{b}}.
+
+\bibitem[Kraus(1983)]{Kraus1983StatesEffectsOperations}
+KRAUS K.
+\newblock Lecture notes in physics: volume 190\quad states, effects, and
+  operations: Fundamental notions of quantum theory\allowbreak[M/OL].
+\newblock Berlin and Heidelberg: Springer, 1983.
+\newblock DOI: \doi{10.1007/3-540-12732-1}.
+
+\bibitem[Hong et~al.(1987)Hong, Ou, and Mandel]{HongOuMandel1987}
+HONG C~K, OU Z~Y, MANDEL L.
+\newblock Measurement of subpicosecond time intervals between two photons by
+  interference\allowbreak[J/OL].
+\newblock Physical Review Letters, 1987, 59\allowbreak (18): 2044-2046.
+\newblock DOI: \doi{10.1103/PhysRevLett.59.2044}.
+
+\bibitem[White(1992)]{White1992DMRG}
+WHITE S~R.
+\newblock Density matrix formulation for quantum renormalization
+  groups\allowbreak[J/OL].
+\newblock Physical Review Letters, 1992, 69\allowbreak (19): 2863-2866.
+\newblock DOI: \doi{10.1103/PhysRevLett.69.2863}.
+
+\bibitem[White(1993)]{White1993DMRG}
+WHITE S~R.
+\newblock Density-matrix algorithms for quantum renormalization
+  groups\allowbreak[J/OL].
+\newblock Physical Review B, 1993, 48\allowbreak (14): 10345-10356.
+\newblock DOI: \doi{10.1103/PhysRevB.48.10345}.
+
+\bibitem[Vidal(2003)]{Vidal2003SlightlyEntangled}
+VIDAL G.
+\newblock Efficient classical simulation of slightly entangled quantum
+  computations\allowbreak[J/OL].
+\newblock Physical Review Letters, 2003, 91: 147902.
+\newblock DOI: \doi{10.1103/PhysRevLett.91.147902}.
+
+\bibitem[Schollw{\"o}ck(2011)]{Schollwoeck2011MPS}
+SCHOLLW{\"O}CK U.
+\newblock The density-matrix renormalization group in the age of matrix product
+  states\allowbreak[J/OL].
+\newblock Annals of Physics, 2011, 326\allowbreak (1): 96-192.
+\newblock DOI: \doi{10.1016/j.aop.2010.09.012}.
+
+\bibitem[Or{\'u}s(2014)]{Orus2014TensorNetworks}
+OR{\'U}S R.
+\newblock A practical introduction to tensor networks: Matrix product states
+  and projected entangled pair states\allowbreak[J/OL].
+\newblock Annals of Physics, 2014, 349: 117-158.
+\newblock DOI: \doi{10.1016/j.aop.2014.06.013}.
+
+\bibitem[Hastings(2007)]{Hastings2007AreaLaw}
+HASTINGS M~B.
+\newblock An area law for one-dimensional quantum systems\allowbreak[J/OL].
+\newblock Journal of Statistical Mechanics: Theory and Experiment, 2007,
+  2007\allowbreak (08): P08024.
+\newblock DOI: \doi{10.1088/1742-5468/2007/08/P08024}.
+
+\bibitem[Vidal(2004)]{Vidal2004TEBD}
+VIDAL G.
+\newblock Efficient simulation of one-dimensional quantum many-body
+  systems\allowbreak[J/OL].
+\newblock Physical Review Letters, 2004, 93: 040502.
+\newblock DOI: \doi{10.1103/PhysRevLett.93.040502}.
+
+\bibitem[Verstraete et~al.(2004)Verstraete, Garc{\'\i}a-Ripoll, and
+  Cirac]{Verstraete2004MPDO}
+VERSTRAETE F, GARC{\'I}A-RIPOLL J~J, CIRAC J~I.
+\newblock Matrix product density operators: Simulation of finite-temperature
+  and dissipative systems\allowbreak[J/OL].
+\newblock Physical Review Letters, 2004, 93: 207204.
+\newblock DOI: \doi{10.1103/PhysRevLett.93.207204}.
+
+\bibitem[Zwolak et~al.(2004)Zwolak and Vidal]{Zwolak2004MixedStateDynamics}
+ZWOLAK M, VIDAL G.
+\newblock Mixed-state dynamics in one-dimensional quantum lattice systems: A
+  time-dependent superoperator renormalization algorithm\allowbreak[J/OL].
+\newblock Physical Review Letters, 2004, 93: 207205.
+\newblock DOI: \doi{10.1103/PhysRevLett.93.207205}.
+
+\bibitem[Paeckel et~al.(2019)Paeckel, K{\"o}hler, Swoboda, Manmana,
+  Schollw{\"o}ck, and Hubig]{Paeckel2019TimeEvolutionMPS}
+PAECKEL S, K{\"O}HLER T, SWOBODA A, et~al.
+\newblock Time-evolution methods for matrix-product states\allowbreak[J/OL].
+\newblock Annals of Physics, 2019, 411: 167998.
+\newblock DOI: \doi{10.1016/j.aop.2019.167998}.
+
+\bibitem[Lindblad(1976)]{Lindblad1976Semigroups}
+LINDBLAD G.
+\newblock On the generators of quantum dynamical semigroups\allowbreak[J/OL].
+\newblock Communications in Mathematical Physics, 1976, 48\allowbreak (2):
+  119-130.
+\newblock DOI: \doi{10.1007/BF01608499}.
+
+\bibitem[Gorini et~al.(1976)Gorini, Kossakowski, and
+  Sudarshan]{GoriniKossakowskiSudarshan1976}
+GORINI V, KOSSAKOWSKI A, SUDARSHAN E~C~G.
+\newblock Completely positive dynamical semigroups of {N}-level
+  systems\allowbreak[J/OL].
+\newblock Journal of Mathematical Physics, 1976, 17\allowbreak (5): 821-825.
+\newblock DOI: \doi{10.1063/1.522979}.
+
+\bibitem[Dalibard et~al.(1992)Dalibard, Castin, and
+  M{\o}lmer]{DalibardCastinMolmer1992QuantumJumps}
+DALIBARD J, CASTIN Y, M{\O}LMER K.
+\newblock Wave-function approach to dissipative processes in quantum
+  optics\allowbreak[J/OL].
+\newblock Physical Review Letters, 1992, 68\allowbreak (5): 580-583.
+\newblock DOI: \doi{10.1103/PhysRevLett.68.580}.
+
+\bibitem[Daley(2014)]{Daley2014QuantumTrajectories}
+DALEY A~J.
+\newblock Quantum trajectories and open many-body quantum
+  systems\allowbreak[J/OL].
+\newblock Advances in Physics, 2014, 63\allowbreak (2): 77-149.
+\newblock DOI: \doi{10.1080/00018732.2014.933502}.
+
+\bibitem[Horodecki et~al.(1995)Horodecki, Horodecki, and
+  Horodecki]{Horodecki1995CHSH}
+HORODECKI R, HORODECKI P, HORODECKI M.
+\newblock Violating {B}ell inequality by mixed spin-$\frac{1}{2}$ states:
+  necessary and sufficient condition\allowbreak[J/OL].
+\newblock Physics Letters A, 1995, 200\allowbreak (5): 340-344.
+\newblock DOI: \doi{10.1016/0375-9601(95)00214-N}.
 
 \bibitem[Jaynes et~al.(1963)Jaynes and Cummings]{JaynesCummings1963}
 JAYNES E~T, CUMMINGS F~W.

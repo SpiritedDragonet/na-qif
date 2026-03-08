@@ -121,6 +121,7 @@
 \DeclareBoolOption[true]{bsheadrule}
 \DeclareBoolOption[true]{newtxmath}
 \DeclareBoolOption[false]{splitbibitem}
+\DeclareBoolOption[true]{eqnumfullwidth}
 \DeclareBoolOption[false]{engtoc}
 \DeclareStringOption{fontset}
 \DeclareDefaultOption{\PassOptionsToClass{\CurrentOption}{ctexbook}}
@@ -548,9 +549,11 @@
     (\ignorespaces\text{\equationname\hskip0.5em}#1\unskip\@@italiccorr)\equcaption{#1}}}
 \fi
 \fi
-\def\heu@maketag#1{\maketag@@@{(\ignorespaces #1\unskip\@@italiccorr)}}
-\def\tagform@#1{\maketag@@@{(\ignorespaces #1\unskip\@@italiccorr)\equcaption{#1}}}
-\renewcommand{\eqref}[1]{\textup{(\ref{#1})}}
+\def\heu@eqnumlparen{\ifheu@eqnumfullwidth （\else(\fi}
+\def\heu@eqnumrparen{\ifheu@eqnumfullwidth ）\else)\fi}
+\def\heu@maketag#1{\maketag@@@{\heu@eqnumlparen\ignorespaces #1\unskip\@@italiccorr\heu@eqnumrparen}}
+\def\tagform@#1{\maketag@@@{\heu@eqnumlparen\ignorespaces #1\unskip\@@italiccorr\heu@eqnumrparen\equcaption{#1}}}
+\renewcommand{\eqref}[1]{\textup{\heu@eqnumlparen\ref{#1}\heu@eqnumrparen}}
 \ifheu@postdoc
 \setlength{\intextsep}{10.5bp}
 \setlength{\textfloatsep}{10.5bp}
