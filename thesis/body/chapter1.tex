@@ -1,8 +1,8 @@
 \chapter{绪论}[Introduction]
 
-量子计算是以可控量子系统为信息载体、通过相干操控与测量执行计算的一类计算模型。\cite{NielsenChuang2010QCQI,NationalAcademies2019QC} 其基本信息单元是量子比特。在不进行测量的相干演化过程中，一个量子比特的纯态可写为 $|\psi\rangle=\alpha|0\rangle+\beta|1\rangle$，其中 $\alpha,\beta$ 为复幅并满足 $|\alpha|^2+|\beta|^2=1$。\cite{NielsenChuang2010QCQI} 当 $n$ 个量子比特联合编码信息时，系统状态属于维度为 $2^n$ 的希尔伯特空间；量子门操作对应幺正变换，能够在该高维空间中以受控方式改变幅度与相位；最后的测量把量子态投影为经典结果并给出相应概率分布。\cite{NielsenChuang2010QCQI,NationalAcademies2019QC} 在多比特体系中，当整体态无法写成各子系统态的直积形式时就出现纠缠；纠缠与干涉共同构成量子算法、量子通信与量子计量的核心资源。\cite{NielsenChuang2010QCQI}
+量子计算利用量子态的相干演化与测量处理信息，并在部分任务上展现出与经典计算不同的复杂度潜力。\cite{NielsenChuang2010QCQI,NationalAcademies2019QC} 典型例子包括 Shor 算法对整数因数分解与离散对数的多项式时间求解，以及 Grover 算法对无结构搜索的平方根加速。\cite{Shor1994Algorithms,Grover1997QuantumSearch} 同时，美国理论物理学家理查德·费曼指出量子体系演化难以由经典资源直接模拟，这使量子多体动力学与量子化学等任务成为量子计算的重要牵引方向。\cite{Feynman1982Simulating,Cao2019QuantumChemistry}
 
-这种信息处理方式之所以受到关注，源于其在若干问题类别上展现出与经典计算不同的复杂度潜力。典型例子包括 Shor 算法对整数因数分解与离散对数的多项式时间求解，以及 Grover 算法对无结构搜索的平方根加速。\cite{Shor1994Algorithms,Grover1997QuantumSearch} 另一方面，美国理论物理学家理查德·费曼指出量子体系的演化通常难以用经典资源直接模拟，因此量子计算天然适合量子多体动力学、量子化学等模拟任务。\cite{Feynman1982Simulating,Cao2019QuantumChemistry} 需要强调的是，量子计算的潜在优势具有任务依赖性，取决于问题结构、算法设计与硬件误差水平。\cite{Preskill2018NISQ,NationalAcademies2019QC}
+随着研究从概念验证走向可扩展实现，问题重心逐步从“单次实验能否成功”转向“系统能否长期稳定地产生、传输并调用量子资源”。\cite{Preskill2018NISQ,NationalAcademies2019QC} 这一转向中的量子接口问题值得重点讨论，并围绕处理中性原子节点的端到端链路开展建模与误差预算分析。
 
 \section{量子计算简介}[Introduction to quantum computing]
 
@@ -228,7 +228,7 @@
 
 本文所说的“处理中性原子节点”，指的是节点内部既拥有可编程多比特原子寄存器，也拥有能与光场高效耦合的通信自由度。\cite{Covey2023QuantumNetworksNeutralAtomNodes} 在更工程化的表述下，节点里一部分原子（或一部分受控模式）负责通信：用于产生原子--光子纠缠、接收光子，或把本地量子态映射到飞行光子；另一部分原子负责计算：用于本地门操作、错误检测/纠错与资源管理。\cite{Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
 
-这里需要强调的是：远程光学链路建立的是跨模块的贝尔对；要把贝尔对转化为分布式计算可用的资源，需要节点内部具备相应的本地处理能力配合，例如门传送、纠错注入或纠缠净化等操作。\cite{Monroe2014ModularQC,Covey2023QuantumNetworksNeutralAtomNodes} 因此，即使本文后续在链路层面只模拟“两端各一个原子”的远程纠缠产生过程，其物理对象仍属于“处理节点如何接入网络”的接口层评估，与纯通信意义上的链路展示在体系结构目标上有所区别。\cite{Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
+即使本文在链路层面只模拟“两端各一个原子”的远程纠缠产生过程，研究对象仍定义为处理中性原子节点的接口层评估；其在模块化/分布式量子计算中的体系结构定位将在本章后文集中展开。\cite{Monroe2014ModularQC,Covey2023QuantumNetworksNeutralAtomNodes,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
 
 
 
@@ -251,7 +251,7 @@
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.95\linewidth]{Fig1.jpg}
-\caption{本文关注的端到端链路示意图：两端 $^{87}$Rb 原子在腔增强条件下产生原子--光子纠缠；光子经量子频率转换（QFC）转到电信波段并通过长光纤发送至中间站；中间站通过两光子干涉与部分贝尔态测量（BSM）宣告远程原子贝尔对。\cite{vanleent2020longdistance,vanleent2022entangling,Ikuta2018PolarizationInsensitiveQFC,zhou2024longlived,Hartung2024QuantumNetworkRegisterTweezerCavity}}
+\caption{所研究的端到端链路示意图：两端 $^{87}$Rb 原子在腔增强条件下产生原子--光子纠缠；光子经量子频率转换（QFC）转到电信波段并通过长光纤发送至中间站；中间站通过两光子干涉与部分贝尔态测量（BSM）宣告远程原子贝尔对。\cite{vanleent2020longdistance,vanleent2022entangling,Ikuta2018PolarizationInsensitiveQFC,zhou2024longlived,Hartung2024QuantumNetworkRegisterTweezerCavity}}
 \label{fig:link_overview}
 \end{figure}
 
@@ -259,10 +259,10 @@
 
 从国际研究脉络看，上述关键环节已被若干实验逐步打通。\cite{vanleent2020longdistance,vanleent2022entangling,zhou2024longlived} 与此同时，把光镊阵列与光学腔结合以实现可多路复用的网络寄存器，也使“单通信接口”与“可扩展原子寄存器”的对接更具体。\cite{Hartung2024QuantumNetworkRegisterTweezerCavity} 因而选择该链路进行建模，有利于把仿真输出直接对应到已有或近期可实现的实验链路参数上。\cite{Covey2023QuantumNetworksNeutralAtomNodes}
 
-本文选取的接口链路更契合的对象是“本地中性原子阵列承担处理模块，少量通信比特通过光子链路建立跨模块贝尔对”的模块化/分布式量子计算范式。\cite{Jiang2007DistributedQC,Monroe2014ModularQC,Covey2023QuantumNetworksNeutralAtomNodes} 在这种范式下，本地寄存器负责高并行度门操作、逻辑编码与错误检测，网络接口负责非局域纠缠资源的生成与注入；体系结构的关键在于让两类能力在时间与资源调度上协同工作。\cite{Bluvstein2024LogicalQuantumProcessor,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
+所选接口链路更契合的对象是“本地中性原子阵列承担处理模块，少量通信比特通过光子链路建立跨模块贝尔对”的模块化/分布式量子计算范式。\cite{Jiang2007DistributedQC,Monroe2014ModularQC,Covey2023QuantumNetworksNeutralAtomNodes} 在这种范式下，本地寄存器负责高并行度门操作、逻辑编码与错误检测，网络接口负责非局域纠缠资源的生成与注入；体系结构的关键在于让两类能力在时间与资源调度上协同工作。\cite{Bluvstein2024LogicalQuantumProcessor,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
 
 
-从“计算范式—接口范式”的对应关系看，门模型的模块化量子计算希望在模块内部保持接近确定性、可并行的本地门操作，并把跨模块操作转化为“消耗远程贝尔对的门传送”或“测量驱动的逻辑操作”。\cite{Monroe2014ModularQC,Jiang2007DistributedQC} 因此，接口链路的关键指标是“给定误差阈值下的纠缠资源吞吐”以及“失败后可快速回收并再次尝试”的运行特性。\cite{Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms} 以长距离通信为主要目标的量子中继则更强调存储寿命、多模复用与网络层级交换策略。\cite{Azuma2023QuantumRepeatersReview} 本文建模对象位于两者交汇处：链路形态依赖电信光纤与中继站 BSM，节点能力同时面向模块化计算对纠缠资源的调用。\cite{Covey2023QuantumNetworksNeutralAtomNodes}
+从“计算范式—接口范式”的对应关系看，门模型的模块化量子计算希望在模块内部保持接近确定性、可并行的本地门操作，并把跨模块操作转化为“消耗远程贝尔对的门传送”或“测量驱动的逻辑操作”。\cite{Monroe2014ModularQC,Jiang2007DistributedQC} 因此，接口链路的关键指标是“给定误差阈值下的纠缠资源吞吐”以及“失败后可快速回收并再次尝试”的运行特性。\cite{Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms} 以长距离通信为主要目标的量子中继则更强调存储寿命、多模复用与网络层级交换策略。\cite{Azuma2023QuantumRepeatersReview} 所建模型对象位于两者交汇处：链路形态依赖电信光纤与中继站 BSM，节点能力同时面向模块化计算对纠缠资源的调用。\cite{Covey2023QuantumNetworksNeutralAtomNodes}
 
 
 \section{端到端性能瓶颈分析}[End-to-end performance bottlenecks]
@@ -272,7 +272,7 @@
 从链路层面看，宣告成功率的“乘法塌缩”往往最先显现。\cite{Reiserer2022CavityEnhancedNetworkNodes,vanleent2022entangling} 远程纠缠建立的宣告成功概率通常由多项因素连乘决定：源端发射概率、收集与耦合效率、QFC 转换效率、光纤传输、干涉/BSM 成功率以及探测效率等。\cite{Azuma2023QuantumRepeatersReview} 当两端链路都要同时成功时，总成功率会随这些因子的连乘而快速下降，距离增加还会带来额外光纤损耗。\cite{vanleent2022entangling}
 
 
-在实验数据处理上，成功率通常直接体现在符合计数率或宣告事件率上；而当接口用于纠缠交换时，中继站不同探测模式对应不同的贝尔态投影结果。\cite{BarrettKok2005EfficientHighFidelityQC,vanleent2022entangling} 因此，除了整体的宣告事件率，还需要关注“各类投影事件的占比”以及“投影事件对应的远程后验态质量”。\cite{Zhou2023QuantumNetworkNoise} 这类统计量可以直接与实验的点击直方图、符合窗口扫描以及后续原子测量结果做一一对应，从而把仿真输出转化为可操作的实验诊断信息。\cite{vanleent2022entangling}
+在实验数据处理上，本文沿用前文“远程纠缠方案与系统级评价指标”小节给出的口径，仍以宣告事件率、投影事件占比及其对应后验态质量作为主线统计量；这些量可与点击直方图、符合窗口扫描和后续原子测量结果直接对应。\cite{BarrettKok2005EfficientHighFidelityQC,vanleent2022entangling,Zhou2023QuantumNetworkNoise}
 
 
 距离还会引入时间代价：在宣告型方案中，节点需要等待中继站的测量结果返回，才能知道这一轮尝试是否成功。\cite{Azuma2023QuantumRepeatersReview,Zhou2023QuantumNetworkNoise} 距离越长，往返时间越长，尝试频率就越难无限提高；若节点需要在等待期间保持量子态，相干寿命与相位稳定又会把等待时间进一步转化为保真度损失。\cite{zhou2024longlived} 因而成功率不足与等待导致的退相干常常同时出现，需要在系统级共同权衡。\cite{Zhou2023QuantumNetworkNoise}
@@ -304,9 +304,9 @@
 
 \subsection{端到端建模方法概述}
 
-从理论上看，本文问题涉及连续时间开放量子系统在传播、测量条件化与多尺度噪声下的联合演化。\cite{GardinerCollett1985,Pichler2016TimeDelaysMPS} 将连续时间光场离散为时间分箱后，系统与光场的逐步相互作用可以写成一维链上的局域更新；在数值上，可以借助矩阵乘积态（matrix product state，MPS）及其时间演化块解耦算法（time-evolving block decimation，TEBD）在可管理复杂度下保留关键相干与时间相关信息。\cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems,ArranzRegidor2021WaveguideQED,Yanagimoto2021MPSQuantumPulsePropagation,Yanagimoto2021UltrafastQuantumNonlinearOptics}
+从理论上看，这类量子接口问题涉及连续时间开放量子系统在传播、测量条件化与多尺度噪声下的联合演化。\cite{GardinerCollett1985,Pichler2016TimeDelaysMPS} 将连续时间光场离散为时间分箱后，系统与光场的逐步相互作用可以写成一维链上的局域更新；在数值上，可以借助矩阵乘积态（matrix product state，MPS）及其时间演化块解耦算法（time-evolving block decimation，TEBD）在可管理复杂度下保留关键相干与时间相关信息。\cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems,ArranzRegidor2021WaveguideQED,Yanagimoto2021MPSQuantumPulsePropagation,Yanagimoto2021UltrafastQuantumNonlinearOptics}
 
-对本文的链路而言，这一表示有两点直接好处。第一，接受窗、时间抖动、滤波记忆与点击宣告都在时间域定义，时间分箱表示与实验电子学和中继探测逻辑天然对齐。\cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems} 第二，端到端链路包含多个串接环节（发射、QFC、传播、干涉、探测）；若在统一时序框架下处理，可以把误差源统一映射到最终测量算符与后验态统计上，从而支持更可解释的误差分解与工作点选择。\cite{vanleent2022entangling,Zhou2023QuantumNetworkNoise}
+对所研究的链路而言，这一表示有两点直接好处。第一，接受窗、时间抖动、滤波记忆与点击宣告都在时间域定义，时间分箱表示与实验电子学和中继探测逻辑天然对齐。\cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems} 第二，端到端链路包含多个串接环节（发射、QFC、传播、干涉、探测）；若在统一时序框架下处理，可以把误差源统一映射到最终测量算符与后验态统计上，从而支持更可解释的误差分解与工作点选择。\cite{vanleent2022entangling,Zhou2023QuantumNetworkNoise}
 
 
 这里的正算符值测量（positive operator-valued measure，POVM）是一类对测量过程的算符表述：它用一组正算符 $\{E_k\}$ 描述不同测量结果 $k$ 的概率 $p_k=\mathrm{Tr}(E_k\rho)$。\cite{NielsenChuang2010QCQI} 对于包含线性光学干涉、滤波、探测门宽与条件化选择的链路，可以在算符层面把这些后续过程“推回”到节点态上，得到等效的 POVM；这样既便于把多种误差源统一到同一统计框架，也能在数值上减少需要显式保留的环境自由度。\cite{Pichler2016TimeDelaysMPS,ArranzRegidor2021WaveguideQED}
@@ -314,13 +314,13 @@
 
 \subsection{研究内容与章节安排}
 
-基于上述背景，本文聚焦处理中性原子节点的端到端量子接口建模，研究对象为“原子--光子发射、QFC、电信光纤传播、中继站两光子干涉与部分 BSM”组成的宣告型远程纠缠链路。\cite{vanleent2020longdistance,vanleent2022entangling,Ikuta2018PolarizationInsensitiveQFC} 本文关注在多种现实非理想因素并存条件下，链路的宣告统计、远程纠缠建立率与条件态质量如何随参数变化，并分析不同距离与工作点下的主导误差源，为实验调参提供可量化依据。
+基于上述背景，围绕处理中性原子节点的端到端量子接口建模有必要进一步展开，研究对象为“原子--光子发射、QFC、电信光纤传播、中继站两光子干涉与部分 BSM”组成的宣告型远程纠缠链路。\cite{vanleent2020longdistance,vanleent2022entangling,Ikuta2018PolarizationInsensitiveQFC} 研究重点是在多种现实非理想因素并存条件下，链路的宣告统计、远程纠缠建立率与条件态质量如何随参数变化，并分析不同距离与工作点下的主导误差源，为实验调参提供可量化依据。
 
 
 围绕这一目标，本文的具体工作主要包括以下几个方面：（1）构建两端原子—光子发射、量子频率转换、光纤传播、中继站干涉与探测的端到端模型，并在模型中显式纳入主要损耗与噪声通道；（2）在统一的时间分箱时序框架下，实现宣告型测量的条件化更新与后验态计算，并输出可与实验直接对照的符合计数与贝尔态投影统计；（3）在参数扫描基础上给出误差预算视角的可解释分析，识别不同距离与工作点下的主导退化机制与关键可调旋钮。\cite{Zhou2023QuantumNetworkNoise,Reiserer2022CavityEnhancedNetworkNodes}
 
 
-在研究边界上，本文回答的是“处理中性原子节点的通信接口在模块化/分布式量子计算背景下能够提供怎样的远程纠缠资源”。\cite{Covey2023QuantumNetworksNeutralAtomNodes,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms} 因此，本文聚焦接口链路本身的端到端建模与误差预算，而不在绪论阶段展开更大规模网络协议的全部细节。\cite{Wehner2018QuantumInternetVision}
+在研究边界上，这一研究所回答的问题是“处理中性原子节点的通信接口在模块化/分布式量子计算背景下能够提供怎样的远程纠缠资源”。\cite{Covey2023QuantumNetworksNeutralAtomNodes,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms} 因此，讨论聚焦接口链路本身的端到端建模与误差预算，而不在绪论阶段展开更大规模网络协议的全部细节。\cite{Wehner2018QuantumInternetVision}
 
 
 这种取舍使得数值复杂度主要集中在链路级物理过程及其统计后果上，仿真输出可以直接与实验的点击事件、符合统计和原子读出结果对照；同时也为后续把链路模型嵌入更高层的资源调度、复用与容错分析留下接口。\cite{Azuma2023QuantumRepeatersReview,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
@@ -328,5 +328,5 @@
 
 全文结构如下：第二章介绍开放量子系统描述、时间分箱离散化、MPS 表示与 TEBD 推进，以及量子信道/测量算符的基本处理框架；第三章建立端到端模型并给出源端发射、频率转换、滤波记忆、光纤传播、模式退化、中继站干涉与探测等环节的建模方法；第四章给出与实验可比对的数值结果与误差预算，重点分析远程纠缠建立率、条件态保真度、贝尔态投影统计及关键参数扫描；结论部分对全文工作进行总结并讨论可能的扩展方向。
 
-本章旨在交代研究背景、关键概念与技术脉络，并明确本文建模对象与论文组织方式，为后续章节的理论推导和数值结果阅读提供统一语境与参照基础。
+本章用于交代研究背景、关键概念与技术脉络，并明确建模对象与论文组织方式，为后续章节的理论推导和数值结果阅读提供统一语境与参照基础。
 
