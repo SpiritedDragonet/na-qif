@@ -1,4 +1,4 @@
-\begin{thebibliography}{71}
+\begin{thebibliography}{74}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{#1}
 \expandafter\ifx\csname urlstyle\endcsname\relax\else
@@ -537,6 +537,14 @@ HORODECKI R, HORODECKI P, HORODECKI M.
 \newblock Physics Letters A, 1995, 200\allowbreak (5): 340-344.
 \newblock DOI: \doi{10.1016/0375-9601(95)00214-N}.
 
+\bibitem[Reiserer et~al.(2015)Reiserer and
+  Rempe]{ReisererRempe2015CavityNetworks}
+REISERER A, REMPE G.
+\newblock Cavity-based quantum networks with single atoms and optical
+  photons\allowbreak[J/OL].
+\newblock Reviews of Modern Physics, 2015, 87\allowbreak (4): 1379-1418.
+\newblock DOI: \doi{10.1103/RevModPhys.87.1379}.
+
 \bibitem[Jaynes et~al.(1963)Jaynes and Cummings]{JaynesCummings1963}
 JAYNES E~T, CUMMINGS F~W.
 \newblock Comparison of quantum and semiclassical radiation theories with
@@ -544,11 +552,26 @@ JAYNES E~T, CUMMINGS F~W.
 \newblock Proceedings of the IEEE, 1963, 51\allowbreak (1): 89-109.
 \newblock DOI: \doi{10.1109/PROC.1963.1664}.
 
-\bibitem[Garraway(1997)]{Garraway1997DecayStrongReservoir}
-GARRAWAY B~M.
-\newblock Nonperturbative decay of an atomic system in a
-  cavity\allowbreak[J/OL].
-\newblock Physical Review A, 1997, 55\allowbreak (3): 2290-2303.
-\newblock DOI: \doi{10.1103/PhysRevA.55.2290}.
+\bibitem[Carmichael(1993)]{Carmichael1993OpenSystemsQuantumOptics}
+CARMICHAEL H~J.
+\newblock Lecture notes in physics monographs: volume~18\quad an open systems
+  approach to quantum optics\allowbreak[M/OL].
+\newblock Springer Berlin Heidelberg, 1993.
+\newblock DOI: \doi{10.1007/978-3-540-47620-7}.
+
+\bibitem[Plenio et~al.(1998)Plenio and Knight]{PlenioKnight1998QuantumJumps}
+PLENIO M~B, KNIGHT P~L.
+\newblock The quantum-jump approach to dissipative dynamics in quantum
+  optics\allowbreak[J/OL].
+\newblock Reviews of Modern Physics, 1998, 70\allowbreak (1): 101-144.
+\newblock DOI: \doi{10.1103/RevModPhys.70.101}.
+
+\bibitem[Calsamiglia et~al.(2001)Calsamiglia and
+  L\"utkenhaus]{CalsamigliaLutkenhaus2001BellAnalyzer}
+CALSAMIGLIA J, L\"UTKENHAUS N.
+\newblock Maximum efficiency of a linear-optical bell-state
+  analyzer\allowbreak[J/OL].
+\newblock Applied Physics B, 2001, 72\allowbreak (1): 67-71.
+\newblock DOI: \doi{10.1007/s003400000484}.
 
 \end{thebibliography}
