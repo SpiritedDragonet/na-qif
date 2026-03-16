@@ -1,4 +1,4 @@
-import csv
+﻿import csv
 import pathlib
 
 import matplotlib.pyplot as plt
@@ -9,6 +9,9 @@ EXPORT_PNG = False
 
 def _default_summary_csv() -> pathlib.Path:
     data_root = pathlib.Path(__file__).resolve().parents[1] / "data"
+    preferred = data_root / "hom_rerun" / "summary" / "hom_summary.csv"
+    if preferred.exists():
+        return preferred
     candidates = sorted(
         data_root.glob("hom_summary_output_*/summary/hom_summary.csv"),
         key=lambda p: p.stat().st_mtime,
@@ -186,3 +189,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
