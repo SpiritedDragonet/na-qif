@@ -32,7 +32,21 @@ def _arrow(ax, p0, p1):
 
 
 def main() -> None:
-    plt.rcParams.update({"font.family": "DejaVu Sans"})
+    plt.rcParams.update(
+        {
+            "font.family": "sans-serif",
+            "font.sans-serif": [
+                "Microsoft YaHei",
+                "SimHei",
+                "SimSun",
+                "Noto Sans CJK SC",
+                "Source Han Sans SC",
+                "Arial Unicode MS",
+                "DejaVu Sans",
+            ],
+            "axes.unicode_minus": False,
+        }
+    )
 
     fig, ax = plt.subplots(figsize=(11.0, 4.8), constrained_layout=True)
     ax.set_xlim(0.0, 1.0)
@@ -50,7 +64,7 @@ def main() -> None:
         y,
         w,
         h,
-        "Wavepacket anchor\nObs: peak/width/tail\nFit: $\\Omega(t),g,\\kappa$",
+        "波包锚定\n观测：峰值/宽度/尾部\n拟合：$\\Omega(t),g,\\kappa$",
         "#e0f2fe",
     )
     _box(
@@ -59,7 +73,7 @@ def main() -> None:
         y,
         w,
         h,
-        "Window layer\nObs: click histogram\nFit: $\\Delta t_w$",
+        "窗口层\n观测：点击直方图\n拟合：$\\Delta t_w$",
         "#dcfce7",
     )
     _box(
@@ -68,7 +82,7 @@ def main() -> None:
         y,
         w,
         h,
-        "HOM layer\nObs: dip depth/width\nFit: $v_{\\mathrm{HOM}},\\sigma_\\phi$",
+        "HOM层\n观测：谷深/宽度\n拟合：$v_{\\mathrm{HOM}},\\sigma_\\phi$",
         "#fef9c3",
     )
     _box(
@@ -77,7 +91,7 @@ def main() -> None:
         y,
         w,
         h,
-        "BSM layer\nObs: mode patterns\nFit: residual mix, bg split",
+        "BSM层\n观测：模式分布\n拟合：残余混合、背景占比",
         "#fee2e2",
     )
     _box(
@@ -86,7 +100,7 @@ def main() -> None:
         y,
         w,
         h,
-        "Task metrics\nValidate:\n$\\{p_s,p_t,p_f,F_t,S\\}$",
+        "任务指标\n验证：\n$\\{p_s,p_t,p_f,F_t,S\\}$",
         "#ede9fe",
     )
 
@@ -99,13 +113,13 @@ def main() -> None:
         0.16,
         0.76,
         0.24,
-        "Layered objective: each stage optimizes only stage-matched observables, then passes constraints downstream.\n"
-        "This avoids full-parameter degeneracy and improves auditability of residual mismatch.",
+        "分层目标：每一层只优化该层对应观测量，并将约束传递到下一层。\n"
+        "该策略可避免全参数退化并提高残差不匹配的可审计性。",
         "#f8fafc",
     )
     _arrow(ax, (0.50, y), (0.50, 0.41))
 
-    ax.set_title("Layered calibration workflow and observable-to-parameter mapping", fontsize=12.3, fontweight="bold")
+    ax.set_title("分层标定流程与观测量-参数映射", fontsize=12.3, fontweight="bold")
     out_path = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_path, dpi=220)
     plt.close(fig)

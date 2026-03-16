@@ -124,7 +124,17 @@ def main() -> None:
 
     plt.rcParams.update(
         {
-            "font.family": "DejaVu Sans",
+            "font.family": "sans-serif",
+            "font.sans-serif": [
+                "Microsoft YaHei",
+                "SimHei",
+                "SimSun",
+                "Noto Sans CJK SC",
+                "Source Han Sans SC",
+                "Arial Unicode MS",
+                "DejaVu Sans",
+            ],
+            "axes.unicode_minus": False,
             "axes.spines.top": False,
             "axes.spines.right": False,
             "axes.grid": True,
@@ -160,9 +170,9 @@ def main() -> None:
         alpha=0.85,
     )
     ax0.clabel(cs, fmt="%.3f", inline=True, fontsize=8)
-    ax0.set_xlabel(r"detector efficiency $\eta_d$")
-    ax0.set_ylabel(r"background rate $R_{\mathrm{bg}}$ (Hz)")
-    ax0.set_title(r"Conditional fidelity map $F_t(\eta_d,\mathrm{bg})$")
+    ax0.set_xlabel(r"探测效率 $\eta_d$")
+    ax0.set_ylabel(r"背景计数率 $R_{\mathrm{bg}}$ (Hz)")
+    ax0.set_title(r"条件保真度热图 $F_t(\eta_d,\mathrm{bg})$")
     cbar = fig.colorbar(im, ax=ax0, fraction=0.05, pad=0.03)
     cbar.set_label(r"$F_t$")
     ax0.scatter(
@@ -203,14 +213,14 @@ def main() -> None:
             label=rf"$R_{{\mathrm{{bg}}}}={int(round(bg))}$ Hz",
             zorder=3,
         )
-    ax1.set_xlabel(r"detector efficiency $\eta_d$")
-    ax1.set_ylabel(r"herald probability $p_s$ ($\times10^{-6}$ per attempt)")
-    ax1.set_title(r"Herald-probability slices at fixed $R_{\mathrm{bg}}$")
+    ax1.set_xlabel(r"探测效率 $\eta_d$")
+    ax1.set_ylabel(r"宣告概率 $p_s$（每次尝试 $\times10^{-6}$）")
+    ax1.set_title(r"固定 $R_{\mathrm{bg}}$ 下的宣告概率切片")
     ax1.legend(frameon=False, fontsize=8, loc="upper left", ncol=1)
     _panel_label(ax1, "(b)")
 
     fig.suptitle(
-        "Detector Efficiency and Background Tradeoff from DETECTOR_BG_SCAN Summary",
+        "探测效率与背景权衡（DETECTOR_BG_SCAN 汇总）",
         fontsize=12.1,
         fontweight="bold",
     )

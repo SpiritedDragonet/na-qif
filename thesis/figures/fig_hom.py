@@ -131,7 +131,17 @@ def main() -> None:
 
     plt.rcParams.update(
         {
-            "font.family": "DejaVu Sans",
+            "font.family": "sans-serif",
+            "font.sans-serif": [
+                "Microsoft YaHei",
+                "SimHei",
+                "SimSun",
+                "Noto Sans CJK SC",
+                "Source Han Sans SC",
+                "Arial Unicode MS",
+                "DejaVu Sans",
+            ],
+            "axes.unicode_minus": False,
             "axes.spines.top": False,
             "axes.spines.right": False,
             "axes.grid": True,
@@ -151,19 +161,19 @@ def main() -> None:
             ecolor="#6baed6",
             elinewidth=0.8,
             capsize=1.8,
-            label="Double-click statistics",
+            label="双点击统计",
         )
     else:
-        plt.scatter(tau, g2, s=18, color="#1f77b4", label="Double-click statistics")
-    plt.plot(tau_dense, g2_fit, color="#d62728", lw=2.0, label="Least-squares fit")
+        plt.scatter(tau, g2, s=18, color="#1f77b4", label="双点击统计")
+    plt.plot(tau_dense, g2_fit, color="#d62728", lw=2.0, label="最小二乘拟合")
 
     y_all = np.concatenate([g2, g2_fit])
     y_min = float(np.min(y_all))
     y_max = float(np.max(y_all))
     y_pad = max(0.04 * (y_max - y_min), 0.04)
     plt.ylim(y_min - y_pad, y_max + y_pad)
-    plt.xlabel(r"Relative delay $\tau$ (ns)")
-    plt.ylabel(r"Second-order correlation $g^{(2)}_{HH,VV}(\tau)$")
+    plt.xlabel(r"相对时延 $\tau$ (ns)")
+    plt.ylabel(r"二阶关联 $g^{(2)}_{HH,VV}(\tau)$")
     plt.legend(frameon=False, loc="best")
     plt.tight_layout()
 

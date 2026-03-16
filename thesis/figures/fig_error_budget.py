@@ -191,7 +191,17 @@ def main() -> None:
 
     plt.rcParams.update(
         {
-            "font.family": "DejaVu Sans",
+            "font.family": "sans-serif",
+            "font.sans-serif": [
+                "Microsoft YaHei",
+                "SimHei",
+                "SimSun",
+                "Noto Sans CJK SC",
+                "Source Han Sans SC",
+                "Arial Unicode MS",
+                "DejaVu Sans",
+            ],
+            "axes.unicode_minus": False,
             "axes.spines.top": False,
             "axes.spines.right": False,
             "axes.grid": True,
@@ -216,7 +226,7 @@ def main() -> None:
         alpha=0.36,
         edgecolor="none",
         zorder=1,
-        label=r"spurious component $p_f$",
+        label=r"假成功分量 $p_f$",
     )
     ax0.plot(
         theta,
@@ -226,17 +236,17 @@ def main() -> None:
         marker="o",
         ms=4.1,
         zorder=3,
-        label=r"genuine component $p_t$",
+        label=r"真成功分量 $p_t$",
     )
-    ax0.set_xlabel(r"BS mixing angle $\theta_{BS}$ (rad)")
-    ax0.set_ylabel(r"Per-attempt probability ($\times 10^{-4}$)")
-    ax0.set_title("Event-probability budget versus beam-splitter angle")
+    ax0.set_xlabel(r"BS 混合角 $\theta_{BS}$ (rad)")
+    ax0.set_ylabel(r"每次尝试概率 ($\times 10^{-4}$)")
+    ax0.set_title("事件概率预算随分束器角度变化")
 
     ax0_r = ax0.twinx()
     ax0_r.plot(theta, fidelity, color="#047857", lw=2.0, marker="o", ms=4.2, label=r"$F_t$")
-    ax0_r.plot(theta, false_pct, color="#991b1b", lw=1.6, marker="s", ms=3.8, ls="--", label="Spurious-share (%)")
+    ax0_r.plot(theta, false_pct, color="#991b1b", lw=1.6, marker="s", ms=3.8, ls="--", label="假成功占比 (%)")
     ax0_r.plot(theta, chsh / 4.0, color="#111827", lw=1.3, marker="^", ms=3.2, ls="-.", label=r"$S_{\max}/4$")
-    ax0_r.set_ylabel(r"Quality axis: $F_t$, spurious share (\%), and $S_{\max}/4$")
+    ax0_r.set_ylabel(r"质量轴：$F_t$、假成功占比 (\%)、$S_{\max}/4$")
     ax0.axvline(theta_rec, color="#9ca3af", lw=1.0, ls=":")
 
     # Inset: rate-fidelity operating-point frontier view (merged from old standalone figure).
@@ -263,13 +273,13 @@ def main() -> None:
         linewidths=0.6,
         zorder=3,
     )
-    inset.set_title("Rate-Fidelity inset", fontsize=7.2)
+    inset.set_title("速率-保真度插图", fontsize=7.2)
     inset.set_xlabel(r"$p_s$ ($\times 10^{-4}$)", fontsize=6.8)
     inset.set_ylabel(r"$F_t$", fontsize=6.8)
     inset.tick_params(labelsize=6.4, length=2.2, pad=1.5)
     inset.grid(True, alpha=0.18, linewidth=0.6)
     cb_inset = fig.colorbar(inset_sc, ax=inset, fraction=0.16, pad=0.02)
-    cb_inset.set_label("spurious (%)", fontsize=6.4)
+    cb_inset.set_label("假成功 (%)", fontsize=6.4)
     cb_inset.ax.tick_params(labelsize=6.2, length=2.0)
 
     lines = []
@@ -283,13 +293,13 @@ def main() -> None:
 
     ax1.set_xlim(0.0, 100.0)
     ax1.set_ylim(-0.8, 1.8)
-    ax1.set_yticks([1.0, 0.0], ["Source composition", "Pattern composition"])
-    ax1.set_xlabel("Share within total spurious component (%)")
-    ax1.set_title(rf"Spurious-component composition at $\theta_{{BS}}={theta_rec:.2f}$ rad")
+    ax1.set_yticks([1.0, 0.0], ["来源组成", "模式组成"])
+    ax1.set_xlabel("假成功总量内占比 (%)")
+    ax1.set_title(rf"$\theta_{{BS}}={theta_rec:.2f}$ rad 下假成功组成")
 
     source_items = [
-        ("background-assisted", source_share["bg"], "#f59e0b"),
-        ("intrinsic dark-count assisted", source_share["intrinsic_dark"], "#dc2626"),
+        ("背景辅助", source_share["bg"], "#f59e0b"),
+        ("内禀暗计数辅助", source_share["intrinsic_dark"], "#dc2626"),
     ]
     left = 0.0
     for key, frac, color in source_items:
@@ -334,12 +344,12 @@ def main() -> None:
 
     fig.suptitle(
         (
-            "Error-Budget View from Real BSM Scan: "
-            + rf"$\theta_{{BS}}={theta_rec:.2f}$ rad, "
-            + rf"$F_t={fidelity[idx_rec]:.3f}$, "
-            + rf"$p_t={1e4 * rate_true[idx_rec]:.3f}\times10^{{-4}}$, "
-            + rf"$p_f={1e4 * rate_false[idx_rec]:.4f}\times10^{{-4}}$, "
-            + f"accepted records={success_count}"
+            "真实 BSM 扫描的误差预算视图："
+            + rf"$\theta_{{BS}}={theta_rec:.2f}$ rad，"
+            + rf"$F_t={fidelity[idx_rec]:.3f}$，"
+            + rf"$p_t={1e4 * rate_true[idx_rec]:.3f}\times10^{{-4}}$，"
+            + rf"$p_f={1e4 * rate_false[idx_rec]:.4f}\times10^{{-4}}$，"
+            + f"成功记录数={success_count}"
         ),
         fontsize=12.1,
         fontweight="bold",

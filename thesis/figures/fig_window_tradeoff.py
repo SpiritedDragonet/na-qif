@@ -280,7 +280,17 @@ def _load_or_compute_ci(
 def _set_style() -> None:
     plt.rcParams.update(
         {
-            "font.family": "DejaVu Sans",
+            "font.family": "sans-serif",
+            "font.sans-serif": [
+                "Microsoft YaHei",
+                "SimHei",
+                "SimSun",
+                "Noto Sans CJK SC",
+                "Source Han Sans SC",
+                "Arial Unicode MS",
+                "DejaVu Sans",
+            ],
+            "axes.unicode_minus": False,
             "font.size": 10.5,
             "axes.titlesize": 11.0,
             "axes.labelsize": 10.4,
@@ -429,9 +439,9 @@ def main() -> None:
     false_pct = 100.0 * false_frac
     false_pct_plot = 100.0 * false_frac_plot
 
-    ax0.plot(w_plot, 1e6 * p_s_plot, color=c_all, lw=2.25, label=r"$p_s$: accepted records")
-    ax0.plot(w_plot, 1e6 * p_t_plot, color=c_true, lw=2.2, label=r"$p_t$: genuine component")
-    ax0.plot(w_plot, 1e6 * p_f_plot, color=c_false, lw=2.0, ls="--", label=r"$p_f$: spurious component")
+    ax0.plot(w_plot, 1e6 * p_s_plot, color=c_all, lw=2.25, label=r"$p_s$：成功记录")
+    ax0.plot(w_plot, 1e6 * p_t_plot, color=c_true, lw=2.2, label=r"$p_t$：真成功分量")
+    ax0.plot(w_plot, 1e6 * p_f_plot, color=c_false, lw=2.0, ls="--", label=r"$p_f$：假成功分量")
     ax0.scatter(w, 1e6 * p_s, s=8, color=c_all, alpha=0.18, linewidths=0, zorder=3)
     ax0.scatter(w, 1e6 * p_t, s=8, color=c_true, alpha=0.18, linewidths=0, zorder=3)
     ax0.scatter(w, 1e6 * p_f, s=8, color=c_false, alpha=0.18, linewidths=0, zorder=3)
@@ -450,9 +460,9 @@ def main() -> None:
     ax0.fill_between(w_plot, 1e6 * p_t_plot, 1e6 * p_s_plot, color=c_false, alpha=0.10)
     ax0.axvline(args.work_point_ns, color=c_work, lw=1.7, ls="--")
     ax0.set_yscale("log")
-    ax0.set_xlabel("Acceptance window (ns)")
-    ax0.set_ylabel(r"Probability per attempt ($\times 10^{-6}$)")
-    ax0.set_title("Rate decomposition versus acceptance window")
+    ax0.set_xlabel("接收窗口 (ns)")
+    ax0.set_ylabel(r"每次尝试概率 ($\times 10^{-6}$)")
+    ax0.set_title("速率分解随接收窗口变化")
     ax0.legend(
         frameon=False,
         loc="lower left",
@@ -466,7 +476,7 @@ def main() -> None:
         f_t_plot,
         color=c_fidelity,
         lw=2.25,
-        label=r"$F_t$: conditional fidelity (genuine component)",
+        label=r"$F_t$：条件保真度（真成功分量）",
     )
     ax1.plot(
         w_plot,
@@ -474,12 +484,12 @@ def main() -> None:
         color=c_pt11,
         lw=2.05,
         ls="-.",
-        label=r"$p_{t|11}$: genuine success conditioned on two-photon arrival",
+        label=r"$p_{t|11}$：双光子到达条件真成功",
     )
     ax1.scatter(w, f_t, s=8, color=c_fidelity, alpha=0.18, linewidths=0, zorder=3)
     ax1.scatter(w, p_t11, s=8, color=c_pt11, alpha=0.18, linewidths=0, zorder=3)
 
-    ax1r.plot(w_plot, false_pct_plot, color="#d62728", lw=2.1, label=r"$p_f/p_s$ (spurious share, right axis, %)")
+    ax1r.plot(w_plot, false_pct_plot, color="#d62728", lw=2.1, label=r"$p_f/p_s$（假成功占比，右轴，%）")
     ax1r.scatter(w, false_pct, s=8, color="#d62728", alpha=0.18, linewidths=0, zorder=3)
 
     if ci is not None:
@@ -503,8 +513,8 @@ def main() -> None:
 
     ax1.axvline(args.work_point_ns, color=c_work, lw=1.7, ls="--", label=f"{args.work_point_ns:g} ns")
     ax1.set_ylim(0.0, 1.0)
-    ax1.set_xlabel("Acceptance window (ns)")
-    ax1.set_ylabel(r"$F_t$ and $p_{t|11}$")
+    ax1.set_xlabel("接收窗口 (ns)")
+    ax1.set_ylabel(r"$F_t$ 与 $p_{t|11}$")
 
     ff_min = float(np.min(false_frac_plot))
     ff_max = float(np.max(false_frac_plot))
@@ -512,7 +522,7 @@ def main() -> None:
     ff_lo = max(0.0, ff_min - ff_pad)
     ff_hi = ff_max + ff_pad
     ax1r.set_ylim(100.0 * ff_lo, 100.0 * ff_hi)
-    ax1r.set_ylabel(r"Spurious-share ratio $p_f/p_s$ (%)", color="#d62728")
+    ax1r.set_ylabel(r"假成功占比 $p_f/p_s$ (%)", color="#d62728")
     ax1r.tick_params(axis="y", colors="#d62728")
     ax1r.spines["top"].set_visible(False)
 
@@ -521,7 +531,7 @@ def main() -> None:
     ff_min_pct = float(false_pct_plot[idx_ff_min])
     ax1r.scatter([w_min], [ff_min_pct], s=20, color="#d62728", zorder=5)
     ax1r.annotate(
-        f"local minimum: {ff_min_pct:.3f}% @ {w_min:g} ns",
+        f"局部最小值：{ff_min_pct:.3f}% @ {w_min:g} ns",
         xy=(w_min, ff_min_pct),
         xytext=(w_min + 8.0, ff_min_pct + 0.02),
         textcoords="data",
@@ -530,7 +540,7 @@ def main() -> None:
         color="#9a1b1b",
     )
 
-    ax1.set_title("Quality metrics and spurious-share evolution")
+    ax1.set_title("质量指标与假成功占比演化")
     legend_handles, legend_labels = _line_handles_labels(ax1, ax1r)
     ax1.legend(
         legend_handles,
@@ -544,7 +554,7 @@ def main() -> None:
 
     y_work = float(np.interp(args.work_point_ns, w_plot, f_t_plot))
     ax1.annotate(
-        "recommended working point",
+        "推荐工作点",
         xy=(args.work_point_ns, y_work),
         xytext=(args.work_point_ns + 14.0, min(0.96, y_work + 0.15)),
         textcoords="data",
@@ -553,7 +563,7 @@ def main() -> None:
     )
 
     fig.suptitle(
-        "Acceptance-window tradeoff: event rate, conditional fidelity, and spurious share",
+        "接收窗口权衡：事件速率、条件保真度与假成功占比",
         fontsize=11.6,
         fontweight="bold",
     )

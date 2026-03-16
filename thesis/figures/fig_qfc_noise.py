@@ -183,7 +183,17 @@ def main() -> None:
 
     plt.rcParams.update(
         {
-            "font.family": "DejaVu Sans",
+            "font.family": "sans-serif",
+            "font.sans-serif": [
+                "Microsoft YaHei",
+                "SimHei",
+                "SimSun",
+                "Noto Sans CJK SC",
+                "Source Han Sans SC",
+                "Arial Unicode MS",
+                "DejaVu Sans",
+            ],
+            "axes.unicode_minus": False,
             "axes.spines.top": False,
             "axes.spines.right": False,
             "axes.grid": False,
@@ -222,9 +232,9 @@ def main() -> None:
         alpha=0.85,
     )
     ax0.clabel(cs0, fmt="%.3f", inline=True, fontsize=8)
-    ax0.set_xlabel(r"QFC efficiency $\eta_q$")
-    ax0.set_ylabel(r"QFC noise SD (cps/MHz)")
-    ax0.set_title(r"Conditional fidelity map $F_t(\eta_q,\sigma_{\rm QFC})$")
+    ax0.set_xlabel(r"QFC 效率 $\eta_q$")
+    ax0.set_ylabel(r"QFC 噪声标准差 (cps/MHz)")
+    ax0.set_title(r"条件保真度热图 $F_t(\eta_q,\sigma_{\rm QFC})$")
     cb0 = fig.colorbar(im0, ax=ax0, fraction=0.05, pad=0.03)
     cb0.set_label(r"$F_t$")
     _panel_label(ax0, "(a)")
@@ -247,9 +257,9 @@ def main() -> None:
         alpha=0.85,
     )
     ax1.clabel(cs1, fmt="%.3f", inline=True, fontsize=8)
-    ax1.set_xlabel(r"QFC efficiency $\eta_q$")
-    ax1.set_ylabel(r"QFC noise SD (cps/MHz)")
-    ax1.set_title(r"Herald probability map $p_s(\eta_q,\sigma_{\rm QFC})$")
+    ax1.set_xlabel(r"QFC 效率 $\eta_q$")
+    ax1.set_ylabel(r"QFC 噪声标准差 (cps/MHz)")
+    ax1.set_title(r"宣告概率热图 $p_s(\eta_q,\sigma_{\rm QFC})$")
     cb1 = fig.colorbar(im1, ax=ax1, fraction=0.05, pad=0.03)
     cb1.set_label(r"$p_s \times 10^{-6}$")
     _panel_label(ax1, "(b)")
@@ -278,7 +288,7 @@ def main() -> None:
     )
 
     fig.suptitle(
-        "QFC Efficiency-Noise Tradeoff from QFC_EFF_NOISE_SCAN Summary",
+        "QFC 效率-噪声权衡（QFC_EFF_NOISE_SCAN 汇总）",
         fontsize=12.3,
         fontweight="bold",
     )

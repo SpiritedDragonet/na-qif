@@ -27,9 +27,9 @@ PATTERN_LABELS = {
 }
 PAIR_ORDER = ("H1+V2", "V1+H2", "H1+V1", "H2+V2")
 BUCKET_STYLE = {
-    "success": {"label": "all accepted records", "color": "#111827", "lw": 1.8, "ls": "-"},
-    "true": {"label": "genuine-component weight", "color": "#059669", "lw": 2.0, "ls": "-"},
-    "false": {"label": "spurious-component weight", "color": "#dc2626", "lw": 1.8, "ls": "--"},
+    "success": {"label": "全部成功记录", "color": "#111827", "lw": 1.8, "ls": "-"},
+    "true": {"label": "真成功权重", "color": "#059669", "lw": 2.0, "ls": "-"},
+    "false": {"label": "假成功权重", "color": "#dc2626", "lw": 1.8, "ls": "--"},
 }
 
 
@@ -212,7 +212,17 @@ def main() -> None:
 
     plt.rcParams.update(
         {
-            "font.family": "DejaVu Sans",
+            "font.family": "sans-serif",
+            "font.sans-serif": [
+                "Microsoft YaHei",
+                "SimHei",
+                "SimSun",
+                "Noto Sans CJK SC",
+                "Source Han Sans SC",
+                "Arial Unicode MS",
+                "DejaVu Sans",
+            ],
+            "axes.unicode_minus": False,
             "axes.spines.top": False,
             "axes.spines.right": False,
             "axes.grid": True,
@@ -231,13 +241,13 @@ def main() -> None:
     y_true = 100.0 * pattern_components[:, 0]
     y_bg = 100.0 * pattern_components[:, 1]
     y_intrinsic = 100.0 * pattern_components[:, 2]
-    ax0.bar(x, y_true, width=0.72, color="#1f77b4", label="genuine")
-    ax0.bar(x, y_bg, width=0.72, bottom=y_true, color="#f28e2b", label="background-assisted spurious")
-    ax0.bar(x, y_intrinsic, width=0.72, bottom=y_true + y_bg, color="#c44e52", label="intrinsic-dark-count spurious")
+    ax0.bar(x, y_true, width=0.72, color="#1f77b4", label="真成功")
+    ax0.bar(x, y_bg, width=0.72, bottom=y_true, color="#f28e2b", label="背景辅助假成功")
+    ax0.bar(x, y_intrinsic, width=0.72, bottom=y_true + y_bg, color="#c44e52", label="内禀暗计数假成功")
     ax0.set_xticks(x, [PATTERN_LABELS[p] for p in PATTERN_ORDER])
-    ax0.set_ylabel("Contribution within accepted records (%)")
-    ax0.set_xlabel("Click pattern")
-    ax0.set_title("Pattern composition of accepted records")
+    ax0.set_ylabel("成功记录占比 (%)")
+    ax0.set_xlabel("点击模式")
+    ax0.set_title("成功记录的模式组成")
     ax0.legend(frameon=False, fontsize=8.3, loc="upper right")
 
     masked_reliability = np.ma.masked_invalid(reliability)
@@ -255,10 +265,10 @@ def main() -> None:
     )
     ax1.set_yticks(np.arange(len(PAIR_ORDER)), PAIR_ORDER)
     ax1.set_xlabel(r"$|\Delta n|$")
-    ax1.set_ylabel("Detector pair")
-    ax1.set_title(r"Genuine-record map $P(\mathrm{genuine}\mid \mathrm{pair},|\Delta n|)$")
+    ax1.set_ylabel("探测器对")
+    ax1.set_title(r"真成功记录分布图 $P(\mathrm{genuine}\mid \mathrm{pair},|\Delta n|)$")
     cbar = fig.colorbar(im, ax=ax1, fraction=0.052, pad=0.03)
-    cbar.set_label("Genuine-record probability")
+    cbar.set_label("真成功记录概率")
 
     for bucket, style in BUCKET_STYLE.items():
         ax2.plot(
@@ -270,8 +280,8 @@ def main() -> None:
             label=style["label"],
         )
     ax2.set_xlabel(r"$|\Delta n|$")
-    ax2.set_ylabel("Normalized mass (%)")
-    ax2.set_title(r"$|\Delta n|$ distribution by record class")
+    ax2.set_ylabel("归一化占比 (%)")
+    ax2.set_title(r"$|\Delta n|$ 在记录类别上的分布")
     ax2.legend(frameon=False, fontsize=8.4, loc="upper right")
 
     ax0.text(-0.16, 1.05, "(a)", transform=ax0.transAxes, fontsize=12.5, fontweight="bold", va="bottom", ha="left")
@@ -280,13 +290,13 @@ def main() -> None:
 
     fig.suptitle(
         (
-            "BSM Record Diagnostics at "
+            "BSM 记录诊断 "
             + rf"$\theta_{{\mathrm{{BS}}}}={theta:.2f}$ rad "
-            + rf"($R=\sin^2\theta={bs_split_ratio:.3f}$): "
-            + rf"$F_t={fidelity_true:.3f}$, "
-            + rf"$p_s={1e4 * herald_rate:.3f}\times10^{{-4}}$, "
-            + rf"spurious share={100.0 * false_frac:.2f}\%, "
-            + f"accepted records={success_count}"
+            + rf"($R=\sin^2\theta={bs_split_ratio:.3f}$)："
+            + rf"$F_t={fidelity_true:.3f}$，"
+            + rf"$p_s={1e4 * herald_rate:.3f}\times10^{{-4}}$，"
+            + rf"假成功占比={100.0 * false_frac:.2f}\%，"
+            + f"成功记录数={success_count}"
         ),
         fontsize=12.2,
         fontweight="bold",

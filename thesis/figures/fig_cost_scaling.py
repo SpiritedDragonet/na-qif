@@ -22,7 +22,17 @@ def _panel_label(ax: plt.Axes, label: str) -> None:
 def main() -> None:
     plt.rcParams.update(
         {
-            "font.family": "DejaVu Sans",
+            "font.family": "sans-serif",
+            "font.sans-serif": [
+                "Microsoft YaHei",
+                "SimHei",
+                "SimSun",
+                "Noto Sans CJK SC",
+                "Source Han Sans SC",
+                "Arial Unicode MS",
+                "DejaVu Sans",
+            ],
+            "axes.unicode_minus": False,
             "axes.spines.top": False,
             "axes.spines.right": False,
             "axes.grid": True,
@@ -41,20 +51,20 @@ def main() -> None:
 
     ax0.plot(window_bin_cap, det_runtime_proxy, color="#1f77b4", lw=2.3)
     ax0.scatter(window_bin_cap, det_runtime_proxy, color="#1f77b4", s=26, zorder=3)
-    ax0.set_xlabel("Window bin upper bound")
-    ax0.set_ylabel("Detection-stage runtime (a.u.)")
-    ax0.set_title(r"$T_{\rm det}$ vs window bin upper bound")
+    ax0.set_xlabel("窗口时间仓上界")
+    ax0.set_ylabel("探测阶段时间 (a.u.)")
+    ax0.set_title(r"$T_{\rm det}$ 与窗口时间仓上界")
     _panel_label(ax0, "(a)")
 
     ax1.plot(window_bin_cap, wall_clock_proxy, color="#d62728", lw=2.3)
     ax1.scatter(window_bin_cap, wall_clock_proxy, color="#d62728", s=26, zorder=3)
-    ax1.set_xlabel("Window bin upper bound")
-    ax1.set_ylabel("Wall-clock proxy (a.u.)")
-    ax1.set_title(r"$T_w$ proxy vs window bin upper bound")
+    ax1.set_xlabel("窗口时间仓上界")
+    ax1.set_ylabel("墙钟时间代理 (a.u.)")
+    ax1.set_title(r"$T_w$ 代理与窗口时间仓上界")
     _panel_label(ax1, "(b)")
 
     fig.suptitle(
-        "Complexity Scaling with Window Bin Upper Bound",
+        "随窗口时间仓上界的复杂度标度",
         fontsize=12.1,
         fontweight="bold",
     )

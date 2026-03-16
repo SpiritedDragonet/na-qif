@@ -128,7 +128,21 @@ def _add_arrow(
 
 
 def main() -> None:
-    plt.rcParams.update({"font.family": "DejaVu Sans"})
+    plt.rcParams.update(
+        {
+            "font.family": "sans-serif",
+            "font.sans-serif": [
+                "Microsoft YaHei",
+                "SimHei",
+                "SimSun",
+                "Noto Sans CJK SC",
+                "Source Han Sans SC",
+                "Arial Unicode MS",
+                "DejaVu Sans",
+            ],
+            "axes.unicode_minus": False,
+        }
+    )
 
     fig, ax = plt.subplots(figsize=(13.0, 6.2), constrained_layout=True)
     ax.set_xlim(0.0, 1.0)
@@ -139,14 +153,14 @@ def main() -> None:
         ax,
         y0=0.56,
         y1=0.94,
-        label="State-side physics pipeline",
+        label="状态侧物理流程",
         fc="#f8fbff",
     )
     _add_lane(
         ax,
         y0=0.20,
         y1=0.53,
-        label="Measurement-side statistics pipeline",
+        label="测量侧统计流程",
         fc="#fcfcff",
     )
 
@@ -161,7 +175,7 @@ def main() -> None:
         y=state_y,
         w=state_w,
         h=state_h,
-        text="Input setup\n$n_{bins},\\,\\Delta t,\\,\\chi_{max}$\nnoise + scan parameters",
+        text="输入设置\n$n_{bins},\\,\\Delta t,\\,\\chi_{max}$\n噪声与扫描参数",
         fc="#e0f2fe",
     )
     b_em = _add_box(
@@ -170,7 +184,7 @@ def main() -> None:
         y=state_y,
         w=state_w,
         h=state_h,
-        text="Emission TEBD\natom-cavity gates\nbin evolution + SWAP",
+        text="发射 TEBD\n原子-腔门\n时间仓演化 + SWAP",
         fc="#dcfce7",
     )
     b_qfc = _add_box(
@@ -179,7 +193,7 @@ def main() -> None:
         y=state_y,
         w=state_w,
         h=state_h,
-        text="QFC + filter memory\n$5\\mathrm{D}$ with $5\\times3\\mathrm{D}$\nstate-side local updates",
+        text="QFC + 滤波记忆\n$5\\mathrm{D}$ 与 $5\\times3\\mathrm{D}$\n状态侧局域更新",
         fc="#fef9c3",
     )
     b_fiber = _add_box(
@@ -188,7 +202,7 @@ def main() -> None:
         y=state_y,
         w=state_w,
         h=state_h,
-        text="Fiber realization\nJones / PDL / phase\nHeisenberg parameters",
+        text="光纤实现\nJones / PDL / 相位\nHeisenberg 参数",
         fc="#fee2e2",
     )
     b_dephase = _add_box(
@@ -197,7 +211,7 @@ def main() -> None:
         y=state_y,
         w=state_w,
         h=state_h,
-        text="Atomic dephasing\n$T_{wait}, T_2 \\rightarrow p_{dephase}$\nstate update",
+        text="原子退相干\n$T_{wait}, T_2 \\rightarrow p_{dephase}$\n状态更新",
         fc="#fde68a",
     )
 
@@ -217,7 +231,7 @@ def main() -> None:
         y=meas_y,
         w=meas_w,
         h=meas_h,
-        text="Arrival statistics\n$p_{arrive},\\,p_{11}$\n+ same-arm terms",
+        text="到达统计\n$p_{arrive},\\,p_{11}$\n+ 同臂项",
         fc="#e2e8f0",
     )
     b_effect = _add_box(
@@ -226,7 +240,7 @@ def main() -> None:
         y=meas_y,
         w=meas_w,
         h=meas_h,
-        text="POVM effects build\nper-bin $5\\mathrm{D}$ effects\n$+\\,v_{res}$",
+        text="POVM effect 构建\n每时间仓 $5\\mathrm{D}$ effect\n$+\\,v_{res}$",
         fc="#ede9fe",
     )
     b_bg = _add_box(
@@ -235,7 +249,7 @@ def main() -> None:
         y=meas_y,
         w=meas_w,
         h=meas_h,
-        text="Background OR map\ndetector-side\nmerge",
+        text="背景 OR 映射\n探测器侧\n合并",
         fc="#ffe4e6",
     )
     b_enum = _add_box(
@@ -244,7 +258,7 @@ def main() -> None:
         y=meas_y,
         w=meas_w,
         h=meas_h,
-        text="Success enumeration\nStage 1-4\nall / true / all-signal / raw+ff",
+        text="成功枚举\n阶段 1-4\n全体/真成功/全信号/raw+ff",
         fc="#f3e8ff",
     )
     b_sample = _add_box(
@@ -253,7 +267,7 @@ def main() -> None:
         y=meas_y,
         w=tail_w,
         h=meas_h,
-        text="Sampling + gating\n$n_{samples}$\nwindow_bins",
+        text="抽样 + 门控\n$n_{samples}$\n窗口时间仓",
         fc="#ccfbf1",
     )
     b_mode_sel = _add_decision(
@@ -262,7 +276,7 @@ def main() -> None:
         y=0.315,
         w=0.050,
         h=0.120,
-        text="enum\nmode",
+        text="枚举\n模式",
         fc="#f8fafc",
         fs=8.3,
     )
@@ -272,7 +286,7 @@ def main() -> None:
         y=0.385,
         w=0.090,
         h=0.065,
-        text="no dark\nbranch",
+        text="无暗计数\n分支",
         fc="#ecfeff",
         fs=8.2,
     )
@@ -282,7 +296,7 @@ def main() -> None:
         y=0.255,
         w=0.090,
         h=0.065,
-        text="dark\nbranch",
+        text="含暗计数\n分支",
         fc="#fff7ed",
         fs=8.2,
     )
@@ -292,7 +306,7 @@ def main() -> None:
         y=meas_y,
         w=tail_w,
         h=meas_h,
-        text="Outputs\n$p_s,p_t,p_f,p_{t|11}$\n$F_t,S_{max},\\rho_{declared}$",
+        text="输出\n$p_s,p_t,p_f,p_{t|11}$\n$F_t,S_{max},\\rho_{declared}$",
         fc="#dbeafe",
     )
 
@@ -332,7 +346,7 @@ def main() -> None:
     _add_arrow(ax, (b_dephase[0] + b_dephase[2] * 0.20, b_dephase[1]), _top(b_arrive), rad=0.05, color="#475569")
 
     ax.set_title(
-        "End-to-end single-run core: state-side evolution and measurement-side statistics",
+        "端到端单次流程核心：状态侧演化与测量侧统计",
         fontsize=12.2,
         fontweight="bold",
     )

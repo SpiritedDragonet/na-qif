@@ -27,7 +27,17 @@ PALETTE = {
 def _set_paper_style() -> None:
     mpl.rcParams.update(
         {
-            "font.family": "DejaVu Sans",
+            "font.family": "sans-serif",
+            "font.sans-serif": [
+                "Microsoft YaHei",
+                "SimHei",
+                "SimSun",
+                "Noto Sans CJK SC",
+                "Source Han Sans SC",
+                "Arial Unicode MS",
+                "DejaVu Sans",
+            ],
+            "axes.unicode_minus": False,
             "font.size": 9.2 * FONT_SCALE,
             "axes.titlesize": 10.2 * FONT_SCALE,
             "axes.labelsize": 10.0 * FONT_SCALE,
@@ -208,12 +218,12 @@ def _plot_dual_arm(
 ) -> None:
     ax.fill_between(t_ns, 0.0, arm_a, color=PALETTE["arm_a"], alpha=0.14, linewidth=0.0)
     ax.fill_between(t_ns, 0.0, arm_b, color=PALETTE["arm_b"], alpha=0.12, linewidth=0.0)
-    ax.plot(t_ns, arm_a, color=PALETTE["arm_a"], label="Arm A")
-    ax.plot(t_ns, arm_b, color=PALETTE["arm_b"], label="Arm B")
+    ax.plot(t_ns, arm_a, color=PALETTE["arm_a"], label="A臂")
+    ax.plot(t_ns, arm_b, color=PALETTE["arm_b"], label="B臂")
     ax.axvspan(0.0, window_ns, color=PALETTE["window"], alpha=0.08, linewidth=0.0)
     _lock_time_axis(ax)
     ax.set_ylim(0.0, y_max)
-    ax.set_ylabel("Photon probability")
+    ax.set_ylabel("光子概率")
     ax.set_title(title, pad=4.0)
     _style_axis(ax)
     if show_legend:
@@ -313,17 +323,17 @@ def main() -> None:
     ax_a.axvspan(0.0, window_ns, color=PALETTE["window"], alpha=0.08, linewidth=0.0)
     _lock_time_axis(ax_a)
     ax_a.set_ylim(0.0, 1.02)
-    ax_a.set_ylabel("Population")
-    ax_a.set_title("Atomic populations (Arm A, directly exported)", pad=4.0)
+    ax_a.set_ylabel("占据概率")
+    ax_a.set_title("原子占据（A臂，直接导出）", pad=4.0)
     _style_axis(ax_a)
     ax_a.legend(frameon=False, ncol=4, loc="upper right")
     ax_a.text(
         0.02,
         0.96,
         (
-            f"$g/\\kappa_{{tot}}={g_over_kappa:.3f}$ (restored cavity parameter set).\n"
-            "Bad-cavity: $|u\\rangle\\!\\to\\!|e\\rangle$ is followed by fast radiative loss.\n"
-            "Higher finesse (smaller $\\kappa$): stronger coherent $u\\leftrightarrow e$ exchange."
+            f"$g/\\kappa_{{tot}}={g_over_kappa:.3f}$（恢复的腔参数组）。\n"
+            "坏腔：$|u\\rangle\\!\\to\\!|e\\rangle$ 后迅速辐射损失。\n"
+            "更高精细度（更小 $\\kappa$）：$u\\leftrightarrow e$ 相干交换更强。"
         ),
         transform=ax_a.transAxes,
         va="top",
@@ -339,17 +349,17 @@ def main() -> None:
         t_ns,
         em_a,
         em_b,
-        "After emission: dual-arm wavepacket + drive intensity",
+        "发射后：双臂波包与驱动强度",
         y_max=wave_ymax_em,
         window_ns=window_ns,
         show_legend=True,
     )
     ax_b_r = ax_b.twinx()
-    ax_b_r.plot(t_ns, drive_a, color=PALETTE["arm_a"], linestyle="--", linewidth=1.8, label="Arm A drive")
-    ax_b_r.plot(t_ns, drive_b, color=PALETTE["arm_b"], linestyle="--", linewidth=1.8, label="Arm B drive")
+    ax_b_r.plot(t_ns, drive_a, color=PALETTE["arm_a"], linestyle="--", linewidth=1.8, label="A臂驱动")
+    ax_b_r.plot(t_ns, drive_b, color=PALETTE["arm_b"], linestyle="--", linewidth=1.8, label="B臂驱动")
     drive_peak = max(float(np.max(drive_a)), float(np.max(drive_b)), 1e-30)
     ax_b_r.set_ylim(0.0, drive_peak * 1.12)
-    ax_b_r.set_ylabel(r"Drive intensity $|\Omega|^2$ (rad$^2$/s$^2$)")
+    ax_b_r.set_ylabel(r"驱动强度 $|\Omega|^2$ (rad$^2$/s$^2$)")
     ax_b_r.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
     ax_b_r.grid(False)
     ax_b_r.spines["top"].set_visible(False)
@@ -361,9 +371,9 @@ def main() -> None:
         0.02,
         0.06,
         (
-            f"time-axis view (not bin index): Δt={dt_ns:g} ns/bin; "
-            f"internal bin order is reversed, i.e., bin {n_bins} ↔ [{t_start_ns:g},{dt_ns:g}) ns, "
-            f"bin 1 ↔ [{t_end_ns - dt_ns:g},{t_end_ns:g}) ns"
+            f"时间轴视图（非时间仓索引）：Δt={dt_ns:g} ns/仓；"
+            f"内部时间仓顺序反向，即 bin {n_bins} <-> [{t_start_ns:g},{dt_ns:g}) ns，"
+            f"bin 1 <-> [{t_end_ns - dt_ns:g},{t_end_ns:g}) ns"
         ),
         transform=ax_b.transAxes,
         ha="left",
@@ -375,16 +385,16 @@ def main() -> None:
     _panel_label(ax_b, "(b)")
 
     # (c) 单臂积分保留（归一化到发射阶段）
-    ax_c.plot(t_ns, retain_emit, color=PALETTE["arm_a"], label=f"Emission ({retain_emit[-1]:.3f})")
-    ax_c.plot(t_ns, retain_qfc, color=PALETTE["qfc"], label=f"After QFC ({retain_qfc[-1]:.3f})")
-    ax_c.plot(t_ns, retain_fib, color=PALETTE["fiber"], label=f"After fiber ({retain_fib[-1]:.3f})")
-    ax_c.plot(t_ns, retain_bs, color=PALETTE["bs"], label=f"After BS ({retain_bs[-1]:.3f})")
+    ax_c.plot(t_ns, retain_emit, color=PALETTE["arm_a"], label=f"发射后（{retain_emit[-1]:.3f}）")
+    ax_c.plot(t_ns, retain_qfc, color=PALETTE["qfc"], label=f"QFC 后（{retain_qfc[-1]:.3f}）")
+    ax_c.plot(t_ns, retain_fib, color=PALETTE["fiber"], label=f"光纤后（{retain_fib[-1]:.3f}）")
+    ax_c.plot(t_ns, retain_bs, color=PALETTE["bs"], label=f"BS 后（{retain_bs[-1]:.3f}）")
     ax_c.axvspan(0.0, window_ns, color=PALETTE["window"], alpha=0.08, linewidth=0.0)
     _lock_time_axis(ax_c)
     ax_c.set_ylim(0.0, max(1.03, float(np.max(retain_emit)) * 1.05))
-    ax_c.set_ylabel("Retention ratio")
-    ax_c.set_xlabel("Time (ns)")
-    ax_c.set_title("Single-arm cumulative retention (Arm A, normalized)", pad=4.0)
+    ax_c.set_ylabel("保留比例")
+    ax_c.set_xlabel("时间 (ns)")
+    ax_c.set_title("单臂累计保留（A臂，归一化）", pad=4.0)
     _style_axis(ax_c)
     ax_c.legend(frameon=False, loc="upper left", ncol=2)
     _panel_label(ax_c, "(c)")
@@ -394,18 +404,18 @@ def main() -> None:
     integ_qfc_b = np.cumsum(qfc_b) * dt_ns
     integ_fib_b = np.cumsum(fib_b) * dt_ns
     integ_bs_b = np.cumsum(bs_b) * dt_ns
-    stage_names = ["Emission", "QFC", "Fiber", "BS"]
+    stage_names = ["发射", "QFC", "光纤", "BS"]
     stage_x = np.arange(len(stage_names), dtype=float)
     stage_integral_a = np.array([integ_emit[-1], integ_qfc[-1], integ_fib[-1], integ_bs[-1]], dtype=float)
     stage_integral_b = np.array([integ_emit_b[-1], integ_qfc_b[-1], integ_fib_b[-1], integ_bs_b[-1]], dtype=float)
-    ax_d.plot(stage_x, stage_integral_a, color=PALETTE["arm_a"], marker="o", label="Arm A")
-    ax_d.plot(stage_x, stage_integral_b, color=PALETTE["arm_b"], marker="s", label="Arm B")
+    ax_d.plot(stage_x, stage_integral_a, color=PALETTE["arm_a"], marker="o", label="A臂")
+    ax_d.plot(stage_x, stage_integral_b, color=PALETTE["arm_b"], marker="s", label="B臂")
     ax_d.fill_between(stage_x, 0.0, stage_integral_a, color=PALETTE["arm_a"], alpha=0.07, linewidth=0.0)
     ax_d.fill_between(stage_x, 0.0, stage_integral_b, color=PALETTE["arm_b"], alpha=0.06, linewidth=0.0)
     ax_d.set_xticks(stage_x, stage_names)
     ax_d.tick_params(axis="x", labelrotation=12)
-    ax_d.set_ylabel("Integrated photon prob.")
-    ax_d.set_title("Stage-wise total photon probability", pad=4.0)
+    ax_d.set_ylabel("光子概率积分")
+    ax_d.set_title("分阶段总光子概率", pad=4.0)
     _style_axis(ax_d)
     ax_d.legend(frameon=False, loc="upper right")
     _panel_label(ax_d, "(d)")
@@ -416,7 +426,7 @@ def main() -> None:
         t_ns,
         qfc_a,
         qfc_b,
-        "After QFC",
+        "QFC 后",
         y_max=wave_ymax_qfc,
         window_ns=window_ns,
         show_legend=False,
@@ -427,7 +437,7 @@ def main() -> None:
         t_ns,
         fib_a,
         fib_b,
-        "Before BS (after fiber)",
+        "BS 前（光纤后）",
         y_max=wave_ymax_fib,
         window_ns=window_ns,
         show_legend=False,
@@ -438,7 +448,7 @@ def main() -> None:
         t_ns,
         bs_a,
         bs_b,
-        "After BS",
+        "BS 后",
         y_max=wave_ymax_bs,
         window_ns=window_ns,
         show_legend=False,
@@ -446,17 +456,17 @@ def main() -> None:
     _panel_label(ax_g, "(g)")
 
     # (h) 能量捕获轮廓
-    ax_h.plot(t_ns, energy_a, color=PALETTE["arm_a"], label="Arm A cumulative")
-    ax_h.plot(t_ns, energy_b, color=PALETTE["arm_b"], label="Arm B cumulative")
-    ax_h.axhline(0.65, linestyle="--", linewidth=1.2, color="#666666", label="65% level")
-    ax_h.axvline(window_ns, linestyle="--", linewidth=1.2, color=PALETTE["window"], label=f"{window_ns:.0f} ns edge")
+    ax_h.plot(t_ns, energy_a, color=PALETTE["arm_a"], label="A臂累计")
+    ax_h.plot(t_ns, energy_b, color=PALETTE["arm_b"], label="B臂累计")
+    ax_h.axhline(0.65, linestyle="--", linewidth=1.2, color="#666666", label="65% 水平")
+    ax_h.axvline(window_ns, linestyle="--", linewidth=1.2, color=PALETTE["window"], label=f"{window_ns:.0f} ns 边界")
     ax_h.fill_between(t_ns, 0.0, energy_a, color=PALETTE["arm_a"], alpha=0.08, linewidth=0.0)
     ax_h.fill_between(t_ns, 0.0, energy_b, color=PALETTE["arm_b"], alpha=0.07, linewidth=0.0)
     _lock_time_axis(ax_h)
     ax_h.set_ylim(0.0, 1.02)
-    ax_h.set_xlabel("Time (ns)")
-    ax_h.set_ylabel("Cumulative energy")
-    ax_h.set_title("Energy capture profile (after fiber)", pad=4.0)
+    ax_h.set_xlabel("时间 (ns)")
+    ax_h.set_ylabel("累计能量")
+    ax_h.set_title("能量捕获轮廓（光纤后）", pad=4.0)
     _style_axis(ax_h)
     ax_h.legend(frameon=False, loc="lower right")
     _panel_label(ax_h, "(h)")
@@ -467,7 +477,7 @@ def main() -> None:
         plt.setp(ax.get_xticklabels(), visible=True)
 
     fig.suptitle(
-        "Dual-arm wavepacket temporal structure and acceptance-window placement",
+        "双臂波包时域结构与接收窗口位置",
         y=0.985,
         fontweight="bold",
     )
@@ -475,8 +485,8 @@ def main() -> None:
         0.5,
         0.02,
         (
-            f"Axis convention: all time-domain panels use physical event time t (ns). "
-            f"One time-bin width is Δt={dt_ns:g} ns."
+            f"坐标约定：所有时域面板使用物理时间 t (ns)。"
+            f"单个时间仓宽度为 Δt={dt_ns:g} ns。"
         ),
         ha="center",
         va="bottom",

@@ -70,7 +70,17 @@ def _load_timing_config() -> tuple[float, float]:
 def _set_paper_style() -> None:
     plt.rcParams.update(
         {
-            "font.family": "DejaVu Sans",
+            "font.family": "sans-serif",
+            "font.sans-serif": [
+                "Microsoft YaHei",
+                "SimHei",
+                "SimSun",
+                "Noto Sans CJK SC",
+                "Source Han Sans SC",
+                "Arial Unicode MS",
+                "DejaVu Sans",
+            ],
+            "axes.unicode_minus": False,
             "font.size": 10.5,
             "axes.titlesize": 11.0,
             "axes.labelsize": 10.5,
@@ -187,7 +197,7 @@ def main() -> None:
         alpha=0.58,
         color=PALETTE["arm_a"],
         edgecolor="none",
-        label=f"Arm A (N={a_times_ns.size})",
+        label=f"A臂 (N={a_times_ns.size})",
     )
     ax0.hist(
         b_times_ns,
@@ -195,11 +205,11 @@ def main() -> None:
         alpha=0.52,
         color=PALETTE["arm_b"],
         edgecolor="none",
-        label=f"Arm B (N={b_times_ns.size})",
+        label=f"B臂 (N={b_times_ns.size})",
     )
-    ax0.set_title("Absolute Click-Time Distribution by Arm", pad=5.0)
-    ax0.set_xlabel("Click time (ns)")
-    ax0.set_ylabel("Counts")
+    ax0.set_title("分臂绝对点击时间分布", pad=5.0)
+    ax0.set_xlabel("点击时间 (ns)")
+    ax0.set_ylabel("计数")
     ax0.legend(frameon=False, loc="upper right")
     _style_axis(ax0)
     _panel_label(ax0, "(a)")
@@ -215,7 +225,7 @@ def main() -> None:
         color=PALETTE["delta"],
         alpha=0.86,
         edgecolor="none",
-        label=f"Pairs (N={delta_ns.size})",
+        label=f"成对记录 (N={delta_ns.size})",
     )
     ax1.axvspan(
         -window_half,
@@ -223,21 +233,21 @@ def main() -> None:
         color=PALETTE["window"],
         alpha=0.20,
         linewidth=0.0,
-        label=rf"acceptance window ($|\Delta t| \leq {window_half:g}\,\mathrm{{ns}}$)",
+        label=rf"接收窗口（$|\Delta t| \leq {window_half:g}\,\mathrm{{ns}}$）",
         zorder=0,
     )
     ax1.axvline(0.0, color=PALETTE["window"], lw=1.6, ls="--", label=r"$\Delta t=0$")
-    ax1.set_title("Relative Two-Click Delay (A - B)", pad=5.0)
+    ax1.set_title("相对双点击时延（A-B）", pad=5.0)
     ax1.set_xlabel(r"$\Delta t$ (ns)")
-    ax1.set_ylabel("Counts")
+    ax1.set_ylabel("计数")
     ax1.legend(frameon=False, loc="upper right")
     _style_axis(ax1)
     _panel_label(ax1, "(b)")
 
     fig.suptitle(
         (
-            "Window-Scan Timing Statistics from Real Data  "
-            f"(slice window_ns={WINDOW_NS_SLICE:g}, dt={dt_ns:g} ns, rows={rows_in_slice})"
+            "真实数据窗口扫描时序统计  "
+            f"（切片 window_ns={WINDOW_NS_SLICE:g}, dt={dt_ns:g} ns, rows={rows_in_slice}）"
         ),
         fontsize=12.4,
         fontweight="bold",

@@ -222,7 +222,17 @@ def main() -> None:
 
     plt.rcParams.update(
         {
-            "font.family": "DejaVu Sans",
+            "font.family": "sans-serif",
+            "font.sans-serif": [
+                "Microsoft YaHei",
+                "SimHei",
+                "SimSun",
+                "Noto Sans CJK SC",
+                "Source Han Sans SC",
+                "Arial Unicode MS",
+                "DejaVu Sans",
+            ],
+            "axes.unicode_minus": False,
             "axes.spines.top": False,
             "axes.spines.right": False,
             "axes.grid": True,
@@ -247,22 +257,22 @@ def main() -> None:
             marker="o",
             ms=2.9,
             alpha=0.85,
-            label=r"$\langle S_{\max}\rangle$ (all runs)",
+            label=r"$\langle S_{\max}\rangle$（全部运行）",
         )
     ax0.axhline(
         classical_bound,
         color="#7f1d1d",
         lw=2.2,
         ls=(0, (6, 3)),
-        label="Classical limit $S=2$",
+        label="经典界限 $S=2$",
         zorder=4,
     )
     s_label = (
-        r"$\langle S_{\max}\rangle$ (successful runs)"
+        r"$\langle S_{\max}\rangle$（成功运行）"
         if use_cond
         else r"$\langle S_{\max}\rangle$"
     )
-    ci_label = "95% CI (successful runs)" if use_cond else "95% CI (run-level)"
+    ci_label = "95% 置信区间（成功运行）" if use_cond else "95% 置信区间（运行级）"
     ax0.plot(length_km, s_mean_plot, color="#0f766e", lw=2.4, marker="o", ms=3.8, label=s_label)
     ax0.fill_between(
         length_km,
@@ -274,7 +284,7 @@ def main() -> None:
         label=ci_label,
     )
     ax0.axvline(33.0, lw=1.1, color="#9ca3af", ls=":")
-    ax0.set_xlabel("Total fiber length (km)")
+    ax0.set_xlabel("总光纤长度 (km)")
     ax0.set_ylabel("CHSH $S$")
     y_min = float(np.min(s_mean_plot - s_ci95))
     y_max = float(np.max(s_mean_plot + s_ci95))
@@ -287,13 +297,13 @@ def main() -> None:
     ylim_top = float(ax0.get_ylim()[1])
     if ylim_top > classical_bound:
         ax0.axhspan(classical_bound, ylim_top, color="#ecfdf5", alpha=0.35, zorder=0)
-    ax0.set_title("CHSH versus Distance (Heralded-State View)")
+    ax0.set_title("CHSH 随距离变化（宣告态口径）")
     ax0.legend(frameon=False, fontsize=8.4, loc="upper right")
     _panel_label(ax0, "(a)")
     ax0.text(
         0.02,
         0.93,
-        r"Non-classical region: $S>2$",
+        r"非经典区：$S>2$",
         transform=ax0.transAxes,
         fontsize=8.3,
         color="#065f46",
@@ -303,7 +313,7 @@ def main() -> None:
         ax0.text(
             0.02,
             0.08,
-            rf"mean $S>2$ up to {max_nonlocal_length:.1f} km",
+            rf"平均 $S>2$ 可达 {max_nonlocal_length:.1f} km",
             transform=ax0.transAxes,
             fontsize=8.5,
             color="#0f766e",
@@ -311,8 +321,8 @@ def main() -> None:
 
     violate_label = r"$\Pr(S>2\mid \mathrm{succ})$" if use_cond else r"$\Pr(S>2)$"
     ax1.plot(length_km, violate_pct, color="#1d4ed8", lw=2.2, marker="s", ms=3.5, label=violate_label)
-    ax1.set_xlabel("Total fiber length (km)")
-    ax1.set_ylabel("Violation probability (%)", color="#1e40af")
+    ax1.set_xlabel("总光纤长度 (km)")
+    ax1.set_ylabel("违背概率 (%)", color="#1e40af")
     ax1.tick_params(axis="y", colors="#1e40af")
     ax1.set_ylim(0.0, 103.0)
     ax1.axvline(33.0, lw=1.1, color="#9ca3af", ls=":")
@@ -326,12 +336,12 @@ def main() -> None:
             marker="x",
             ms=3.0,
             ls=":",
-            label="run success fraction (%)",
+            label="运行成功比例 (%)",
         )
 
     ax1_r = ax1.twinx()
     ax1_r.plot(length_km, f_t, color="#059669", lw=2.0, marker="D", ms=3.0, label=r"$F_t$")
-    ax1_r.set_ylabel(r"Conditional fidelity $F_t$", color="#047857")
+    ax1_r.set_ylabel(r"条件保真度 $F_t$", color="#047857")
     ax1_r.tick_params(axis="y", colors="#047857")
     ax1_r.set_ylim(max(0.0, float(np.min(f_t)) - 0.03), min(1.0, float(np.max(f_t)) + 0.03))
 
@@ -345,7 +355,7 @@ def main() -> None:
         marker="^",
         ms=3.3,
         ls="-.",
-        label=r"normalized true-success rate",
+        label=r"归一化真成功率",
     )
 
     lines = []
@@ -355,11 +365,11 @@ def main() -> None:
         lines.extend(axis_lines)
         labels.extend(axis_labels)
     ax1.legend(lines, labels, frameon=False, fontsize=8.2, loc="upper right")
-    ax1.set_title("Violation Probability and State-Quality Context")
+    ax1.set_title("违背概率与态质量对照")
     _panel_label(ax1, "(b)")
 
     fig.suptitle(
-        "CHSH Distance Trend (Length-Scan Data)",
+        "CHSH 随距离趋势（长度扫描数据）",
         fontsize=12.4,
         fontweight="bold",
     )

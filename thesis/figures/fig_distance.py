@@ -201,7 +201,17 @@ def main() -> None:
 
     plt.rcParams.update(
         {
-            "font.family": "DejaVu Sans",
+            "font.family": "sans-serif",
+            "font.sans-serif": [
+                "Microsoft YaHei",
+                "SimHei",
+                "SimSun",
+                "Noto Sans CJK SC",
+                "Source Han Sans SC",
+                "Arial Unicode MS",
+                "DejaVu Sans",
+            ],
+            "axes.unicode_minus": False,
             "axes.spines.top": False,
             "axes.spines.right": False,
             "axes.grid": True,
@@ -215,16 +225,16 @@ def main() -> None:
     ax0 = fig.add_subplot(gs[0, 0])
     ax1 = fig.add_subplot(gs[0, 1])
 
-    ax0.semilogy(length_km, p_s, color="#111827", lw=2.3, marker="o", ms=3.6, label=r"$p_s$ (all herald)")
-    ax0.semilogy(length_km, p_t, color="#1f77b4", lw=2.3, marker="s", ms=3.2, label=r"$p_t$ (true)")
-    ax0.semilogy(length_km, p_f, color="#d62728", lw=2.0, marker="^", ms=3.0, label=r"$p_f$ (false)")
+    ax0.semilogy(length_km, p_s, color="#111827", lw=2.3, marker="o", ms=3.6, label=r"$p_s$（全部宣告）")
+    ax0.semilogy(length_km, p_t, color="#1f77b4", lw=2.3, marker="s", ms=3.2, label=r"$p_t$（真成功）")
+    ax0.semilogy(length_km, p_f, color="#d62728", lw=2.0, marker="^", ms=3.0, label=r"$p_f$（假成功）")
     if np.any(np.isfinite(p_t_fit)):
-        fit_label = r"log-linear fit to $p_t$"
+        fit_label = r"$p_t$ 的对数线性拟合"
         ax0.semilogy(length_km, p_t_fit, color="#0ea5e9", lw=1.5, ls="--", alpha=0.95, label=fit_label)
     ax0.axvline(33.0, lw=1.1, color="#9ca3af", ls=":")
-    ax0.set_xlabel("Total fiber length (km)")
-    ax0.set_ylabel("Per-attempt probability")
-    ax0.set_title("Herald Components vs Distance")
+    ax0.set_xlabel("总光纤长度 (km)")
+    ax0.set_ylabel("每次尝试概率")
+    ax0.set_title("宣告分量随距离变化")
     ax0.legend(frameon=False, fontsize=8.5, loc="upper right")
     _panel_label(ax0, "(a)")
     if np.isfinite(slope):
@@ -246,13 +256,13 @@ def main() -> None:
         alpha=0.16,
         linewidth=0.0,
     )
-    ax1.set_xlabel("Total fiber length (km)")
-    ax1.set_ylabel(r"Conditional fidelity $F_t$", color="#047857")
+    ax1.set_xlabel("总光纤长度 (km)")
+    ax1.set_ylabel(r"条件保真度 $F_t$", color="#047857")
     ax1.tick_params(axis="y", colors="#047857")
     ax1.set_ylim(max(0.0, float(np.min(f_t - ci95_f_t)) - 0.03), min(1.0, float(np.max(f_t + ci95_f_t)) + 0.03))
 
     ax1_r = ax1.twinx()
-    ax1_r.plot(length_km, false_frac_pct, color="#b91c1c", lw=2.0, marker="D", ms=3.0, label="False fraction")
+    ax1_r.plot(length_km, false_frac_pct, color="#b91c1c", lw=2.0, marker="D", ms=3.0, label="假成功占比")
     ax1_r.fill_between(
         length_km,
         np.clip(false_frac_pct - ci95_ff_pct, 0.0, 100.0),
@@ -261,7 +271,7 @@ def main() -> None:
         alpha=0.15,
         linewidth=0.0,
     )
-    ax1_r.set_ylabel("False-herald fraction (%)", color="#991b1b")
+    ax1_r.set_ylabel("假成功占比 (%)", color="#991b1b")
     ax1_r.tick_params(axis="y", colors="#991b1b")
     ff_top = float(np.max(false_frac_pct + ci95_ff_pct))
     ax1_r.set_ylim(0.0, max(2.0, ff_top * 1.18))
@@ -274,11 +284,11 @@ def main() -> None:
         lines.extend(axis_lines)
         labels.extend(axis_labels)
     ax1.legend(lines, labels, frameon=False, fontsize=8.5, loc="upper left")
-    ax1.set_title("Quality-Reliability Tradeoff")
+    ax1.set_title("质量-可靠性权衡")
     _panel_label(ax1, "(b)")
 
     fig.suptitle(
-        "Length-Scan Performance Envelope (Real Summary + Run-Level Uncertainty)",
+        "长度扫描性能包络（汇总数据 + 运行级不确定度）",
         fontsize=12.4,
         fontweight="bold",
     )
