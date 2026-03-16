@@ -1,0 +1,29 @@
+﻿% !TeX program = xelatex
+\documentclass[tikz,12pt]{standalone}
+\usepackage[UTF8,scheme=plain,fontset=windows]{ctex}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc}
+\begin{document}
+\begin{tikzpicture}[>=Latex,node distance=8mm and 10mm]
+\tikzstyle{box}=[draw,rounded corners,align=center,minimum height=9mm,minimum width=28mm,font=\small]
+\tikzstyle{widebox}=[draw,rounded corners,align=center,minimum height=9mm,minimum width=44mm,font=\small]
+\node[box] (app1) {量子模拟\\量子化学};
+\node[box,right=of app1] (app2) {优化\\采样/决策};
+\node[box,right=of app2] (app3) {机器学习\\数据分析};
+
+\node[widebox,below=10mm of app2] (arch) {体系结构转向\\单机扩展 $\rightarrow$ 模块化/分布式};
+
+\node[box,below left=10mm and 2mm of arch] (node1) {本地处理模块\\高保真门/纠错};
+\node[box,below=10mm of arch] (node2) {网络互连\\远程纠缠资源};
+\node[box,below right=10mm and 2mm of arch] (node3) {量子接口\\物质 $\leftrightarrow$ 光子};
+
+\draw[->,thick] (app1.south) -- (arch.north);
+\draw[->,thick] (app2.south) -- (arch.north);
+\draw[->,thick] (app3.south) -- (arch.north);
+
+\draw[->,thick] (arch.south) -- (node1.north);
+\draw[->,thick] (arch.south) -- (node2.north);
+\draw[->,thick] (arch.south) -- (node3.north);
+
+\end{tikzpicture}
+\end{document}

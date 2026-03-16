@@ -1,0 +1,24 @@
+﻿% !TeX program = xelatex
+\documentclass[tikz,12pt]{standalone}
+\usepackage[UTF8,scheme=plain,fontset=windows]{ctex}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc}
+\begin{document}
+\begin{tikzpicture}[>=Latex,node distance=7mm and 10mm]
+\tikzstyle{root}=[draw,rounded corners,align=center,minimum height=9mm,minimum width=44mm,font=\small]
+\tikzstyle{leaf}=[draw,rounded corners,align=left,minimum height=9mm,minimum width=48mm,font=\small,text width=48mm]
+\node[root] (root) {量子接口技术树};
+
+\node[leaf,below left=10mm and 12mm of root] (mem) {存储型/中继\\原子系综、稀土掺杂\\高效率/长寿命/多模};
+\node[leaf,below=10mm of root] (ion) {处理型：离子模块\\高保真本地门\\光子互连宣告};
+\node[leaf,below right=10mm and 12mm of root] (solid) {固态缺陷/量子点\\纳米光子集成\\电信接口潜力};
+
+\node[leaf,below=14mm of ion] (neutral) {单原子/中性原子\\腔增强/波导/芯片\\寄存器 + 通信比特};
+
+\draw[->,thick] (root) -- (mem);
+\draw[->,thick] (root) -- (ion);
+\draw[->,thick] (root) -- (solid);
+\draw[->,thick] (root) -- (neutral);
+
+\end{tikzpicture}
+\end{document}

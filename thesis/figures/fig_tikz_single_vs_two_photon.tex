@@ -1,0 +1,22 @@
+﻿% !TeX program = xelatex
+\documentclass[tikz,12pt]{standalone}
+\usepackage[UTF8,scheme=plain,fontset=windows]{ctex}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc}
+\begin{document}
+\begin{tikzpicture}[>=Latex,node distance=10mm and 10mm]
+\tikzstyle{box}=[draw,rounded corners,align=center,minimum height=9mm,minimum width=32mm,font=\small]
+\tikzstyle{smallbox}=[draw,rounded corners,align=center,minimum height=8mm,minimum width=26mm,font=\small]
+\node[box] (nodeA) {节点 A\\(原子/离子)};
+\node[box,right=30mm of nodeA] (nodeB) {节点 B\\(原子/离子)};
+\node[smallbox,below=12mm of nodeA] (mid) {中继站};
+
+\draw[->,thick] (nodeA) -- node[above,font=\small]{单光子：1 光子} (mid.west);
+\draw[->,thick] (nodeB) -- node[above,font=\small]{相位参考/本振} (mid.east);
+
+\node[smallbox,below=24mm of nodeA] (mid2) {中继站};
+\draw[->,thick] (nodeA) -- node[above,font=\small]{双光子：A 光子} (mid2.west);
+\draw[->,thick] (nodeB) -- node[above,font=\small]{双光子：B 光子} (mid2.east);
+\draw[->,thick] (mid2) -- node[right,font=\small]{干涉 + BSM} ++(0,-8mm);
+\end{tikzpicture}
+\end{document}

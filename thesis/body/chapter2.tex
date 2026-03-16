@@ -1,4 +1,4 @@
-% !Mode:: "TeX:UTF-8"
+﻿% !Mode:: "TeX:UTF-8"
 
 \chapter{端到端量子接口仿真的张量网络方法}[Tensor-Network Methods for End-to-End Quantum Interface Simulation]
 
@@ -313,35 +313,7 @@ p_m=\mathrm{Tr}(\Pi_m\rho).
 
 \begin{figure}[htbp]
   \centering
-  \begin{tikzpicture}[
-    >=Latex,
-    node distance=7mm and 8mm,
-    every node/.style={font=\small},
-    box/.style={draw,rounded corners,minimum width=20mm,minimum height=8mm,align=center},
-    note/.style={align=center}
-  ]
-    \node[note] (title1) at (0,1.2) {状态侧};
-    \node[note] (title2) at (0,-1.2) {测量侧};
-    \node[box] (s1) at (2.0,1.2) {原子-腔发射};
-    \node[box] (s2) at (5.0,1.2) {QFC};
-    \node[box] (s3) at (8.2,1.2) {滤波记忆};
-    \node[box] (s4) at (11.6,1.2) {输入端条件态};
-
-    \draw[->] (s1)--(s2);
-    \draw[->] (s2)--(s3);
-    \draw[->] (s3)--(s4);
-
-    \node[box] (m1) at (3.0,-1.2) {光纤损耗/相位};
-    \node[box] (m2) at (6.6,-1.2) {分束器网络};
-    \node[box] (m3) at (10.1,-1.2) {探测器 POVM};
-    \node[box] (m4) at (13.5,-1.2) {等效 effect 推回};
-
-    \draw[->] (m1)--(m2);
-    \draw[->] (m2)--(m3);
-    \draw[->] (m3)--(m4);
-
-    \draw[->,dashed] (m4.north) -- (s4.south) node[midway,right] {\small $\Phi^{\dagger}$};
-  \end{tikzpicture}
+  \includegraphics{fig_tikz_ch2_duallane}
   \caption{所研究链路的双通道方法示意。状态侧保留会积累相干历史的发射和有限带宽记忆，测量侧则把光纤、线性光学和探测器统一写成等效 effect 并向输入端推回。该分工在保持物理解释性的同时避免混态维数在态端全面膨胀。}
   \label{fig:ch2-duallane}
 \end{figure}
@@ -464,3 +436,7 @@ V_{\mathrm{HOM}}=\frac{C_{\perp}-C_{\parallel}}{C_{\perp}}.
 \section{小结}[Chapter Summary]
 
 端到端量子接口链路的方法框架可概括为：连续时间光场离散为时间 bin 后形成一维链式排布；利用 Schmidt 分解与 MPS 规范形式将指数复杂度压缩到由键维控制的低秩流形；利用 TEBD 将发射、QFC、滤波记忆和 SWAP 调度统一为局域门序列；借助 Kraus 表示、POVM 与对偶映射把开放系统噪声和条件测量组织到同一条概率链中。该框架中，state side 显式保留发射与有限带宽记忆，effect side 负责线性光学与探测统计；成功率、真假成功分解、Bell 态保真度、CHSH 指标与 HOM 可见度在统一算符框架下定义，时间分箱误差、Trotter 误差、Schmidt 截断和 effect 端模型边界共同构成收敛检查。
+
+
+
+

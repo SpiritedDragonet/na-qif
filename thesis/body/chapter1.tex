@@ -1,4 +1,4 @@
-\chapter{绪论}[Introduction]
+﻿\chapter{绪论}[Introduction]
 
 量子计算利用量子态的相干演化与测量处理信息，并在部分任务上展现出与经典计算不同的复杂度潜力。\cite{NielsenChuang2010QCQI,NationalAcademies2019QC} 典型例子包括 Shor 算法对整数因数分解与离散对数的多项式时间求解，以及 Grover 算法对无结构搜索的平方根加速。\cite{Shor1994Algorithms,Grover1997QuantumSearch} 同时，美国理论物理学家理查德·费曼指出量子体系演化难以由经典资源直接模拟，这使量子多体动力学与量子化学等任务成为量子计算的重要牵引方向。\cite{Feynman1982Simulating,Cao2019QuantumChemistry}
 
@@ -44,28 +44,7 @@
 
 \begin{figure}[htbp]
 \centering
-\begin{tikzpicture}[>=Latex,node distance=8mm and 10mm]
-\tikzstyle{box}=[draw,rounded corners,align=center,minimum height=9mm,minimum width=28mm,font=\small]
-\tikzstyle{widebox}=[draw,rounded corners,align=center,minimum height=9mm,minimum width=44mm,font=\small]
-\node[box] (app1) {量子模拟\\量子化学};
-\node[box,right=of app1] (app2) {优化\\采样/决策};
-\node[box,right=of app2] (app3) {机器学习\\数据分析};
-
-\node[widebox,below=10mm of app2] (arch) {体系结构转向\\单机扩展 $\rightarrow$ 模块化/分布式};
-
-\node[box,below left=10mm and 2mm of arch] (node1) {本地处理模块\\高保真门/纠错};
-\node[box,below=10mm of arch] (node2) {网络互连\\远程纠缠资源};
-\node[box,below right=10mm and 2mm of arch] (node3) {量子接口\\物质 $\leftrightarrow$ 光子};
-
-\draw[->,thick] (app1.south) -- (arch.north);
-\draw[->,thick] (app2.south) -- (arch.north);
-\draw[->,thick] (app3.south) -- (arch.north);
-
-\draw[->,thick] (arch.south) -- (node1.north);
-\draw[->,thick] (arch.south) -- (node2.north);
-\draw[->,thick] (arch.south) -- (node3.north);
-
-\end{tikzpicture}
+\includegraphics{fig_tikz_arch_to_interface}
 \caption{可扩展量子计算中“应用目标--体系结构转向--节点形态--量子接口需求”的逻辑关系示意图。随着系统目标从小规模 NISQ 演示走向容错与大规模应用，单机扩展会逐渐遇到互连与吞吐瓶颈，进而推动模块化/分布式体系结构的发展；量子接口因此成为连接处理、存储与通信节点的关键耦合层。图示据相关文献思路整理绘制。\cite{Jiang2007DistributedQC,Monroe2014ModularQC,Wehner2018QuantumInternetVision,Awschalom2021QuIC,Covey2023QuantumNetworksNeutralAtomNodes}}
 \label{fig:arch_to_interface}
 \end{figure}
@@ -84,25 +63,7 @@
 
 \begin{figure}[htbp]
 \centering
-\begin{tikzpicture}[>=Latex,node distance=10mm and 10mm]
-\tikzstyle{centerbox}=[draw,rounded corners,align=center,minimum height=10mm,minimum width=30mm,font=\normalsize]
-\tikzstyle{branchbox}=[draw,rounded corners,align=left,minimum height=20mm,minimum width=42mm,font=\small,text width=42mm]
-\node[centerbox] (core) {量子接口};
-
-\node[branchbox,below left=18mm and 18mm of core] (ent) {远程纠缠产生\\
-物质--光子纠缠 + 中继站干涉\\
-产出：远程贝尔对};
-\node[branchbox,below=18mm of core] (mem) {态转移/量子存储\\
-光 $\leftrightarrow$ 物质可逆映射\\
-用途：缓存、同步、复用};
-\node[branchbox,below right=18mm and 18mm of core] (gate) {门/错误探测\\
-散射/腔相互作用/门传送\\
-用途：远程门、容错资源};
-
-\draw[->,thick] (core) -- (ent);
-\draw[->,thick] (core) -- (mem);
-\draw[->,thick] (core) -- (gate);
-\end{tikzpicture}
+\includegraphics{fig_tikz_interface_tasks}
 \caption{量子接口在网络化体系中的三类典型任务示意图。三类任务可在同一平台协同出现，不同体系结构阶段的侧重点可以不同。图示据相关文献思路整理绘制。\cite{NorthupBlatt2014QuantumInfoTransfer,Awschalom2021QuIC,Reiserer2022CavityEnhancedNetworkNodes}}
 \label{fig:interface_tasks}
 \end{figure}
@@ -113,21 +74,7 @@
 
 \begin{figure}[htbp]
 \centering
-\begin{tikzpicture}[>=Latex,node distance=10mm and 10mm]
-\tikzstyle{box}=[draw,rounded corners,align=center,minimum height=9mm,minimum width=32mm,font=\small]
-\tikzstyle{smallbox}=[draw,rounded corners,align=center,minimum height=8mm,minimum width=26mm,font=\small]
-\node[box] (nodeA) {节点 A\\(原子/离子)};
-\node[box,right=30mm of nodeA] (nodeB) {节点 B\\(原子/离子)};
-\node[smallbox,below=12mm of nodeA] (mid) {中继站};
-
-\draw[->,thick] (nodeA) -- node[above,font=\small]{单光子：1 光子} (mid.west);
-\draw[->,thick] (nodeB) -- node[above,font=\small]{相位参考/本振} (mid.east);
-
-\node[smallbox,below=24mm of nodeA] (mid2) {中继站};
-\draw[->,thick] (nodeA) -- node[above,font=\small]{双光子：A 光子} (mid2.west);
-\draw[->,thick] (nodeB) -- node[above,font=\small]{双光子：B 光子} (mid2.east);
-\draw[->,thick] (mid2) -- node[right,font=\small]{干涉 + BSM} ++(0,-8mm);
-\end{tikzpicture}
+\includegraphics{fig_tikz_single_vs_two_photon}
 \caption{单光子与双光子干涉型远程纠缠方案示意图。单光子方案对相位参考更敏感但成功率可线性受益于链路效率；双光子方案把相位稳定需求更多局域到中继站，更适合长光纤部署，但成功率对两边链路效率更敏感。图示据相关文献思路整理绘制。\cite{Cabrillo1999CreationEntangledStates,BarrettKok2005EfficientHighFidelityQC,SimonIrvine2003RobustLongDistanceEntanglement}}
 \label{fig:single_vs_two_photon}
 \end{figure}
@@ -178,23 +125,7 @@
 
 \begin{figure}[htbp]
 \centering
-\begin{tikzpicture}[>=Latex,node distance=7mm and 10mm]
-\tikzstyle{root}=[draw,rounded corners,align=center,minimum height=9mm,minimum width=44mm,font=\small]
-\tikzstyle{leaf}=[draw,rounded corners,align=left,minimum height=9mm,minimum width=48mm,font=\small,text width=48mm]
-\node[root] (root) {量子接口技术树};
-
-\node[leaf,below left=10mm and 12mm of root] (mem) {存储型/中继\\原子系综、稀土掺杂\\高效率/长寿命/多模};
-\node[leaf,below=10mm of root] (ion) {处理型：离子模块\\高保真本地门\\光子互连宣告};
-\node[leaf,below right=10mm and 12mm of root] (solid) {固态缺陷/量子点\\纳米光子集成\\电信接口潜力};
-
-\node[leaf,below=14mm of ion] (neutral) {单原子/中性原子\\腔增强/波导/芯片\\寄存器 + 通信比特};
-
-\draw[->,thick] (root) -- (mem);
-\draw[->,thick] (root) -- (ion);
-\draw[->,thick] (root) -- (solid);
-\draw[->,thick] (root) -- (neutral);
-
-\end{tikzpicture}
+\includegraphics{fig_tikz_platform_tree}
 \caption{典型量子接口平台的技术树与优缺点概览。图示据相关文献思路整理绘制。\cite{Duan2001LongDistanceQuantumCommunication,Sangouard2011QuantumRepeatersAtomicEnsembles,Monroe2014ModularQC,Hucul2015ModularEntanglement,Bernien2013HeraldedEntanglement,Pompili2021MultinodeQuantumNetwork,Covey2023QuantumNetworksNeutralAtomNodes}}
 \label{fig:platform_tree}
 \end{figure}
@@ -329,4 +260,8 @@
 全文结构如下：第二章介绍开放量子系统描述、时间分箱离散化、MPS 表示与 TEBD 推进，以及量子信道/测量算符的基本处理框架；第三章建立端到端模型并给出源端发射、频率转换、滤波记忆、光纤传播、模式退化、中继站干涉与探测等环节的建模方法；第四章给出与实验可比对的数值结果与误差预算，重点分析远程纠缠建立率、条件态保真度、贝尔态投影统计及关键参数扫描；结论部分对全文工作进行总结并讨论可能的扩展方向。
 
 本章用于交代研究背景、关键概念与技术脉络，并明确建模对象与论文组织方式，为后续章节的理论推导和数值结果阅读提供统一语境与参照基础。
+
+
+
+
 

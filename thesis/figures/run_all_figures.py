@@ -1,4 +1,4 @@
-import pathlib
+﻿import pathlib
 import subprocess
 import sys
 
@@ -20,6 +20,13 @@ def main() -> None:
         "fig_detector_eff.py",
         "fig_error_budget.py",
         "fig_cost_scaling.py",
+        "fig_tikz_arch_to_interface.py",
+        "fig_tikz_interface_tasks.py",
+        "fig_tikz_single_vs_two_photon.py",
+        "fig_tikz_platform_tree.py",
+        "fig_tikz_ch2_duallane.py",
+        "fig_tikz_ch3_effective_dofs.py",
+        "fig_tikz_ch3_effect_pushback.py",
     ]
     for script_name in scripts:
         script = figures_dir / script_name

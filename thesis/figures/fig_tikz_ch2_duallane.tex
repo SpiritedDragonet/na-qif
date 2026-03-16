@@ -1,0 +1,36 @@
+﻿% !TeX program = xelatex
+\documentclass[tikz,12pt]{standalone}
+\usepackage[UTF8,scheme=plain,fontset=windows]{ctex}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc}
+\begin{document}
+\begin{tikzpicture}[
+  >=Latex,
+  node distance=7mm and 8mm,
+  every node/.style={font=\small},
+  box/.style={draw,rounded corners,minimum width=20mm,minimum height=8mm,align=center},
+  note/.style={align=center}
+]
+  \node[note] (title1) at (0,1.2) {状态侧};
+  \node[note] (title2) at (0,-1.2) {测量侧};
+  \node[box] (s1) at (2.0,1.2) {原子-腔发射};
+  \node[box] (s2) at (5.0,1.2) {QFC};
+  \node[box] (s3) at (8.2,1.2) {滤波记忆};
+  \node[box] (s4) at (11.6,1.2) {输入端条件态};
+
+  \draw[->] (s1)--(s2);
+  \draw[->] (s2)--(s3);
+  \draw[->] (s3)--(s4);
+
+  \node[box] (m1) at (3.0,-1.2) {光纤损耗/相位};
+  \node[box] (m2) at (6.6,-1.2) {分束器网络};
+  \node[box] (m3) at (10.1,-1.2) {探测器 POVM};
+  \node[box] (m4) at (13.5,-1.2) {等效 effect 推回};
+
+  \draw[->] (m1)--(m2);
+  \draw[->] (m2)--(m3);
+  \draw[->] (m3)--(m4);
+
+  \draw[->,dashed] (m4.north) -- (s4.south) node[midway,right] {\small $\Phi^{\dagger}$};
+\end{tikzpicture}
+\end{document}
