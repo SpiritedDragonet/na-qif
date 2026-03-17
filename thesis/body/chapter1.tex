@@ -1,8 +1,8 @@
 ﻿\chapter{绪论}[Introduction]
 
-量子计算利用量子态的相干演化与测量处理信息，并在部分任务上展现出与经典计算不同的复杂度潜力。\cite{NielsenChuang2010QCQI,NationalAcademies2019QC} 典型例子包括 Shor 算法对整数因数分解与离散对数的多项式时间求解，以及 Grover 算法对无结构搜索的平方根加速。\cite{Shor1994Algorithms,Grover1997QuantumSearch} 同时，美国理论物理学家理查德·费曼指出量子体系演化难以由经典资源直接模拟，这使量子多体动力学与量子化学等任务成为量子计算的重要牵引方向。\cite{Feynman1982Simulating,Cao2019QuantumChemistry}
+量子计算以量子态的相干演化与测量统计为核心信息处理机制，在特定问题上展示出不同于经典计算的复杂度潜力。\cite{NielsenChuang2010QCQI,NationalAcademies2019QC,Li2025QIT} 量子算法中的典型例子包括 Shor 算法对整数因数分解与离散对数的多项式时间求解，以及 Grover 算法对无结构搜索的平方根加速。\cite{Shor1994Algorithms,Grover1997QuantumSearch,Li2025QIT} 美国理论物理学家理查德 费曼在1982年提出量子体系难以被经典资源直接模拟的观点，这一观点使量子多体动力学与量子化学等任务成为量子计算的重要牵引方向。\cite{Feynman1982Simulating,Cao2019QuantumChemistry,Li2025QIT} 从更宏观的视角看，量子计算、量子通信与量子测量共同构成量子信息科学的核心版图，其工程化进展与系统化评估已成为当前研究重点。\cite{Li2025QIT}
 
-随着研究从概念验证走向可扩展实现，问题重心逐步从“单次实验能否成功”转向“系统能否长期稳定地产生、传输并调用量子资源”。\cite{Preskill2018NISQ,NationalAcademies2019QC} 这一转向中的量子接口问题值得重点讨论，并围绕处理中性原子节点的端到端链路开展建模与误差预算分析。
+随着研究从概念验证走向可扩展实现，该领域的评价口径逐步从单次实验是否成功转向系统能否稳定地产生、传输并调用量子资源。\cite{Preskill2018NISQ,NationalAcademies2019QC,Li2025QIT} 在这一语境下，量子接口成为连接物质量子比特与光学信道的关键环节，其性能直接影响远程纠缠的建立速率、成功率与条件态质量。\cite{Reiserer2022CavityEnhancedNetworkNodes,Awschalom2021QuIC,Li2023QNS} 中性原子节点兼具可编程寄存器与光学接口能力，具有较强代表性。\cite{Covey2023QuantumNetworksNeutralAtomNodes,Li2023QNS} 本研究聚焦该类节点的端到端链路，开展可对照实验的建模与误差预算分析，并为后续章节的系统评估指标与仿真结果提供统一起点。
 
 \section{量子计算简介}[Introduction to quantum computing]
 
@@ -260,6 +260,10 @@
 全文结构如下：第二章介绍开放量子系统描述、时间分箱离散化、MPS 表示与 TEBD 推进，以及量子信道/测量算符的基本处理框架；第三章建立端到端模型并给出源端发射、频率转换、滤波记忆、光纤传播、模式退化、中继站干涉与探测等环节的建模方法；第四章给出与实验可比对的数值结果与误差预算，重点分析远程纠缠建立率、条件态保真度、贝尔态投影统计及关键参数扫描；结论部分对全文工作进行总结并讨论可能的扩展方向。
 
 本章用于交代研究背景、关键概念与技术脉络，并明确建模对象与论文组织方式，为后续章节的理论推导和数值结果阅读提供统一语境与参照基础。
+
+
+
+
 
 
 

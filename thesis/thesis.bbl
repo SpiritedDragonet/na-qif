@@ -1,4 +1,4 @@
-\begin{thebibliography}{74}
+\begin{thebibliography}{76}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{#1}
 \expandafter\ifx\csname urlstyle\endcsname\relax\else
@@ -23,6 +23,15 @@ NIELSEN M~A, CHUANG I~L.
 \newblock Quantum computing: Progress and prospects\allowbreak[M/OL].
 \newblock Washington, DC: The National Academies Press, 2019.
 \newblock DOI: \doi{10.17226/25196}.
+
+\bibitem[李硕\ 等(2025)李硕, 李欣欣, 张雪松, 高飞, 陈远珍,
+  任思源, and 于溢琛]{Li2025QIT}
+李硕, 李欣欣, 张雪松, 等.
+\newblock
+  量子信息科技与产业发展态势及未来展望\allowbreak[J/OL].
+\newblock 中国工程科学, 2025, 27\allowbreak (1): 122-132.
+\newblock
+  \url{https://www.engineering.org.cn/sscae/CN/PDF/10.15302/J-SSCAE-2024.12.016}.
 
 \bibitem[Shor(1994)]{Shor1994Algorithms}
 SHOR P~W.
@@ -60,6 +69,12 @@ PRESKILL J.
 \newblock Quantum, 2018, 2: 79.
 \newblock DOI: \doi{10.22331/q-2018-08-06-79}.
 
+\bibitem[Reiserer(2022)]{Reiserer2022CavityEnhancedNetworkNodes}
+REISERER A.
+\newblock Colloquium: Cavity-enhanced quantum network nodes\allowbreak[J/OL].
+\newblock Reviews of Modern Physics, 2022, 94\allowbreak (4): 041003.
+\newblock DOI: \doi{10.1103/RevModPhys.94.041003}.
+
 \bibitem[Awschalom et~al.(2021)Awschalom, Berggren, Bernien,
   et~al.]{Awschalom2021QuIC}
 AWSCHALOM D, BERGGREN K, BERNIEN H, et~al.
@@ -67,6 +82,14 @@ AWSCHALOM D, BERGGREN K, BERNIEN H, et~al.
   information technologies\allowbreak[J/OL].
 \newblock PRX Quantum, 2021, 2: 017002.
 \newblock DOI: \doi{10.1103/PRXQuantum.2.017002}.
+
+\bibitem[李靖\ 等(2023)李靖, 高飞, 秦素娟, 温巧燕, and
+  张平]{Li2023QNS}
+李靖, 高飞, 秦素娟, 等.
+\newblock 量子网络系统研究进展与关键技术分析\allowbreak[J/OL].
+\newblock 中国工程科学, 2023, 25\allowbreak (6): 80-95.
+\newblock
+  \url{https://www.engineering.org.cn/sscae/CN/PDF/10.15302/J-SSCAE-2023.06.010}.
 
 \bibitem[Covey et~al.(2023)Covey, Weinfurter, and
   Bernien]{Covey2023QuantumNetworksNeutralAtomNodes}
@@ -134,12 +157,6 @@ KIMBLE H~J.
 \newblock The quantum internet\allowbreak[J/OL].
 \newblock Nature, 2008, 453\allowbreak (7198): 1023-1030.
 \newblock DOI: \doi{10.1038/nature07127}.
-
-\bibitem[Reiserer(2022)]{Reiserer2022CavityEnhancedNetworkNodes}
-REISERER A.
-\newblock Colloquium: Cavity-enhanced quantum network nodes\allowbreak[J/OL].
-\newblock Reviews of Modern Physics, 2022, 94\allowbreak (4): 041003.
-\newblock DOI: \doi{10.1103/RevModPhys.94.041003}.
 
 \bibitem[Ikuta et~al.(2018)Ikuta, Kobayashi, Kawakami, Miki, Yamashita, Terai,
   Yamamoto, Koashi, and Imoto]{Ikuta2018PolarizationInsensitiveQFC}
