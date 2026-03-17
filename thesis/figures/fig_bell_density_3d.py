@@ -120,8 +120,8 @@ def _plot_heatmap(
     ax.set_title(title, pad=6.0)
     ax.set_xticks(range(4), labels, rotation=19, ha="right")
     ax.set_yticks(range(4), labels)
-    ax.set_xlabel("ket 基底")
-    ax.set_ylabel("bra 基底")
+    ax.set_xlabel("ket", labelpad=6.0, loc="right")
+    ax.set_ylabel("bra", labelpad=6.0, loc="top")
     ax.set_xticks(np.arange(-0.5, 4.0, 1.0), minor=True)
     ax.set_yticks(np.arange(-0.5, 4.0, 1.0), minor=True)
     ax.grid(which="minor", color="white", linestyle="-", linewidth=1.05, alpha=0.85)
@@ -178,7 +178,9 @@ def _plot_bar3d(
     ax.set_yticklabels(labels, rotation=-13, ha="right")
     ax.set_xlabel("ket", labelpad=6.0)
     ax.set_ylabel("bra", labelpad=8.0)
-    ax.set_zlabel("数值", labelpad=6.0)
+    ax.set_zlabel("", labelpad=6.0)
+    ax.xaxis.set_label_coords(1.02, -0.04)
+    ax.yaxis.set_label_coords(-0.04, 1.02)
 
     ax.xaxis.pane.set_facecolor((0.965, 0.972, 0.988, 1.0))
     ax.yaxis.pane.set_facecolor((0.965, 0.972, 0.988, 1.0))
@@ -282,14 +284,14 @@ def main() -> None:
     sm_raw.set_array([])
     cax_raw = fig.add_axes([0.932, 0.55, 0.020, 0.32])
     cbar_raw = fig.colorbar(sm_raw, cax=cax_raw)
-    cbar_raw.set_label("原始矩阵数值", fontsize=13.0)
+    cbar_raw.set_label("原始矩阵", fontsize=13.0)
     cbar_raw.ax.tick_params(labelsize=11.2)
 
     sm_delta = ScalarMappable(norm=Normalize(vmin=-delta_vmax, vmax=delta_vmax), cmap=cmap)
     sm_delta.set_array([])
     cax_delta = fig.add_axes([0.932, 0.14, 0.020, 0.32])
     cbar_delta = fig.colorbar(sm_delta, cax=cax_delta)
-    cbar_delta.set_label(r"$\Delta\rho_{\mathrm{ff}}$ 数值", fontsize=13.0)
+    cbar_delta.set_label(r"$\Delta\rho_{\mathrm{ff}}$", fontsize=13.0)
     cbar_delta.ax.tick_params(labelsize=11.2)
 
     fig.suptitle(
@@ -306,3 +308,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+

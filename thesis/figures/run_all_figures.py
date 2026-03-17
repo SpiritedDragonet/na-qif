@@ -1,4 +1,4 @@
-﻿import pathlib
+import pathlib
 import subprocess
 import sys
 
@@ -23,7 +23,6 @@ def main() -> None:
         "fig_tikz_arch_to_interface.py",
         "fig_tikz_interface_tasks.py",
         "fig_tikz_single_vs_two_photon.py",
-        "fig_tikz_platform_tree.py",
         "fig_tikz_ch2_duallane.py",
         "fig_tikz_ch3_effective_dofs.py",
         "fig_tikz_ch3_effect_pushback.py",
@@ -37,3 +36,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
