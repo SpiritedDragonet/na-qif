@@ -59,6 +59,8 @@ SUMMARY_TASK_MODE = "SUMMARY"
 SUMMARY_TASK_FILENAME = "task_summary.json"
 WORKER_HEARTBEAT_INTERVAL_SECS = 40
 WORKER_STALE_RECOVERY_SECS = 240
+PENDING_SCAN_MAX = int(os.environ.get("PENDING_SCAN_MAX", "512"))
+PENDING_SCAN_SKIP = int(os.environ.get("PENDING_SCAN_SKIP", "4096"))
 SUPPORTED_EXPERIMENTS = {
     "SIM",
     "HOM",
@@ -275,6 +277,12 @@ def _parse_run_params(argv):
         ("--scan-window-ns-start", "scan_window_ns_start", float, "(PARAM_SCAN) 维度 window_ns 起点"),
         ("--scan-window-ns-end", "scan_window_ns_end", float, "(PARAM_SCAN) 维度 window_ns 终点"),
         ("--scan-window-ns-step", "scan_window_ns_step", float, "(PARAM_SCAN) 维度 window_ns 步长"),
+        ("--scan-n-bins-start", "scan_n_bins_start", float, "(PARAM_SCAN) 维度 n_bins 起点"),
+        ("--scan-n-bins-end", "scan_n_bins_end", float, "(PARAM_SCAN) 维度 n_bins 终点"),
+        ("--scan-n-bins-step", "scan_n_bins_step", float, "(PARAM_SCAN) 维度 n_bins 步长"),
+        ("--scan-dt-ns-start", "scan_dt_ns_start", float, "(PARAM_SCAN) 维度 dt_ns 起点"),
+        ("--scan-dt-ns-end", "scan_dt_ns_end", float, "(PARAM_SCAN) 维度 dt_ns 终点"),
+        ("--scan-dt-ns-step", "scan_dt_ns_step", float, "(PARAM_SCAN) 维度 dt_ns 步长"),
         ("--scan-tau-ns-start", "scan_tau_ns_start", float, "(PARAM_SCAN/HOM) 维度 tau_ns 起点"),
         ("--scan-tau-ns-end", "scan_tau_ns_end", float, "(PARAM_SCAN/HOM) 维度 tau_ns 终点"),
         ("--scan-tau-ns-step", "scan_tau_ns_step", float, "(PARAM_SCAN/HOM) 维度 tau_ns 步长"),
@@ -554,6 +562,12 @@ def _parse_run_params(argv):
         ("scan_window_ns_start", "scan_window_ns_start"),
         ("scan_window_ns_end", "scan_window_ns_end"),
         ("scan_window_ns_step", "scan_window_ns_step"),
+        ("scan_n_bins_start", "scan_n_bins_start"),
+        ("scan_n_bins_end", "scan_n_bins_end"),
+        ("scan_n_bins_step", "scan_n_bins_step"),
+        ("scan_dt_ns_start", "scan_dt_ns_start"),
+        ("scan_dt_ns_end", "scan_dt_ns_end"),
+        ("scan_dt_ns_step", "scan_dt_ns_step"),
         ("scan_tau_ns_start", "scan_tau_ns_start"),
         ("scan_tau_ns_end", "scan_tau_ns_end"),
         ("scan_tau_ns_step", "scan_tau_ns_step"),
@@ -1096,6 +1110,40 @@ def _count_total_and_core_tasks(task_dir: Path) -> tuple[int, int]:
     return total, core
 
 
+def _has_pending_task(pending_dir: Path) -> bool:
+    try:
+        with os.scandir(pending_dir) as it:
+            for entry in it:
+                name = entry.name
+                if name.startswith("task_") and name.endswith(".json"):
+                    return True
+    except FileNotFoundError:
+        return False
+    return False
+
+
+def _scan_pending_candidates(
+    pending_dir: Path, max_candidates: int, max_skip: int
+) -> list[Path]:
+    candidates: list[Path] = []
+    try:
+        skip = int(np.random.randint(0, max_skip + 1)) if max_skip > 0 else 0
+        with os.scandir(pending_dir) as it:
+            for entry in it:
+                name = entry.name
+                if not (name.startswith("task_") and name.endswith(".json")):
+                    continue
+                if skip > 0:
+                    skip -= 1
+                    continue
+                candidates.append(Path(entry.path))
+                if len(candidates) >= max_candidates:
+                    break
+    except FileNotFoundError:
+        return []
+    return candidates
+
+
 def _summary_task_exists(paths: dict) -> bool:
     for section in ("pending", "inprogress", "done", "error"):
         if (paths[section] / SUMMARY_TASK_FILENAME).exists():
@@ -1382,8 +1430,7 @@ def _run_worker_loop(
             picked = None
             for run_root in _discover_run_roots(base_root):
                 run_paths = _queue_paths(run_root)
-                pending_count, _ = _count_total_and_core_tasks(run_paths["pending"])
-                if pending_count <= 0:
+                if not _has_pending_task(run_paths["pending"]):
                     continue
                 picked = run_paths
                 break
@@ -1415,8 +1462,12 @@ def _run_worker_loop(
             if heartbeat_path is not None and heartbeat_path.parent.exists():
                 heartbeat_path.write_text(str(int(now)), encoding="utf-8")
             last_heartbeat = now
-        pending_all = list(paths["pending"].glob("task_*.json"))
-        if not pending_all:
+        pending = _scan_pending_candidates(
+            paths["pending"], PENDING_SCAN_MAX, PENDING_SCAN_SKIP
+        )
+        if not pending:
+            pending = _scan_pending_candidates(paths["pending"], PENDING_SCAN_MAX, 0)
+        if not pending:
             inprogress = list(paths["inprogress"].glob("task_*.json"))
             if exit_when_done:
                 # 退出条件：done_flag + 无 inprogress
@@ -1432,10 +1483,8 @@ def _run_worker_loop(
             _sleep_backoff()
             backoff_idx = min(backoff_idx + 1, len(backoff) - 1)
             continue
-        pending = pending_all
         if len(pending) > 1:
-            start = int(np.random.randint(0, len(pending)))
-            pending = pending[start:] + pending[:start]
+            np.random.shuffle(pending)
         empty_rounds = 0
         task_path = None
         for cand in pending:
