@@ -1,4 +1,4 @@
-﻿\chapter{量子接口的端到端仿真模型与实现}[End-to-End Simulation Model and Implementation for Quantum Interfaces]
+\chapter{量子接口的端到端仿真模型与实现}[End-to-End Simulation Model and Implementation for Quantum Interfaces]
 
 沿用前两章已经建立的时间分箱表示和条件测量框架，所研究链路在这一章被落实为一组可直接进入数值计算的局域空间、局部门和测量 effect。状态侧显式保留四能级原子-腔发射、量子频率转换（quantum frequency conversion，QFC）和有限带宽滤波带来的跨 bin 记忆；光纤传输、分束器干涉以及探测器响应则在测量侧通过对偶映射推回输入端 effect。这一分工保留了会在链上积累相关性的物理过程，也避免把线性光学网络重复写入态端演化 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems}。
 
@@ -538,16 +538,16 @@ p_\lambda=\sum_{m\in\mathcal{S}_\lambda}\mathrm{Tr}(E_m\rho),
 T_{\rm enum}\propto O\!\left(N\cdot W\cdot C(\chi)\right).
 \label{eq:enum-leading-cost}
 \end{equation}
-总墙钟时间满足
+总用时满足
 \begin{equation}
-T_w=T_{\rm phy}+T_{\rm det}+T_{\rm aux}+T_{\rm res},
+T_{\text{总用时}}=T_{\text{物理链路}}+T_{\text{探测阶段}}+T_{\text{辅助}}+T_{\text{残差}},
 \label{eq:app-time-closure}
 \end{equation}
-其中 $T_{\rm phy}=T_{\rm em}+T_{\rm qfc}+T_{\rm mem}+T_{\rm dep}$ 表示状态侧物理链路耗时，$T_{\rm det}$ 表示测量侧总耗时。进一步定义
+其中 $T_{\text{物理链路}}=T_{\text{发射}}+T_{\text{QFC}}+T_{\text{滤波记忆}}+T_{\text{退相干}}$ 表示状态侧物理链路耗时，$T_{\text{探测阶段}}$ 表示测量侧总耗时。进一步定义
 \begin{equation}
-\rho_{\rm enum}=\frac{T_{\rm b,enum}+T_{\rm m,enum}}{T_w},
+\rho_{\rm enum}=\frac{T_{\rm b,enum}+T_{\rm m,enum}}{T_{\text{总用时}}},
 \qquad
-\rho_{\rm phy}=\frac{T_{\rm phy}}{T_w},
+\rho_{\rm phy}=\frac{T_{\text{物理链路}}}{T_{\text{总用时}}},
 \label{eq:dominant-ratio}
 \end{equation}
 即可判断优化优先级。若 $\rho_{\rm enum}$ 占优，计算资源更应优先投向 effect 枚举与收缩；若 $\rho_{\rm phy}$ 占优，才有必要继续压缩态端局部门或交换调度。
@@ -558,7 +558,7 @@ effect 端处理还有一个明确边界：它依赖于光纤、分束器和探�
 
 \begin{table}[htbp]
 \centering
-\caption{第三章模型中的主要近似、控制参数及其影响范围}
+\caption{模型中的主要近似、控制参数及其影响范围}
 \label{tab:ch3_model_boundaries}
 \renewcommand{\arraystretch}{1.15}
 \begin{tabular}{p{2.5cm}p{4.8cm}p{2.2cm}p{5.0cm}}
@@ -591,6 +591,10 @@ QFC & 采用强泵近似下的分束器型局域幺正 & $\eta_H,\eta_V,\phi_H,\
 \section{小结}[Summary]
 
 这一章把前两章已经建立的方法框架落实到所研究的量子接口链路上。原子-腔发射阶段由四能级原子、三维腔场和 5 维时间 bin 的局部门给出；QFC 在单 bin 内完成波长转换；滤波记忆模把有限带宽导致的跨 bin 相关显式保留在链上；中间站的光纤、分束器和探测器响应则通过对偶映射推回输入端 effect，并进一步给出 partial BSM 的成功模式判据以及真假成功分解。由此得到的端到端模型既保留了实验上最关键的物理环节，也保持了和数值实现一一对应的局域结构，为下一章的实验对照、参数扫描和误差预算提供了统一基线。
+
+
+
+
 
 
 

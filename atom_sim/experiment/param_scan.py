@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import itertools
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
@@ -59,6 +60,8 @@ class ScanAxisSpec:
 
 _SCAN_AXIS_ORDER = (
     "window_ns",
+    "n_bins",
+    "dt_ns",
     "tau_ns",
     "qfc_noise_sd_cps_per_mhz",
     "qfc_eta",
@@ -80,6 +83,23 @@ SCAN_AXIS_SPECS: dict[str, ScanAxisSpec] = {
         legacy_end_attr="window_sweep_end_ns",
         legacy_step_attr="window_sweep_step_ns",
         min_value=0.0,
+    ),
+    "n_bins": ScanAxisSpec(
+        key="n_bins",
+        family=FAMILY_SIM_CORE,
+        start_attr="scan_n_bins_start",
+        end_attr="scan_n_bins_end",
+        step_attr="scan_n_bins_step",
+        min_value=1.0,
+    ),
+    "dt_ns": ScanAxisSpec(
+        key="dt_ns",
+        family=FAMILY_SIM_CORE,
+        start_attr="scan_dt_ns_start",
+        end_attr="scan_dt_ns_end",
+        step_attr="scan_dt_ns_step",
+        min_value=0.0,
+        min_open=True,
     ),
     "tau_ns": ScanAxisSpec(
         key="tau_ns",
@@ -567,8 +587,11 @@ def _run_param_scan_sim_point(
     should_abort=None,
 ) -> dict:
     _ = task
+    run_wall_start = time.perf_counter()
     run_rng = np.random.default_rng(seed)
     base_state = {
+        "n_bins": int(config.emission.n_bins),
+        "dt_ns": float(config.emission.dt_ns),
         "window_ns": float(config.run.window_ns),
         "length_km": float(config.fiber.length_km),
         "qfc_theta_h": float(config.qfc.theta_H),
@@ -586,6 +609,16 @@ def _run_param_scan_sim_point(
             value = float(raw_value)
             if key == "window_ns":
                 config.run.window_ns = value
+            elif key == "n_bins":
+                n_bins = int(round(value))
+                if n_bins < 1:
+                    raise ValueError("scan_n_bins_* 必须 >= 1")
+                config.emission.n_bins = n_bins
+                point["n_bins"] = n_bins
+            elif key == "dt_ns":
+                if value <= 0.0:
+                    raise ValueError("scan_dt_ns_* 必须 > 0")
+                config.emission.dt_ns = value
             elif key == "length_km":
                 config.fiber.length_km = value
             elif key == "qfc_noise_sd_cps_per_mhz":
@@ -696,6 +729,7 @@ def _run_param_scan_sim_point(
 
         p_success_abs = float(enum_main.p_success)
         event_rate_hz = float(p_success_abs * attempt_rate_hz_eff)
+        runtime_wall_s = float(time.perf_counter() - run_wall_start)
         return {
             "run_index": run_index,
             "scan_family": FAMILY_SIM_CORE,
@@ -705,6 +739,7 @@ def _run_param_scan_sim_point(
             "success": int(sum(1 for sample in pipeline.samples if sample.success)),
             "attempt_rate_hz": float(attempt_rate_hz_eff),
             "event_rate_hz": event_rate_hz,
+            "runtime_wall_s": runtime_wall_s,
             "p_two_click_abs": float(np.clip(pipeline.p_records_total, 0.0, 1.0)),
             "p_arrive": float(enum_main.p_arrive),
             "p_arrive_11": float(enum_main.p_arrive_11),
@@ -730,6 +765,8 @@ def _run_param_scan_sim_point(
             "coinc": None,
         }
     finally:
+        config.emission.n_bins = base_state["n_bins"]
+        config.emission.dt_ns = base_state["dt_ns"]
         config.run.window_ns = base_state["window_ns"]
         config.fiber.length_km = base_state["length_km"]
         config.qfc.theta_H = base_state["qfc_theta_h"]

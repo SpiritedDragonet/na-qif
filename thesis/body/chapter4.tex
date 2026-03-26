@@ -221,10 +221,10 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.95\linewidth]{fig_error_budget.pdf}
-\caption{误差预算汇总图：（a）真成功/假成功宣告概率预算及 $F_t$、假成功占比、$S_{\max}/4$ 随 $\theta_{\mathrm{BS}}$ 的联合变化（右下角 inset 为速率-保真度工作点前沿，颜色表示假成功占比）；（b）推荐工作点的假成功来源（背景辅助与内禀暗计数辅助）及其模式贡献分解。}
+\caption{误差预算汇总图：（a）真成功/假成功宣告概率预算及 $F_t$、假成功占比、$S_{\max}/4$ 随 $\theta_{\mathrm{BS}}$ 的联合变化；（b）速率-保真度工作点前沿，颜色表示假成功占比，星标表示推荐工作点；（c）推荐工作点下各有效点击模式对假成功总量的贡献分解，并按来源并列给出背景辅助与内禀暗计数分量。}
 \label{fig:error_budget}
 \end{figure}
-图 \ref{fig:error_budget} 将“事件预算”（$p_t$ 与 $p_f$）与“质量预算”（$F_t$、$S_{\max}$、假成功占比）统一到同一张图中。图 \ref{fig:error_budget}(b) 的分解进一步指出推荐工作点下假成功并非单一来源主导，而是由背景与内禀暗计数共同贡献，并在不同点击模式间分担，这为后续“先压背景还是先压暗计数”的工程优先级提供了直接依据。
+图 \ref{fig:error_budget} 将“事件预算”（$p_t$ 与 $p_f$）和“质量预算”（$F_t$、$S_{\max}$、假成功占比）统一到同一组图中。图 \ref{fig:error_budget}(a) 用于识别分束角扫描下的候选工作区间，图 \ref{fig:error_budget}(b) 给出速率与保真度之间的前沿关系，而图 \ref{fig:error_budget}(c) 则把推荐工作点下的假成功贡献按点击模式展开，并在每个模式内并列展示背景辅助与内禀暗计数两类来源。该图显示假成功并非单一来源主导，而是由背景与内禀暗计数共同贡献，并主要集中在四类有效点击模式中，这为后续“先压背景还是先压暗计数”的工程优先级提供了更直接的依据。
 
 \section{单轨迹仿真开销测算}[Single-Trajectory Simulation Cost Profiling]
 
@@ -257,14 +257,14 @@ $T_{\text{探测阶段}}/T_{\text{总用时}}=99.42\%$，
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.95\linewidth]{fig_cost_scaling.pdf}
-\caption{复杂度缩放图：（a）探测阶段耗时随窗口 bin 数增长；（b）墙钟代理量随 bin 个数上限增长。}
+\caption{复杂度缩放图：（a）探测阶段耗时随窗口 bin 数增长；（b）总用时代理量随 bin 个数上限增长。}
 \label{fig:cost_scaling}
 \end{figure}
-图 \ref{fig:cost_scaling} 给出窗口 bin 上限变化下的探测阶段开销与墙钟代理量趋势，用于与第 3 章复杂度分析对应。
+图 \ref{fig:cost_scaling} 给出窗口 bin 上限变化下的探测阶段开销与总用时代理量趋势，用于与第 3 章复杂度分析对应。
 
 部署判据因此采用两层规则：先满足硬约束
 \begin{equation}
-\mathcal{C}_{\rm hard}=\{F_t\ge F_{\min},\ S\ge S_{\min},\ T_w\le T_{\max}\},
+\mathcal{C}_{\rm hard}=\{F_t\ge F_{\min},\ S\ge S_{\min},\ T_{\text{总用时}}\le T_{\max}\},
 \end{equation}
 再在 $\mathcal{C}_{\rm hard}$ 内优化软目标（如单位墙钟真成功数）。该顺序可避免“仅压缩墙钟却牺牲可用纠缠质量”的误优化。
 在本论文的代表性部署口径下，可采用示例阈值
@@ -274,6 +274,10 @@ $F_{\min}=0.80$、$S_{\min}=2.0$ 与 $T_{\max}=3600\,\mathrm{s}$，
 \section{本章小结}[Chapter Summary]
 
 本章给出与实验流程一致的结果组织方式：参数先由可独立测量量锚定，再由分层标定流程进入端到端评估。核心输出扩展为 $\{p_s,p_t,p_f,F_t,S\}$ 与中间可观测量的统一集合。该结构使模型具备两类能力：一是与实验逐项对照的可解释性，二是面向下一轮装置优化的可操作误差预算能力。
+
+
+
+
 
 
 

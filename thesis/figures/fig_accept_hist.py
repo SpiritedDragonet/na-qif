@@ -1,3 +1,4 @@
+from plot_style import frame_all_axes
 import csv
 import json
 import math
@@ -254,6 +255,7 @@ def main() -> None:
     )
 
     out_path = pathlib.Path(__file__).with_suffix(".pdf")
+    frame_all_axes(fig)
     fig.savefig(out_path, dpi=220)
     plt.close(fig)
 

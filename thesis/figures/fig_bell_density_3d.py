@@ -1,3 +1,4 @@
+from plot_style import frame_all_axes
 import argparse
 import json
 import pathlib
@@ -302,6 +303,7 @@ def main() -> None:
     )
 
     out_pdf = pathlib.Path(__file__).with_suffix(".pdf")
+    frame_all_axes(fig)
     fig.savefig(out_pdf, dpi=320)
     plt.close(fig)
 

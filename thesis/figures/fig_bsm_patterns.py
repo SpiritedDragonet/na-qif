@@ -1,3 +1,4 @@
+from plot_style import frame_all_axes
 import argparse
 import csv
 import pathlib
@@ -303,6 +304,7 @@ def main() -> None:
     )
 
     out_base = pathlib.Path(__file__).with_suffix("")
+    frame_all_axes(fig)
     fig.savefig(out_base.with_suffix(".pdf"), dpi=260)
     if EXPORT_PNG:
         fig.savefig(out_base.with_suffix(".png"), dpi=220)

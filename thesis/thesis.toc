@@ -3,63 +3,57 @@
 \contentsline {subsection}{\numberline {1.1.1}量子计算基本概念与模型}{1}{subsection.1.1.1}%
 \contentsline {subsection}{\numberline {1.1.2}工程化价值与应用牵引}{2}{subsection.1.1.2}%
 \contentsline {subsection}{\numberline {1.1.3}可扩展性压力与模块化思路}{3}{subsection.1.1.3}%
-\contentsline {section}{\numberline {1.2}量子接口简介}{4}{section.1.2}%
-\contentsline {subsection}{\numberline {1.2.1}量子接口的任务与典型工作流程}{4}{subsection.1.2.1}%
-\contentsline {subsection}{\numberline {1.2.2}远程纠缠方案与系统级评价指标}{4}{subsection.1.2.2}%
-\contentsline {section}{\numberline {1.3}量子接口研究现状}{6}{section.1.3}%
-\contentsline {subsection}{\numberline {1.3.1}主要物理平台与代表性进展}{6}{subsection.1.3.1}%
-\contentsline {subsection}{\numberline {1.3.2}技术路线比较与发展趋势}{8}{subsection.1.3.2}%
-\contentsline {section}{\numberline {1.4}本文建模的处理中性原子量子接口链路}{9}{section.1.4}%
-\contentsline {subsection}{\numberline {1.4.1}链路概述与选型依据}{9}{subsection.1.4.1}%
-\contentsline {section}{\numberline {1.5}端到端性能瓶颈分析}{11}{section.1.5}%
-\contentsline {subsection}{\numberline {1.5.1}成功率与距离代价}{11}{subsection.1.5.1}%
-\contentsline {subsection}{\numberline {1.5.2}保真度退化与噪声受限机制}{11}{subsection.1.5.2}%
-\contentsline {section}{\numberline {1.6}本文的主要研究内容与结构安排}{12}{section.1.6}%
-\contentsline {subsection}{\numberline {1.6.1}端到端建模方法概述}{12}{subsection.1.6.1}%
-\contentsline {subsection}{\numberline {1.6.2}研究内容与章节安排}{13}{subsection.1.6.2}%
-\contentsline {chapter}{\numberline {第2章}端到端量子接口仿真的张量网络方法}{15}{chapter.2}%
-\contentsline {section}{\numberline {2.1}连续时间链路的离散表示}{15}{section.2.1}%
-\contentsline {subsection}{\numberline {2.1.1}时间 bin 的定义}{15}{subsection.2.1.1}%
-\contentsline {subsection}{\numberline {2.1.2}一维链映射}{16}{subsection.2.1.2}%
-\contentsline {section}{\numberline {2.2}矩阵乘积态表示}{17}{section.2.2}%
-\contentsline {subsection}{\numberline {2.2.1}Schmidt 分解和截断}{17}{subsection.2.2.1}%
-\contentsline {subsection}{\numberline {2.2.2}规范形式和可观测量收缩}{18}{subsection.2.2.2}%
-\contentsline {section}{\numberline {2.3}TEBD 时间推进}{19}{section.2.3}%
-\contentsline {subsection}{\numberline {2.3.1}局域门更新}{20}{subsection.2.3.1}%
-\contentsline {subsection}{\numberline {2.3.2}时间推进调度}{20}{subsection.2.3.2}%
-\contentsline {section}{\numberline {2.4}条件测量的算符方法}{21}{section.2.4}%
-\contentsline {subsection}{\numberline {2.4.1}Kraus 表示}{22}{subsection.2.4.1}%
-\contentsline {subsection}{\numberline {2.4.2}POVM 对偶映射}{22}{subsection.2.4.2}%
-\contentsline {section}{\numberline {2.5}观测量定义及误差控制}{24}{section.2.5}%
-\contentsline {subsection}{\numberline {2.5.1}主要观测量}{24}{subsection.2.5.1}%
-\contentsline {subsection}{\numberline {2.5.2}误差来源}{25}{subsection.2.5.2}%
-\contentsline {section}{\numberline {2.6}小结}{26}{section.2.6}%
-\contentsline {chapter}{\numberline {第3章}量子接口的端到端仿真模型与实现}{29}{chapter.3}%
-\contentsline {section}{\numberline {3.1}建模对象与局域空间}{29}{section.3.1}%
-\contentsline {section}{\numberline {3.2}发射过程的离散化模型}{31}{section.3.2}%
-\contentsline {subsection}{\numberline {3.2.1}四能级原子-腔有效模型}{31}{subsection.3.2.1}%
-\contentsline {subsection}{\numberline {3.2.2}发射门的局域表示}{33}{subsection.3.2.2}%
-\contentsline {section}{\numberline {3.3}频率转换与滤波记忆模型}{34}{section.3.3}%
-\contentsline {subsection}{\numberline {3.3.1}QFC 局域门}{34}{subsection.3.3.1}%
-\contentsline {subsection}{\numberline {3.3.2}滤波记忆步进门}{35}{subsection.3.3.2}%
-\contentsline {subsection}{\numberline {3.3.3}链布局与相邻调度}{36}{subsection.3.3.3}%
-\contentsline {section}{\numberline {3.4}中间站测量模型}{37}{section.3.4}%
-\contentsline {subsection}{\numberline {3.4.1}光纤信道与探测 effect}{37}{subsection.3.4.1}%
-\contentsline {subsection}{\numberline {3.4.2}effect 推回与成功判据}{38}{subsection.3.4.2}%
-\contentsline {section}{\numberline {3.5}数值口径与模型边界}{40}{section.3.5}%
-\contentsline {subsection}{\numberline {3.5.1}参数换算与时间口径}{40}{subsection.3.5.1}%
-\contentsline {subsection}{\numberline {3.5.2}复杂度与误差来源}{40}{subsection.3.5.2}%
-\contentsline {section}{\numberline {3.6}小结}{42}{section.3.6}%
-\contentsline {chapter}{\numberline {第4章}量子接口噪声建模下的保真度损失量化分析}{43}{chapter.4}%
-\contentsline {section}{\numberline {4.1}实验口径下的参数锚定}{43}{section.4.1}%
-\contentsline {subsection}{\numberline {4.1.1}指标口径参数锚定}{43}{subsection.4.1.1}%
-\contentsline {section}{\numberline {4.2}分层噪声标定流程}{44}{section.4.2}%
-\contentsline {section}{\numberline {4.3}关键噪声来源归因}{45}{section.4.3}%
-\contentsline {subsection}{\numberline {4.3.1}关键结果与物理解释}{45}{subsection.4.3.1}%
-\contentsline {section}{\numberline {4.4}保真度损失量化结果}{49}{section.4.4}%
-\contentsline {section}{\numberline {4.5}单轨迹仿真开销测算}{52}{section.4.5}%
-\contentsline {section}{\numberline {4.6}本章小结}{54}{section.4.6}%
-\contentsline {chapter}{结论}{55}{section.4.6}%
-\contentsline {chapter}{参考文献}{57}{section*.8}%
-\contentsline {chapter}{致谢}{65}{section*.8}%
-\contentsline {chapter}{攻读硕士学位期间发表的论文及其他成果}{67}{section*.8}%
+\contentsline {section}{\numberline {1.2}本文建模的处理中性原子量子接口链路}{4}{section.1.2}%
+\contentsline {subsection}{\numberline {1.2.1}链路概述与选型依据}{4}{subsection.1.2.1}%
+\contentsline {section}{\numberline {1.3}端到端性能瓶颈分析}{7}{section.1.3}%
+\contentsline {subsection}{\numberline {1.3.1}成功率与距离代价}{7}{subsection.1.3.1}%
+\contentsline {subsection}{\numberline {1.3.2}保真度退化与噪声受限机制}{8}{subsection.1.3.2}%
+\contentsline {section}{\numberline {1.4}本文的主要研究内容与结构安排}{9}{section.1.4}%
+\contentsline {subsection}{\numberline {1.4.1}端到端建模方法概述}{9}{subsection.1.4.1}%
+\contentsline {subsection}{\numberline {1.4.2}研究内容与章节安排}{10}{subsection.1.4.2}%
+\contentsline {chapter}{\numberline {第2章}端到端量子接口仿真的张量网络方法}{11}{chapter.2}%
+\contentsline {section}{\numberline {2.1}连续时间链路的离散表示}{11}{section.2.1}%
+\contentsline {subsection}{\numberline {2.1.1}时间 bin 的定义}{11}{subsection.2.1.1}%
+\contentsline {subsection}{\numberline {2.1.2}一维链映射}{12}{subsection.2.1.2}%
+\contentsline {section}{\numberline {2.2}矩阵乘积态表示}{13}{section.2.2}%
+\contentsline {subsection}{\numberline {2.2.1}Schmidt 分解和截断}{13}{subsection.2.2.1}%
+\contentsline {subsection}{\numberline {2.2.2}规范形式和可观测量收缩}{14}{subsection.2.2.2}%
+\contentsline {section}{\numberline {2.3}TEBD 时间推进}{15}{section.2.3}%
+\contentsline {subsection}{\numberline {2.3.1}局域门更新}{16}{subsection.2.3.1}%
+\contentsline {subsection}{\numberline {2.3.2}时间推进调度}{16}{subsection.2.3.2}%
+\contentsline {section}{\numberline {2.4}条件测量的算符方法}{17}{section.2.4}%
+\contentsline {subsection}{\numberline {2.4.1}Kraus 表示}{18}{subsection.2.4.1}%
+\contentsline {subsection}{\numberline {2.4.2}POVM 对偶映射}{18}{subsection.2.4.2}%
+\contentsline {section}{\numberline {2.5}观测量定义及误差控制}{20}{section.2.5}%
+\contentsline {subsection}{\numberline {2.5.1}主要观测量}{20}{subsection.2.5.1}%
+\contentsline {subsection}{\numberline {2.5.2}误差来源}{21}{subsection.2.5.2}%
+\contentsline {section}{\numberline {2.6}小结}{22}{section.2.6}%
+\contentsline {chapter}{\numberline {第3章}量子接口的端到端仿真模型与实现}{25}{chapter.3}%
+\contentsline {section}{\numberline {3.1}建模对象与局域空间}{25}{section.3.1}%
+\contentsline {section}{\numberline {3.2}发射过程的离散化模型}{27}{section.3.2}%
+\contentsline {subsection}{\numberline {3.2.1}四能级原子-腔有效模型}{27}{subsection.3.2.1}%
+\contentsline {subsection}{\numberline {3.2.2}发射门的局域表示}{29}{subsection.3.2.2}%
+\contentsline {section}{\numberline {3.3}频率转换与滤波记忆模型}{30}{section.3.3}%
+\contentsline {subsection}{\numberline {3.3.1}QFC 局域门}{30}{subsection.3.3.1}%
+\contentsline {subsection}{\numberline {3.3.2}滤波记忆步进门}{31}{subsection.3.3.2}%
+\contentsline {subsection}{\numberline {3.3.3}链布局与相邻调度}{32}{subsection.3.3.3}%
+\contentsline {section}{\numberline {3.4}中间站测量模型}{33}{section.3.4}%
+\contentsline {subsection}{\numberline {3.4.1}光纤信道与探测 effect}{33}{subsection.3.4.1}%
+\contentsline {subsection}{\numberline {3.4.2}effect 推回与成功判据}{34}{subsection.3.4.2}%
+\contentsline {section}{\numberline {3.5}数值口径与模型边界}{36}{section.3.5}%
+\contentsline {subsection}{\numberline {3.5.1}参数换算与时间口径}{36}{subsection.3.5.1}%
+\contentsline {subsection}{\numberline {3.5.2}复杂度与误差来源}{36}{subsection.3.5.2}%
+\contentsline {section}{\numberline {3.6}小结}{38}{section.3.6}%
+\contentsline {chapter}{\numberline {第4章}量子接口噪声建模下的保真度损失量化分析}{39}{chapter.4}%
+\contentsline {section}{\numberline {4.1}实验口径下的参数锚定}{39}{section.4.1}%
+\contentsline {subsection}{\numberline {4.1.1}指标口径参数锚定}{39}{subsection.4.1.1}%
+\contentsline {section}{\numberline {4.2}分层噪声标定流程}{40}{section.4.2}%
+\contentsline {section}{\numberline {4.3}关键噪声来源归因}{41}{section.4.3}%
+\contentsline {subsection}{\numberline {4.3.1}关键结果与物理解释}{41}{subsection.4.3.1}%
+\contentsline {section}{\numberline {4.4}保真度损失量化结果}{45}{section.4.4}%
+\contentsline {section}{\numberline {4.5}单轨迹仿真开销测算}{48}{section.4.5}%
+\contentsline {section}{\numberline {4.6}本章小结}{50}{section.4.6}%
+\contentsline {chapter}{结论}{51}{section.4.6}%
+\contentsline {chapter}{参考文献}{53}{section*.8}%
+\contentsline {chapter}{致谢}{59}{section*.8}%
+\contentsline {chapter}{攻读硕士学位期间发表的论文及其他成果}{61}{section*.8}%

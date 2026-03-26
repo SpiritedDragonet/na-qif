@@ -1718,6 +1718,7 @@ def _write_param_scan_summary(paths: dict) -> None:
         "window_ns",
         "attempt_rate_hz",
         "event_rate_hz",
+        "runtime_wall_s",
         "p_two_click_abs",
         "p_arrive",
         "p_arrive_11",

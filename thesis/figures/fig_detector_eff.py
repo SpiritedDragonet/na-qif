@@ -1,3 +1,4 @@
+from plot_style import frame_all_axes
 import argparse
 import csv
 import pathlib
@@ -225,6 +226,7 @@ def main() -> None:
         fontweight="bold",
     )
     out_path = pathlib.Path(__file__).with_suffix(".pdf")
+    frame_all_axes(fig)
     fig.savefig(out_path, dpi=220)
     plt.close(fig)
 

@@ -362,6 +362,12 @@ class RunConfig:
     scan_tau_ns_start: Optional[float] = None
     scan_tau_ns_end: Optional[float] = None
     scan_tau_ns_step: Optional[float] = None
+    scan_n_bins_start: Optional[float] = None
+    scan_n_bins_end: Optional[float] = None
+    scan_n_bins_step: Optional[float] = None
+    scan_dt_ns_start: Optional[float] = None
+    scan_dt_ns_end: Optional[float] = None
+    scan_dt_ns_step: Optional[float] = None
     scan_qfc_noise_sd_cps_per_mhz_start: Optional[float] = None
     scan_qfc_noise_sd_cps_per_mhz_end: Optional[float] = None
     scan_qfc_noise_sd_cps_per_mhz_step: Optional[float] = None

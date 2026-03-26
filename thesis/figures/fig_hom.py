@@ -1,4 +1,5 @@
-﻿import csv
+from plot_style import frame_all_axes
+import csv
 import pathlib
 
 import matplotlib.pyplot as plt
@@ -181,6 +182,7 @@ def main() -> None:
     plt.tight_layout()
 
     out_base = pathlib.Path(__file__).with_suffix("")
+    frame_all_axes(plt.gcf())
     plt.savefig(out_base.with_suffix(".pdf"), dpi=220)
     if EXPORT_PNG:
         plt.savefig(out_base.with_suffix(".png"), dpi=220)

@@ -1,13 +1,14 @@
-import argparse
+﻿import argparse
 import csv
 import pathlib
 
 import matplotlib.pyplot as plt
 import numpy as np
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+from matplotlib.colors import Normalize
+
+from plot_style import frame_all_axes
 
 EXPORT_PNG = False
-
 
 PATTERN_ORDER = (
     "pattern_h1v2",
@@ -52,7 +53,7 @@ def _default_summary_dir() -> pathlib.Path:
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Plot real-data error budget from BSM_SCAN summary/trials CSV.")
+    parser = argparse.ArgumentParser(description="Plot error-budget figure from BSM_SCAN summary/trials CSV.")
     parser.add_argument("--summary-dir", type=pathlib.Path, default=_default_summary_dir())
     return parser.parse_args()
 
@@ -130,10 +131,9 @@ def _filter_theta_rows(rows: list[dict[str, str]], key: str, theta: float) -> li
     return out
 
 
-def _false_budget_from_trials(theta_trials: list[dict[str, str]]) -> tuple[dict[str, float], dict[str, float], int]:
-    false_bg = 0.0
-    false_intrinsic = 0.0
-    pattern_false_mass = {pattern: 0.0 for pattern in PATTERN_ORDER}
+def _false_contribution_matrix_from_trials(theta_trials: list[dict[str, str]]) -> tuple[np.ndarray, int]:
+    matrix = np.zeros((2, len(PATTERN_ORDER)), dtype=float)
+    pattern_index = {pattern: idx for idx, pattern in enumerate(PATTERN_ORDER)}
     success_count = 0
 
     for line_no, row in enumerate(theta_trials, start=2):
@@ -141,35 +141,32 @@ def _false_budget_from_trials(theta_trials: list[dict[str, str]]) -> tuple[dict[
             continue
         success_count += 1
         pattern = str(row.get("pattern", "")).strip()
-        p_bg = _parse_float(row, "p_bg_assist_given_record", line_no)
-        p_intrinsic = _parse_float(row, "p_intrinsic_dark_assist_given_record", line_no)
-        false_bg += p_bg
-        false_intrinsic += p_intrinsic
-        if pattern in pattern_false_mass:
-            pattern_false_mass[pattern] += (p_bg + p_intrinsic)
+        idx = pattern_index.get(pattern)
+        if idx is None:
+            continue
+        matrix[0, idx] += _parse_float(row, "p_bg_assist_given_record", line_no)
+        matrix[1, idx] += _parse_float(row, "p_intrinsic_dark_assist_given_record", line_no)
 
-    total_false = false_bg + false_intrinsic
-    if total_false <= 0.0:
-        source_share = {"bg": 0.0, "intrinsic_dark": 0.0}
-        pattern_share = {pattern: 0.0 for pattern in PATTERN_ORDER}
-    else:
-        source_share = {"bg": false_bg / total_false, "intrinsic_dark": false_intrinsic / total_false}
-        pattern_share = {pattern: pattern_false_mass[pattern] / total_false for pattern in PATTERN_ORDER}
-    return source_share, pattern_share, success_count
+    total_false = float(np.sum(matrix))
+    if total_false > 0.0:
+        matrix = 100.0 * matrix / total_false
+    return matrix, success_count
 
 
 def _panel_label(ax: plt.Axes, label: str) -> None:
-    ax.text(
-        -0.12,
-        1.03,
-        label,
-        transform=ax.transAxes,
-        fontsize=12.0,
-        fontweight="bold",
-        ha="left",
-        va="bottom",
-    )
+    ax.text(-0.14, 1.02, label, transform=ax.transAxes, fontsize=12.0, fontweight="bold", ha="left", va="bottom")
 
+
+def _label_last_point(ax: plt.Axes, x: np.ndarray, y: np.ndarray, text: str, color: str, dy: float = 0.0) -> None:
+    ax.text(float(x[-1]) + 0.01, float(y[-1]) + dy, text, color=color, fontsize=8.8, va="center", clip_on=False)
+
+
+def _set_numeric_xlim(ax: plt.Axes, values: np.ndarray, *, pad_fraction: float = 0.035) -> None:
+    x_min = float(np.min(values))
+    x_max = float(np.max(values))
+    span = x_max - x_min
+    pad = pad_fraction * span if span > 0.0 else max(abs(x_min), 1.0) * pad_fraction
+    ax.set_xlim(x_min - pad, x_max + pad)
 
 def main() -> None:
     args = _parse_args()
@@ -179,15 +176,18 @@ def main() -> None:
     summary = _load_summary(summary_rows)
 
     theta = summary["theta"]
+    rate_all = np.clip(summary["rate_all"], 0.0, None)
     rate_true = np.clip(summary["rate_true"], 0.0, None)
     rate_false = np.clip(summary["rate_false"], 0.0, None)
     fidelity = np.clip(summary["fidelity"], 0.0, 1.0)
     false_pct = 100.0 * np.clip(summary["false_fraction"], 0.0, 1.0)
     chsh = summary["chsh"]
 
-    idx_rec = _recommended_index(fidelity, summary["rate_all"])
+    idx_rec = _recommended_index(fidelity, rate_all)
     theta_rec = float(theta[idx_rec])
-    source_share, pattern_share, success_count = _false_budget_from_trials(_filter_theta_rows(trial_rows, "bs_theta", theta_rec))
+    false_share_matrix, success_count = _false_contribution_matrix_from_trials(_filter_theta_rows(trial_rows, "bs_theta", theta_rec))
+    source_share_pct = np.sum(false_share_matrix, axis=1)
+    pattern_share_pct = np.sum(false_share_matrix, axis=0)
 
     plt.rcParams.update(
         {
@@ -202,160 +202,151 @@ def main() -> None:
                 "DejaVu Sans",
             ],
             "axes.unicode_minus": False,
-            "axes.spines.top": False,
-            "axes.spines.right": False,
+            "axes.spines.top": True,
+            "axes.spines.right": True,
+            "axes.edgecolor": "black",
+            "axes.linewidth": 0.95,
             "axes.grid": True,
-            "grid.alpha": 0.18,
-            "grid.linewidth": 0.75,
+            "grid.alpha": 0.16,
+            "grid.linewidth": 0.70,
         }
     )
 
-    fig = plt.figure(figsize=(10.8, 4.9), constrained_layout=True)
-    gs = fig.add_gridspec(1, 2, width_ratios=[1.12, 0.88], wspace=0.28)
-    ax0 = fig.add_subplot(gs[0, 0])
-    ax1 = fig.add_subplot(gs[0, 1])
+    fig = plt.figure(figsize=(13.8, 3.85))
+    ax_a = fig.add_axes([0.070, 0.22, 0.255, 0.60])
+    ax_b = fig.add_axes([0.413, 0.22, 0.178, 0.60])
+    cax_b = fig.add_axes([0.599, 0.22, 0.011, 0.60])
+    ax_c = fig.add_axes([0.710, 0.22, 0.205, 0.60])
 
-    bar_width = 0.035
     rate_true_1e4 = 1e4 * rate_true
     rate_false_1e4 = 1e4 * rate_false
-    ax0.bar(
-        theta,
-        rate_false_1e4,
-        width=bar_width,
-        color="#ef4444",
-        alpha=0.36,
-        edgecolor="none",
-        zorder=1,
-        label=r"假成功分量 $p_f$",
-    )
-    ax0.plot(
-        theta,
-        rate_true_1e4,
-        color="#1f77b4",
-        lw=2.1,
-        marker="o",
-        ms=4.1,
-        zorder=3,
-        label=r"真成功分量 $p_t$",
-    )
-    ax0.set_xlabel(r"BS 混合角 $\theta_{BS}$ (rad)")
-    ax0.set_ylabel(r"每次尝试概率 ($\times 10^{-4}$)")
-    ax0.set_title("事件概率预算随分束器角度变化")
+    ax_a.plot(theta, rate_true_1e4, color="#1f77b4", lw=2.1, marker="o", ms=3.8)
+    ax_a.plot(theta, rate_false_1e4, color="#d62728", lw=1.7, marker="s", ms=3.4)
+    ax_a.axvline(theta_rec, color="#9ca3af", lw=1.0, ls="--")
+    _set_numeric_xlim(ax_a, theta, pad_fraction=0.04)
+    ax_a.set_xlabel(r"$\theta_{\mathrm{BS}}$ (rad)")
+    ax_a.set_ylabel(r"每次尝试概率 ($\times 10^{-4}$)")
+    ax_a.set_title("角度扫描")
+    ax_a_r = ax_a.twinx()
+    ax_a_r.grid(False)
+    ax_a_r.plot(theta, fidelity, color="#047857", lw=2.0, marker="o", ms=3.6)
+    ax_a_r.plot(theta, false_pct / 100.0, color="#991b1b", lw=1.5, marker="s", ms=3.2, ls="--")
+    ax_a_r.plot(theta, chsh / 4.0, color="#111827", lw=1.3, marker="^", ms=3.0, ls="-.")
+    ax_a_r.set_ylabel(r"$F_t$、假成功占比、$S_{\max}/4$")
+    _label_last_point(ax_a, theta, rate_true_1e4, r"$p_t$", "#1f77b4", dy=0.01)
+    _label_last_point(ax_a, theta, rate_false_1e4, r"$p_f$", "#d62728", dy=-0.005)
+    _label_last_point(ax_a_r, theta, fidelity, r"$F_t$", "#047857", dy=0.012)
+    ax_a.text(theta_rec + 0.01, ax_a.get_ylim()[0] + 0.86 * (ax_a.get_ylim()[1] - ax_a.get_ylim()[0]), "选取工作点", fontsize=8.2, color="#4b5563")
+    handles_a = [
+        plt.Line2D([], [], color="#1f77b4", marker="o", lw=2.1, ms=3.8, label=r"$p_t$"),
+        plt.Line2D([], [], color="#d62728", marker="s", lw=1.7, ms=3.4, label=r"$p_f$"),
+        plt.Line2D([], [], color="#047857", marker="o", lw=2.0, ms=3.6, label=r"$F_t$"),
+        plt.Line2D([], [], color="#991b1b", marker="s", lw=1.5, ms=3.2, ls="--", label="假成功占比"),
+        plt.Line2D([], [], color="#111827", marker="^", lw=1.3, ms=3.0, ls="-.", label=r"$S_{\max}/4$"),
+    ]
+    ax_a.legend(handles=handles_a, frameon=False, fontsize=8.0, loc="upper left")
+    _panel_label(ax_a, "(a)")
 
-    ax0_r = ax0.twinx()
-    ax0_r.plot(theta, fidelity, color="#047857", lw=2.0, marker="o", ms=4.2, label=r"$F_t$")
-    ax0_r.plot(theta, false_pct, color="#991b1b", lw=1.6, marker="s", ms=3.8, ls="--", label="假成功占比 (%)")
-    ax0_r.plot(theta, chsh / 4.0, color="#111827", lw=1.3, marker="^", ms=3.2, ls="-.", label=r"$S_{\max}/4$")
-    ax0_r.set_ylabel(r"质量轴：$F_t$、假成功占比 (\%)、$S_{\max}/4$")
-    ax0.axvline(theta_rec, color="#9ca3af", lw=1.0, ls=":")
-
-    # Inset: rate-fidelity operating-point frontier view (merged from old standalone figure).
-    inset = inset_axes(ax0, width="44%", height="44%", loc="lower right", borderpad=1.0)
-    rate_all_1e4 = 1e4 * np.clip(summary["rate_all"], np.finfo(float).tiny, None)
-    inset_sc = inset.scatter(
-        rate_all_1e4,
+    scatter = ax_b.scatter(
+        1e4 * np.clip(rate_all, np.finfo(float).tiny, None),
         fidelity,
         c=false_pct,
-        s=32.0,
+        s=48.0,
         cmap="Reds",
-        alpha=0.92,
-        edgecolors="#f8fafc",
-        linewidths=0.45,
+        norm=Normalize(vmin=float(np.min(false_pct)), vmax=float(np.max(false_pct) if np.max(false_pct) > np.min(false_pct) else np.min(false_pct) + 1.0)),
+        edgecolors="white",
+        linewidths=0.65,
         zorder=2,
     )
-    inset.scatter(
-        [rate_all_1e4[idx_rec]],
+    ax_b.scatter(
+        [1e4 * rate_all[idx_rec]],
         [fidelity[idx_rec]],
         marker="*",
-        s=86.0,
-        color="#f97316",
-        edgecolors="#0f172a",
-        linewidths=0.6,
+        s=130,
+        color="#f59e0b",
+        edgecolors="#111827",
+        linewidths=0.7,
         zorder=3,
     )
-    inset.set_title("速率-保真度插图", fontsize=7.2)
-    inset.set_xlabel(r"$p_s$ ($\times 10^{-4}$)", fontsize=6.8)
-    inset.set_ylabel(r"$F_t$", fontsize=6.8)
-    inset.tick_params(labelsize=6.4, length=2.2, pad=1.5)
-    inset.grid(True, alpha=0.18, linewidth=0.6)
-    cb_inset = fig.colorbar(inset_sc, ax=inset, fraction=0.16, pad=0.02)
-    cb_inset.set_label("假成功 (%)", fontsize=6.4)
-    cb_inset.ax.tick_params(labelsize=6.2, length=2.0)
+    rate_all_1e4 = 1e4 * np.clip(rate_all, np.finfo(float).tiny, None)
+    _set_numeric_xlim(ax_b, rate_all_1e4, pad_fraction=0.05)
+    ax_b.set_xlabel(r"宣告成功率 $p_s$ ($\times 10^{-4}$)")
+    ax_b.set_ylabel(r"真成功条件保真度 $F_t$")
+    ax_b.set_title("速率-保真度工作点前沿")
+    cbar = fig.colorbar(scatter, cax=cax_b)
+    cbar.set_label("假成功占比 (%)")
+    _panel_label(ax_b, "(b)")
 
-    lines = []
-    labels = []
-    for axis in (ax0, ax0_r):
-        axis_lines, axis_labels = axis.get_legend_handles_labels()
-        lines.extend(axis_lines)
-        labels.extend(axis_labels)
-    ax0.legend(lines, labels, frameon=False, fontsize=8.3, loc="upper left")
-    _panel_label(ax0, "(a)")
-
-    ax1.set_xlim(0.0, 100.0)
-    ax1.set_ylim(-0.8, 1.8)
-    ax1.set_yticks([1.0, 0.0], ["来源组成", "模式组成"])
-    ax1.set_xlabel("假成功总量内占比 (%)")
-    ax1.set_title(rf"$\theta_{{BS}}={theta_rec:.2f}$ rad 下假成功组成")
-
-    source_items = [
-        ("背景辅助", source_share["bg"], "#f59e0b"),
-        ("内禀暗计数辅助", source_share["intrinsic_dark"], "#dc2626"),
-    ]
-    left = 0.0
-    for key, frac, color in source_items:
-        width = 100.0 * max(frac, 0.0)
-        ax1.barh([1.0], [width], left=left, height=0.44, color=color, edgecolor="#111827", linewidth=0.8, label=key)
-        if width >= 8.0:
-            ax1.text(left + width / 2.0, 1.0, f"{width:.1f}%", ha="center", va="center", fontsize=8.6, color="white")
-        left += width
-
-    pattern_colors = {
-        "pattern_h1v2": "#1f77b4",
-        "pattern_v1h2": "#2ca02c",
-        "pattern_h1v1": "#9467bd",
-        "pattern_h2v2": "#8c564b",
-        "pattern_h1h2": "#17becf",
-        "pattern_v1v2": "#bcbd22",
-    }
-    left = 0.0
-    for pattern in PATTERN_ORDER:
-        width = 100.0 * max(pattern_share[pattern], 0.0)
-        ax1.barh(
-            [0.0],
-            [width],
-            left=left,
-            height=0.44,
-            color=pattern_colors[pattern],
-            edgecolor="#111827",
-            linewidth=0.6,
-            label=PATTERN_LABELS[pattern],
-        )
-        if width >= 7.0:
-            ax1.text(left + width / 2.0, 0.0, f"{width:.1f}%", ha="center", va="center", fontsize=7.8, color="white")
-        left += width
-
-    handles, labels = ax1.get_legend_handles_labels()
-    unique = {}
-    for handle, label in zip(handles, labels):
-        if label not in unique:
-            unique[label] = handle
-    ax1.legend(unique.values(), unique.keys(), frameon=False, fontsize=7.8, loc="lower right", ncol=2)
-    _panel_label(ax1, "(b)")
+    active_idx = [idx for idx, value in enumerate(pattern_share_pct) if value > 0.05]
+    x_pos = np.arange(len(active_idx), dtype=float)
+    bar_width = 0.32
+    bg_vals = false_share_matrix[0, active_idx]
+    intrinsic_vals = false_share_matrix[1, active_idx]
+    total_vals = pattern_share_pct[active_idx]
+    pattern_labels = [PATTERN_LABELS[PATTERN_ORDER[idx]] for idx in active_idx]
+    bars_bg = ax_c.bar(
+        x_pos - bar_width / 2.0,
+        bg_vals,
+        width=bar_width,
+        color="#f59e0b",
+        edgecolor="#111827",
+        linewidth=0.75,
+        label=f"背景辅助 ({source_share_pct[0]:.1f}%)",
+        zorder=3,
+    )
+    bars_intrinsic = ax_c.bar(
+        x_pos + bar_width / 2.0,
+        intrinsic_vals,
+        width=bar_width,
+        color="#dc2626",
+        edgecolor="#111827",
+        linewidth=0.75,
+        label=f"内禀暗计数 ({source_share_pct[1]:.1f}%)",
+        zorder=3,
+    )
+    total_peak = max(1.0, float(np.max(total_vals)))
+    ax_c.set_ylim(0.0, total_peak * 1.25)
+    ax_c.set_xlim(-0.6, len(active_idx) - 0.4)
+    ax_c.set_xticks(x_pos, pattern_labels)
+    ax_c.tick_params(axis="x", labelsize=8.0)
+    ax_c.set_ylabel("对总假成功的贡献 (%)")
+    ax_c.set_xlabel("点击模式")
+    ax_c.set_title(rf"$\theta_{{\mathrm{{BS}}}}={theta_rec:.2f}$ rad 下点击模式贡献")
+    ax_c.grid(axis="y", alpha=0.18, linewidth=0.70)
+    ax_c.grid(axis="x", visible=False)
+    for x_center, total in zip(x_pos, total_vals):
+        ax_c.text(x_center, total + 0.45, f"总 {total:.1f}%", ha="center", va="bottom", fontsize=7.4, color="#4b5563")
+    for bars in (bars_bg, bars_intrinsic):
+        for bar in bars:
+            height = float(bar.get_height())
+            if height >= 0.15:
+                ax_c.text(
+                    bar.get_x() + bar.get_width() / 2.0,
+                    height + 0.20,
+                    f"{height:.1f}%",
+                    ha="center",
+                    va="bottom",
+                    fontsize=7.0,
+                    color="#111827",
+                )
+    ax_c.legend(frameon=False, fontsize=7.3, loc="upper right")
+    _panel_label(ax_c, "(c)")
 
     fig.suptitle(
         (
-            "真实 BSM 扫描的误差预算视图："
-            + rf"$\theta_{{BS}}={theta_rec:.2f}$ rad，"
+            "真实 BSM 扫描的误差预算："
+            + rf"$\theta_{{\mathrm{{BS}}}}={theta_rec:.2f}$ rad，"
             + rf"$F_t={fidelity[idx_rec]:.3f}$，"
             + rf"$p_t={1e4 * rate_true[idx_rec]:.3f}\times10^{{-4}}$，"
             + rf"$p_f={1e4 * rate_false[idx_rec]:.4f}\times10^{{-4}}$，"
             + f"成功记录数={success_count}"
         ),
-        fontsize=12.1,
+        fontsize=12.0,
         fontweight="bold",
     )
 
     out_base = pathlib.Path(__file__).with_suffix("")
+    frame_all_axes(fig)
     fig.savefig(out_base.with_suffix(".pdf"), dpi=260)
     if EXPORT_PNG:
         fig.savefig(out_base.with_suffix(".png"), dpi=220)
@@ -364,4 +355,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

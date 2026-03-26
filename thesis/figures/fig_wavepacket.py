@@ -1,3 +1,4 @@
+from plot_style import frame_all_axes
 import csv
 import json
 import pathlib
@@ -495,6 +496,7 @@ def main() -> None:
     fig.subplots_adjust(left=0.06, right=0.985, top=0.94, bottom=0.10)
 
     out_pdf = pathlib.Path(__file__).with_suffix(".pdf")
+    frame_all_axes(fig)
     fig.savefig(out_pdf)
     plt.close(fig)
 
