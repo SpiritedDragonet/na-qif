@@ -10,7 +10,6 @@ def main() -> None:
         "fig_calibration_pipeline.py",
         "fig_wavepacket.py",
         "fig_accept_hist.py",
-        "fig_window_tradeoff.py",
         "fig_hom.py",
         "fig_bsm_patterns.py",
         "fig_bell_density_3d.py",

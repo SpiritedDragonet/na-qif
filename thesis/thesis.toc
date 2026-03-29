@@ -50,7 +50,7 @@
 \contentsline {section}{\numberline {4.2}分层噪声标定流程}{40}{section.4.2}%
 \contentsline {section}{\numberline {4.3}关键噪声来源归因}{41}{section.4.3}%
 \contentsline {subsection}{\numberline {4.3.1}关键结果与物理解释}{41}{subsection.4.3.1}%
-\contentsline {section}{\numberline {4.4}保真度损失量化结果}{45}{section.4.4}%
+\contentsline {section}{\numberline {4.4}保真度损失量化结果}{44}{section.4.4}%
 \contentsline {section}{\numberline {4.5}单轨迹仿真开销测算}{48}{section.4.5}%
 \contentsline {section}{\numberline {4.6}本章小结}{50}{section.4.6}%
 \contentsline {chapter}{结论}{51}{section.4.6}%

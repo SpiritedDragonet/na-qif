@@ -14,31 +14,13 @@ def _repo_root() -> pathlib.Path:
 
 
 def _default_summary_csv() -> pathlib.Path:
-    data_root = pathlib.Path(__file__).resolve().parents[1] / "data"
-    candidates = sorted(
-        data_root.glob("*/summary/length_scan_summary.csv"),
-        key=lambda p: p.stat().st_mtime,
+    return (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "data"
+        / "length_scan_server_output_20260218_1926"
+        / "summary"
+        / "length_scan_summary.csv"
     )
-    if candidates:
-        return candidates[-1]
-
-    queue_root = _repo_root() / "queue"
-    candidates = sorted(
-        queue_root.glob("*/summary/length_scan_summary.csv"),
-        key=lambda p: p.stat().st_mtime,
-    )
-    if candidates:
-        return candidates[-1]
-
-    outputs_root = _repo_root() / "outputs"
-    candidates = sorted(
-        outputs_root.glob("*/summary/length_scan_summary.csv"),
-        key=lambda p: p.stat().st_mtime,
-    )
-    if candidates:
-        return candidates[-1]
-
-    return data_root / "length_scan_server_output_latest" / "summary" / "length_scan_summary.csv"
 
 
 def _default_runs_csv(summary_csv: pathlib.Path) -> pathlib.Path:

@@ -28,7 +28,7 @@ PATTERN_LABELS = {
 }
 PAIR_ORDER = ("H1+V2", "V1+H2", "H1+V1", "H2+V2")
 BUCKET_STYLE = {
-    "success": {"label": "全部成功记录", "color": "#111827", "lw": 1.8, "ls": "-"},
+    "success": {"label": "全部记录权重", "color": "#111827", "lw": 1.8, "ls": "-"},
     "true": {"label": "真成功权重", "color": "#059669", "lw": 2.0, "ls": "-"},
     "false": {"label": "假成功权重", "color": "#dc2626", "lw": 1.8, "ls": "--"},
 }
@@ -39,23 +39,12 @@ def _repo_root() -> pathlib.Path:
 
 
 def _default_summary_dir() -> pathlib.Path:
-    data_root = pathlib.Path(__file__).resolve().parents[1] / "data"
-    candidates = sorted(
-        data_root.glob("bsm_scan_summary_output_*/summary/bsm_scan_summary.csv"),
-        key=lambda p: p.stat().st_mtime,
+    return (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "data"
+        / "bsm_scan_summary_output_20260223_2121"
+        / "summary"
     )
-    if candidates:
-        return candidates[-1].parent
-
-    outputs_root = _repo_root() / "outputs"
-    candidates = sorted(
-        outputs_root.glob("*/summary/bsm_scan_summary.csv"),
-        key=lambda p: p.stat().st_mtime,
-    )
-    if candidates:
-        return candidates[-1].parent
-
-    return data_root / "bsm_scan_summary_output_latest" / "summary"
 
 
 def _parse_args() -> argparse.Namespace:
@@ -248,7 +237,7 @@ def main() -> None:
     ax0.set_xticks(x, [PATTERN_LABELS[p] for p in PATTERN_ORDER])
     ax0.set_ylabel("成功记录占比 (%)")
     ax0.set_xlabel("点击模式")
-    ax0.set_title("成功记录的模式组成")
+    ax0.set_title("宣告记录的后验组成")
     ax0.legend(frameon=False, fontsize=8.3, loc="upper right")
 
     masked_reliability = np.ma.masked_invalid(reliability)
@@ -267,7 +256,7 @@ def main() -> None:
     ax1.set_yticks(np.arange(len(PAIR_ORDER)), PAIR_ORDER)
     ax1.set_xlabel(r"$|\Delta n|$")
     ax1.set_ylabel("探测器对")
-    ax1.set_title(r"真成功记录分布图 $P(\mathrm{genuine}\mid \mathrm{pair},|\Delta n|)$")
+    ax1.set_title(r"记录真实性热图 $P(\mathrm{genuine}\mid \mathrm{pair},|\Delta n|)$")
     cbar = fig.colorbar(im, ax=ax1, fraction=0.052, pad=0.03)
     cbar.set_label("真成功记录概率")
 
@@ -282,7 +271,7 @@ def main() -> None:
         )
     ax2.set_xlabel(r"$|\Delta n|$")
     ax2.set_ylabel("归一化占比 (%)")
-    ax2.set_title(r"$|\Delta n|$ 在记录类别上的分布")
+    ax2.set_title(r"$|\Delta n|$ 上的真/假成功权重")
     ax2.legend(frameon=False, fontsize=8.4, loc="upper right")
 
     ax0.text(-0.16, 1.05, "(a)", transform=ax0.transAxes, fontsize=12.5, fontweight="bold", va="bottom", ha="left")
@@ -291,7 +280,7 @@ def main() -> None:
 
     fig.suptitle(
         (
-            "BSM 记录诊断 "
+            "BSM 模式与时差真实性诊断 "
             + rf"$\theta_{{\mathrm{{BS}}}}={theta:.2f}$ rad "
             + rf"($R=\sin^2\theta={bs_split_ratio:.3f}$)："
             + rf"$F_t={fidelity_true:.3f}$，"

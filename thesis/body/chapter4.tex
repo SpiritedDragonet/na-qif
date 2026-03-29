@@ -74,10 +74,10 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.98\linewidth]{fig_calibration_pipeline.pdf}
-\caption{分层标定流程图：每一层仅使用该层可观测量约束对应参数，再把约束传递到下一层，最终进入端到端任务指标验证。}
+\caption{按装置环节组织的分层标定图：从源端发射、时间窗、HOM 干涉到 BSM 与条件态，每一层只用本层观测量锚定对应参数，并把约束传递到下一层。}
 \label{fig:calibration_pipeline}
 \end{figure}
-图 \ref{fig:calibration_pipeline} 强调了“观测量到参数”的逐层映射关系，避免把全部参数一次性并入单一目标函数导致的退化解与可解释性下降。
+图 \ref{fig:calibration_pipeline} 将抽象的“层”改写为具体装置环节与观测量对应关系：上行给出物理环节，下行给出该环节直接约束的观测量与参数组。这样做的目的不是重复后文顺序，而是明确每一步标定究竟依赖哪类实验数据，以及哪些参数应在该步被冻结。
 
 \section{关键噪声来源归因}[Attribution of Key Noise Sources]
 
@@ -91,18 +91,18 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.98\linewidth]{fig_wavepacket.pdf}
-\caption{双臂波包时域结构与主窗口位置：（a）A 臂原子四能级占据演化；（b）发射后双臂波包；（c）A 臂累计保留率；（d）各阶段总光子概率积分；（e）QFC 后双臂波包；（f）光纤后、入 BS 前波包；（g）BS 后波包；（h）光纤后累计能量捕获。}
+\caption{双臂波包的关键时域结果：（a）A 臂原子四能级占据演化；（b）发射后双臂波包与驱动强度；（c）A 臂在发射、QFC、光纤与 BS 四阶段的累计保留；（d）A/B 两臂分阶段总光子概率积分；（e）光纤后、入 BS 前的双臂波包，并与发射后参考波包比较。}
 \label{fig:wavepacket}
 \end{figure}
 \FloatBarrier
 
-图 \ref{fig:wavepacket} 给出了单跑数据中的完整时域链路：主瓣位置、上升沿与尾部衰减在 0--100 ns 观察窗内保持一致；QFC、光纤与 BS 三阶段后，双臂波包幅值按预期逐段下降，阶段积分与累计能量曲线保持同向变化。基线单跑的发射阶段键维序列呈现“入口 3、主体平台 9、出口 3”（$3\!\to\!9\!\to\!3$）的平顶结构，四个主要阶段峰值均在 9 附近且未出现异常尖峰，说明该组结果未出现键维失稳导致的数值伪影。
+图 \ref{fig:wavepacket} 压缩为五个直接支撑后续窗口与干涉分析的观察量。主瓣位置、上升沿与尾部衰减在 0--100 ns 观察窗内保持一致；面板 (c) 与 (d) 把 QFC、光纤与 BS 三阶段的整体衰减集中到同一组图中，避免用多张近似同形的波包图重复展示同一事实；面板 (e) 则保留真正与 HOM 和 BSM 相关的入 BS 前轮廓。基线单跑的发射阶段键维序列呈现“入口 3、主体平台 9、出口 3”（$3\!\to\!9\!\to\!3$）的平顶结构，四个主要阶段峰值均在 9 附近且未出现异常尖峰，说明该组结果未出现键维失稳导致的数值伪影。
 
 由于该参数组下键维曲线近似常值平台，单独成图的信息增益有限，本章不再单列键维图，而将其作为每次单跑输出中的数值一致性检查项。
 
 在此基础上，窗口选择与事件统计关系可直接从多指标曲线读取。
 
-窗口宽度是实验最直接的调节量。图 \ref{fig:accept_hist} 基于窗口扫描真实数据给出时序统计：图 \ref{fig:accept_hist}(a) 为 A/B 两臂绝对点击时间分布，图 \ref{fig:accept_hist}(b) 为相对双点击时间差 $\Delta t=t_A-t_B$ 的直方图；图 \ref{fig:window_tradeoff} 给出窗口扫描下的速率-质量折中。与传统二维折中图不同，本章同时关注
+窗口宽度是实验最直接的调节量。图 \ref{fig:accept_hist} 将时序统计与窗口扫描合并为一张三联图：图 \ref{fig:accept_hist}(a) 为 A/B 两臂绝对点击时间分布，图 \ref{fig:accept_hist}(b) 为相对双点击时间差 $\Delta t=t_A-t_B$ 的直方图及接收窗口，图 \ref{fig:accept_hist}(c) 则给出窗口扫描下的工作区。与传统二维折中图不同，本章同时关注
 \begin{equation}
 \Xi(\Delta t_w)=\left(p_s,\;F_t,\;\frac{p_f}{p_s},\;p_{t|11}\right),
 \end{equation}
@@ -110,23 +110,15 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.88\linewidth]{fig_accept_hist.pdf}
-\caption{A/B 两臂绝对点击时间分布（a）与相对双点击时间差分布（b）；其中 (b) 中淡黄色阴影为 $\pm 70\,\mathrm{ns}$ 的时间差接收窗口。}
+\includegraphics[width=0.98\linewidth]{fig_accept_hist.pdf}
+\caption{窗口选择的三联诊断图：（a）A/B 两臂绝对点击时间分布；（b）相对双点击时间差分布，其中淡黄色阴影为 $\pm 70\,\mathrm{ns}$ 的时间差接收窗口；（c）窗口扫描下的工作区，同时给出 $F_t$、$p_{t|11}$、$p_t$ 与假成功占比。}
 \label{fig:accept_hist}
 \end{figure}
-图 \ref{fig:accept_hist} 直接给出了两臂点击主密度区以及相对时差集中区间；其中图 \ref{fig:accept_hist}(b) 的 $\Delta t$ 与窗口判定使用同一相对时间口径，因此对后续窗口策略解释更直接。
-
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=0.95\linewidth]{fig_window_tradeoff.pdf}
-\caption{窗口扫描下的速率、条件保真度与假成功占比。}
-\label{fig:window_tradeoff}
-\end{figure}
-图 \ref{fig:window_tradeoff} 显示了清晰的多目标前沿：窗口增大时成功率上升与假成功占比上升同步出现，窗口减小时条件质量改善与真成功事件损失同时出现。该前沿在当前参数组中给出了可复现的折中区间。
+图 \ref{fig:accept_hist} 的前两幅子图给出两臂点击主密度区以及相对时差集中区间；第三幅子图把同一窗口口径下的真成功率、条件保真度、到达条件真成功概率与假成功占比并列起来。由此可以先从时序统计锁定候选窗口，再在候选区内选择兼顾速率与质量的工作点，而无需再把时序和质量分成两张图分别解释。
 
 干涉质量与模式分解结果如下。
 
-图 \ref{fig:hom} 与图 \ref{fig:bsm_patterns} 共同给出两光子干涉质量。前者约束不可分辨性与时延噪声，后者给出模式概率及真假来源分解；二者与末端条件保真度相互对应。
+图 \ref{fig:hom} 与图 \ref{fig:bsm_patterns} 共同给出两光子干涉质量。前者约束不可分辨性与时延噪声，后者把推荐工作点下的点击模式、记录真实性和时差分布放到同一张诊断图中；二者与末端条件保真度相互对应。
 
 \begin{figure}[htbp]
 \centering
@@ -165,15 +157,15 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \end{equation}
 该关系解释了长链路下“速率先退化、保真度后退化”的常见实验现象。
 
-图 \ref{fig:distance} 与图 \ref{fig:error_budget}(a) inset 对应两种互补坐标：前者固定物理链路长度，后者固定链路条件并考察参数调节下的 Pareto 前沿。二者联合回答“给定距离能达到什么质量”与“给定质量需付出多少速率”两个工程问题。
+图 \ref{fig:distance} 与图 \ref{fig:error_budget}(b) 对应两种互补坐标：前者固定物理链路长度，后者固定链路条件并考察参数调节下的 Pareto 前沿。二者联合回答“给定距离能达到什么质量”与“给定质量需付出多少速率”两个工程问题。
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.95\linewidth]{fig_bell_density_3d.pdf}
-\caption{宣告成功条件下 Bell 后验态密度矩阵的十二联图：三行分别对应 raw $\Psi^{+}$、raw $\Psi^{-}$ 与 $\Delta\rho_{\mathrm{ff}}=\rho^{\Psi+}_{\mathrm{ff}}-\rho^{\Psi-}_{\mathrm{ff}}$；每行四列依次为二维实部热图、三维实部柱图、二维虚部热图与三维虚部柱图。}
+\caption{宣告成功条件下 Bell 后验态的二维热图：三行分别对应 raw $\Psi^{+}$、raw $\Psi^{-}$ 与 $\Delta\rho_{\mathrm{ff}}=\rho^{\Psi+}_{\mathrm{ff}}-\rho^{\Psi-}_{\mathrm{ff}}$；两列分别为实部与虚部。}
 \label{fig:bell_density_2d}
 \end{figure}
-图 \ref{fig:bell_density_2d} 在同一页面给出“二维数值读数”与“三维形状直觉”的并行视图：例如图 \ref{fig:bell_density_2d}(a)/(b) 与图 \ref{fig:bell_density_2d}(e)/(f) 分别对应 raw $\Psi^{+}$ 与 raw $\Psi^{-}$ 的实部二维-三维对照，图 \ref{fig:bell_density_2d}(i)--(l) 则展示前馈对齐后的差分项 $\Delta\rho_{\mathrm{ff}}$。整体上，实部主权重集中在 $|01\rangle$ 与 $|10\rangle$ 相关块，且两态间的结构差异在差分图中直接显现；虚部幅值相对较小但其空间分布仍可用于定位相位相关误差来源。与后续 CHSH 曲线联合解读时，可以同时回答“态结构是否接近目标 Bell 形态”与“非定域关联是否仍可观测”两个问题。
+图 \ref{fig:bell_density_2d} 不再重复给出三维柱图，而是把注意力集中到最可读的二维矩阵结构上。整体上，实部主权重集中在 $|01\rangle$ 与 $|10\rangle$ 相关块，且两态间的结构差异在差分图中直接显现；虚部整体较小，但其空间分布仍可用于定位相位相关误差来源。与后续 CHSH 曲线联合解读时，可以同时回答“态结构是否接近目标 Bell 形态”与“非定域关联是否仍可观测”两个问题。
 
 \begin{figure}[htbp]
 \centering
@@ -221,10 +213,10 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.95\linewidth]{fig_error_budget.pdf}
-\caption{误差预算汇总图：（a）真成功/假成功宣告概率预算及 $F_t$、假成功占比、$S_{\max}/4$ 随 $\theta_{\mathrm{BS}}$ 的联合变化；（b）速率-保真度工作点前沿，颜色表示假成功占比，星标表示推荐工作点；（c）推荐工作点下各有效点击模式对假成功总量的贡献分解，并按来源并列给出背景辅助与内禀暗计数分量。}
+\caption{误差预算汇总图：（a）真成功/假成功宣告概率预算以及 $F_t$、假成功占比随 $\theta_{\mathrm{BS}}$ 的联合变化；（b）速率-保真度工作点前沿，颜色表示假成功占比，星标表示推荐工作点。}
 \label{fig:error_budget}
 \end{figure}
-图 \ref{fig:error_budget} 将“事件预算”（$p_t$ 与 $p_f$）和“质量预算”（$F_t$、$S_{\max}$、假成功占比）统一到同一组图中。图 \ref{fig:error_budget}(a) 用于识别分束角扫描下的候选工作区间，图 \ref{fig:error_budget}(b) 给出速率与保真度之间的前沿关系，而图 \ref{fig:error_budget}(c) 则把推荐工作点下的假成功贡献按点击模式展开，并在每个模式内并列展示背景辅助与内禀暗计数两类来源。该图显示假成功并非单一来源主导，而是由背景与内禀暗计数共同贡献，并主要集中在四类有效点击模式中，这为后续“先压背景还是先压暗计数”的工程优先级提供了更直接的依据。
+图 \ref{fig:error_budget} 将“事件预算”（$p_t$ 与 $p_f$）和“工作点选择”（$F_t$ 与速率前沿）统一到同一组图中。图 \ref{fig:error_budget}(a) 用于识别分束角扫描下的候选工作区间，图 \ref{fig:error_budget}(b) 给出速率与保真度之间的前沿关系，并用颜色编码假成功占比。推荐工作点取保真度最高且宣告速率更优的点。逐模式的真假来源分解已在图 \ref{fig:bsm_patterns} 中给出，因此此处不再重复展开。
 
 \section{单轨迹仿真开销测算}[Single-Trajectory Simulation Cost Profiling]
 

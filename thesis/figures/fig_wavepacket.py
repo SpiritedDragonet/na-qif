@@ -125,8 +125,6 @@ def _extract_atomic_population(by_arm: dict, label: str, arm: str = "A") -> tupl
 
 def _style_axis(ax: plt.Axes) -> None:
     ax.grid(True, which="major", color=PALETTE["grid"], alpha=0.65, linewidth=0.75)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
 
 
 def _lock_time_axis(ax: plt.Axes) -> None:
@@ -295,26 +293,15 @@ def main() -> None:
     retain_fib = integ_fib / norm_base
     retain_bs = integ_bs / norm_base
 
-    energy_a = np.cumsum(fib_a)
-    energy_b = np.cumsum(fib_b)
-    energy_a /= max(float(energy_a[-1]), 1e-12)
-    energy_b /= max(float(energy_b[-1]), 1e-12)
-
     wave_ymax_em = _auto_wave_ymax(em_a, em_b)
-    wave_ymax_qfc = _auto_wave_ymax(qfc_a, qfc_b)
     wave_ymax_fib = _auto_wave_ymax(fib_a, fib_b)
-    wave_ymax_bs = _auto_wave_ymax(bs_a, bs_b)
-
-    fig = plt.figure(figsize=(17.5, 11.8), constrained_layout=False)
-    gs = fig.add_gridspec(4, 2, width_ratios=[1.45, 1.0], hspace=0.55, wspace=0.30)
+    fig = plt.figure(figsize=(14.2, 10.4), constrained_layout=False)
+    gs = fig.add_gridspec(3, 2, height_ratios=[1.05, 0.95, 1.0], hspace=0.42, wspace=0.26)
     ax_a = fig.add_subplot(gs[0, 0])
-    ax_b = fig.add_subplot(gs[1, 0], sharex=ax_a)
-    ax_c = fig.add_subplot(gs[2, 0], sharex=ax_a)
-    ax_d = fig.add_subplot(gs[3, 0])
-    ax_e = fig.add_subplot(gs[0, 1], sharex=ax_a)
-    ax_f = fig.add_subplot(gs[1, 1], sharex=ax_a)
-    ax_g = fig.add_subplot(gs[2, 1], sharex=ax_a)
-    ax_h = fig.add_subplot(gs[3, 1], sharex=ax_a)
+    ax_b = fig.add_subplot(gs[0, 1], sharex=ax_a)
+    ax_c = fig.add_subplot(gs[1, 0], sharex=ax_a)
+    ax_d = fig.add_subplot(gs[1, 1])
+    ax_e = fig.add_subplot(gs[2, :], sharex=ax_a)
 
     # (a) 原子四能级（真实导出）
     ax_a.plot(t_atom, p0, color=PALETTE["atom_0"], label="|0>")
@@ -325,7 +312,7 @@ def main() -> None:
     _lock_time_axis(ax_a)
     ax_a.set_ylim(0.0, 1.02)
     ax_a.set_ylabel("占据概率")
-    ax_a.set_title("原子占据（A臂，直接导出）", pad=4.0)
+    ax_a.set_title("原子占据演化（A臂）", pad=4.0)
     _style_axis(ax_a)
     ax_a.legend(frameon=False, ncol=4, loc="upper right")
     ax_a.text(
@@ -333,13 +320,13 @@ def main() -> None:
         0.96,
         (
             f"$g/\\kappa_{{tot}}={g_over_kappa:.3f}$（恢复的腔参数组）。\n"
-            "坏腔：$|u\\rangle\\!\\to\\!|e\\rangle$ 后迅速辐射损失。\n"
-            "更高精细度（更小 $\\kappa$）：$u\\leftrightarrow e$ 相干交换更强。"
+            "坏腔区下，$|u\\rangle\\!\\to\\!|e\\rangle$ 后迅速向波导辐射。\n"
+            "该组参数给出论文主用波包宽度与尾部时间常数。"
         ),
         transform=ax_a.transAxes,
         va="top",
         ha="left",
-        fontsize=9.6,
+        fontsize=9.2,
         bbox={"facecolor": "white", "edgecolor": "#D8DEE9", "alpha": 0.86, "boxstyle": "round,pad=0.32"},
     )
     _panel_label(ax_a, "(a)")
@@ -350,7 +337,7 @@ def main() -> None:
         t_ns,
         em_a,
         em_b,
-        "发射后：双臂波包与驱动强度",
+        "发射后双臂波包与驱动强度",
         y_max=wave_ymax_em,
         window_ns=window_ns,
         show_legend=True,
@@ -395,7 +382,7 @@ def main() -> None:
     ax_c.set_ylim(0.0, max(1.03, float(np.max(retain_emit)) * 1.05))
     ax_c.set_ylabel("保留比例")
     ax_c.set_xlabel("时间 (ns)")
-    ax_c.set_title("单臂累计保留（A臂，归一化）", pad=4.0)
+    ax_c.set_title("链路各阶段的累计保留", pad=4.0)
     _style_axis(ax_c)
     ax_c.legend(frameon=False, loc="upper left", ncol=2)
     _panel_label(ax_c, "(c)")
@@ -416,69 +403,44 @@ def main() -> None:
     ax_d.set_xticks(stage_x, stage_names)
     ax_d.tick_params(axis="x", labelrotation=12)
     ax_d.set_ylabel("光子概率积分")
-    ax_d.set_title("分阶段总光子概率", pad=4.0)
+    ax_d.set_title("分阶段总光子概率积分", pad=4.0)
     _style_axis(ax_d)
     ax_d.legend(frameon=False, loc="upper right")
     _panel_label(ax_d, "(d)")
 
-    # (e)(f)(g) 三阶段双臂波包
+    # (e) 干涉前波包
     _plot_dual_arm(
         ax_e,
         t_ns,
-        qfc_a,
-        qfc_b,
-        "QFC 后",
-        y_max=wave_ymax_qfc,
-        window_ns=window_ns,
-        show_legend=False,
-    )
-    _panel_label(ax_e, "(e)")
-    _plot_dual_arm(
-        ax_f,
-        t_ns,
         fib_a,
         fib_b,
-        "BS 前（光纤后）",
+        "入 BS 前双臂波包（光纤后）",
         y_max=wave_ymax_fib,
         window_ns=window_ns,
-        show_legend=False,
+        show_legend=True,
     )
-    _panel_label(ax_f, "(f)")
-    _plot_dual_arm(
-        ax_g,
-        t_ns,
-        bs_a,
-        bs_b,
-        "BS 后",
-        y_max=wave_ymax_bs,
-        window_ns=window_ns,
-        show_legend=False,
+    ax_e.plot(t_ns, em_a, color=PALETTE["arm_a"], linestyle="--", linewidth=1.4, alpha=0.55, label="A臂发射后")
+    ax_e.plot(t_ns, em_b, color=PALETTE["arm_b"], linestyle="--", linewidth=1.4, alpha=0.55, label="B臂发射后")
+    ax_e.set_xlabel("时间 (ns)")
+    ax_e.text(
+        0.015,
+        0.07,
+        "虚线给出发射后参考波包，用于对照传输后的主瓣保持与整体衰减。",
+        transform=ax_e.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=8.6,
+        bbox={"facecolor": "white", "alpha": 0.82, "edgecolor": "none", "pad": 1.5},
     )
-    _panel_label(ax_g, "(g)")
-
-    # (h) 能量捕获轮廓
-    ax_h.plot(t_ns, energy_a, color=PALETTE["arm_a"], label="A臂累计")
-    ax_h.plot(t_ns, energy_b, color=PALETTE["arm_b"], label="B臂累计")
-    ax_h.axhline(0.65, linestyle="--", linewidth=1.2, color="#666666", label="65% 水平")
-    ax_h.axvline(window_ns, linestyle="--", linewidth=1.2, color=PALETTE["window"], label=f"{window_ns:.0f} ns 边界")
-    ax_h.fill_between(t_ns, 0.0, energy_a, color=PALETTE["arm_a"], alpha=0.08, linewidth=0.0)
-    ax_h.fill_between(t_ns, 0.0, energy_b, color=PALETTE["arm_b"], alpha=0.07, linewidth=0.0)
-    _lock_time_axis(ax_h)
-    ax_h.set_ylim(0.0, 1.02)
-    ax_h.set_xlabel("时间 (ns)")
-    ax_h.set_ylabel("累计能量")
-    ax_h.set_title("能量捕获轮廓（光纤后）", pad=4.0)
-    _style_axis(ax_h)
-    ax_h.legend(frameon=False, loc="lower right")
-    _panel_label(ax_h, "(h)")
+    _panel_label(ax_e, "(e)")
 
     # 共享 x 轴时 Matplotlib 默认只保留底部刻度；这里强制显示 a/b/e/f/g 的刻度数字。
-    for ax in (ax_a, ax_b, ax_e, ax_f, ax_g):
+    for ax in (ax_a, ax_b, ax_c):
         ax.tick_params(axis="x", labelbottom=True)
         plt.setp(ax.get_xticklabels(), visible=True)
 
     fig.suptitle(
-        "双臂波包时域结构与接收窗口位置",
+        "双臂波包时域结构、阶段衰减与干涉前轮廓",
         y=0.985,
         fontweight="bold",
     )
@@ -493,7 +455,7 @@ def main() -> None:
         va="bottom",
         fontsize=9.0,
     )
-    fig.subplots_adjust(left=0.06, right=0.985, top=0.94, bottom=0.10)
+    fig.subplots_adjust(left=0.06, right=0.985, top=0.94, bottom=0.08)
 
     out_pdf = pathlib.Path(__file__).with_suffix(".pdf")
     frame_all_axes(fig)

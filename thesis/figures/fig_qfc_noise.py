@@ -18,23 +18,13 @@ def _repo_root() -> pathlib.Path:
 
 
 def _default_summary_csv() -> pathlib.Path:
-    data_root = pathlib.Path(__file__).resolve().parents[1] / "data"
-    candidates = sorted(
-        data_root.glob("*/summary/qfc_eff_noise_scan_summary.csv"),
-        key=lambda p: p.stat().st_mtime,
+    return (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "data"
+        / "qfc_eff_noise_scan_server_output_20260224_0140"
+        / "summary"
+        / "qfc_eff_noise_scan_summary.csv"
     )
-    if candidates:
-        return candidates[-1]
-
-    outputs_root = _repo_root() / "outputs"
-    candidates = sorted(
-        outputs_root.glob("*/summary/qfc_eff_noise_scan_summary.csv"),
-        key=lambda p: p.stat().st_mtime,
-    )
-    if candidates:
-        return candidates[-1]
-
-    return data_root / "qfc_eff_noise_scan_server_output_latest" / "summary" / "qfc_eff_noise_scan_summary.csv"
 
 
 def _parse_args() -> argparse.Namespace:
