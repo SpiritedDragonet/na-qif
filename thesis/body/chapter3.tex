@@ -6,7 +6,7 @@
 
 \section{建模对象与局域空间}[Modeled System and Local Hilbert Spaces]
 
-所研究的端到端链路包含两臂单原子-腔节点、780\,nm 到 1517\,nm 的频率转换、两段长光纤传输以及中间站 partial BSM。单原子-腔节点的网络角色与 cavity-QED 接口的一般工作方式，可由单原子网络节点综述和中性原子远程纠缠实验来把握 \cite{ReisererRempe2015CavityNetworks,vanleent2022entangling}。在这个链路里，真正需要显式保留的自由度并不多：原子内部只保留两个存储态、一个光学激发态和一个驱动态；腔场只保留真空、H 偏振单光子和 V 偏振单光子；每个时间 bin 只保留真空、780\,nm 双偏振单光子和 1517\,nm 双偏振单光子；滤波记忆模只保留真空、H 和记忆 V 三个局域态。其余线性损耗、偏振旋转和探测器响应不再扩展链上站点，而是进入测量侧 effect。
+所研究的端到端链路包含两臂单原子-腔节点、780\,nm 到 1517\,nm 的频率转换、两段长光纤传输以及中间站 partial BSM。单原子-腔节点的网络角色与 cavity-QED 接口的一般工作方式，可由单原子网络节点综述和中性原子远程纠缠实验来把握 \cite{ReisererRempe2015CavityNetworks,vanleent2022entangling}。在这个链路里，真正需要显式保留的自由度并不多：原子内部只保留两个存储态、一个光学激发态和一个驱动态；腔场只保留真空、H 偏振单光子和 V 偏振单光子；每个时间 bin 只保留真空、780\,nm 双偏振单光子和 1517\,nm 双偏振单光子；滤波记忆模只保留真空、H 和记忆 V 三个局域态。其余线性损耗、偏振旋转和探测器响应统一并入测量侧 effect。
 
 \begin{table}[htbp]
 \centering
@@ -390,7 +390,7 @@ p_{\mathrm{memB}} &\rightarrow p_{B_n}+1.
 
 \subsection{光纤信道与探测 effect}[Fiber Channel and Detection Effects]
 
-中间站只显式构造探测端的点击记录和 success effect，不再把光纤、分束器和探测器响应写回状态链。线性光学 Bell 态分析在无辅助真空以外资源的条件下存在可判集合限制，因此测量模型只针对 partial BSM 的成功模式集合展开 \cite{CalsamigliaLutkenhaus2001BellAnalyzer}。
+中间站只显式构造探测端的点击记录和 success effect，并将光纤、分束器和探测器响应统一写入测量侧。线性光学 Bell 态分析在无辅助真空以外资源的条件下存在可判集合限制，因此测量模型只针对 partial BSM 的成功模式集合展开 \cite{CalsamigliaLutkenhaus2001BellAnalyzer}。
 
 对每个偏振 $\mu\in\{H,V\}$，50:50 分束器的输入输出模变换取为
 \begin{equation}
@@ -553,7 +553,7 @@ T_{\text{总用时}}=T_{\text{物理链路}}+T_{\text{探测阶段}}+T_{\text{�
 即可判断优化优先级。若 $\rho_{\rm enum}$ 占优，计算资源更应优先投向 effect 枚举与收缩；若 $\rho_{\rm phy}$ 占优，才有必要继续压缩态端局部门或交换调度。
 
 
-effect 端处理还有一个明确边界：它依赖于光纤、分束器和探测器可以在当前问题里写成与态端主链独立串联的线性信道。若某个器件会在传播过程中引入新的长程时间相关，或者需要显式保留额外的频谱模式，那么它就不再适合仅通过推回公式吸收到测量侧，而需要回到状态链中显式建模。当前链路中的滤波记忆之所以保留在状态侧，原因正在于它会在相邻乃至跨多个 bin 之间传播相关。
+effect 端处理还有一个明确边界：它依赖于光纤、分束器和探测器可以在当前问题里写成与态端主链独立串联的线性信道。若某个器件会在传播过程中引入新的长程时间相关，或者需要显式保留额外的频谱模式，那么该器件就需要回到状态链中显式建模，而不能仅通过推回公式吸收到测量侧。当前链路中的滤波记忆之所以保留在状态侧，原因正在于它会在相邻乃至跨多个 bin 之间传播相关。
 
 
 \begin{table}[htbp]
@@ -584,15 +584,14 @@ QFC & 采用强泵近似下的分束器型局域幺正 & $\eta_H,\eta_V,\phi_H,\
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.96\linewidth]{fig_sim_pipeline.pdf}
-\caption{端到端单次任务仿真流程图。上层是状态侧物理链路：发射 TEBD、QFC、滤波记忆、光纤采样和原子退相干；下层是测量侧统计链路：到达概率、POVM effect 构造、背景 OR 卷积、成功模式枚举、窗口化抽样和指标汇总。分束器并入测量侧 effect，而不在态端重复施加 BS 门。该双泳道结构与当前仓库的实现路径一致 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems}.}
+\caption{端到端单次任务仿真流程图。图 \ref{fig:link_overview} 所示物理链路在实现中被拆分为状态侧演化和测量侧统计两条流程：前者负责发射 TEBD、QFC、滤波记忆、光纤采样和原子退相干，后者负责到达统计、POVM effect 构造、背景 OR 卷积、成功模式枚举、窗口化抽样和指标汇总。分束器并入测量侧 effect，该双泳道结构与当前仓库的实现路径一致 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems}.}
 \label{fig:sim_pipeline}
 \end{figure}
+图 \ref{fig:single_vs_two_photon} 关注远程纠缠建立的物理机理，图 \ref{fig:sim_pipeline} 则把同一链路翻译为代码中的执行顺序与责任分界，用于说明各模块在数值实现中的输入输出关系。
 
 \section{小结}[Summary]
 
 这一章把前两章已经建立的方法框架落实到所研究的量子接口链路上。原子-腔发射阶段由四能级原子、三维腔场和 5 维时间 bin 的局部门给出；QFC 在单 bin 内完成波长转换；滤波记忆模把有限带宽导致的跨 bin 相关显式保留在链上；中间站的光纤、分束器和探测器响应则通过对偶映射推回输入端 effect，并进一步给出 partial BSM 的成功模式判据以及真假成功分解。由此得到的端到端模型既保留了实验上最关键的物理环节，也保持了和数值实现一一对应的局域结构，为下一章的实验对照、参数扫描和误差预算提供了统一基线。
-
-
 
 
 

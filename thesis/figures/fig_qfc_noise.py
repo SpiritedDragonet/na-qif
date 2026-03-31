@@ -1,4 +1,3 @@
-from plot_style import frame_all_axes
 import argparse
 import csv
 import pathlib
@@ -6,18 +5,18 @@ import pathlib
 import matplotlib.pyplot as plt
 import numpy as np
 
+from plot_style import frame_all_axes
+
 
 DEFAULT_BASELINE_ETA_Q = 0.57
 DEFAULT_BASELINE_NOISE_CPS_PER_MHZ = 41.1
+DEFAULT_BASELINE_ETA_DET = 0.85
+DEFAULT_BASELINE_BG_HZ = 165.0
 DEFAULT_SMOOTH_SIGMA = 0.85
 DEFAULT_SMOOTH_BLEND = 0.65
 
 
-def _repo_root() -> pathlib.Path:
-    return pathlib.Path(__file__).resolve().parents[2]
-
-
-def _default_summary_csv() -> pathlib.Path:
+def _default_qfc_summary_csv() -> pathlib.Path:
     return (
         pathlib.Path(__file__).resolve().parents[1]
         / "data"
@@ -28,8 +27,19 @@ def _default_summary_csv() -> pathlib.Path:
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Plot QFC efficiency-noise landscape from summary CSV.")
-    parser.add_argument("--summary-csv", type=pathlib.Path, default=_default_summary_csv())
+    parser = argparse.ArgumentParser(description="Plot device-level working planes from summary CSVs.")
+    parser.add_argument("--qfc-summary-csv", type=pathlib.Path, default=_default_qfc_summary_csv())
+    parser.add_argument(
+        "--detector-summary-csv",
+        type=pathlib.Path,
+        default=(
+            pathlib.Path(__file__).resolve().parents[1]
+            / "data"
+            / "detector_bg_scan_server_output_20260224_0908"
+            / "summary"
+            / "detector_bg_scan_summary.csv"
+        ),
+    )
     parser.add_argument(
         "--smooth-sigma",
         type=float,
@@ -108,6 +118,41 @@ def _load_grid(summary_csv: pathlib.Path) -> tuple[np.ndarray, np.ndarray, np.nd
         p_success[i, j] = _parse_float(row, "p_success_abs_avg", line_no)
 
     return eta, noise, fidelity, p_success
+
+
+def _load_detector_grid(summary_csv: pathlib.Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if not summary_csv.exists():
+        raise FileNotFoundError(f"Summary CSV not found: {summary_csv}")
+
+    with summary_csv.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+        fieldnames = reader.fieldnames or []
+
+    required = ("eta_det", "bg_rate_mean_hz", "fidelity_true_avg")
+    missing = [key for key in required if key not in fieldnames]
+    if missing:
+        raise ValueError(f"Summary CSV missing required columns: {', '.join(missing)}")
+    if not rows:
+        raise ValueError(f"Summary CSV has no rows: {summary_csv}")
+
+    eta_vals = sorted({round(_parse_float(row, "eta_det", idx), 9) for idx, row in enumerate(rows, start=2)})
+    bg_vals = sorted({round(_parse_float(row, "bg_rate_mean_hz", idx), 9) for idx, row in enumerate(rows, start=2)})
+    eta = np.asarray(eta_vals, dtype=float)
+    bg = np.asarray(bg_vals, dtype=float)
+    fidelity = np.full((bg.size, eta.size), np.nan, dtype=float)
+    eta_index = {value: idx for idx, value in enumerate(eta_vals)}
+    bg_index = {value: idx for idx, value in enumerate(bg_vals)}
+
+    for line_no, row in enumerate(rows, start=2):
+        e = round(_parse_float(row, "eta_det", line_no), 9)
+        b = round(_parse_float(row, "bg_rate_mean_hz", line_no), 9)
+        fidelity[bg_index[b], eta_index[e]] = _parse_float(row, "fidelity_true_avg", line_no)
+
+    if np.isnan(fidelity).any():
+        raise ValueError("Detector summary grid is incomplete.")
+
+    return eta, bg, fidelity
 
 
 def _gaussian_kernel1d(sigma: float) -> np.ndarray:
@@ -191,17 +236,20 @@ def main() -> None:
         }
     )
 
-    eta_q, noise_sd, fidelity, p_success = _load_grid(args.summary_csv)
+    eta_q, noise_sd, fidelity, p_success = _load_grid(args.qfc_summary_csv)
+    eta_det, bg_levels, det_fidelity = _load_detector_grid(args.detector_summary_csv)
     fidelity_plot = _smooth_field(fidelity, sigma=args.smooth_sigma, blend=args.smooth_blend)
     p_success_plot = _smooth_field(p_success, sigma=args.smooth_sigma, blend=args.smooth_blend)
 
     fidelity_m = np.ma.masked_invalid(fidelity_plot)
     p_success_m = np.ma.masked_invalid(p_success_plot)
+    det_fidelity_m = np.ma.masked_invalid(det_fidelity)
 
-    fig = plt.figure(figsize=(9.8, 4.8), constrained_layout=True)
-    gs = fig.add_gridspec(1, 2, width_ratios=[1.0, 1.0], wspace=0.26)
+    fig = plt.figure(figsize=(14.0, 4.8), constrained_layout=True)
+    gs = fig.add_gridspec(1, 3, width_ratios=[1.0, 1.0, 1.0], wspace=0.22)
     ax0 = fig.add_subplot(gs[0, 0])
     ax1 = fig.add_subplot(gs[0, 1])
+    ax2 = fig.add_subplot(gs[0, 2])
 
     extent = [float(eta_q.min()), float(eta_q.max()), float(noise_sd.min()), float(noise_sd.max())]
 
@@ -225,7 +273,7 @@ def main() -> None:
     ax0.clabel(cs0, fmt="%.3f", inline=True, fontsize=8)
     ax0.set_xlabel(r"QFC 效率 $\eta_q$")
     ax0.set_ylabel(r"QFC 噪声标准差 (cps/MHz)")
-    ax0.set_title(r"条件保真度热图 $F_t(\eta_q,\sigma_{\rm QFC})$")
+    ax0.set_title(r"QFC 平面上的条件保真度")
     cb0 = fig.colorbar(im0, ax=ax0, fraction=0.05, pad=0.03)
     cb0.set_label(r"$F_t$")
     _panel_label(ax0, "(a)")
@@ -250,7 +298,7 @@ def main() -> None:
     ax1.clabel(cs1, fmt="%.3f", inline=True, fontsize=8)
     ax1.set_xlabel(r"QFC 效率 $\eta_q$")
     ax1.set_ylabel(r"QFC 噪声标准差 (cps/MHz)")
-    ax1.set_title(r"宣告概率热图 $p_s(\eta_q,\sigma_{\rm QFC})$")
+    ax1.set_title(r"QFC 平面上的宣告概率")
     cb1 = fig.colorbar(im1, ax=ax1, fraction=0.05, pad=0.03)
     cb1.set_label(r"$p_s \times 10^{-6}$")
     _panel_label(ax1, "(b)")
@@ -278,11 +326,45 @@ def main() -> None:
         linewidths=0.8,
     )
 
-    fig.suptitle(
-        "QFC 效率-噪声权衡（QFC_EFF_NOISE_SCAN 汇总）",
-        fontsize=12.3,
-        fontweight="bold",
+    det_extent = [float(eta_det.min()), float(eta_det.max()), float(bg_levels.min()), float(bg_levels.max())]
+    im2 = ax2.imshow(
+        det_fidelity_m,
+        origin="lower",
+        aspect="auto",
+        extent=det_extent,
+        cmap="viridis",
+        interpolation="bicubic",
+        vmin=float(np.nanmin(det_fidelity)),
+        vmax=float(np.nanmax(det_fidelity)),
     )
+    det_levels = np.linspace(float(np.nanmin(det_fidelity)), float(np.nanmax(det_fidelity)), 6)
+    cs2 = ax2.contour(
+        eta_det,
+        bg_levels,
+        det_fidelity,
+        levels=det_levels,
+        colors="white",
+        linewidths=0.8,
+        alpha=0.85,
+    )
+    ax2.clabel(cs2, fmt="%.3f", inline=True, fontsize=8)
+    ax2.set_xlabel(r"探测效率 $\eta_d$")
+    ax2.set_ylabel(r"背景计数率 $R_{\mathrm{bg}}$ (Hz)")
+    ax2.set_title("探测平面上的条件保真度")
+    cb2 = fig.colorbar(im2, ax=ax2, fraction=0.05, pad=0.03)
+    cb2.set_label(r"$F_t$")
+    ax2.scatter(
+        [DEFAULT_BASELINE_ETA_DET],
+        [DEFAULT_BASELINE_BG_HZ],
+        s=48,
+        marker="o",
+        color="#f2c14e",
+        edgecolors="#1f1f1f",
+        linewidths=0.8,
+        zorder=5,
+    )
+    _panel_label(ax2, "(c)")
+
     out_path = pathlib.Path(__file__).with_suffix(".pdf")
     frame_all_axes(fig)
     fig.savefig(out_path, dpi=220)

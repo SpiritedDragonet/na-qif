@@ -77,7 +77,7 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 \caption{按装置环节组织的分层标定图：从源端发射、时间窗、HOM 干涉到 BSM 与条件态，每一层只用本层观测量锚定对应参数，并把约束传递到下一层。}
 \label{fig:calibration_pipeline}
 \end{figure}
-图 \ref{fig:calibration_pipeline} 将抽象的“层”改写为具体装置环节与观测量对应关系：上行给出物理环节，下行给出该环节直接约束的观测量与参数组。这样做的目的不是重复后文顺序，而是明确每一步标定究竟依赖哪类实验数据，以及哪些参数应在该步被冻结。
+图 \ref{fig:calibration_pipeline} 将抽象的“层”改写为具体装置环节与观测量对应关系：上行给出物理环节，下行给出该环节直接约束的观测量与参数组。该图用于明确每一步标定所依赖的实验数据类型，以及应在该步被冻结的参数集合。
 
 \section{关键噪声来源归因}[Attribution of Key Noise Sources]
 
@@ -91,18 +91,18 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.98\linewidth]{fig_wavepacket.pdf}
-\caption{双臂波包的关键时域结果：（a）A 臂原子四能级占据演化；（b）发射后双臂波包与驱动强度；（c）A 臂在发射、QFC、光纤与 BS 四阶段的累计保留；（d）A/B 两臂分阶段总光子概率积分；（e）光纤后、入 BS 前的双臂波包，并与发射后参考波包比较。}
+\caption{双臂波包时域结构与主窗口位置：（a）A 臂原子四能级占据演化；（b）发射后双臂波包；（c）A 臂累计保留率；（d）各阶段总光子概率积分；（e）QFC 后双臂波包；（f）光纤后、入 BS 前波包；（g）BS 后波包；（h）光纤后累计能量捕获。}
 \label{fig:wavepacket}
 \end{figure}
 \FloatBarrier
 
-图 \ref{fig:wavepacket} 压缩为五个直接支撑后续窗口与干涉分析的观察量。主瓣位置、上升沿与尾部衰减在 0--100 ns 观察窗内保持一致；面板 (c) 与 (d) 把 QFC、光纤与 BS 三阶段的整体衰减集中到同一组图中，避免用多张近似同形的波包图重复展示同一事实；面板 (e) 则保留真正与 HOM 和 BSM 相关的入 BS 前轮廓。基线单跑的发射阶段键维序列呈现“入口 3、主体平台 9、出口 3”（$3\!\to\!9\!\to\!3$）的平顶结构，四个主要阶段峰值均在 9 附近且未出现异常尖峰，说明该组结果未出现键维失稳导致的数值伪影。
+图 \ref{fig:wavepacket} 给出了单跑数据中的完整时域链路：主瓣位置、上升沿与尾部衰减在 0--100 ns 观察窗内保持一致；QFC、光纤与 BS 三阶段后，双臂波包幅值按预期逐段下降，阶段积分与累计能量曲线保持同向变化。基线单跑的发射阶段键维序列呈现“入口 3、主体平台 9、出口 3”（$3\!\to\!9\!\to\!3$）的平顶结构，四个主要阶段峰值均在 9 附近且未出现异常尖峰，说明该组结果未出现键维失稳导致的数值伪影。
 
-由于该参数组下键维曲线近似常值平台，单独成图的信息增益有限，本章不再单列键维图，而将其作为每次单跑输出中的数值一致性检查项。
+由于该参数组下键维曲线近似常值平台，键维结果统一作为每次单跑输出中的数值一致性检查项。
 
 在此基础上，窗口选择与事件统计关系可直接从多指标曲线读取。
 
-窗口宽度是实验最直接的调节量。图 \ref{fig:accept_hist} 将时序统计与窗口扫描合并为一张三联图：图 \ref{fig:accept_hist}(a) 为 A/B 两臂绝对点击时间分布，图 \ref{fig:accept_hist}(b) 为相对双点击时间差 $\Delta t=t_A-t_B$ 的直方图及接收窗口，图 \ref{fig:accept_hist}(c) 则给出窗口扫描下的工作区。与传统二维折中图不同，本章同时关注
+窗口宽度是实验最直接的调节量。为便于把时序统计与工作点选择放到同一口径下考察，本节统一采用
 \begin{equation}
 \Xi(\Delta t_w)=\left(p_s,\;F_t,\;\frac{p_f}{p_s},\;p_{t|11}\right),
 \end{equation}
@@ -114,7 +114,7 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 \caption{窗口选择的三联诊断图：（a）A/B 两臂绝对点击时间分布；（b）相对双点击时间差分布，其中淡黄色阴影为 $\pm 70\,\mathrm{ns}$ 的时间差接收窗口；（c）窗口扫描下的工作区，同时给出 $F_t$、$p_{t|11}$、$p_t$ 与假成功占比。}
 \label{fig:accept_hist}
 \end{figure}
-图 \ref{fig:accept_hist} 的前两幅子图给出两臂点击主密度区以及相对时差集中区间；第三幅子图把同一窗口口径下的真成功率、条件保真度、到达条件真成功概率与假成功占比并列起来。由此可以先从时序统计锁定候选窗口，再在候选区内选择兼顾速率与质量的工作点，而无需再把时序和质量分成两张图分别解释。
+图 \ref{fig:accept_hist} 的前两幅子图给出两臂点击主密度区以及相对时差集中区间；第三幅子图把同一窗口口径下的真成功率、条件保真度、到达条件真成功概率与假成功占比并列起来。这样可以先从时序统计锁定候选窗口，再在候选区内选择兼顾速率与质量的工作点。
 
 干涉质量与模式分解结果如下。
 
@@ -128,12 +128,13 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 \end{figure}
 图 \ref{fig:hom} 纵轴采用二阶关联量
 \begin{equation}
-\begin{aligned}
-g^{(2)}_{HH,VV}(\tau)&=\frac{P_{2}(\tau)}{\langle P_{2}(|\tau|\ge\tau_{\mathrm{edge}})\rangle},\\
-P_{2}(\tau)&=\frac{C_{2}(\tau)}{N_{\mathrm{shot}}(\tau)},
-\end{aligned}
+g^{(2)}_{HH,VV}(\tau)=\frac{P_{2}(\tau)}{\langle P_{2}(|\tau|\ge\tau_{\mathrm{edge}})\rangle}
 \end{equation}
-其中 $C_2(\tau)$ 表示时延为 $\tau$ 时同偏振跨端口双点击计数（$H1$-$H2$ 或 $V1$-$V2$），$N_{\mathrm{shot}}(\tau)$ 为对应时延采样的总尝试数，$\tau_{\mathrm{edge}}$ 取 $|\tau|$ 外侧 $15\%$ 区间的阈值。曲线采用
+其中
+\begin{equation}
+P_{2}(\tau)=\frac{C_{2}(\tau)}{N_{\mathrm{shot}}(\tau)}
+\end{equation}
+$C_2(\tau)$ 表示时延为 $\tau$ 时同偏振跨端口双点击计数（$H1$-$H2$ 或 $V1$-$V2$），$N_{\mathrm{shot}}(\tau)$ 为对应时延采样的总尝试数，$\tau_{\mathrm{edge}}$ 取 $|\tau|$ 外侧 $15\%$ 区间的阈值。曲线采用
 \begin{equation}
 g^{(2)}(\tau)=b-a\exp\!\left[-\left(\frac{\tau-\tau_0}{\sigma}\right)^2\right]
 \end{equation}
@@ -151,7 +152,7 @@ g^{(2)}(\tau)=b-a\exp\!\left[-\left(\frac{\tau-\tau_0}{\sigma}\right)^2\right]
 
 接下来汇总条件态结构与端到端可用纠缠质量。
 
-前两段联合诊断给出“源端时间结构—窗口筛选—干涉模式”的因果证据链，本节转入任务层汇总：在统一成功判据下同时报告 Bell 条件保真度、CHSH 与速率工作点。图 \ref{fig:chsh} 给出 $S$ 参数趋势；图 \ref{fig:distance}、图 \ref{fig:qfc_noise} 与图 \ref{fig:detector_eff} 分别刻画链路尺度、QFC 噪声和探测效率影响；图 \ref{fig:error_budget} 汇总事件预算与质量预算。在两臂等长 $L$ 且单臂衰减系数为 $\alpha_f$ 时，成功率满足
+前两段联合诊断给出“源端时间结构—窗口筛选—干涉模式”的因果证据链，本节转入任务层汇总：在统一成功判据下同时报告 Bell 条件保真度、CHSH 与速率工作点。图 \ref{fig:chsh} 给出 $S$ 参数趋势；图 \ref{fig:distance} 刻画链路尺度影响；图 \ref{fig:qfc_noise} 把 QFC 端和探测端的器件参数约束统一到同一工作平面；图 \ref{fig:error_budget} 汇总事件预算与质量预算。在两臂等长 $L$ 且单臂衰减系数为 $\alpha_f$ 时，成功率满足
 \begin{equation}
 p_s(L)\propto 10^{-\alpha_f L/5},
 \end{equation}
@@ -162,10 +163,10 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.95\linewidth]{fig_bell_density_3d.pdf}
-\caption{宣告成功条件下 Bell 后验态的二维热图：三行分别对应 raw $\Psi^{+}$、raw $\Psi^{-}$ 与 $\Delta\rho_{\mathrm{ff}}=\rho^{\Psi+}_{\mathrm{ff}}-\rho^{\Psi-}_{\mathrm{ff}}$；两列分别为实部与虚部。}
+\caption{宣告成功条件下 Bell 后验态密度矩阵的十二联图：三行分别对应 raw $\Psi^{+}$、raw $\Psi^{-}$ 与 $\Delta\rho_{\mathrm{ff}}=\rho^{\Psi+}_{\mathrm{ff}}-\rho^{\Psi-}_{\mathrm{ff}}$；每行四列依次为二维实部热图、三维实部柱图、二维虚部热图与三维虚部柱图。}
 \label{fig:bell_density_2d}
 \end{figure}
-图 \ref{fig:bell_density_2d} 不再重复给出三维柱图，而是把注意力集中到最可读的二维矩阵结构上。整体上，实部主权重集中在 $|01\rangle$ 与 $|10\rangle$ 相关块，且两态间的结构差异在差分图中直接显现；虚部整体较小，但其空间分布仍可用于定位相位相关误差来源。与后续 CHSH 曲线联合解读时，可以同时回答“态结构是否接近目标 Bell 形态”与“非定域关联是否仍可观测”两个问题。
+图 \ref{fig:bell_density_2d} 在同一页面给出二维数值读数与三维形状直觉：例如图 \ref{fig:bell_density_2d}(a)/(b) 与图 \ref{fig:bell_density_2d}(e)/(f) 分别对应 raw $\Psi^{+}$ 与 raw $\Psi^{-}$ 的实部二维-三维对照，图 \ref{fig:bell_density_2d}(i)--(l) 则展示前馈对齐后的差分项 $\Delta\rho_{\mathrm{ff}}$。整体上，实部主权重集中在 $|01\rangle$ 与 $|10\rangle$ 相关块，且两态间的结构差异在差分图中直接显现；虚部幅值相对较小，但其空间分布仍可用于定位相位相关误差来源。与后续 CHSH 曲线联合解读时，可以同时回答“态结构是否接近目标 Bell 形态”与“非定域关联是否仍可观测”两个问题。
 
 \begin{figure}[htbp]
 \centering
@@ -185,19 +186,11 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.9\linewidth]{fig_qfc_noise.pdf}
-\caption{QFC 背景噪声对事件率与保真度的影响。}
+\includegraphics[width=0.98\linewidth]{fig_qfc_noise.pdf}
+\caption{器件参数工作平面：（a）QFC 效率与背景噪声对应的条件保真度热图；（b）同一 QFC 参数平面上的宣告概率热图；（c）探测效率与背景计数对应的条件保真度热图。圆点表示基线参数。}
 \label{fig:qfc_noise}
 \end{figure}
-图 \ref{fig:qfc_noise} 给出了 QFC 背景从“次要扰动”转为“主导污染”的阈值区。该阈值随窗口策略和探测效率变化，表明 QFC 背景与窗口参数存在显著耦合，单独优化任一参数都难以复现同等改进幅度。
-
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=0.9\linewidth]{fig_detector_eff.pdf}
-\caption{探测效率-背景联合扫描下的保真度热图与成功率切片。}
-\label{fig:detector_eff}
-\end{figure}
-图 \ref{fig:detector_eff} 将“探测效率影响”写成二维工作平面：图 \ref{fig:detector_eff}(a) 的热图给出不同背景计数下的条件保真度地形，图 \ref{fig:detector_eff}(b) 给出对应成功率切片。结果显示，在高背景区效率提升对保真度的边际改善更早受限，但成功率仍可继续上升。
+图 \ref{fig:qfc_noise} 把转换端和探测端两类器件约束并列到同一层级。前两幅子图显示 QFC 背景升高会同时压低条件保真度与宣告概率，且高效率只有在低噪声区才能充分转化为链路收益；第三幅子图表明探测效率提升在低背景区更直接转化为质量改进，而在高背景区更早出现饱和。这样，QFC 噪声和探测端噪声的影响可以先在器件层比较，再由图 \ref{fig:error_budget} 统一投影到系统级工作点。
 
 最后给出误差归因与部署判据。
 
@@ -216,8 +209,9 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \caption{误差预算汇总图：（a）真成功/假成功宣告概率预算以及 $F_t$、假成功占比随 $\theta_{\mathrm{BS}}$ 的联合变化；（b）速率-保真度工作点前沿，颜色表示假成功占比，星标表示推荐工作点。}
 \label{fig:error_budget}
 \end{figure}
-图 \ref{fig:error_budget} 将“事件预算”（$p_t$ 与 $p_f$）和“工作点选择”（$F_t$ 与速率前沿）统一到同一组图中。图 \ref{fig:error_budget}(a) 用于识别分束角扫描下的候选工作区间，图 \ref{fig:error_budget}(b) 给出速率与保真度之间的前沿关系，并用颜色编码假成功占比。推荐工作点取保真度最高且宣告速率更优的点。逐模式的真假来源分解已在图 \ref{fig:bsm_patterns} 中给出，因此此处不再重复展开。
+图 \ref{fig:error_budget} 将“事件预算”（$p_t$ 与 $p_f$）和“工作点选择”（$F_t$ 与速率前沿）统一到同一组图中。图 \ref{fig:error_budget}(a) 用于识别分束角扫描下的候选工作区间，图 \ref{fig:error_budget}(b) 给出速率与保真度之间的前沿关系，并用颜色编码假成功占比。推荐工作点取保真度最高且宣告速率更优的点；模式级来源分解集中放在图 \ref{fig:bsm_patterns} 中呈现。
 
+\FloatBarrier
 \section{单轨迹仿真开销测算}[Single-Trajectory Simulation Cost Profiling]
 
 测试硬件为 Intel(R) Xeon(R) E-2176M CPU，标称主频 $2.70$ GHz（系统可见 12 逻辑线程）；本次单跑按单核、单并发任务执行（1 个工作线程）。在基线参数 $N=100,\ \Delta t=1$ ns，窗口 $70$ ns，$\chi_{\max}=50$，单次任务（1 shot）下，时间量定义与代表性运行结果统一列于表 \ref{tab:timing-breakdown}。
@@ -246,12 +240,13 @@ QFC+滤波记忆阶段 & 完成频率转换并引入有限带宽记忆/滤波效
 $T_{\text{探测阶段}}/T_{\text{总用时}}=99.42\%$，
 即当前瓶颈明确位于探测阶段，态端动力学阶段占比很小。
 
-\begin{figure}[htbp]
+\begin{figure}[!htbp]
 \centering
 \includegraphics[width=0.95\linewidth]{fig_cost_scaling.pdf}
 \caption{复杂度缩放图：（a）探测阶段耗时随窗口 bin 数增长；（b）总用时代理量随 bin 个数上限增长。}
 \label{fig:cost_scaling}
 \end{figure}
+\FloatBarrier
 图 \ref{fig:cost_scaling} 给出窗口 bin 上限变化下的探测阶段开销与总用时代理量趋势，用于与第 3 章复杂度分析对应。
 
 部署判据因此采用两层规则：先满足硬约束
@@ -263,6 +258,7 @@ $T_{\text{探测阶段}}/T_{\text{总用时}}=99.42\%$，
 $F_{\min}=0.80$、$S_{\min}=2.0$ 与 $T_{\max}=3600\,\mathrm{s}$，
 并据此筛选满足任务约束的工作点集合。
 
+\FloatBarrier
 \section{本章小结}[Chapter Summary]
 
 本章给出与实验流程一致的结果组织方式：参数先由可独立测量量锚定，再由分层标定流程进入端到端评估。核心输出扩展为 $\{p_s,p_t,p_f,F_t,S\}$ 与中间可观测量的统一集合。该结构使模型具备两类能力：一是与实验逐项对照的可解释性，二是面向下一轮装置优化的可操作误差预算能力。

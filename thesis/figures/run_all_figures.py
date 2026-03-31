@@ -16,7 +16,6 @@ def main() -> None:
         "fig_chsh.py",
         "fig_distance.py",
         "fig_qfc_noise.py",
-        "fig_detector_eff.py",
         "fig_error_budget.py",
         "fig_cost_scaling.py",
         "fig_tikz_arch_to_interface.py",

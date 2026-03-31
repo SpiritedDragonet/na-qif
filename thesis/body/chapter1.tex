@@ -102,7 +102,7 @@
 
 本文链路采用的 $1517\,\mathrm{nm}$ 波段与两臂约 $16\,\mathrm{km}$ 光纤长度具有明确工程依据：$780\,\mathrm{nm}$ 附近光子在标准光纤中的损耗较高，几十公里尺度会使信号衰减到接近暗计数背景；将其相干转换到 $1.5\,\mu\mathrm{m}$ 附近可显著改善链路预算，使“损耗主导”与“噪声主导”两类退化机制在同一距离尺度上都可观测。\cite{Ikuta2018PolarizationInsensitiveQFC,vanleent2022entangling,Zhou2023QuantumNetworkNoise} 同时，$16\,\mathrm{km}$ 量级单程距离对应的往返经典通信时延已达百微秒量级，节点需在等待中继站宣告期间保持相干，这会把存储退相干、相位漂移与时间门宽放大为可量化的保真度损失。\cite{Zhou2023QuantumNetworkNoise,zhou2024longlived} 该距离尺度既能暴露端到端噪声链条，又与城域/近郊光纤基础设施和外场部署条件贴近，适合作为量子接口从实验室走向实地应用的过渡评估尺度。\cite{vanleent2022entangling}
 本研究链路采用中继站双光子干涉与部分 BSM 的宣告型方案。\cite{SimonIrvine2003RobustLongDistanceEntanglement,vanleent2022entangling}
-远程纠缠方案常见两类：单光子方案依赖稳定的相位参考与长时间相干干涉，链路相位噪声会直接压低可见度；双光子方案通过中继站两光子干涉与部分 BSM 宣告成功，更关注两臂光子的时频/偏振不可区分性，对绝对相位稳定性的要求相对更低。本文采用双光子方案以贴合长光纤与实地部署条件，其结构示意见图~\ref{fig:single_vs_two_photon}。
+远程纠缠方案常见两类：单光子方案依赖稳定的相位参考与长时间相干干涉，链路相位噪声会直接压低可见度；双光子方案通过中继站两光子干涉与部分 BSM 宣告成功，更关注两臂光子的时频/偏振不可区分性，对绝对相位稳定性的要求相对更低。考虑到长光纤链路和实地部署条件，本研究选取双光子方案，其机理示意见图~\ref{fig:single_vs_two_photon}。
 
 \begin{figure}[htbp]
   \centering
@@ -111,8 +111,7 @@
   \label{fig:single_vs_two_photon}
 \end{figure}
 
-
-从链路建模角度看，上述每一环节都可能把“理想的量子态映射”转化为可观测的退化：原子态制备与腔增强发射会决定光子波包的时间包络与谱线结构；QFC 会引入转换损耗与泵浦相关的噪声光子背景；长光纤传输会带来损耗、偏振漂移与时间抖动；中继站干涉对两光子不可区分性极为敏感，而探测器暗计数与电子学门宽会进一步影响假宣告概率。\cite{Ikuta2018PolarizationInsensitiveQFC,vanleent2022entangling,Zhou2023QuantumNetworkNoise} 因此，要让仿真对实验具有指导意义，端到端模型需要能够把这些物理过程与可调参数统一映射到“宣告统计与后验态质量”上。\cite{Reiserer2022CavityEnhancedNetworkNodes,Zhou2023QuantumNetworkNoise}
+图~\ref{fig:single_vs_two_photon} 用于说明本研究选择双光子宣告方案的物理依据：远程纠缠建立的关键约束集中在两臂光子的不可区分性以及中继站的 BSM 判据上。具体到所研究的量子接口，端到端链路还需要把原子--光子纠缠制备、QFC、电信光纤传输和中继站探测统一到同一物理边界内，如图~\ref{fig:link_overview} 所示。
 
 
 \begin{figure}[htbp]
@@ -122,7 +121,7 @@
 \label{fig:link_overview}
 \end{figure}
 
-后续建模按图~\ref{fig:link_overview}所示链路分段，将噪声/误差映射到具体物理过程与实验可调旋钮上。\cite{Zhou2023QuantumNetworkNoise} 例如，源端部分需要描述原子态制备、腔增强发射效率以及光子波包的时间包络；QFC 段需要刻画转换效率、附加损耗与泵浦相关背景光子，并结合滤波与时间门宽反映信噪比的变化；光纤传播段需要纳入损耗、偏振漂移与可能的到达时间抖动；中继站干涉与 BSM 则需要把模式失配与不可区分性转化为投影可见度与后验态退化；探测与电子学后处理需要包含探测效率、暗计数与抖动对假宣告率的影响。\cite{Ikuta2018PolarizationInsensitiveQFC,vanleent2022entangling,Zhou2023QuantumNetworkNoise} 只有当这些因素在同一端到端框架中被统一处理，仿真结果才可以直接用于判断“在给定距离与器件水平下，应该优先改进哪一段、如何选择滤波带宽与符合窗口、以及哪些误差源将首先成为主导瓶颈”。\cite{Reiserer2022CavityEnhancedNetworkNodes}
+后续建模按图~\ref{fig:link_overview} 所示链路分段，将噪声归并到源端发射与波包整形、QFC 及光纤传输、中继站干涉与探测三类物理阶段，并进一步映射到实验可调旋钮上。\cite{Ikuta2018PolarizationInsensitiveQFC,vanleent2022entangling,Zhou2023QuantumNetworkNoise} 这样既保留了端到端链路中最关键的物理边界，也为第 3 章的实现流程图和第 4 章的误差预算提供了统一的对象划分。\cite{Reiserer2022CavityEnhancedNetworkNodes,Zhou2023QuantumNetworkNoise}
 
 从国际研究脉络看，上述关键环节已被若干实验逐步打通。\cite{vanleent2020longdistance,vanleent2022entangling,zhou2024longlived} 与此同时，把光镊阵列与光学腔结合以实现可多路复用的网络寄存器，也使“单通信接口”与“可扩展原子寄存器”的对接更具体。\cite{Hartung2024QuantumNetworkRegisterTweezerCavity} 因而选择该链路进行建模，有利于把仿真输出直接对应到已有或近期可实现的实验链路参数上。\cite{Covey2023QuantumNetworksNeutralAtomNodes}
 

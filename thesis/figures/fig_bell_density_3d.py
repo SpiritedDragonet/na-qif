@@ -22,6 +22,7 @@ DEFAULT_DENSITY_JSON = (
 
 
 def _set_style() -> None:
+    # 在多分图布局下仍保持较大字号，避免缩放后难以辨认。
     mpl.rcParams.update(
         {
             "font.family": "sans-serif",
@@ -35,11 +36,11 @@ def _set_style() -> None:
                 "DejaVu Sans",
             ],
             "axes.unicode_minus": False,
-            "font.size": 11.8,
-            "axes.titlesize": 12.6,
-            "axes.labelsize": 11.8,
-            "xtick.labelsize": 10.8,
-            "ytick.labelsize": 10.8,
+            "font.size": 13.2,
+            "axes.titlesize": 14.2,
+            "axes.labelsize": 13.0,
+            "xtick.labelsize": 11.8,
+            "ytick.labelsize": 11.8,
             "savefig.bbox": "tight",
             "savefig.pad_inches": 0.03,
         }
@@ -74,6 +75,7 @@ def _load_bell_matrix_map(payload: dict[str, Any], real_key: str, imag_key: str)
 
 
 def _soft_diverging_cmap() -> LinearSegmentedColormap:
+    # 负值蓝、零附近近白、正值柔和黄。
     return LinearSegmentedColormap.from_list(
         "blue_white_yellow",
         ["#2F6FA3", "#F8FAFD", "#F4D35E"],
@@ -82,16 +84,17 @@ def _soft_diverging_cmap() -> LinearSegmentedColormap:
 
 
 def _panel_label(ax: plt.Axes, label: str) -> None:
-    ax.text(
+    text_fn = getattr(ax, "text2D", ax.text)
+    text_fn(
         0.01,
         0.99,
         label,
         transform=ax.transAxes,
         ha="left",
         va="top",
-        fontsize=12.6,
+        fontsize=14.8,
         fontweight="bold",
-        bbox={"facecolor": "white", "alpha": 0.84, "edgecolor": "none", "pad": 1.4},
+        bbox={"facecolor": "white", "alpha": 0.84, "edgecolor": "none", "pad": 1.7},
     )
 
 
@@ -102,8 +105,8 @@ def _annotate_matrix(ax: plt.Axes, mat: np.ndarray, vmax: float) -> None:
             value = float(mat[i, j])
             if abs(value) < threshold:
                 continue
-            color = "white" if abs(value) > 0.52 * vmax else "#111111"
-            ax.text(j, i, f"{value:+.2f}", ha="center", va="center", fontsize=9.7, color=color)
+            color = "white" if abs(value) > 0.55 * vmax else "#111111"
+            ax.text(j, i, f"{value:+.2f}", ha="center", va="center", fontsize=10.5, color=color)
 
 
 def _plot_heatmap(
@@ -115,22 +118,83 @@ def _plot_heatmap(
 ) -> None:
     labels = [r"$|00\rangle$", r"$|01\rangle$", r"$|10\rangle$", r"$|11\rangle$"]
     ax.imshow(component, cmap=cmap, vmin=-vmax, vmax=vmax, origin="upper", aspect="equal")
-    ax.set_title(title, pad=5.5)
+    ax.set_title(title, pad=6.0)
     ax.set_xticks(range(4), labels, rotation=19, ha="right")
     ax.set_yticks(range(4), labels)
     ax.set_xlabel("ket", labelpad=6.0, loc="right")
-    ax.set_ylabel("bra", labelpad=8.0, loc="top")
+    ax.set_ylabel("bra", labelpad=6.0, loc="top")
     ax.set_xticks(np.arange(-0.5, 4.0, 1.0), minor=True)
     ax.set_yticks(np.arange(-0.5, 4.0, 1.0), minor=True)
     ax.grid(which="minor", color="white", linestyle="-", linewidth=1.05, alpha=0.85)
     ax.tick_params(which="minor", bottom=False, left=False)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
     _annotate_matrix(ax, component, vmax)
+
+
+def _plot_bar3d(
+    ax: plt.Axes,
+    component: np.ndarray,
+    title: str,
+    vmax: float,
+    cmap: LinearSegmentedColormap,
+) -> None:
+    n = component.shape[0]
+    xx, yy = np.meshgrid(np.arange(n), np.arange(n), indexing="ij")
+    xpos = (xx.ravel() - 0.28).astype(float)
+    ypos = (yy.ravel() - 0.28).astype(float)
+    dx = np.full_like(xpos, 0.56, dtype=float)
+    dy = np.full_like(ypos, 0.56, dtype=float)
+
+    values = component.ravel().astype(float)
+    zbase = np.where(values >= 0.0, 0.0, values)
+    heights = np.abs(values)
+    norm = Normalize(vmin=-vmax, vmax=vmax)
+    colors = cmap(norm(values))
+
+    ax.bar3d(
+        xpos,
+        ypos,
+        zbase,
+        dx,
+        dy,
+        heights,
+        color=colors,
+        shade=True,
+        alpha=0.96,
+        edgecolor=(0.24, 0.24, 0.24, 0.42),
+        linewidth=0.24,
+        zsort="average",
+    )
+    ax.view_init(elev=24, azim=-54)
+    ax.set_box_aspect((1.0, 1.0, 0.78))
+    ax.set_title(title, pad=6.0)
+    ax.set_zlim(-vmax, vmax)
+    ax.set_zticks([-vmax, -0.5 * vmax, 0.0, 0.5 * vmax, vmax])
+
+    labels = [r"$|00\rangle$", r"$|01\rangle$", r"$|10\rangle$", r"$|11\rangle$"]
+    ax.set_xticks(np.arange(n))
+    ax.set_xticklabels(labels, rotation=17, ha="right")
+    ax.set_yticks(np.arange(n))
+    ax.set_yticklabels(labels, rotation=-13, ha="right")
+    ax.set_xlabel("ket", labelpad=6.0)
+    ax.set_ylabel("bra", labelpad=8.0)
+    ax.set_zlabel("", labelpad=6.0)
+    ax.xaxis.set_label_coords(1.02, -0.04)
+    ax.yaxis.set_label_coords(-0.04, 1.02)
+
+    ax.xaxis.pane.set_facecolor((0.965, 0.972, 0.988, 1.0))
+    ax.yaxis.pane.set_facecolor((0.965, 0.972, 0.988, 1.0))
+    ax.zaxis.pane.set_facecolor((0.982, 0.986, 0.995, 1.0))
+    ax.xaxis.pane.set_edgecolor((0.82, 0.85, 0.90, 1.0))
+    ax.yaxis.pane.set_edgecolor((0.82, 0.85, 0.90, 1.0))
+    ax.zaxis.pane.set_edgecolor((0.82, 0.85, 0.90, 1.0))
 
 
 def main() -> None:
     _set_style()
     parser = argparse.ArgumentParser(
-        description="Plot 2D Bell-density heatmaps for raw Psi+/Psi- and ff delta."
+        description="Plot 12-panel density-matrix figure: 2D/3D, real/imag, raw Psi+/Psi- and ff delta."
     )
     parser.add_argument(
         "--density-json",
@@ -180,16 +244,18 @@ def main() -> None:
     ]
     cmap = _soft_diverging_cmap()
 
-    fig = plt.figure(figsize=(11.6, 13.6))
-    gs = fig.add_gridspec(3, 2, wspace=0.18, hspace=0.28)
+    fig = plt.figure(figsize=(24.0, 14.2))
+    gs = fig.add_gridspec(3, 4, wspace=0.20, hspace=0.26)
 
     panel_idx = 0
     for r, (row_name, mat, vmax) in enumerate(rows):
         re_comp = np.real(mat)
         im_comp = np.imag(mat)
         titles = [
-            rf"{row_name}：实部",
-            rf"{row_name}：虚部",
+            rf"{row_name}：实部 2D",
+            rf"{row_name}：实部 3D",
+            rf"{row_name}：虚部 2D",
+            rf"{row_name}：虚部 3D",
         ]
 
         ax = fig.add_subplot(gs[r, 0])
@@ -197,31 +263,42 @@ def main() -> None:
         _panel_label(ax, f"({chr(ord('a') + panel_idx)})")
         panel_idx += 1
 
-        ax = fig.add_subplot(gs[r, 1])
-        _plot_heatmap(ax, im_comp, titles[1], vmax, cmap)
+        ax = fig.add_subplot(gs[r, 1], projection="3d")
+        _plot_bar3d(ax, re_comp, titles[1], vmax, cmap)
         _panel_label(ax, f"({chr(ord('a') + panel_idx)})")
         panel_idx += 1
 
-    fig.subplots_adjust(left=0.075, right=0.885, top=0.93, bottom=0.06, wspace=0.16, hspace=0.23)
+        ax = fig.add_subplot(gs[r, 2])
+        _plot_heatmap(ax, im_comp, titles[2], vmax, cmap)
+        _panel_label(ax, f"({chr(ord('a') + panel_idx)})")
+        panel_idx += 1
+
+        ax = fig.add_subplot(gs[r, 3], projection="3d")
+        _plot_bar3d(ax, im_comp, titles[3], vmax, cmap)
+        _panel_label(ax, f"({chr(ord('a') + panel_idx)})")
+        panel_idx += 1
+
+    # 颜色条右移，避免遮挡最右侧 3D 图纵轴文本。
+    fig.subplots_adjust(left=0.045, right=0.905, top=0.92, bottom=0.072, wspace=0.19, hspace=0.24)
 
     sm_raw = ScalarMappable(norm=Normalize(vmin=-raw_vmax, vmax=raw_vmax), cmap=cmap)
     sm_raw.set_array([])
-    cax_raw = fig.add_axes([0.905, 0.55, 0.022, 0.29])
+    cax_raw = fig.add_axes([0.932, 0.55, 0.020, 0.32])
     cbar_raw = fig.colorbar(sm_raw, cax=cax_raw)
-    cbar_raw.set_label("原始后验态", fontsize=11.6)
-    cbar_raw.ax.tick_params(labelsize=10.4)
+    cbar_raw.set_label("原始矩阵", fontsize=13.0)
+    cbar_raw.ax.tick_params(labelsize=11.2)
 
     sm_delta = ScalarMappable(norm=Normalize(vmin=-delta_vmax, vmax=delta_vmax), cmap=cmap)
     sm_delta.set_array([])
-    cax_delta = fig.add_axes([0.905, 0.16, 0.022, 0.24])
+    cax_delta = fig.add_axes([0.932, 0.14, 0.020, 0.32])
     cbar_delta = fig.colorbar(sm_delta, cax=cax_delta)
-    cbar_delta.set_label(r"$\Delta\rho_{\mathrm{ff}}$", fontsize=11.6)
-    cbar_delta.ax.tick_params(labelsize=10.4)
+    cbar_delta.set_label(r"$\Delta\rho_{\mathrm{ff}}$", fontsize=13.0)
+    cbar_delta.ax.tick_params(labelsize=11.2)
 
     fig.suptitle(
-        "宣告成功 Bell 后验态的二维热图比较",
+        "宣告成功 Bell 后验态：实部/虚部 2D/3D 十二联图对比",
         y=0.965,
-        fontsize=15.2,
+        fontsize=17.0,
         fontweight="bold",
     )
 
@@ -233,3 +310,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
