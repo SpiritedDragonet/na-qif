@@ -1,12 +1,12 @@
 \chapter{量子接口的端到端仿真模型与实现}[End-to-End Simulation Model and Implementation for Quantum Interfaces]
 
-沿用前两章已经建立的时间分箱表示和条件测量框架，所研究链路在这一章被落实为一组可直接进入数值计算的局域空间、局部门和测量 effect。状态侧显式保留四能级原子-腔发射、量子频率转换（quantum frequency conversion，QFC）和有限带宽滤波带来的跨 bin 记忆；光纤传输、分束器干涉以及探测器响应则在测量侧通过对偶映射推回输入端 effect。这一分工保留了会在链上积累相关性的物理过程，也避免把线性光学网络重复写入态端演化 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems}。
+沿用前两章已经建立的时间分箱表示和条件测量框架，所研究链路在这一章被落实为一组可直接进入数值计算的局域空间、局部门和测量侧效应算符。状态侧显式保留四能级原子-腔发射、量子频率转换（QFC）和有限带宽滤波带来的跨分箱记忆；光纤传输、分束器干涉以及探测器响应则在测量侧通过对偶映射推回输入端效应算符。这一分工保留了会在链上积累相关性的物理过程，也避免把线性光学网络重复写入态端演化 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems}。
 
-同一组实验参数在这里同时进入哈密顿量、塌缩通道、QFC 子块、滤波记忆核和中间站探测 effect，并最终汇入宣告成功率、真成功率、假成功率、条件保真度和 CHSH 指标。第三章的任务正是把这一条从物理链路到可观测量的映射关系逐步写清。
+同一组实验参数在这里同时进入哈密顿量、塌缩通道、QFC 子块、滤波记忆核和中间站探测效应算符，并最终汇入宣告成功率、真成功率、假成功率、条件保真度和 CHSH 指标。以下内容将逐步写清这条从物理链路到可观测量的映射关系。
 
 \section{建模对象与局域空间}[Modeled System and Local Hilbert Spaces]
 
-所研究的端到端链路包含两臂单原子-腔节点、780\,nm 到 1517\,nm 的频率转换、两段长光纤传输以及中间站 partial BSM。单原子-腔节点的网络角色与 cavity-QED 接口的一般工作方式，可由单原子网络节点综述和中性原子远程纠缠实验来把握 \cite{ReisererRempe2015CavityNetworks,vanleent2022entangling}。在这个链路里，真正需要显式保留的自由度并不多：原子内部只保留两个存储态、一个光学激发态和一个驱动态；腔场只保留真空、H 偏振单光子和 V 偏振单光子；每个时间 bin 只保留真空、780\,nm 双偏振单光子和 1517\,nm 双偏振单光子；滤波记忆模只保留真空、H 和记忆 V 三个局域态。其余线性损耗、偏振旋转和探测器响应统一并入测量侧 effect。
+所研究的端到端链路包含两臂单原子-腔节点、780\,nm 到 1517\,nm 的频率转换、两段长光纤传输以及中间站部分 BSM。单原子-腔节点的网络角色与腔量子电动力学接口的一般工作方式，可由单原子网络节点综述和中性原子远程纠缠实验来把握 \cite{ReisererRempe2015CavityNetworks,vanleent2022entangling}。在这个链路里，真正需要显式保留的自由度并不多：原子内部只保留两个存储态、一个光学激发态和一个驱动态；腔场只保留真空、H 偏振单光子和 V 偏振单光子；每个时间分箱只保留真空、780\,nm 双偏振单光子和 1517\,nm 双偏振单光子；滤波记忆模只保留真空、H 和记忆 V 三个局域态。其余线性损耗、偏振旋转和探测器响应统一并入测量侧效应算符。
 
 \begin{table}[htbp]
 \centering
@@ -19,31 +19,31 @@
 \midrule
 通信原子 & $\{|0\rangle,|1\rangle,|e\rangle,|u\rangle\}$ & 4 & 存储量子比特、驱动激发与受激发射 \\
 腔内偏振模 & $\{|{\rm vac}\rangle,|H\rangle,|V\rangle\}$ & 3 & 承载原子到输出场的偏振选择性耦合 \\
-时间 bin & $\{|{\rm vac}\rangle,|H_{780}\rangle,|V_{780}\rangle,|H_{1517}\rangle,|V_{1517}\rangle\}$ & 5 & 同时容纳发射阶段的 780\,nm 光子和 QFC 后的电信波段光子 \\
-滤波记忆模 & $\{|{\rm vac}\rangle,|H\rangle,|V\rangle\}_{\rm mem}$ & 3 & 显式记录有限带宽滤波带来的跨 bin 相关 \\
-测量侧 effect 空间 & 由标签嵌入、光纤信道、分束器和四路探测器联合确定 & -- & 负责 partial BSM 的成功模式判定及真假成功分解 \\
+时间分箱 & $\{|{\rm vac}\rangle,|H_{780}\rangle,|V_{780}\rangle,|H_{1517}\rangle,|V_{1517}\rangle\}$ & 5 & 同时容纳发射阶段的 780\,nm 光子和 QFC 后的电信波段光子 \\
+滤波记忆模 & $\{|{\rm vac}\rangle,|H\rangle,|V\rangle\}_{\rm mem}$ & 3 & 显式记录有限带宽滤波带来的跨分箱相关 \\
+测量侧效应算符空间 & 由标签嵌入、光纤信道、分束器和四路探测器联合确定 & -- & 负责部分 BSM 的成功模式判定及真假成功分解 \\
 \bottomrule
 \end{tabular}
 
 \vspace{0.5em}
 \begin{minipage}{0.94\linewidth}
 \footnotesize
-资料来源：根据 cavity-QED 网络节点、time-bin MPS、QFC 和波导/记忆核离散建模的相关工作整理，并结合所研究链路的局域截断方式给出 \cite{ReisererRempe2015CavityNetworks,Pichler2016TimeDelaysMPS,Ikuta2018PolarizationInsensitiveQFC,ArranzRegidor2021WaveguideQED}。
+资料来源：根据腔量子电动力学网络节点、时间分箱 MPS、QFC 和波导/记忆核离散建模的相关工作整理，并结合所研究链路的局域截断方式给出 \cite{ReisererRempe2015CavityNetworks,Pichler2016TimeDelaysMPS,Ikuta2018PolarizationInsensitiveQFC,ArranzRegidor2021WaveguideQED}。
 \end{minipage}
 \end{table}
 
 \begin{figure}[htbp]
 \centering
 \includegraphics{fig_tikz_ch3_effective_dofs}
-\caption{四能级原子-腔接口中显式保留的有效自由度及其主要物理过程。驱动项连接 $|u\rangle$ 与 $|e\rangle$，偏振相关跃迁经腔模耦合进入时间 bin，腔内损耗与自由空间辐射由塌缩通道处理。该图对应后续 4 维原子块、12 维发射体和 5 维时间 bin 的局域建模口径 \cite{JaynesCummings1963,ReisererRempe2015CavityNetworks,vanleent2022entangling}。}
+\caption{四能级原子-腔接口中显式保留的有效自由度及其主要物理过程。驱动项连接 $|u\rangle$ 与 $|e\rangle$，偏振相关跃迁经腔模耦合进入时间分箱，腔内损耗与自由空间辐射由塌缩通道处理。该图对应后续 4 维原子块、12 维发射体和 5 维时间分箱的局域建模口径 \cite{JaynesCummings1963,ReisererRempe2015CavityNetworks,vanleent2022entangling}。}
 \label{fig:ch3_effective_dofs}
 \end{figure}
 
 
 
-5 维时间 bin 和 3 维记忆模的选取还承担了一个实现上的统一作用。若发射阶段只为 780\,nm 模式分配局域空间，QFC 之后就必须在链上改写站点类型；若滤波记忆改用更高维连续模式截断，局部门尺寸和相邻调度都会显著膨胀。当前口径把“波长转换发生在单 bin 内”“滤波记忆在相邻 bin 间传播”这两件事分别落在 5 维时间站点和 3 维记忆模上，链上站点类型始终固定，门序列也因此保持清晰。
+5 维时间分箱和 3 维记忆模的选取还承担了一个实现上的统一作用。若发射阶段只为 780\,nm 模式分配局域空间，QFC 之后就必须在链上改写站点类型；若滤波记忆改用更高维连续模式截断，局部门尺寸和相邻调度都会显著膨胀。当前口径把“波长转换发生在单个时间分箱内”“滤波记忆在相邻分箱间传播”这两件事分别落在 5 维时间站点和 3 维记忆模上，链上站点类型始终固定，门序列也因此保持清晰。
 
-对这组自由度的分工可以概括为两条原则。其一，凡是会在时间链上生成或积累相关性的过程都保留在状态侧，例如发射、QFC 和滤波记忆；其二，线性光学和探测响应通过对偶映射合并到 effect 端。这个安排直接对应代码主路径，也对应 time-bin MPS 处理延迟和记忆核时的常见写法 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems,ArranzRegidor2021WaveguideQED}。
+对这组自由度的分工可以概括为两条原则。其一，凡是会在时间链上生成或积累相关性的过程都保留在状态侧，例如发射、QFC 和滤波记忆；其二，线性光学和探测响应通过对偶映射合并到测量侧效应算符。这个安排直接对应代码主路径，也对应时间分箱 MPS 处理延迟和记忆核时的常见写法 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems,ArranzRegidor2021WaveguideQED}。
 
 \section{发射过程的离散化模型}[Discrete Model for the Emission Stage]
 
@@ -276,7 +276,7 @@ U_{\mathrm{QFC}}=
 其中 $c_\mu=\cos\theta_\mu$，$s_\mu=\sin\theta_\mu$，转换效率满足 $\eta_\mu=\sin^2\theta_\mu$。相位 $\phi_H$ 和 $\phi_V$ 用来表征两条偏振转换通道的相位失配或补偿。由于这个门完全局限在单 bin 内，QFC 不会额外引入链上长程相互作用；它改变的是同一时间窗内两种波长的振幅分配。
 
 
-QFC 门在这里写成严格局域幺正，还因为链上已经把转换噪声和探测背景分别放到了测量侧统计量中处理。其结果是：态端只负责“理想转换如何重分配量子振幅”，噪声统计则在后续的 effect 组合与真假成功分解中体现。当前处理方式把振幅演化和事件概率拆开处理，同时保持两者都由同一组实验参数控制。
+QFC 门在这里写成严格局域幺正，还因为链上已经把转换噪声和探测背景分别放到了测量侧统计量中处理。其结果是：态端只负责“理想转换如何重分配量子振幅”，噪声统计则在后续的效应算符组合与真假成功分解中体现。当前处理方式把振幅演化和事件概率拆开处理，同时保持两者都由同一组实验参数控制。
 
 
 \subsection{滤波记忆步进门}[Step Gate for Filter Memory]
@@ -388,9 +388,9 @@ p_{\mathrm{memB}} &\rightarrow p_{B_n}+1.
 
 \section{中间站测量模型}[Measurement Model at the Middle Station]
 
-\subsection{光纤信道与探测 effect}[Fiber Channel and Detection Effects]
+\subsection{光纤信道与探测效应算符}[Fiber Channel and Detection Effects]
 
-中间站只显式构造探测端的点击记录和 success effect，并将光纤、分束器和探测器响应统一写入测量侧。线性光学 Bell 态分析在无辅助真空以外资源的条件下存在可判集合限制，因此测量模型只针对 partial BSM 的成功模式集合展开 \cite{CalsamigliaLutkenhaus2001BellAnalyzer}。
+中间站只显式构造探测端的点击记录和成功效应算符，并将光纤、分束器和探测器响应统一写入测量侧。线性光学贝尔态分析在无辅助真空以外资源的条件下存在可判集合限制，因此测量模型只针对部分 BSM 的成功模式集合展开 \cite{CalsamigliaLutkenhaus2001BellAnalyzer}。
 
 对每个偏振 $\mu\in\{H,V\}$，50:50 分束器的输入输出模变换取为
 \begin{equation}
@@ -410,13 +410,13 @@ a_{B\mu}
 \end{bmatrix}.
 \label{eq:bs-mode-map}
 \end{equation}
-其中 $a_{A\mu}$ 和 $a_{B\mu}$ 是进入中间站的两臂模式，$c_{1\mu}$ 和 $c_{2\mu}$ 是分束器后两个输出端口的模式。对单个探测器 $j$，效率为 $\eta_j$、暗计数概率为 $d_j$，则二元 effect 写为
+其中 $a_{A\mu}$ 和 $a_{B\mu}$ 是进入中间站的两臂模式，$c_{1\mu}$ 和 $c_{2\mu}$ 是分束器后两个输出端口的模式。对单个探测器 $j$，效率为 $\eta_j$、暗计数概率为 $d_j$，则二元效应算符写为
 \begin{align}
 E_j^{(1)} &= I-(1-d_j)\left(I-\eta_j n_j\right),\\
 E_j^{(0)} &= I-E_j^{(1)},
 \label{eq:single-detector-effect}
 \end{align}
-四路联合记录 $\mathbf{s}=(s_1,s_2,s_3,s_4)$ 的 effect 为
+四路联合记录 $\mathbf{s}=(s_1,s_2,s_3,s_4)$ 的效应算符为
 \begin{equation}
 E_{\mathbf{s}}=\bigotimes_{j=1}^{4}E_j^{(s_j)}.
 \label{eq:joint-detection-effect}
@@ -428,30 +428,30 @@ E^{(v_{\mathrm{res}})}=
 v_{\mathrm{res}}E_{\mathrm{int}}+(1-v_{\mathrm{res}})E_{\mathrm{dist}},
 \label{eq:vres-mixture}
 \end{equation}
-其中 $v_{\mathrm{res}}\in[0,1]$。这个参数吸收了当前 time-bin 截断中未显式展开的剩余模式失配，并在中间站点击统计里表现为 HOM 可见度和 Bell 投影质量的退化。
+其中 $v_{\mathrm{res}}\in[0,1]$。这个参数吸收了当前时间分箱截断中未显式展开的剩余模式失配，并在中间站点击统计里表现为 HOM 可见度和贝尔态投影质量的退化。
 
-光纤链路通过偏振旋转、偏振相关损耗和相位剖面进入 effect 端。第 $n$ 个时间 bin 的相位写为
+光纤链路通过偏振旋转、偏振相关损耗和相位剖面进入测量侧。第 $n$ 个时间分箱的相位写为
 \begin{equation}
 \phi_n=\phi_{\mathrm{slope}}\!\left(n-\frac{N-1}{2}\right)+\xi_n,
 \label{eq:phase-profile-bin}
 \end{equation}
-其中 $\xi_n\sim\mathcal{N}(0,\sigma_\phi^2)$。线性相位斜率 $\phi_{\mathrm{slope}}$ 描述系统性时序相位偏置，$\sigma_\phi$ 描述随机相位噪声。偏振旋转和损耗以 Jones 矩阵及其 Kraus 扩展进入测量信道，和探测器响应一道在 effect 端处理。
+其中 $\xi_n\sim\mathcal{N}(0,\sigma_\phi^2)$。线性相位斜率 $\phi_{\mathrm{slope}}$ 描述系统性时序相位偏置，$\sigma_\phi$ 描述随机相位噪声。偏振旋转和损耗以 Jones 矩阵及其 Kraus 扩展进入测量信道，和探测器响应一道在测量侧处理。
 
 \begin{figure}[htbp]
 \centering
 \includegraphics{fig_tikz_ch3_effect_pushback}
-\caption{中间站测量侧的 effect 推回关系。探测端先构造点击记录 $F_m$，再经光纤信道和分束器的对偶映射推回输入端，得到用于收缩的 $E_m^{\mathrm{in}}$。这一路径保留了损耗、偏振旋转和探测器响应，又避免在态端重复施加线性光学网络。该处理与开放系统中的对偶信道表述一致 \cite{Kraus1983StatesEffectsOperations,Lindblad1976Semigroups,GoriniKossakowskiSudarshan1976}。}
+\caption{中间站测量侧的效应算符推回关系。探测端先构造点击记录 $F_m$，再经光纤信道和分束器的对偶映射推回输入端，得到用于收缩的 $E_m^{\mathrm{in}}$。这一路径保留了损耗、偏振旋转和探测器响应，又避免在态端重复施加线性光学网络。该处理与开放系统中的对偶信道表述一致 \cite{Kraus1983StatesEffectsOperations,Lindblad1976Semigroups,GoriniKossakowskiSudarshan1976}。}
 \label{fig:ch3_effect_pushback}
 \end{figure}
 
-\subsection{effect 推回与成功判据}[Effect Pushback and Success Criteria]
+\subsection{效应算符推回与成功判据}[Effect Pushback and Success Criteria]
 
-测量侧的核心步骤是把探测端定义的记录 effect 推回输入端。对任意信道 $\Lambda(\rho)=\sum_k K_k\rho K_k^\dagger$，其对偶映射为
+测量侧的核心步骤是把探测端定义的记录效应算符推回输入端。对任意信道 $\Lambda(\rho)=\sum_k K_k\rho K_k^\dagger$，其对偶映射为
 \begin{equation}
 \Lambda^\dagger(E)=\sum_k K_k^\dagger E K_k.
 \label{eq:channel-adjoint}
 \end{equation}
-光纤、分束器和探测器响应都通过式 \eqref{eq:channel-adjoint} 并入输入端 effect。分束器部分最直接的写法是
+光纤、分束器和探测器响应都通过式 \eqref{eq:channel-adjoint} 并入输入端效应算符。分束器部分最直接的写法是
 \begin{equation}
 E\leftarrow U_{\mathrm{BS}}^\dagger E U_{\mathrm{BS}}.
 \label{eq:bs-adjoint}
@@ -464,7 +464,7 @@ E_m^{\mathrm{in}} &= \Phi^\dagger(F_m),\\
 \end{align}
 其中 $\mathcal{V}(\rho)=V\rho V^\dagger$ 表示等距嵌入，$\mathcal{L}$ 表示损耗信道，$\mathcal{M}_{\mathrm{det}}$ 表示探测器响应信道。
 
-概率不变性可以写成显式链式表达。设输入态位于 $\mathcal{H}_{\mathrm{in}}$，探测端记录 $m$ 的 effect 为 $F_m$。若先经等距嵌入
+概率不变性可以写成显式链式表达。设输入态位于 $\mathcal{H}_{\mathrm{in}}$，探测端记录 $m$ 的效应算符为 $F_m$。若先经等距嵌入
 \begin{align}
 V&:\mathcal{H}_{\mathrm{in}}\rightarrow \mathcal{H}_{\mathrm{emb}},\\
 V^\dagger V&=I_{\mathrm{in}},
@@ -482,9 +482,9 @@ p_m
 &=\mathrm{Tr}\!\left[\rho\,V^\dagger\!\left(\sum_{\alpha}K_\alpha^\dagger F_m K_\alpha\right)V\right].
 \label{eq:pushback-probability}
 \end{align}
-式 \eqref{eq:pushback-probability} 说明，非方阵嵌入和带损耗 Kraus 通道不会破坏记录概率的精确性；近似只会来自有限时间窗、有限模式数和残余可分辨性等物理截断，而不来自 pushback 公式本身。
+式 \eqref{eq:pushback-probability} 说明，非方阵嵌入和带损耗 Kraus 通道不会破坏记录概率的精确性；近似只会来自有限时间窗、有限模式数和残余可分辨性等物理截断，而不来自推回公式本身。
 
-探测记录还需要继续分解为真成功、背景辅助的假成功和暗计数辅助的假成功。记录 effect 的分解写为
+探测记录还需要继续分解为真成功、背景辅助的假成功和暗计数辅助的假成功。记录效应算符的分解写为
 \begin{equation}
 F_m=F_m^{\mathrm{true}}+F_m^{\mathrm{bg}}+F_m^{\mathrm{dark}},
 \label{eq:record-effect-decomp}
@@ -504,7 +504,7 @@ p_{\mathrm{true}\mid m}
 \label{eq:true-posterior-record}
 \end{equation}
 
-对所研究的 partial BSM，成功事件集合记为 $\mathcal{S}$。进入中间站枚举层的输入态记为 $\rho$，则核心统计量定义为
+对所研究的部分 BSM，成功事件集合记为 $\mathcal{S}$。进入中间站枚举层的输入态记为 $\rho$，则核心统计量定义为
 \begin{align}
 p_s &= \sum_{m\in\mathcal{S}} \mathrm{Tr}(E_m\rho),\\
 p_t &= \sum_{m\in\mathcal{S}} \mathrm{Tr}(E_m^{\mathrm{true}}\rho),\\
@@ -512,15 +512,15 @@ p_f &= p_s-p_t,\\
 p_{t|11} &= \frac{p_t}{p_{11}},
 \label{eq:core-metrics-ch3}
 \end{align}
-其中 $p_s$ 是宣告成功率，$p_t$ 是真成功率，$p_f$ 是假成功率，$p_{t|11}$ 是在双臂各到达一个光子的条件下的真成功率，$p_{11}$ 表示两臂各到达一个光子的事件概率。第四章中的保真度、Bell 标签概率和 CHSH 指标都将建立在这组输入端 effect 和条件事件权重之上。
+其中 $p_s$ 是宣告成功率，$p_t$ 是真成功率，$p_f$ 是假成功率，$p_{t|11}$ 是在双臂各到达一个光子的条件下的真成功率，$p_{11}$ 表示两臂各到达一个光子的事件概率。第四章中的保真度、贝尔标签概率和 CHSH 指标都将建立在这组输入端效应算符和条件事件权重之上。
 
 
-按 Bell 标签对成功记录继续分组后，还可以得到用于保真度和 CHSH 计算的条件原子态。若 $\mathcal{S}_\lambda\subseteq\mathcal{S}$ 表示标签为 $\lambda$ 的成功记录子集，则对应的条件事件权重为
+按贝尔标签对成功记录继续分组后，还可以得到用于保真度和 CHSH 计算的条件原子态。若 $\mathcal{S}_\lambda\subseteq\mathcal{S}$ 表示标签为 $\lambda$ 的成功记录子集，则对应的条件事件权重为
 \begin{equation}
 p_\lambda=\sum_{m\in\mathcal{S}_\lambda}\mathrm{Tr}(E_m\rho),
 \label{eq:bell-label-weight}
 \end{equation}
-其后验态由同一组记录在原子自由度上的条件化收缩给出。第四章中汇报的 Bell 标签占比、条件保真度和 CHSH 指标都建立在这一层分组之上，因此这一组输入端 effect 既是成功率计算的对象，也是态质量评估的入口。
+其后验态由同一组记录在原子自由度上的条件化收缩给出。第四章中汇报的贝尔标签占比、条件保真度和 CHSH 指标都建立在这一层分组之上，因此这一组输入端效应算符既是成功率计算的对象，也是态质量评估的入口。
 
 
 \section{数值口径与模型边界}[Numerical Conventions and Model Boundaries]
@@ -533,7 +533,7 @@ p_\lambda=\sum_{m\in\mathcal{S}_\lambda}\mathrm{Tr}(E_m\rho),
 
 \subsection{复杂度与误差来源}[Computational Cost and Error Sources]
 
-当前参数范围内，主耗时通常集中在测量侧的 effect 枚举和收缩，发射、QFC 和滤波记忆阶段的开销次之。窗口大小为 $W$、总时间 bin 数为 $N$、键维相关单次收缩成本记为 $C(\chi)$ 时，主导项可写为
+当前参数范围内，主耗时通常集中在测量侧的效应算符枚举和收缩，发射、QFC 和滤波记忆阶段的开销次之。窗口大小为 $W$、总时间分箱数为 $N$、键维相关单次收缩成本记为 $C(\chi)$ 时，主导项可写为
 \begin{equation}
 T_{\rm enum}\propto O\!\left(N\cdot W\cdot C(\chi)\right).
 \label{eq:enum-leading-cost}
@@ -550,10 +550,10 @@ T_{\text{总用时}}=T_{\text{物理链路}}+T_{\text{探测阶段}}+T_{\text{�
 \rho_{\rm phy}=\frac{T_{\text{物理链路}}}{T_{\text{总用时}}},
 \label{eq:dominant-ratio}
 \end{equation}
-即可判断优化优先级。若 $\rho_{\rm enum}$ 占优，计算资源更应优先投向 effect 枚举与收缩；若 $\rho_{\rm phy}$ 占优，才有必要继续压缩态端局部门或交换调度。
+即可判断优化优先级。若 $\rho_{\rm enum}$ 占优，计算资源更应优先投向效应算符枚举与收缩；若 $\rho_{\rm phy}$ 占优，才有必要继续压缩态端局部门或交换调度。
 
 
-effect 端处理还有一个明确边界：它依赖于光纤、分束器和探测器可以在当前问题里写成与态端主链独立串联的线性信道。若某个器件会在传播过程中引入新的长程时间相关，或者需要显式保留额外的频谱模式，那么该器件就需要回到状态链中显式建模，而不能仅通过推回公式吸收到测量侧。当前链路中的滤波记忆之所以保留在状态侧，原因正在于它会在相邻乃至跨多个 bin 之间传播相关。
+测量侧处理还有一个明确边界：它依赖于光纤、分束器和探测器可以在当前问题里写成与态端主链独立串联的线性信道。若某个器件会在传播过程中引入新的长程时间相关，或者需要显式保留额外的频谱模式，那么该器件就需要回到状态链中显式建模，而不能仅通过推回公式吸收到测量侧。当前链路中的滤波记忆之所以保留在状态侧，原因正在于它会在相邻乃至跨多个时间分箱之间传播相关。
 
 
 \begin{table}[htbp]
@@ -566,35 +566,32 @@ effect 端处理还有一个明确边界：它依赖于光纤、分束器和探�
 环节 & 近似或截断 & 控制参数 & 主要影响 \\
 \midrule
 发射阶段 & 原子取四能级、腔场取单光子三维截断 & $\Delta t$，$\kappa$，$\gamma$，$g$ & 改变波包形状、发射概率和双臂到达事件权重 \\
-时间站点 & 每个时间 bin 取 5 维局域空间 & bin 数 $N$，窗口宽度 $W$ & 限定可追踪的时序分辨率和 late-bin 尾部保留程度 \\
+时间站点 & 每个时间分箱取 5 维局域空间 & 分箱数 $N$，窗口宽度 $W$ & 限定可追踪的时序分辨率和尾部时间分箱保留程度 \\
 QFC & 采用强泵近似下的分束器型局域幺正 & $\eta_H,\eta_V,\phi_H,\phi_V$ & 决定 780\,nm 与 1517\,nm 模式的幅度再分配和相位偏置 \\
-滤波记忆 & 每臂仅保留一个 3 维记忆模 & $\Delta\nu$，$\delta$ & 决定跨 bin 相关、波包重整形和 HOM 可见度退化 \\
-测量侧推回 & 光纤、分束器和探测器均在 effect 端处理 & Jones 参数，PDL，$\eta_j$，$d_j$ & 决定声明记录的概率与真假成功分解 \\
-残余可分辨性 & 未显式展开的模式失配吸收到 $v_{\mathrm{res}}$ & $v_{\mathrm{res}}$ & 直接影响干涉对比度和 Bell 投影质量 \\
+滤波记忆 & 每臂仅保留一个 3 维记忆模 & $\Delta\nu$，$\delta$ & 决定跨分箱相关、波包重整形和 HOM 可见度退化 \\
+测量侧推回 & 光纤、分束器和探测器均在测量侧处理 & Jones 参数，PDL，$\eta_j$，$d_j$ & 决定声明记录的概率与真假成功分解 \\
+残余可分辨性 & 未显式展开的模式失配吸收到 $v_{\mathrm{res}}$ & $v_{\mathrm{res}}$ & 直接影响干涉对比度和贝尔态投影质量 \\
 \bottomrule
 \end{tabular}
 
 \vspace{0.5em}
 \begin{minipage}{0.94\linewidth}
 \footnotesize
-资料来源：根据延迟 time-bin MPS、滤波记忆离散化、QFC 与中间站 partial BSM 的相关文献，并结合所研究链路的实现口径整理 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems,Ikuta2018PolarizationInsensitiveQFC,ArranzRegidor2021WaveguideQED,CalsamigliaLutkenhaus2001BellAnalyzer}。
+资料来源：根据延迟时间分箱 MPS、滤波记忆离散化、QFC 与中间站部分 BSM 的相关文献，并结合所研究链路的实现口径整理 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems,Ikuta2018PolarizationInsensitiveQFC,ArranzRegidor2021WaveguideQED,CalsamigliaLutkenhaus2001BellAnalyzer}。
 \end{minipage}
 \end{table}
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.96\linewidth]{fig_sim_pipeline.pdf}
-\caption{端到端单次任务仿真流程图。图 \ref{fig:link_overview} 所示物理链路在实现中被拆分为状态侧演化和测量侧统计两条流程：前者负责发射 TEBD、QFC、滤波记忆、光纤采样和原子退相干，后者负责到达统计、POVM effect 构造、背景 OR 卷积、成功模式枚举、窗口化抽样和指标汇总。分束器并入测量侧 effect，该双泳道结构与当前仓库的实现路径一致 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems}.}
+\caption{端到端单次任务仿真流程图。图 \ref{fig:link_overview} 所示物理链路在实现中被拆分为状态侧演化和测量侧统计两条流程：前者负责发射 TEBD、QFC、滤波记忆、光纤采样和原子退相干，后者负责到达统计、POVM 效应算符构造、背景事件逻辑或卷积、成功模式枚举、窗口化抽样和指标汇总。分束器并入测量侧效应算符，该双泳道结构与当前仓库的实现路径一致 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems}.}
 \label{fig:sim_pipeline}
 \end{figure}
 图 \ref{fig:single_vs_two_photon} 关注远程纠缠建立的物理机理，图 \ref{fig:sim_pipeline} 则把同一链路翻译为代码中的执行顺序与责任分界，用于说明各模块在数值实现中的输入输出关系。
 
 \section{小结}[Summary]
 
-这一章把前两章已经建立的方法框架落实到所研究的量子接口链路上。原子-腔发射阶段由四能级原子、三维腔场和 5 维时间 bin 的局部门给出；QFC 在单 bin 内完成波长转换；滤波记忆模把有限带宽导致的跨 bin 相关显式保留在链上；中间站的光纤、分束器和探测器响应则通过对偶映射推回输入端 effect，并进一步给出 partial BSM 的成功模式判据以及真假成功分解。由此得到的端到端模型既保留了实验上最关键的物理环节，也保持了和数值实现一一对应的局域结构，为下一章的实验对照、参数扫描和误差预算提供了统一基线。
-
-
-
+这一章把前两章已经建立的方法框架落实到所研究的量子接口链路上。原子-腔发射阶段由四能级原子、三维腔场和 5 维时间分箱的局部门给出；QFC 在单个时间分箱内完成波长转换；滤波记忆模把有限带宽导致的跨分箱相关显式保留在链上；中间站的光纤、分束器和探测器响应则通过对偶映射推回输入端效应算符，并进一步给出部分 BSM 的成功模式判据以及真假成功分解。由此得到的端到端模型既保留了实验上最关键的物理环节，也保持了和数值实现一一对应的局域结构，为下一章的实验对照、参数扫描和误差预算提供了统一基线。
 
 
 

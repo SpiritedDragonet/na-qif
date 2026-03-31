@@ -30,16 +30,16 @@
 \contentsline {section}{\numberline {2.6}小结}{23}{section.2.6}%
 \contentsline {chapter}{\numberline {第3章}量子接口的端到端仿真模型与实现}{25}{chapter.3}%
 \contentsline {section}{\numberline {3.1}建模对象与局域空间}{25}{section.3.1}%
-\contentsline {section}{\numberline {3.2}发射过程的离散化模型}{27}{section.3.2}%
-\contentsline {subsection}{\numberline {3.2.1}四能级原子-腔有效模型}{27}{subsection.3.2.1}%
+\contentsline {section}{\numberline {3.2}发射过程的离散化模型}{26}{section.3.2}%
+\contentsline {subsection}{\numberline {3.2.1}四能级原子-腔有效模型}{26}{subsection.3.2.1}%
 \contentsline {subsection}{\numberline {3.2.2}发射门的局域表示}{29}{subsection.3.2.2}%
 \contentsline {section}{\numberline {3.3}频率转换与滤波记忆模型}{30}{section.3.3}%
 \contentsline {subsection}{\numberline {3.3.1}QFC 局域门}{30}{subsection.3.3.1}%
 \contentsline {subsection}{\numberline {3.3.2}滤波记忆步进门}{31}{subsection.3.3.2}%
 \contentsline {subsection}{\numberline {3.3.3}链布局与相邻调度}{32}{subsection.3.3.3}%
 \contentsline {section}{\numberline {3.4}中间站测量模型}{33}{section.3.4}%
-\contentsline {subsection}{\numberline {3.4.1}光纤信道与探测 effect}{33}{subsection.3.4.1}%
-\contentsline {subsection}{\numberline {3.4.2}effect 推回与成功判据}{34}{subsection.3.4.2}%
+\contentsline {subsection}{\numberline {3.4.1}光纤信道与探测效应算符}{33}{subsection.3.4.1}%
+\contentsline {subsection}{\numberline {3.4.2}效应算符推回与成功判据}{34}{subsection.3.4.2}%
 \contentsline {section}{\numberline {3.5}数值口径与模型边界}{36}{section.3.5}%
 \contentsline {subsection}{\numberline {3.5.1}参数换算与时间口径}{36}{subsection.3.5.1}%
 \contentsline {subsection}{\numberline {3.5.2}复杂度与误差来源}{36}{subsection.3.5.2}%

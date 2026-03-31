@@ -1,6 +1,6 @@
 \chapter{量子接口噪声建模下的保真度损失量化分析}[Quantitative Analysis of Fidelity Loss Under Quantum-Interface Noise Modeling]
 
-本章采用“分层可观测量”的报告框架：先给出可独立标定的中间量，再给出端到端任务量。这样做的核心是把参数识别和性能评估拆开处理，避免把所有误差都压缩到一个末端保真度数字。对应本工作的物理链路，结果解释按“源端发射与波包、链路传输与干涉、BSM 宣告与条件态”三层展开，并在同一统计口径下统一输出成功率、真假成功分量、条件保真度和 CHSH 指标。
+结果按“分层可观测量”的口径组织：先给出可独立标定的中间量，再给出端到端任务量。这样做的核心是把参数识别和性能评估拆开处理，避免把所有误差都压缩到一个末端保真度数字。对应本工作的物理链路，结果解释按“源端发射与波包、链路传输与干涉、BSM 宣告与条件态”三层展开，并在同一统计口径下统一输出成功率、真假成功分量、条件保真度和 CHSH 指标。
 
 \section{实验口径下的参数锚定}[Parameter Anchoring Under Experimental Metrics]
 
@@ -35,7 +35,7 @@ $F_t$ & 真成功口径条件保真度 & 仅以真成功事件构造的条件保
 $p_f=p_{\mathrm{id}}+p_{\mathrm{bg}}$，
 该分解直接对应实验中的误触发来源区分。
 
-为避免“只拟合末端指标”，参数先锚定到文献中可独立测量量，再进入仿真。表 \ref{tab:param-anchor} 给出本章主用锚点；这些量与后续洪-欧-曼德尔干涉（HOM）拟合和误差预算一一对应。其中探测端暗计数参数采用超导纳米线单光子探测器（superconducting nanowire single-photon detector，SNSPD）口径。
+为避免“只拟合末端指标”，参数先锚定到文献中可独立测量量，再进入仿真。表 \ref{tab:param-anchor} 给出本章主用锚点；这些量与后续洪-欧-曼德尔干涉（HOM）拟合和误差预算一一对应。其中探测端暗计数参数采用超导纳米线单光子探测器（SNSPD）口径。
 
 \begin{table}[htbp]
 \centering
@@ -69,7 +69,7 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 \sum_r w_r\,\|y_r^{\mathrm{sim}}(\boldsymbol{\theta})-y_r^{\mathrm{exp}}\|_2^2,
 \label{eq:calibration-objective}
 \end{equation}
-其中 $r$ 依次对应波包、窗口、HOM、BSM 与 Bell 指标层。与一次性端到端拟合相比，式 \eqref{eq:calibration-objective} 可显著降低参数退化，并提供可审计的误差来源。
+其中 $r$ 依次对应波包、窗口、HOM、BSM 与贝尔指标层。与一次性端到端拟合相比，式 \eqref{eq:calibration-objective} 可显著降低参数退化，并提供可审计的误差来源。
 
 \begin{figure}[htbp]
 \centering
@@ -91,12 +91,12 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.98\linewidth]{fig_wavepacket.pdf}
-\caption{双臂波包时域结构与主窗口位置：（a）A 臂原子四能级占据演化；（b）发射后双臂波包；（c）A 臂累计保留率；（d）各阶段总光子概率积分；（e）QFC 后双臂波包；（f）光纤后、入 BS 前波包；（g）BS 后波包；（h）光纤后累计能量捕获。}
+\caption{双臂波包时域结构与主窗口位置：（a）A 臂原子四能级占据演化；（b）发射后双臂波包；（c）A 臂累计保留率；（d）各阶段总光子概率积分；（e）QFC 后双臂波包；（f）光纤后、入分束器前波包；（g）分束器后波包；（h）光纤后累计能量捕获。}
 \label{fig:wavepacket}
 \end{figure}
 \FloatBarrier
 
-图 \ref{fig:wavepacket} 给出了单跑数据中的完整时域链路：主瓣位置、上升沿与尾部衰减在 0--100 ns 观察窗内保持一致；QFC、光纤与 BS 三阶段后，双臂波包幅值按预期逐段下降，阶段积分与累计能量曲线保持同向变化。基线单跑的发射阶段键维序列呈现“入口 3、主体平台 9、出口 3”（$3\!\to\!9\!\to\!3$）的平顶结构，四个主要阶段峰值均在 9 附近且未出现异常尖峰，说明该组结果未出现键维失稳导致的数值伪影。
+图 \ref{fig:wavepacket} 给出了单跑数据中的完整时域链路：主瓣位置、上升沿与尾部衰减在 0--100 ns 观察窗内保持一致；QFC、光纤与分束器三阶段后，双臂波包幅值按预期逐段下降，阶段积分与累计能量曲线保持同向变化。基线单跑的发射阶段键维序列呈现“入口 3、主体平台 9、出口 3”（$3\!\to\!9\!\to\!3$）的平顶结构，四个主要阶段峰值均在 9 附近且未出现异常尖峰，说明该组结果未出现键维失稳导致的数值伪影。
 
 由于该参数组下键维曲线近似常值平台，键维结果统一作为每次单跑输出中的数值一致性检查项。
 
@@ -152,21 +152,21 @@ g^{(2)}(\tau)=b-a\exp\!\left[-\left(\frac{\tau-\tau_0}{\sigma}\right)^2\right]
 
 接下来汇总条件态结构与端到端可用纠缠质量。
 
-前两段联合诊断给出“源端时间结构—窗口筛选—干涉模式”的因果证据链，本节转入任务层汇总：在统一成功判据下同时报告 Bell 条件保真度、CHSH 与速率工作点。图 \ref{fig:chsh} 给出 $S$ 参数趋势；图 \ref{fig:distance} 刻画链路尺度影响；图 \ref{fig:qfc_noise} 把 QFC 端和探测端的器件参数约束统一到同一工作平面；图 \ref{fig:error_budget} 汇总事件预算与质量预算。在两臂等长 $L$ 且单臂衰减系数为 $\alpha_f$ 时，成功率满足
+前两段联合诊断给出“源端时间结构—窗口筛选—干涉模式”的因果证据链，本节转入任务层汇总：在统一成功判据下同时报告贝尔态条件保真度、CHSH 与速率工作点。图 \ref{fig:chsh} 给出 $S$ 参数趋势；图 \ref{fig:distance} 刻画链路尺度影响；图 \ref{fig:qfc_noise} 把 QFC 端和探测端的器件参数约束统一到同一工作平面；图 \ref{fig:error_budget} 汇总事件预算与质量预算。在两臂等长 $L$ 且单臂衰减系数为 $\alpha_f$ 时，成功率满足
 \begin{equation}
 p_s(L)\propto 10^{-\alpha_f L/5},
 \end{equation}
 该关系解释了长链路下“速率先退化、保真度后退化”的常见实验现象。
 
-图 \ref{fig:distance} 与图 \ref{fig:error_budget}(b) 对应两种互补坐标：前者固定物理链路长度，后者固定链路条件并考察参数调节下的 Pareto 前沿。二者联合回答“给定距离能达到什么质量”与“给定质量需付出多少速率”两个工程问题。
+图 \ref{fig:distance} 与图 \ref{fig:error_budget}(b) 对应两种互补坐标：前者固定物理链路长度，后者固定链路条件并考察参数调节下的帕累托前沿。二者联合回答“给定距离能达到什么质量”与“给定质量需付出多少速率”两个工程问题。
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.95\linewidth]{fig_bell_density_3d.pdf}
-\caption{宣告成功条件下 Bell 后验态密度矩阵的十二联图：三行分别对应 raw $\Psi^{+}$、raw $\Psi^{-}$ 与 $\Delta\rho_{\mathrm{ff}}=\rho^{\Psi+}_{\mathrm{ff}}-\rho^{\Psi-}_{\mathrm{ff}}$；每行四列依次为二维实部热图、三维实部柱图、二维虚部热图与三维虚部柱图。}
+\caption{宣告成功条件下贝尔后验态密度矩阵的十二联图：三行分别对应原始 $\Psi^{+}$、原始 $\Psi^{-}$ 与 $\Delta\rho_{\mathrm{ff}}=\rho^{\Psi+}_{\mathrm{ff}}-\rho^{\Psi-}_{\mathrm{ff}}$；每行四列依次为二维实部热图、三维实部柱图、二维虚部热图与三维虚部柱图。}
 \label{fig:bell_density_2d}
 \end{figure}
-图 \ref{fig:bell_density_2d} 在同一页面给出二维数值读数与三维形状直觉：例如图 \ref{fig:bell_density_2d}(a)/(b) 与图 \ref{fig:bell_density_2d}(e)/(f) 分别对应 raw $\Psi^{+}$ 与 raw $\Psi^{-}$ 的实部二维-三维对照，图 \ref{fig:bell_density_2d}(i)--(l) 则展示前馈对齐后的差分项 $\Delta\rho_{\mathrm{ff}}$。整体上，实部主权重集中在 $|01\rangle$ 与 $|10\rangle$ 相关块，且两态间的结构差异在差分图中直接显现；虚部幅值相对较小，但其空间分布仍可用于定位相位相关误差来源。与后续 CHSH 曲线联合解读时，可以同时回答“态结构是否接近目标 Bell 形态”与“非定域关联是否仍可观测”两个问题。
+图 \ref{fig:bell_density_2d} 在同一页面给出二维数值读数与三维形状直觉：例如图 \ref{fig:bell_density_2d}(a)/(b) 与图 \ref{fig:bell_density_2d}(e)/(f) 分别对应原始 $\Psi^{+}$ 与原始 $\Psi^{-}$ 的实部二维-三维对照，图 \ref{fig:bell_density_2d}(i)--(l) 则展示前馈对齐后的差分项 $\Delta\rho_{\mathrm{ff}}$。整体上，实部主权重集中在 $|01\rangle$ 与 $|10\rangle$ 相关块，且两态间的结构差异在差分图中直接显现；虚部幅值相对较小，但其空间分布仍可用于定位相位相关误差来源。与后续 CHSH 曲线联合解读时，可以同时回答“态结构是否接近目标贝尔态”与“非定域关联是否仍可观测”两个问题。
 
 \begin{figure}[htbp]
 \centering
@@ -224,11 +224,11 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \hline
 过程 & 含义 & 时间（s）\\
 \hline
-发射阶段 & 生成原子--光子纠缠并把光子波包写入时间 bin & 6.29 \\
+发射阶段 & 生成原子--光子纠缠并把光子波包写入时间分箱 & 6.29 \\
 QFC+滤波记忆阶段 & 完成频率转换并引入有限带宽记忆/滤波效应 & 5.01 \\
 光纤传播阶段 & 按链路长度施加传输损耗与偏振/时间退化 & 0.04 \\
 退相干阶段 & 等待与存储引入的退相干与相位漂移处理 & 0.59 \\
-探测阶段 & 构建探测端 effect、枚举点击模式并统计宣告事件 & 2108.99 \\
+探测阶段 & 构建探测端效应算符、枚举点击模式并统计宣告事件 & 2108.99 \\
 辅助开销 & 校验、快照、写盘等非核心步骤 & 0.10 \\
 残差 & 未显式记账的零散开销 & 0.18 \\
 总墙钟时间 & 单次任务的总用时 & 2121.20 \\
@@ -243,11 +243,11 @@ $T_{\text{探测阶段}}/T_{\text{总用时}}=99.42\%$，
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=0.95\linewidth]{fig_cost_scaling.pdf}
-\caption{复杂度缩放图：（a）探测阶段耗时随窗口 bin 数增长；（b）总用时代理量随 bin 个数上限增长。}
+\caption{复杂度缩放图：（a）探测阶段耗时随窗口分箱数增长；（b）总用时代理量随分箱个数上限增长。}
 \label{fig:cost_scaling}
 \end{figure}
 \FloatBarrier
-图 \ref{fig:cost_scaling} 给出窗口 bin 上限变化下的探测阶段开销与总用时代理量趋势，用于与第 3 章复杂度分析对应。
+图 \ref{fig:cost_scaling} 给出窗口分箱上限变化下的探测阶段开销与总用时代理量趋势，用于与第 3 章复杂度分析对应。
 
 部署判据因此采用两层规则：先满足硬约束
 \begin{equation}
