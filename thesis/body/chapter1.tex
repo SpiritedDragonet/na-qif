@@ -2,9 +2,9 @@
 
 量子计算以量子态的相干演化与测量统计为核心信息处理机制，在特定问题上展示出不同于经典计算的复杂度潜力。\cite{NielsenChuang2010QCQI,NationalAcademies2019QC,Li2025QIT} 量子算法中的典型例子包括 Shor 算法对整数因数分解与离散对数的多项式时间求解，以及 Grover 算法对无结构搜索的平方根加速。\cite{Shor1994Algorithms,Grover1997QuantumSearch,Li2025QIT} 美国理论物理学家理查德 费曼在1982年提出量子体系难以被经典资源直接模拟的观点，这一观点使量子多体动力学与量子化学等任务成为量子计算的重要牵引方向。\cite{Feynman1982Simulating,Cao2019QuantumChemistry,Li2025QIT} 从更宏观的视角看，量子计算、量子通信与量子测量共同构成量子信息科学的核心版图，其工程化进展与系统化评估已成为当前研究重点。\cite{Li2025QIT}
 
-随着研究从概念验证走向可扩展实现，该领域的评价口径逐步从单次实验是否成功转向系统能否稳定地产生、传输并调用量子资源。\cite{Preskill2018NISQ,NationalAcademies2019QC,Li2025QIT} 在这一语境下，量子接口成为连接物质量子比特与光学信道的关键环节，其性能直接影响远程纠缠的建立速率、成功率与条件态质量。\cite{Reiserer2022CavityEnhancedNetworkNodes,Awschalom2021QuIC,Li2023QNS} 中性原子节点兼具可编程寄存器与光学接口能力，具有较强代表性。\cite{Covey2023QuantumNetworksNeutralAtomNodes,Li2023QNS} 本研究聚焦该类节点的端到端链路，开展可对照实验的建模与误差预算分析，并为后续章节的系统评估指标与仿真结果提供统一起点。
+随着研究从概念验证走向可扩展实现，该领域的评价口径逐步从单次实验是否成功转向系统能否稳定地产生、传输并调用量子资源。\cite{Preskill2018NISQ,NationalAcademies2019QC,Li2025QIT} 在这一语境下，量子接口成为连接物质量子比特与光学信道的关键环节，其性能直接影响远程纠缠的建立速率、成功率与条件态质量。\cite{Reiserer2022CavityEnhancedNetworkNodes,Awschalom2021QuIC,Li2023QNS} 中性原子节点兼具可编程寄存器与光学接口能力，具有较强代表性。\cite{Covey2023QuantumNetworksNeutralAtomNodes,Li2023QNS} 围绕该类节点的端到端链路，有必要开展可对照实验的建模与误差预算分析，并据此建立后续系统评估指标与仿真结果的统一起点。
 
-量子接口可以按任务边界分为远程纠缠产生、态转移/量子存储以及远程门或错误探测三类，示意见图~\ref{fig:interface_tasks}。本文关注远程纠缠产生链路，因为它直接限制分布式纠错与门传送的资源吞吐；其余两类仅作为接口语境背景，不在绪论展开。
+量子接口可以按任务边界分为远程纠缠产生、态转移/量子存储以及远程门或错误探测三类，示意见图~\ref{fig:interface_tasks}。远程纠缠产生链路直接限制分布式纠错与门传送的资源吞吐，因此以下讨论以该类链路为主；其余两类任务主要用于界定量子接口问题的整体语境。
 
 \begin{figure}[htbp]
   \centering
@@ -56,7 +56,7 @@
 从物理实现上看，光子是最自然的远程载体：它与环境耦合弱，易于在光纤或自由空间中长距离传输，并且便于在中继站进行干涉与测量。\cite{kimble2008quantum,Wehner2018QuantumInternetVision} 尤其在电信波段，标准光纤的传输损耗处于较低窗口，使得十公里到百公里尺度的链路预算在工程上更可控。\cite{Wehner2018QuantumInternetVision} 然而，许多高质量物质比特的本征光学跃迁常偏离电信窗口；同时，单光子源的方向性、谱线稳定性以及与光纤单模的耦合效率会直接限制可用链路预算。\cite{Reiserer2022CavityEnhancedNetworkNodes,Awschalom2021QuIC} 这使得腔增强收集、量子频率转换与低噪声探测成为量子接口工程中反复出现的关键技术点。\cite{Ikuta2018PolarizationInsensitiveQFC,vanleent2022entangling}
 
 
-从功能与接口形态出发，量子接口平台可概括为存储型/中继、处理型离子模块、固态缺陷/量子点以及单原子/中性原子四类。该分类强调节点在\u201c存储、处理与接口集成\u201d上的侧重，并用于引出后续的系统级对比，而不直接展开优缺点细节。
+从功能与接口形态出发，量子接口平台可概括为存储型/中继、处理型离子模块、固态缺陷/量子点以及单原子/中性原子四类。
 
 \begin{table}[htbp]
 \centering
@@ -81,13 +81,13 @@
 \end{minipage}
 \end{table}
 
-\section{本文建模的处理中性原子量子接口链路}[Chosen neutral-atom interface link]
+\section{中性原子量子接口链路}[Chosen neutral-atom interface link]
 
 \subsection{链路概述与选型依据}
 
-本文所说的“处理中性原子节点”，指的是节点内部既拥有可编程多比特原子寄存器，也拥有能与光场高效耦合的通信自由度。\cite{Covey2023QuantumNetworksNeutralAtomNodes} 在更工程化的表述下，节点里一部分原子（或一部分受控模式）负责通信：用于产生原子--光子纠缠、接收光子，或把本地量子态映射到飞行光子；另一部分原子负责计算：用于本地门操作、错误检测/纠错与资源管理。\cite{Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
+中性原子节点是指一类以中性原子为载体、既具有可编程多比特原子寄存器、又具有与光场高效耦合通信自由度的量子计算节点或量子中继站。\cite{Covey2023QuantumNetworksNeutralAtomNodes} 在更工程化的表述下，节点里一部分原子（或一部分受控模式）负责通信：用于产生原子--光子纠缠、接收光子，或把本地量子态映射到飞行光子；另一部分原子负责计算：用于本地门操作、错误检测/纠错与资源管理。\cite{Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
 
-即使本文在链路层面只模拟“两端各一个原子”的远程纠缠产生过程，研究对象仍定义为处理中性原子节点的接口层评估；其在模块化/分布式量子计算中的体系结构定位将在本章后文集中展开。\cite{Monroe2014ModularQC,Covey2023QuantumNetworksNeutralAtomNodes,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
+虽然链路层面只模拟“两端各一个原子”的远程纠缠产生过程，研究对象仍是处理中性原子节点的接口层评估；这一链路在模块化与分布式量子计算中的体系结构定位将在后文展开。\cite{Monroe2014ModularQC,Covey2023QuantumNetworksNeutralAtomNodes,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
 
 
 
@@ -100,9 +100,9 @@
 对十公里以上的光纤链路而言，QFC 往往是关键环节：原子天然发射波段（例如 $780\,\mathrm{nm}$）在标准光纤中的损耗较大，而电信波段（$1.5\,\mu\mathrm{m}$ 附近）对应更低损耗窗口。\cite{Ikuta2018PolarizationInsensitiveQFC,vanleent2022entangling} QFC 的任务是把“携带量子态的单光子”从原子波段相干地转换到电信波段（例如 $1517\,\mathrm{nm}$），并尽量抑制由泵浦散射与非线性噪声带来的额外光子背景，从而使单光子能够在十公里到百公里尺度光纤中分发。\cite{Ikuta2018PolarizationInsensitiveQFC,zhou2024longlived}
 
 
-本文链路采用的 $1517\,\mathrm{nm}$ 波段与两臂约 $16\,\mathrm{km}$ 光纤长度具有明确工程依据：$780\,\mathrm{nm}$ 附近光子在标准光纤中的损耗较高，几十公里尺度会使信号衰减到接近暗计数背景；将其相干转换到 $1.5\,\mu\mathrm{m}$ 附近可显著改善链路预算，使“损耗主导”与“噪声主导”两类退化机制在同一距离尺度上都可观测。\cite{Ikuta2018PolarizationInsensitiveQFC,vanleent2022entangling,Zhou2023QuantumNetworkNoise} 同时，$16\,\mathrm{km}$ 量级单程距离对应的往返经典通信时延已达百微秒量级，节点需在等待中继站宣告期间保持相干，这会把存储退相干、相位漂移与时间门宽放大为可量化的保真度损失。\cite{Zhou2023QuantumNetworkNoise,zhou2024longlived} 该距离尺度既能暴露端到端噪声链条，又与城域/近郊光纤基础设施和外场部署条件贴近，适合作为量子接口从实验室走向实地应用的过渡评估尺度。\cite{vanleent2022entangling}
-本研究链路采用中继站双光子干涉与部分 BSM 的宣告型方案。\cite{SimonIrvine2003RobustLongDistanceEntanglement,vanleent2022entangling}
-远程纠缠方案常见两类：单光子方案依赖稳定的相位参考与长时间相干干涉，链路相位噪声会直接压低可见度；双光子方案通过中继站两光子干涉与部分 BSM 宣告成功，更关注两臂光子的时频/偏振不可区分性，对绝对相位稳定性的要求相对更低。考虑到长光纤链路和实地部署条件，本研究选取双光子方案，其机理示意见图~\ref{fig:single_vs_two_photon}。
+所研究链路采用的 $1517\,\mathrm{nm}$ 波段与两臂约 $16\,\mathrm{km}$ 光纤长度具有明确工程依据：$780\,\mathrm{nm}$ 附近光子在标准光纤中的损耗较高，几十公里尺度会使信号衰减到接近暗计数背景；将其相干转换到 $1.5\,\mu\mathrm{m}$ 附近可显著改善链路预算，使“损耗主导”与“噪声主导”两类退化机制在同一距离尺度上都可观测。\cite{Ikuta2018PolarizationInsensitiveQFC,vanleent2022entangling,Zhou2023QuantumNetworkNoise} 同时，$16\,\mathrm{km}$ 量级单程距离对应的往返经典通信时延已达百微秒量级，节点需在等待中继站宣告期间保持相干，这会把存储退相干、相位漂移与时间门宽放大为可量化的保真度损失。\cite{Zhou2023QuantumNetworkNoise,zhou2024longlived} 该距离尺度既能暴露端到端噪声链条，又与城域/近郊光纤基础设施和外场部署条件贴近，适合作为量子接口从实验室走向实地应用的过渡评估尺度。\cite{vanleent2022entangling}
+对应的远程纠缠建立采用中继站双光子干涉与部分 BSM 的宣告型方案。\cite{SimonIrvine2003RobustLongDistanceEntanglement,vanleent2022entangling}
+远程纠缠方案常见两类：单光子方案依赖稳定的相位参考与长时间相干干涉，链路相位噪声会直接压低可见度；双光子方案通过中继站两光子干涉与部分 BSM 宣告成功，更关注两臂光子的时频/偏振不可区分性，对绝对相位稳定性的要求相对更低。考虑到长光纤链路和实地部署条件，该链路选取双光子方案，其机理示意见图~\ref{fig:single_vs_two_photon}。
 
 \begin{figure}[htbp]
   \centering
@@ -111,7 +111,7 @@
   \label{fig:single_vs_two_photon}
 \end{figure}
 
-图~\ref{fig:single_vs_two_photon} 用于说明本研究选择双光子宣告方案的物理依据：远程纠缠建立的关键约束集中在两臂光子的不可区分性以及中继站的 BSM 判据上。具体到所研究的量子接口，端到端链路还需要把原子--光子纠缠制备、QFC、电信光纤传输和中继站探测统一到同一物理边界内，如图~\ref{fig:link_overview} 所示。
+图~\ref{fig:single_vs_two_photon} 给出了双光子宣告方案的物理依据：远程纠缠建立的关键约束集中在两臂光子的不可区分性以及中继站的 BSM 判据上。具体到所研究的量子接口，端到端链路还需要把原子--光子纠缠制备、QFC、电信光纤传输和中继站探测统一到同一物理边界内，如图~\ref{fig:link_overview} 所示。
 
 
 \begin{figure}[htbp]
@@ -138,7 +138,7 @@
 从链路层面看，宣告成功率的“乘法塌缩”往往最先显现。\cite{Reiserer2022CavityEnhancedNetworkNodes,vanleent2022entangling} 远程纠缠建立的宣告成功概率通常由多项因素连乘决定：源端发射概率、收集与耦合效率、QFC 转换效率、光纤传输、干涉/BSM 成功率以及探测效率等。\cite{Azuma2023QuantumRepeatersReview} 当两端链路都要同时成功时，总成功率会随这些因子的连乘而快速下降，距离增加还会带来额外光纤损耗。\cite{vanleent2022entangling}
 
 
-在实验数据处理上，本文沿用前文“远程纠缠方案与系统级评价指标”小节给出的口径，仍以宣告事件率、投影事件占比及其对应后验态质量作为主线统计量；这些量可与点击直方图、符合窗口扫描和后续原子测量结果直接对应。\cite{BarrettKok2005EfficientHighFidelityQC,vanleent2022entangling,Zhou2023QuantumNetworkNoise}
+在实验数据处理上，宣告事件率、投影事件占比及其对应后验态质量仍作为主线统计量；这些量可与点击直方图、符合窗口扫描和后续原子测量结果直接对应。\cite{BarrettKok2005EfficientHighFidelityQC,vanleent2022entangling,Zhou2023QuantumNetworkNoise}
 
 
 距离还会引入时间代价：在宣告型方案中，节点需要等待中继站的测量结果返回，才能知道这一轮尝试是否成功。\cite{Azuma2023QuantumRepeatersReview,Zhou2023QuantumNetworkNoise} 距离越长，往返时间越长，尝试频率就越难无限提高；若节点需要在等待期间保持量子态，相干寿命与相位稳定又会把等待时间进一步转化为保真度损失。\cite{zhou2024longlived} 因而成功率不足与等待导致的退相干常常同时出现，需要在系统级共同权衡。\cite{Zhou2023QuantumNetworkNoise}
@@ -183,10 +183,10 @@
 基于上述背景，围绕处理中性原子节点的端到端量子接口建模有必要进一步展开，研究对象为“原子--光子发射、QFC、电信光纤传播、中继站两光子干涉与部分 BSM”组成的宣告型远程纠缠链路。\cite{vanleent2020longdistance,vanleent2022entangling,Ikuta2018PolarizationInsensitiveQFC} 研究重点是在多种现实非理想因素并存条件下，链路的宣告统计、远程纠缠建立率与条件态质量如何随参数变化，并分析不同距离与工作点下的主导误差源，为实验调参提供可量化依据。
 
 
-围绕这一目标，本文的具体工作主要包括以下几个方面：（1）构建两端原子—光子发射、量子频率转换、光纤传播、中继站干涉与探测的端到端模型，并在模型中显式纳入主要损耗与噪声通道；（2）在统一的时间分箱时序框架下，实现宣告型测量的条件化更新与后验态计算，并输出可与实验直接对照的符合计数与贝尔态投影统计；（3）在参数扫描基础上给出误差预算视角的可解释分析，识别不同距离与工作点下的主导退化机制与关键可调旋钮。\cite{Zhou2023QuantumNetworkNoise,Reiserer2022CavityEnhancedNetworkNodes}
+围绕这一目标，具体工作主要包括以下几个方面：（1）构建两端原子—光子发射、量子频率转换、光纤传播、中继站干涉与探测的端到端模型，并在模型中显式纳入主要损耗与噪声通道；（2）在统一的时间分箱时序框架下，实现宣告型测量的条件化更新与后验态计算，并输出可与实验直接对照的符合计数与贝尔态投影统计；（3）在参数扫描基础上给出误差预算视角的可解释分析，识别不同距离与工作点下的主导退化机制与关键可调旋钮。\cite{Zhou2023QuantumNetworkNoise,Reiserer2022CavityEnhancedNetworkNodes}
 
 
-在研究边界上，这一研究所回答的问题是“处理中性原子节点的通信接口在模块化/分布式量子计算背景下能够提供怎样的远程纠缠资源”。\cite{Covey2023QuantumNetworksNeutralAtomNodes,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms} 因此，讨论聚焦接口链路本身的端到端建模与误差预算，而不在绪论阶段展开更大规模网络协议的全部细节。\cite{Wehner2018QuantumInternetVision}
+研究边界可概括为：处理中性原子节点的通信接口在模块化与分布式量子计算背景下能够提供怎样的远程纠缠资源。\cite{Covey2023QuantumNetworksNeutralAtomNodes,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms} 以下分析围绕接口链路本身的端到端建模与误差预算展开，并以此作为后续讨论的范围。\cite{Wehner2018QuantumInternetVision}
 
 
 这种取舍使得数值复杂度主要集中在链路级物理过程及其统计后果上，仿真输出可以直接与实验的点击事件、符合统计和原子读出结果对照；同时也为后续把链路模型嵌入更高层的资源调度、复用与容错分析留下接口。\cite{Azuma2023QuantumRepeatersReview,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
