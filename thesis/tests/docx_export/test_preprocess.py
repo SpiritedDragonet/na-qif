@@ -38,3 +38,16 @@ class PreprocessTests(unittest.TestCase):
             self.assertNotIn(r"\\allowbreak", converted)
             self.assertNotIn(r"\\Bigl", converted)
 
+    def test_rewrites_bare_pdf_name_when_png_exists_in_figures(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "figures").mkdir()
+            (root / "figures" / "diagram.png").write_bytes(b"png")
+            (root / "thesis.tex").write_text(r"\\includegraphics{diagram.pdf}", encoding="utf-8")
+            (root / "硕士毕业论文参考模板.docx").write_bytes(b"docx")
+            config = ExportConfig.from_root(root)
+
+            workspace = prepare_pandoc_workspace(config)
+
+            converted = (workspace / "thesis.tex").read_text(encoding="utf-8")
+            self.assertIn("{diagram.png}", converted)

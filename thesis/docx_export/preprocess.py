@@ -50,7 +50,10 @@ def normalize_latex_for_pandoc(text: str, root: Path) -> str:
         if not figure_path.lower().endswith(".pdf"):
             return match.group(0)
         png_path = figure_path[:-4] + ".png"
-        if (root / png_path).exists():
+        candidates = [root / png_path]
+        if not Path(png_path).is_absolute():
+            candidates.append(root / "figures" / png_path)
+        if any(candidate.exists() for candidate in candidates):
             return f"{prefix}{png_path}{suffix}"
         return match.group(0)
 
@@ -85,4 +88,3 @@ def prepare_pandoc_workspace(config: ExportConfig) -> Path:
         tex_file.write_text(normalize_latex_for_pandoc(text, work_dir), encoding="utf-8")
 
     return work_dir
-
