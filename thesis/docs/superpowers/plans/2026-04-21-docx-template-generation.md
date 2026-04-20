@@ -598,7 +598,7 @@ Expected: CLI tests pass.
 
 - [ ] **Step 7: Run the full unit test suite**
 
-Run: `python -m unittest discover -s tests -p "test_*.py" -v`
+Run: `python -m unittest discover -s tests -t . -p "test_*.py" -v`
 
 Expected: all DOCX export tests pass.
 
@@ -621,7 +621,7 @@ Expected: commit contains CLI and Makefile integration.
 
 - [ ] **Step 1: Run the unit test suite**
 
-Run: `python -m unittest discover -s tests -p "test_*.py" -v`
+Run: `python -m unittest discover -s tests -t . -p "test_*.py" -v`
 
 Expected: all DOCX export tests pass.
 
@@ -693,7 +693,7 @@ Expected: follow-up list is concrete enough to become the next implementation pl
 Run:
 
 ```powershell
-python -m unittest discover -s tests -p "test_*.py" -v
+python -m unittest discover -s tests -t . -p "test_*.py" -v
 python -m docx_export --root . --output thesis_word_final.docx
 ```
 

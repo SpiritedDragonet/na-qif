@@ -86,3 +86,8 @@ help:
 	@echo "make help     - œ‘ æ∞Ô÷˙"
 	
 .PHONY: all clean cleanall build rebuild 
+
+word:
+	python -m docx_export --root . --output thesis_word_final.docx
+
+.PHONY: word

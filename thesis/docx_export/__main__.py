@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 from .config import ExportConfig
+from .pandoc_runner import run_pandoc
+from .postprocess import merge_with_template
+from .preprocess import prepare_pandoc_workspace
+from .validate import validate_docx
+from .word_refresh import refresh_fields
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -26,13 +30,24 @@ def main(argv: list[str] | None = None) -> int:
         template=args.template,
         refresh_fields=args.refresh_fields,
     )
-    print(f"root: {config.root}")
-    print(f"main: {config.main_tex}")
-    print(f"template: {config.template_docx}")
-    print(f"output: {config.output_docx}")
+    if args.validate_only:
+        report = validate_docx(config.output_docx)
+        print(report.format())
+        return 0 if report.ok else 2
+
+    workspace = prepare_pandoc_workspace(config)
+    intermediate_docx = run_pandoc(config, workspace)
+    merge_with_template(config.template_docx, intermediate_docx, config.output_docx)
+    report = validate_docx(config.output_docx)
+    print(report.format())
+    if not report.ok:
+        return 2
+
+    refresh_status = refresh_fields(config.output_docx, config.refresh_fields)
+    if refresh_status.attempted:
+        print(refresh_status.message)
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
-
