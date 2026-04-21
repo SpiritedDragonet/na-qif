@@ -3,7 +3,9 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from docx_export.openxml import DocxPackage
+from xml.etree import ElementTree as ET
+
+from docx_export.openxml import DocxPackage, MC_NS, W15_NS, W_NS, qn
 
 
 class OpenXmlPackageTests(unittest.TestCase):
@@ -28,3 +30,14 @@ class OpenXmlPackageTests(unittest.TestCase):
 
         self.assertEqual(package.next_relationship_id(rels_xml), "rId4")
 
+    def test_set_xml_part_repairs_undeclared_ignorable_prefixes(self):
+        root = ET.Element(qn(W_NS, "numbering"), {qn(MC_NS, "Ignorable"): "w14 w15"})
+        ET.SubElement(root, qn(W_NS, "abstractNum"), {qn(W_NS, "abstractNumId"): "1", qn(W15_NS, "restartNumberingAfterBreak"): "0"})
+        package = DocxPackage(parts={})
+
+        package.set_xml_part("word/numbering.xml", root)
+
+        xml = package.parts["word/numbering.xml"].decode("utf-8")
+        self.assertIn("xmlns:w15=", xml)
+        self.assertIn('mc:Ignorable="w15"', xml)
+        self.assertNotIn("w14 w15", xml)

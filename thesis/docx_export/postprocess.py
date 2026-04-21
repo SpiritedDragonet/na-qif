@@ -34,8 +34,9 @@ def merge_with_template(template_docx: str | Path, intermediate_docx: str | Path
     if template_body is None or intermediate_body is None:
         raise ValueError("Both template and intermediate DOCX must contain word/document.xml bodies")
 
-    relationship_map = _copy_media_relationships(template, intermediate)
+    relationship_map = _copy_document_relationships(template, intermediate, intermediate_document)
     _rewrite_relationship_ids(intermediate_document, relationship_map)
+    _merge_numbering_definitions(template, intermediate, intermediate_document)
 
     template_section = _extract_section_properties(template_body)
     template_body.clear()
@@ -61,7 +62,11 @@ def _extract_section_properties(body: ET.Element) -> ET.Element | None:
     return None
 
 
-def _copy_media_relationships(template: DocxPackage, intermediate: DocxPackage) -> dict[str, str]:
+def _copy_document_relationships(
+    template: DocxPackage,
+    intermediate: DocxPackage,
+    intermediate_document: ET.Element,
+) -> dict[str, str]:
     if DOCUMENT_RELS in template.parts:
         template_rels = ET.fromstring(template.parts[DOCUMENT_RELS])
     else:
@@ -71,33 +76,54 @@ def _copy_media_relationships(template: DocxPackage, intermediate: DocxPackage) 
         return {}
 
     source_rels = ET.fromstring(intermediate.parts[DOCUMENT_RELS])
+    used_relationships = _used_relationship_ids(intermediate_document)
     mapping: dict[str, str] = {}
     next_index = 1
     for relationship in relationship_elements(source_rels):
         target = relationship.attrib.get("Target", "")
         rel_id = relationship.attrib.get("Id", "")
         rel_type = relationship.attrib.get("Type", IMAGE_REL_TYPE)
-        if not rel_id or not target.startswith("media/"):
+        if not rel_id or rel_id not in used_relationships:
             continue
-        source_part = f"word/{target}"
-        if source_part not in intermediate.parts:
-            continue
-        suffix = Path(target).suffix
-        while f"word/media/exported_{next_index}{suffix}" in template.parts:
+        new_target = target
+        if target.startswith("media/"):
+            source_part = f"word/{target}"
+            if source_part not in intermediate.parts:
+                continue
+            suffix = Path(target).suffix
+            while f"word/media/exported_{next_index}{suffix}" in template.parts:
+                next_index += 1
+            new_target = f"media/exported_{next_index}{suffix}"
             next_index += 1
-        new_target = f"media/exported_{next_index}{suffix}"
-        next_index += 1
+            template.parts[f"word/{new_target}"] = intermediate.parts[source_part]
         new_id = _next_relationship_id(template_rels)
-        template.parts[f"word/{new_target}"] = intermediate.parts[source_part]
+        attrs = {
+            "Id": new_id,
+            "Type": rel_type,
+            "Target": new_target,
+        }
+        if "TargetMode" in relationship.attrib:
+            attrs["TargetMode"] = relationship.attrib["TargetMode"]
         ET.SubElement(
             template_rels,
             qn(PKG_REL_NS, "Relationship"),
-            {"Id": new_id, "Type": rel_type, "Target": new_target},
+            attrs,
         )
         mapping[rel_id] = new_id
 
     template.set_xml_part(DOCUMENT_RELS, template_rels)
     return mapping
+
+
+def _used_relationship_ids(document: ET.Element) -> set[str]:
+    relationship_attrs = {qn(R_NS, "embed"), qn(R_NS, "link"), qn(R_NS, "id")}
+    used: set[str] = set()
+    for element in document.iter():
+        for attr in relationship_attrs:
+            value = element.attrib.get(attr)
+            if value:
+                used.add(value)
+    return used
 
 
 def _next_relationship_id(root: ET.Element) -> str:
@@ -249,3 +275,66 @@ def _ensure_media_content_types(package: DocxPackage) -> None:
             )
     package.set_xml_part(CONTENT_TYPES, root)
 
+
+def _merge_numbering_definitions(
+    template: DocxPackage,
+    intermediate: DocxPackage,
+    intermediate_document: ET.Element,
+) -> None:
+    numbering_part = "word/numbering.xml"
+    if numbering_part not in template.parts or numbering_part not in intermediate.parts:
+        return
+    used_num_ids = {
+        element.attrib.get(qn(W_NS, "val"))
+        for element in intermediate_document.iter(qn(W_NS, "numId"))
+        if element.attrib.get(qn(W_NS, "val"))
+    }
+    if not used_num_ids:
+        return
+
+    template_numbering = template.xml_part(numbering_part)
+    source_numbering = intermediate.xml_part(numbering_part)
+    template_num_ids = {
+        element.attrib.get(qn(W_NS, "numId"))
+        for element in template_numbering.iter(qn(W_NS, "num"))
+    }
+    template_abstract_ids = {
+        element.attrib.get(qn(W_NS, "abstractNumId"))
+        for element in template_numbering.iter(qn(W_NS, "abstractNum"))
+    }
+    source_nums = {
+        element.attrib.get(qn(W_NS, "numId")): element
+        for element in source_numbering.iter(qn(W_NS, "num"))
+    }
+    source_abstracts = {
+        element.attrib.get(qn(W_NS, "abstractNumId")): element
+        for element in source_numbering.iter(qn(W_NS, "abstractNum"))
+    }
+
+    changed = False
+    for num_id in sorted(used_num_ids, key=_numeric_sort_key):
+        if num_id in template_num_ids:
+            continue
+        source_num = source_nums.get(num_id)
+        if source_num is None:
+            continue
+        abstract_ref = source_num.find(qn(W_NS, "abstractNumId"))
+        abstract_id = abstract_ref.attrib.get(qn(W_NS, "val")) if abstract_ref is not None else None
+        if abstract_id and abstract_id not in template_abstract_ids:
+            source_abstract = source_abstracts.get(abstract_id)
+            if source_abstract is not None:
+                template_numbering.append(copy.deepcopy(source_abstract))
+                template_abstract_ids.add(abstract_id)
+                changed = True
+        template_numbering.append(copy.deepcopy(source_num))
+        template_num_ids.add(num_id)
+        changed = True
+
+    if changed:
+        template.set_xml_part(numbering_part, template_numbering)
+
+
+def _numeric_sort_key(value: str | None) -> tuple[int, str]:
+    if value and value.isdigit():
+        return int(value), value
+    return 10**9, value or ""
