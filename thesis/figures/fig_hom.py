@@ -5,7 +5,7 @@ import pathlib
 import matplotlib.pyplot as plt
 import numpy as np
 
-EXPORT_PNG = False
+EXPORT_PNG = True
 
 
 def _default_summary_csv() -> pathlib.Path:

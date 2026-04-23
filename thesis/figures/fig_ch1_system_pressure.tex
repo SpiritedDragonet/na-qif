@@ -1,0 +1,77 @@
+\definecolor{chBlue}{RGB}{64,124,190}
+\definecolor{chTeal}{RGB}{53,151,143}
+\definecolor{chAmber}{RGB}{211,146,50}
+\definecolor{chPurple}{RGB}{126,91,166}
+\definecolor{chInk}{RGB}{37,43,52}
+\definecolor{chGray}{RGB}{118,128,140}
+\definecolor{chSoft}{RGB}{247,249,252}
+\begin{tikzpicture}[
+  >=Latex,
+  font=\footnotesize,
+  pressure/.style={
+    rounded corners=4pt,
+    align=center,
+    minimum width=3.65cm,
+    minimum height=1.05cm,
+    inner sep=3pt,
+    line width=0.6pt
+  },
+  arrow/.style={-{Latex[length=1.8mm]}, line width=0.62pt, draw=chGray}
+]
+
+\node[
+  ellipse,
+  draw=chInk!65,
+  fill=chInk!5,
+  minimum width=2.55cm,
+  minimum height=0.9cm,
+  align=center,
+  text=chInk
+] (core) at (0,0) {规模化\\运行压力};
+
+\node[pressure, draw=chBlue!70!black, fill=chBlue!8] (scale) at (-3.2,1.55)
+  {\begin{tabular}{@{}c@{}}
+   物理比特扩容\\[-1pt]
+   {\scriptsize\color{chInk!78} 控制扇出 · 串扰矩阵}\\[-1pt]
+   {\scriptsize\color{chInk!64} 通道数进入同一误差预算}
+   \end{tabular}};
+
+\node[pressure, draw=chTeal!70!black, fill=chTeal!8] (readout) at (3.2,1.55)
+  {\begin{tabular}{@{}c@{}}
+   并行读出反馈\\[-1pt]
+   {\scriptsize\color{chInk!78} 综合征吞吐 · 译码延迟}\\[-1pt]
+   {\scriptsize\color{chInk!64} 读出、译码和反馈锁定轮次}
+   \end{tabular}};
+
+\node[pressure, draw=chAmber!70!black, fill=chAmber!8] (runtime) at (-3.2,-1.55)
+  {\begin{tabular}{@{}c@{}}
+   长时纠错运行\\[-1pt]
+   {\scriptsize\color{chInk!78} 逻辑寿命预算 · 相关噪声}\\[-1pt]
+   {\scriptsize\color{chInk!64} 深度受轮次错误率和尾部限制}
+   \end{tabular}};
+
+\node[pressure, draw=chPurple!70!black, fill=chPurple!8] (calib) at (3.2,-1.55)
+  {\begin{tabular}{@{}c@{}}
+   标定闭环维护\\[-1pt]
+   {\scriptsize\color{chInk!78} 漂移追踪 · 重标定周期}\\[-1pt]
+   {\scriptsize\color{chInk!64} 控制模型持续吸收漂移回写}
+   \end{tabular}};
+
+\node[
+  draw=chInk!45,
+  fill=chSoft,
+  rounded corners=4pt,
+  align=center,
+  minimum width=4.95cm,
+  minimum height=0.55cm,
+  font=\footnotesize,
+  text=chInk
+] (out) at (0,-2.88) {模块化处理节点 + 可宣告光子互连};
+
+\draw[arrow] (core.150) -- (scale.south east);
+\draw[arrow] (core.30) -- (readout.south west);
+\draw[arrow] (core.210) -- (runtime.north east);
+\draw[arrow] (core.330) -- (calib.north west);
+\draw[arrow, draw=chInk!60] (core.south) -- (out.north);
+
+\end{tikzpicture}

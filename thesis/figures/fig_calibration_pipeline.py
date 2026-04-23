@@ -133,6 +133,7 @@ def main() -> None:
     ax.set_title("分层标定中的装置环节、观测量与参数锚定", fontsize=12.3, fontweight="bold")
     out_path = pathlib.Path(__file__).with_suffix(".pdf")
     fig.savefig(out_path, dpi=220)
+    fig.savefig(out_path.with_suffix(".png"), dpi=220)
     plt.close(fig)
 
 

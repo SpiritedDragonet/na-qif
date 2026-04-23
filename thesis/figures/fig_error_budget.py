@@ -8,7 +8,7 @@ from matplotlib.colors import Normalize
 
 from plot_style import frame_all_axes
 
-EXPORT_PNG = False
+EXPORT_PNG = True
 
 
 def _default_summary_dir() -> pathlib.Path:

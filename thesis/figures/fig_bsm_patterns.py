@@ -6,7 +6,7 @@ import pathlib
 import matplotlib.pyplot as plt
 import numpy as np
 
-EXPORT_PNG = False
+EXPORT_PNG = True
 from matplotlib.colors import LinearSegmentedColormap
 
 

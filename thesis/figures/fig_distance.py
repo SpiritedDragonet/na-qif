@@ -6,7 +6,7 @@ import pathlib
 import matplotlib.pyplot as plt
 import numpy as np
 
-EXPORT_PNG = False
+EXPORT_PNG = True
 
 
 def _repo_root() -> pathlib.Path:

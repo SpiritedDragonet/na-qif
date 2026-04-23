@@ -9,10 +9,30 @@ def main() -> None:
     tex_path = figures_dir / f"{name}.tex"
     if not tex_path.exists():
         raise FileNotFoundError(f"TikZ source not found: {tex_path}")
+
     build_dir = figures_dir / f"_{name}_build"
     if build_dir.exists():
         shutil.rmtree(build_dir)
     build_dir.mkdir(parents=True, exist_ok=True)
+
+    wrapper_path = build_dir / f"{name}.tex"
+    wrapper_path.write_text(
+        "\n".join(
+            [
+                "% !TeX program = xelatex",
+                r"\documentclass[tikz,10pt]{standalone}",
+                r"\usepackage[UTF8,scheme=plain,fontset=windows]{ctex}",
+                r"\usepackage{tikz}",
+                r"\usetikzlibrary{arrows.meta,calc,positioning,shapes.geometric}",
+                r"\begin{document}",
+                rf"\input{{../{name}.tex}}",
+                r"\end{document}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
     subprocess.run(
         [
             "xelatex",
@@ -20,15 +40,27 @@ def main() -> None:
             "-halt-on-error",
             "-output-directory",
             str(build_dir),
-            str(tex_path),
+            str(wrapper_path),
         ],
         check=True,
     )
+
     pdf_src = build_dir / f"{name}.pdf"
     pdf_dst = figures_dir / f"{name}.pdf"
     if not pdf_src.exists():
         raise FileNotFoundError(f"Expected PDF not found: {pdf_src}")
     shutil.copy2(pdf_src, pdf_dst)
+
+    subprocess.run(
+        [
+            "pdftoppm",
+            "-png",
+            "-singlefile",
+            str(pdf_dst),
+            str(figures_dir / name),
+        ],
+        check=True,
+    )
     shutil.rmtree(build_dir)
 
 

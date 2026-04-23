@@ -328,6 +328,7 @@ def main() -> None:
     out_path = pathlib.Path(__file__).with_suffix(".pdf")
     frame_all_axes(fig)
     fig.savefig(out_path, dpi=220)
+    fig.savefig(out_path.with_suffix(".png"), dpi=220)
     plt.close(fig)
 
     print(

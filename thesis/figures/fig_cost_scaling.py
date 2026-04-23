@@ -7,7 +7,7 @@ import numpy as np
 
 from plot_style import frame_all_axes
 
-EXPORT_PNG = False
+EXPORT_PNG = True
 
 DEFAULT_SUMMARY_CSV = (
     pathlib.Path(__file__).resolve().parents[1]
