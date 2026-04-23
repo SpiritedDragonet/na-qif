@@ -63,3 +63,11 @@ thesis/_upstream/
 nul
 # Claude
 CLAUDE.md
+
+# Local agent instructions
+thesis/AGENTS.md
+thesis/AGENT.md
+
+# Local scratch output, except saved figure-generation prompts
+thesis/.codex_tmp/*
+!thesis/.codex_tmp/*_prompt_cn.txt
