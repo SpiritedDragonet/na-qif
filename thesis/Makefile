@@ -88,6 +88,6 @@ help:
 .PHONY: all clean cleanall build rebuild 
 
 word:
-	python -m docx_export --root . --output thesis_word_final.docx
+	python -m docx_export --root . --refresh-fields
 
 .PHONY: word

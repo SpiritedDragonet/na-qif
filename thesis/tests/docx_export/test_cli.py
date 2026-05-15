@@ -33,8 +33,9 @@ class CliTests(unittest.TestCase):
                 calls.append("pandoc")
                 return root / "intermediate.docx"
 
-            def merge(template, intermediate, output):
+            def merge(template, intermediate, output, source_root=None):
                 calls.append("merge")
+                self.assertEqual(source_root, root.resolve())
 
             def validate(output):
                 calls.append("validate")
@@ -54,6 +55,48 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertEqual(calls, ["prepare", "pandoc", "merge", "validate", "refresh"])
+
+    def test_normalizes_and_revalidates_after_successful_word_refresh(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "thesis.tex").write_text("% thesis", encoding="utf-8")
+            (root / "硕士毕业论文参考模板.docx").write_bytes(b"docx")
+            calls = []
+
+            def prepare(config):
+                calls.append("prepare")
+                return root / "workspace"
+
+            def pandoc(config, workspace):
+                calls.append("pandoc")
+                return root / "intermediate.docx"
+
+            def merge(template, intermediate, output, source_root=None):
+                calls.append("merge")
+
+            def validate(output):
+                calls.append("validate")
+                return passing_report()
+
+            def refresh(output, enabled):
+                calls.append("refresh")
+                return SimpleNamespace(attempted=True, succeeded=True, message="refreshed")
+
+            def normalize(output):
+                calls.append("normalize")
+
+            with patch("docx_export.__main__.prepare_pandoc_workspace", side_effect=prepare), patch(
+                "docx_export.__main__.run_pandoc", side_effect=pandoc
+            ), patch("docx_export.__main__.merge_with_template", side_effect=merge), patch(
+                "docx_export.__main__.validate_docx", side_effect=validate
+            ), patch("docx_export.__main__.refresh_fields", side_effect=refresh), patch(
+                "docx_export.__main__.normalize_docx_styles", side_effect=normalize
+            ):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    code = main(["--root", str(root), "--refresh-fields"])
+
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, ["prepare", "pandoc", "merge", "validate", "refresh", "normalize", "validate"])
 
     def test_returns_2_when_validation_fails(self):
         with tempfile.TemporaryDirectory() as tmp:

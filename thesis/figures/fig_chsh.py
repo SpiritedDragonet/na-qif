@@ -7,6 +7,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 EXPORT_PNG = True
+EXP_CHSH_LENGTH_KM = 6.0
+EXP_CHSH_S = 2.244
+EXP_CHSH_S_ERR = 0.063
 
 
 def _repo_root() -> pathlib.Path:
@@ -162,6 +165,10 @@ def _load_run_stats(runs_csv: pathlib.Path, lengths: np.ndarray) -> dict[str, np
     return result
 
 
+def _nearest_index(x_target: float, x: np.ndarray) -> int:
+    return int(np.argmin(np.abs(np.asarray(x, dtype=float) - float(x_target))))
+
+
 def _panel_label(ax: plt.Axes, label: str) -> None:
     ax.text(
         -0.12,
@@ -257,6 +264,23 @@ def main() -> None:
     )
     ci_label = "95% 置信区间（成功运行）" if use_cond else "95% 置信区间（运行级）"
     ax0.plot(length_km, s_mean_plot, color="#0f766e", lw=2.4, marker="o", ms=3.8, label=s_label)
+    exp_idx = None
+    if float(np.min(length_km)) <= EXP_CHSH_LENGTH_KM <= float(np.max(length_km)):
+        exp_idx = _nearest_index(EXP_CHSH_LENGTH_KM, length_km)
+        ax0.errorbar(
+            [EXP_CHSH_LENGTH_KM],
+            [EXP_CHSH_S],
+            yerr=[EXP_CHSH_S_ERR],
+            fmt="D",
+            ms=5.0,
+            mfc="white",
+            mec="#111827",
+            ecolor="#111827",
+            elinewidth=0.9,
+            capsize=2.0,
+            zorder=7,
+            label="公开实验 $S$（6 km）",
+        )
     ax0.fill_between(
         length_km,
         s_mean_plot - s_ci95,
@@ -271,6 +295,9 @@ def main() -> None:
     ax0.set_ylabel("CHSH $S$")
     y_min = float(np.min(s_mean_plot - s_ci95))
     y_max = float(np.max(s_mean_plot + s_ci95))
+    if exp_idx is not None:
+        y_min = min(y_min, EXP_CHSH_S - EXP_CHSH_S_ERR)
+        y_max = max(y_max, EXP_CHSH_S + EXP_CHSH_S_ERR)
     pad = max(0.06 * (y_max - y_min), 0.06)
     # 强制把经典界 S=2 保持在可见范围内，避免成功条件口径下曲线整体>2时把参考线裁掉。
     classical_margin = max(0.10 * max(y_max - y_min, 0.3), 0.06)
@@ -302,7 +329,7 @@ def main() -> None:
             color="#0f766e",
         )
 
-    violate_label = r"$\Pr(S>2\mid \mathrm{succ})$" if use_cond else r"$\Pr(S>2)$"
+    violate_label = r"成功样本 $S>2$ 比例" if use_cond else r"$S>2$ 比例"
     ax1.plot(length_km, violate_pct, color="#1d4ed8", lw=2.2, marker="s", ms=3.5, label=violate_label)
     ax1.set_xlabel("总光纤长度 (km)")
     ax1.set_ylabel("违背概率 (%)", color="#1e40af")

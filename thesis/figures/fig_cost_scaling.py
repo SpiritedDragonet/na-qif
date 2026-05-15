@@ -111,7 +111,7 @@ def main() -> None:
     fig, ax = plt.subplots(figsize=(7.8, 4.6))
     fig.subplots_adjust(left=0.11, right=0.98, bottom=0.15, top=0.90)
 
-    palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
+    palette = ["#3B6EA8", "#E69F00", "#00897B", "#6F58C9"]
     markers = ["o", "s", "^", "D"]
 
     ordered_dts = _ordered_dt_list(list(data_by_dt.keys()))
@@ -120,14 +120,14 @@ def main() -> None:
         ax.plot(
             series["n_bins"],
             series["runtime"],
-            label=f"dt={dt_ns:g} ns",
+            label=rf"$\Delta t={dt_ns:g}$ ns",
             color=palette[idx % len(palette)],
             marker=markers[idx % len(markers)],
             lw=2.2,
             ms=6.0,
         )
 
-    ax.set_xlabel("时间 bin 数")
+    ax.set_xlabel("时间仓数量")
     ax.set_ylabel("单次仿真用时 (s)")
     ax.set_title("不同时间步长下的单次仿真用时")
     ax.legend(loc="best", frameon=False, title="时间步长")

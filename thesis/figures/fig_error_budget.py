@@ -132,14 +132,18 @@ def main() -> None:
     )
 
     fig = plt.figure(figsize=(10.9, 4.0))
-    ax_a = fig.add_axes([0.075, 0.20, 0.44, 0.64])
-    ax_b = fig.add_axes([0.61, 0.20, 0.28, 0.64])
-    cax_b = fig.add_axes([0.905, 0.20, 0.015, 0.64])
+    ax_a = fig.add_axes([0.075, 0.20, 0.43, 0.64])
+    ax_b = fig.add_axes([0.64, 0.20, 0.27, 0.64])
+    cax_b = fig.add_axes([0.927, 0.20, 0.015, 0.64])
 
     rate_true_1e4 = 1e4 * rate_true
     rate_false_1e4 = 1e4 * rate_false
-    ax_a.plot(theta, rate_true_1e4, color="#1f77b4", lw=2.1, marker="o", ms=3.8, label=r"$p_t$")
-    ax_a.plot(theta, rate_false_1e4, color="#d62728", lw=1.8, marker="s", ms=3.4, label=r"$p_f$")
+    color_true = "#3B6EA8"
+    color_false = "#B5533C"
+    color_fidelity = "#00897B"
+    color_false_frac = "#8C564B"
+    ax_a.plot(theta, rate_true_1e4, color=color_true, lw=2.1, marker="o", ms=3.8, label=r"$p_t$")
+    ax_a.plot(theta, rate_false_1e4, color=color_false, lw=1.8, marker="s", ms=3.4, label=r"$p_f$")
     ax_a.axvline(theta_rec, color="#9ca3af", lw=1.0, ls="--")
     _set_numeric_xlim(ax_a, theta, pad_fraction=0.04)
     ax_a.set_xlabel(r"$\theta_{\mathrm{BS}}$ (rad)")
@@ -147,9 +151,21 @@ def main() -> None:
     ax_a.set_title("角度扫描下的事件预算")
     ax_a_r = ax_a.twinx()
     ax_a_r.grid(False)
-    ax_a_r.plot(theta, fidelity, color="#047857", lw=2.0, marker="o", ms=3.5, label=r"$F_t$")
-    ax_a_r.plot(theta, false_pct, color="#991b1b", lw=1.55, marker="s", ms=3.0, ls="--", label="假成功占比")
-    ax_a_r.set_ylabel(r"$F_t$ 与假成功占比 (%)")
+    ax_a_r.plot(theta, fidelity, color=color_fidelity, lw=2.0, marker="o", ms=3.5, label=r"$F_t$")
+    ax_a_r.plot(theta, false_pct, color=color_false_frac, lw=1.55, marker="s", ms=3.0, ls="--", label="假成功占比")
+    ax_a_r.set_ylabel("")
+    ax_a_r.tick_params(axis="y", pad=2)
+    ax_a.text(
+        0.70,
+        0.055,
+        r"右轴：$F_t$ 与假成功占比",
+        transform=ax_a.transAxes,
+        fontsize=7.3,
+        color="#374151",
+        ha="left",
+        va="bottom",
+        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.78, "pad": 1.6},
+    )
     ax_a.text(
         theta_rec + 0.01,
         ax_a.get_ylim()[0] + 0.82 * (ax_a.get_ylim()[1] - ax_a.get_ylim()[0]),
@@ -158,10 +174,10 @@ def main() -> None:
         color="#4b5563",
     )
     handles_a = [
-        plt.Line2D([], [], color="#1f77b4", marker="o", lw=2.1, ms=3.8, label=r"$p_t$"),
-        plt.Line2D([], [], color="#d62728", marker="s", lw=1.8, ms=3.4, label=r"$p_f$"),
-        plt.Line2D([], [], color="#047857", marker="o", lw=2.0, ms=3.5, label=r"$F_t$"),
-        plt.Line2D([], [], color="#991b1b", marker="s", lw=1.55, ms=3.0, ls="--", label="假成功占比"),
+        plt.Line2D([], [], color=color_true, marker="o", lw=2.1, ms=3.8, label=r"$p_t$"),
+        plt.Line2D([], [], color=color_false, marker="s", lw=1.8, ms=3.4, label=r"$p_f$"),
+        plt.Line2D([], [], color=color_fidelity, marker="o", lw=2.0, ms=3.5, label=r"$F_t$"),
+        plt.Line2D([], [], color=color_false_frac, marker="s", lw=1.55, ms=3.0, ls="--", label="假成功占比"),
     ]
     ax_a.legend(handles=handles_a, frameon=False, fontsize=8.2, loc="upper left")
     _panel_label(ax_a, "(a)")
@@ -171,7 +187,7 @@ def main() -> None:
         fidelity,
         c=false_pct,
         s=52.0,
-        cmap="Reds",
+        cmap="cividis",
         norm=Normalize(
             vmin=float(np.min(false_pct)),
             vmax=float(np.max(false_pct) if np.max(false_pct) > np.min(false_pct) else np.min(false_pct) + 1.0),
@@ -185,7 +201,7 @@ def main() -> None:
         [fidelity[idx_rec]],
         marker="*",
         s=135,
-        color="#f59e0b",
+        color="#E6C34A",
         edgecolors="#111827",
         linewidths=0.7,
         zorder=3,

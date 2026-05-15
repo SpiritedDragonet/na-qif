@@ -201,6 +201,19 @@ def _smooth_field(field: np.ndarray, sigma: float, blend: float) -> np.ndarray:
     return out
 
 
+def _label_baseline(ax: plt.Axes, x: float, y: float, text: str, dx: float, dy: float) -> None:
+    ax.annotate(
+        text,
+        xy=(x, y),
+        xytext=(x + dx, y + dy),
+        textcoords="data",
+        arrowprops={"arrowstyle": "->", "color": "#374151", "lw": 0.75},
+        fontsize=7.2,
+        color="#111827",
+        bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.86, "pad": 1.8},
+    )
+
+
 def _panel_label(ax: plt.Axes, label: str) -> None:
     ax.text(
         -0.12,
@@ -283,7 +296,7 @@ def main() -> None:
         origin="lower",
         aspect="auto",
         extent=extent,
-        cmap="magma",
+        cmap="cividis",
         interpolation="bicubic",
     )
     cs1 = ax1.contour(
@@ -325,6 +338,24 @@ def main() -> None:
         edgecolors="#1f1f1f",
         linewidths=0.8,
     )
+    eta_span = float(eta_q.max() - eta_q.min())
+    noise_span = float(noise_sd.max() - noise_sd.min())
+    _label_baseline(
+        ax0,
+        DEFAULT_BASELINE_ETA_Q,
+        DEFAULT_BASELINE_NOISE_CPS_PER_MHZ,
+        "实验基线",
+        0.05 * eta_span,
+        0.13 * noise_span,
+    )
+    _label_baseline(
+        ax1,
+        DEFAULT_BASELINE_ETA_Q,
+        DEFAULT_BASELINE_NOISE_CPS_PER_MHZ,
+        "实验基线",
+        0.05 * eta_span,
+        0.13 * noise_span,
+    )
 
     det_extent = [float(eta_det.min()), float(eta_det.max()), float(bg_levels.min()), float(bg_levels.max())]
     im2 = ax2.imshow(
@@ -362,6 +393,14 @@ def main() -> None:
         edgecolors="#1f1f1f",
         linewidths=0.8,
         zorder=5,
+    )
+    _label_baseline(
+        ax2,
+        DEFAULT_BASELINE_ETA_DET,
+        DEFAULT_BASELINE_BG_HZ,
+        "实验基线",
+        -0.18 * float(eta_det.max() - eta_det.min()),
+        0.13 * float(bg_levels.max() - bg_levels.min()),
     )
     _panel_label(ax2, "(c)")
 

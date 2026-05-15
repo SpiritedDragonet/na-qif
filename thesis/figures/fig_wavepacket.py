@@ -317,10 +317,10 @@ def main() -> None:
     ax_h = fig.add_subplot(gs[3, 1], sharex=ax_a)
 
     # (a) 原子四能级（真实导出）
-    ax_a.plot(t_atom, p0, color=PALETTE["atom_0"], label="|0>")
-    ax_a.plot(t_atom, p1, color=PALETTE["atom_1"], label="|1>")
-    ax_a.plot(t_atom, pu, color=PALETTE["atom_u"], label="|u>")
-    ax_a.plot(t_atom, pe, color=PALETTE["atom_e"], label="|e>")
+    ax_a.plot(t_atom, p0, color=PALETTE["atom_0"], label=r"$|0\rangle$")
+    ax_a.plot(t_atom, p1, color=PALETTE["atom_1"], label=r"$|1\rangle$")
+    ax_a.plot(t_atom, pu, color=PALETTE["atom_u"], label=r"$|u\rangle$")
+    ax_a.plot(t_atom, pe, color=PALETTE["atom_e"], label=r"$|e\rangle$")
     ax_a.axvspan(0.0, window_ns, color=PALETTE["window"], alpha=0.08, linewidth=0.0)
     _lock_time_axis(ax_a)
     ax_a.set_ylim(0.0, 1.02)
@@ -360,7 +360,7 @@ def main() -> None:
     ax_b_r.plot(t_ns, drive_b, color=PALETTE["arm_b"], linestyle="--", linewidth=1.8, label="B臂驱动")
     drive_peak = max(float(np.max(drive_a)), float(np.max(drive_b)), 1e-30)
     ax_b_r.set_ylim(0.0, drive_peak * 1.12)
-    ax_b_r.set_ylabel(r"驱动强度 $|\Omega|^2$ (rad$^2$/s$^2$)")
+    ax_b_r.set_ylabel(r"驱动强度 $|\Omega|^2$")
     ax_b_r.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
     ax_b_r.grid(False)
     ax_b_r.spines["top"].set_visible(False)
@@ -372,9 +372,8 @@ def main() -> None:
         0.02,
         0.06,
         (
-            f"时间轴视图（非时间仓索引）：Δt={dt_ns:g} ns/仓；"
-            f"内部时间仓顺序反向，即 bin {n_bins} <-> [{t_start_ns:g},{dt_ns:g}) ns，"
-            f"bin 1 <-> [{t_end_ns - dt_ns:g},{t_end_ns:g}) ns"
+            f"时间仓说明：Δt={dt_ns:g} ns/仓；"
+            "内部时间仓顺序与物理时间反向。"
         ),
         transform=ax_b.transAxes,
         ha="left",

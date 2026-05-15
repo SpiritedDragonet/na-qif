@@ -28,9 +28,9 @@ PATTERN_LABELS = {
 }
 PAIR_ORDER = ("H1+V2", "V1+H2", "H1+V1", "H2+V2")
 BUCKET_STYLE = {
-    "success": {"label": "全部记录权重", "color": "#111827", "lw": 1.8, "ls": "-"},
-    "true": {"label": "真成功权重", "color": "#059669", "lw": 2.0, "ls": "-"},
-    "false": {"label": "假成功权重", "color": "#dc2626", "lw": 1.8, "ls": "--"},
+    "success": {"label": "全部记录权重", "color": "#334155", "lw": 1.8, "ls": "-"},
+    "true": {"label": "真成功权重", "color": "#00897B", "lw": 2.0, "ls": "-"},
+    "false": {"label": "假成功权重", "color": "#B5533C", "lw": 1.8, "ls": "--"},
 }
 
 
@@ -231,9 +231,9 @@ def main() -> None:
     y_true = 100.0 * pattern_components[:, 0]
     y_bg = 100.0 * pattern_components[:, 1]
     y_intrinsic = 100.0 * pattern_components[:, 2]
-    ax0.bar(x, y_true, width=0.72, color="#1f77b4", label="真成功")
-    ax0.bar(x, y_bg, width=0.72, bottom=y_true, color="#f28e2b", label="背景辅助假成功")
-    ax0.bar(x, y_intrinsic, width=0.72, bottom=y_true + y_bg, color="#c44e52", label="内禀暗计数假成功")
+    ax0.bar(x, y_true, width=0.72, color="#3B6EA8", label="真成功")
+    ax0.bar(x, y_bg, width=0.72, bottom=y_true, color="#E69F00", label="背景辅助假成功")
+    ax0.bar(x, y_intrinsic, width=0.72, bottom=y_true + y_bg, color="#B5533C", label="内禀暗计数假成功")
     ax0.set_xticks(x, [PATTERN_LABELS[p] for p in PATTERN_ORDER])
     ax0.set_ylabel("成功记录占比 (%)")
     ax0.set_xlabel("点击模式")
@@ -241,7 +241,7 @@ def main() -> None:
     ax0.legend(frameon=False, fontsize=8.3, loc="upper right")
 
     masked_reliability = np.ma.masked_invalid(reliability)
-    cmap = LinearSegmentedColormap.from_list("white_red", ["#ffffff", "#d90429"]).copy()
+    cmap = LinearSegmentedColormap.from_list("white_green", ["#f8fafc", "#a7f3d0", "#047857"]).copy()
     cmap.set_bad(color="#f0f0f0", alpha=1.0)
     im = ax1.imshow(
         masked_reliability,
@@ -256,7 +256,7 @@ def main() -> None:
     ax1.set_yticks(np.arange(len(PAIR_ORDER)), PAIR_ORDER)
     ax1.set_xlabel(r"$|\Delta n|$")
     ax1.set_ylabel("探测器对")
-    ax1.set_title(r"记录真实性热图 $P(\mathrm{genuine}\mid \mathrm{pair},|\Delta n|)$")
+    ax1.set_title(r"记录真实性热图：真成功概率")
     cbar = fig.colorbar(im, ax=ax1, fraction=0.052, pad=0.03)
     cbar.set_label("真成功记录概率")
 

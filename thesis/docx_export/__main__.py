@@ -5,7 +5,7 @@ import sys
 
 from .config import ExportConfig
 from .pandoc_runner import run_pandoc
-from .postprocess import merge_with_template
+from .postprocess import merge_with_template, normalize_docx_styles
 from .preprocess import prepare_pandoc_workspace
 from .validate import validate_docx
 from .word_refresh import refresh_fields
@@ -37,7 +37,7 @@ def main(argv: list[str] | None = None) -> int:
 
     workspace = prepare_pandoc_workspace(config)
     intermediate_docx = run_pandoc(config, workspace)
-    merge_with_template(config.template_docx, intermediate_docx, config.output_docx)
+    merge_with_template(config.template_docx, intermediate_docx, config.output_docx, source_root=config.root)
     report = validate_docx(config.output_docx)
     print(report.format())
     if not report.ok:
@@ -46,6 +46,12 @@ def main(argv: list[str] | None = None) -> int:
     refresh_status = refresh_fields(config.output_docx, config.refresh_fields)
     if refresh_status.attempted:
         print(refresh_status.message)
+    if refresh_status.succeeded:
+        normalize_docx_styles(config.output_docx)
+        report = validate_docx(config.output_docx)
+        print(report.format())
+        if not report.ok:
+            return 2
     return 0
 
 

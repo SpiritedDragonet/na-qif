@@ -30,6 +30,17 @@ class ValidateDocxTests(unittest.TestCase):
             self.assertFalse(report.ok)
             self.assertIn("Unsupported media", "\n".join(report.errors))
 
+    def test_detects_unresolved_equation_reference_labels(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            docx = Path(tmp) / "bad.docx"
+            with zipfile.ZipFile(docx, "w") as archive:
+                archive.writestr("word/document.xml", "<w:t>由式 [eq:sample] 可得。</w:t>")
+
+            report = validate_docx(docx)
+
+            self.assertFalse(report.ok)
+            self.assertIn("Unresolved equation reference found: [eq:sample]", report.errors)
+
     def test_detects_missing_document_relationship(self):
         with tempfile.TemporaryDirectory() as tmp:
             docx = Path(tmp) / "bad.docx"
@@ -84,3 +95,21 @@ class ValidateDocxTests(unittest.TestCase):
 
             self.assertFalse(report.ok)
             self.assertIn("Undeclared mc:Ignorable prefix w14 in word/document.xml", report.errors)
+
+    def test_detects_unlinked_author_year_citation_when_bibliography_exists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            docx = Path(tmp) / "bad.docx"
+            with zipfile.ZipFile(docx, "w") as archive:
+                archive.writestr(
+                    "word/document.xml",
+                    "<w:document xmlns:w='http://schemas.openxmlformats.org/wordprocessingml/2006/main'>"
+                    "<w:body>"
+                    "<w:p><w:r><w:t>See (Nielsen and Chuang 2010).</w:t></w:r></w:p>"
+                    "<w:p><w:pPr><w:pStyle w:val='a'/></w:pPr><w:r><w:t>Nielsen, Michael A., and Isaac L. Chuang. 2010. Book.</w:t></w:r></w:p>"
+                    "</w:body></w:document>",
+                )
+
+            report = validate_docx(docx)
+
+            self.assertFalse(report.ok)
+            self.assertIn("Citation is not linked to bibliography: Nielsen and Chuang 2010", report.errors)

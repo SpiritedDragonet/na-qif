@@ -13,15 +13,46 @@ if (Test-Path "thesis.tex") {
 
 function Compile-Thesis {
     Write-Host "`n========== 开始编译 ==========" -ForegroundColor Green
-    xelatex -interaction=nonstopmode "$texBase.tex"
-    bibtex $texBase
-    xelatex -interaction=nonstopmode "$texBase.tex"
-    xelatex -interaction=nonstopmode "$texBase.tex"
+    Invoke-Tool "xelatex" @("-interaction=nonstopmode", "$texBase.tex")
+    Invoke-Tool "bibtex" @($texBase)
+    Invoke-Tool "xelatex" @("-interaction=nonstopmode", "$texBase.tex")
+    Invoke-Tool "xelatex" @("-interaction=nonstopmode", "$texBase.tex")
     Write-Host "========== 编译完成 ==========`n" -ForegroundColor Green
+    Compile-WordThesis
+}
+
+function Compile-WordThesis {
+    $wordScript = Join-Path $scriptDir "compile_word.ps1"
+    Invoke-Tool "powershell" @("-ExecutionPolicy", "Bypass", "-File", $wordScript)
+}
+
+function Invoke-Tool {
+    param(
+        [string]$Command,
+        [string[]]$Arguments
+    )
+    & $Command @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Command failed with exit code $LASTEXITCODE"
+    }
+}
+
+function Test-InExcludedDir {
+    param([string]$Path)
+    $relative = $Path.Substring($scriptDir.Length).TrimStart("\", "/")
+    foreach ($dir in @(".git", ".codex_tmp", ".pytest_cache")) {
+        if ($relative -eq $dir -or $relative.StartsWith("$dir\") -or $relative.StartsWith("$dir/")) {
+            return $true
+        }
+    }
+    return $false
 }
 
 function Get-FilesHash {
-    $sourceFiles = Get-ChildItem -Path $scriptDir -Include @("*.tex", "*.bib", "*.cls", "*.sty", "*.cfg") -Recurse -ErrorAction SilentlyContinue
+    $sourceFiles = foreach ($pattern in @("*.tex", "*.bib", "*.cls", "*.sty", "*.cfg")) {
+        Get-ChildItem -Path $scriptDir -Filter $pattern -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { -not (Test-InExcludedDir $_.FullName) }
+    }
     $figuresDir = Join-Path $scriptDir "figures"
     $figureFiles = @()
     if (Test-Path $figuresDir) {

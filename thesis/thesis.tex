@@ -11,7 +11,7 @@
 %               https://github.com/Li-Wenhui/HeuThesis.git
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\documentclass[type=master,fontset=windows,openright=true]{heuthesisbook}
+\documentclass[type=master,fontset=windows,openright=false,library=true]{heuthesisbook}
 % 此处选项中不要有空格
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 必填选项
@@ -53,13 +53,14 @@
 \begin{document}
 \frontmatter
 \input{front/cover} % 封面和扉页
-\makecover
+{\let\cleardoublepage\clearpage
+\makecover}
 \authorization[auscan.pdf] % 使用扫描版原创性与授权声明页（前置）
 
-\cleardoublepage   % 控制右开页，与前文连续开页时注释掉
+\clearpage         % 电子版连续开页，避免插入空白页
 \makeabstract      % 封面和摘要
 
-\cleardoublepage   % 控制右开页，与前文连续开页时注释掉
+\clearpage         % 电子版连续开页，避免插入空白页
 \tableofcontents   % 论文目录
 
 %%\cleardoublepage % 控制右开页，与前文连续开页时注释掉
@@ -69,7 +70,7 @@
 % \listoftables    % 表格目录（按模板要求关闭）
 
 %%----------  论文主体，可以根据需要添加章节 --------------
-\cleardoublepage % 控制右开页，后续论文正文一般采用此格式
+\clearpage       % 电子版连续开页，避免插入空白页
 \mainmatter
 \include{body/chapter1}
 \include{body/chapter2}

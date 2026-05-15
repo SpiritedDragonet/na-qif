@@ -17,7 +17,7 @@ class ExportConfigTests(unittest.TestCase):
             self.assertEqual(config.root, root.resolve())
             self.assertEqual(config.main_tex, root.resolve() / "thesis.tex")
             self.assertEqual(config.template_docx, root.resolve() / "硕士毕业论文参考模板.docx")
-            self.assertEqual(config.output_docx, root.resolve() / "thesis_word_final.docx")
+            self.assertEqual(config.output_docx, root.resolve() / "thesis.docx")
             self.assertEqual(config.work_dir, root.resolve() / ".codex_tmp" / "docx_export")
 
     def test_missing_main_tex_raises_clear_error(self):
@@ -27,4 +27,3 @@ class ExportConfigTests(unittest.TestCase):
 
             with self.assertRaisesRegex(FileNotFoundError, "thesis.tex"):
                 ExportConfig.from_root(root)
-

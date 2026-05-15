@@ -121,8 +121,8 @@ def _plot_heatmap(
     ax.set_title(title, pad=6.0)
     ax.set_xticks(range(4), labels, rotation=19, ha="right")
     ax.set_yticks(range(4), labels)
-    ax.set_xlabel("ket", labelpad=6.0, loc="right")
-    ax.set_ylabel("bra", labelpad=6.0, loc="top")
+    ax.set_xlabel("列态", labelpad=6.0, loc="right")
+    ax.set_ylabel("行态", labelpad=6.0, loc="top")
     ax.set_xticks(np.arange(-0.5, 4.0, 1.0), minor=True)
     ax.set_yticks(np.arange(-0.5, 4.0, 1.0), minor=True)
     ax.grid(which="minor", color="white", linestyle="-", linewidth=1.05, alpha=0.85)
@@ -177,8 +177,8 @@ def _plot_bar3d(
     ax.set_xticklabels(labels, rotation=17, ha="right")
     ax.set_yticks(np.arange(n))
     ax.set_yticklabels(labels, rotation=-13, ha="right")
-    ax.set_xlabel("ket", labelpad=6.0)
-    ax.set_ylabel("bra", labelpad=8.0)
+    ax.set_xlabel("列态", labelpad=6.0)
+    ax.set_ylabel("行态", labelpad=8.0)
     ax.set_zlabel("", labelpad=6.0)
     ax.xaxis.set_label_coords(1.02, -0.04)
     ax.yaxis.set_label_coords(-0.04, 1.02)
@@ -234,8 +234,8 @@ def main() -> None:
         0.03,
     )
     rows = [
-        ("Raw $\\Psi^{+}$", rho_raw_psip, raw_vmax),
-        ("Raw $\\Psi^{-}$", rho_raw_psim, raw_vmax),
+        ("原始 $\\Psi^{+}$", rho_raw_psip, raw_vmax),
+        ("原始 $\\Psi^{-}$", rho_raw_psim, raw_vmax),
         (
             "$\\Delta\\rho_{\\mathrm{ff}}=\\rho^{\\Psi+}_{\\mathrm{ff}}-\\rho^{\\Psi-}_{\\mathrm{ff}}$",
             delta_ff,
@@ -279,7 +279,7 @@ def main() -> None:
         panel_idx += 1
 
     # 颜色条右移，避免遮挡最右侧 3D 图纵轴文本。
-    fig.subplots_adjust(left=0.045, right=0.905, top=0.92, bottom=0.072, wspace=0.19, hspace=0.24)
+    fig.subplots_adjust(left=0.060, right=0.905, top=0.92, bottom=0.072, wspace=0.19, hspace=0.24)
 
     sm_raw = ScalarMappable(norm=Normalize(vmin=-raw_vmax, vmax=raw_vmax), cmap=cmap)
     sm_raw.set_array([])

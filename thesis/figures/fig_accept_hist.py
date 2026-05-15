@@ -20,14 +20,19 @@ DATA_DIR = (
 TRIALS_PATH = DATA_DIR / "window_scan_trials.csv"
 MANIFEST_PATH = DATA_DIR / "run_manifest.json"
 WINDOW_NS_SLICE = 100.0
+EXP_ACCEPT_WINDOW_NS = 70.0
+EXP_ACCEPT_KEEP_FRAC = 0.65
+EXP_HARDWARE_WINDOW_NS = 208.0
 PALETTE = {
-    "arm_a": "#1F77B4",
-    "arm_b": "#D62728",
-    "delta": "#2F2F2F",
-    "window": "#F2C14E",
+    "arm_a": "#3B6EA8",
+    "arm_b": "#D55E00",
+    "delta": "#334155",
+    "window": "#E6C34A",
     "grid": "#D9DEE7",
-    "true": "#1F77B4",
-    "fidelity": "#2A9D8F",
+    "true": "#3B6EA8",
+    "fidelity": "#00897B",
+    "conditional": "#6F58C9",
+    "false": "#B5533C",
 }
 
 
@@ -242,6 +247,22 @@ def main() -> None:
     ax1.set_xlabel(r"$\Delta t$ (ns)")
     ax1.set_ylabel("计数")
     ax1.legend(frameon=False, loc="upper right")
+    window_note = (
+        "公开实验口径\n"
+        + rf"数据窗 {EXP_ACCEPT_WINDOW_NS:.0f} ns"
+        + "\n"
+        + rf"硬件窗 {EXP_HARDWARE_WINDOW_NS:.0f} ns"
+        + "\n"
+        + rf"接受记录约 {100.0 * EXP_ACCEPT_KEEP_FRAC:.0f}%"
+    )
+    ax1.text(
+        0.035,
+        0.76,
+        window_note,
+        transform=ax1.transAxes,
+        fontsize=7.5,
+        bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.90, "pad": 2.2},
+    )
     _panel_label(ax1, "(b)")
 
     dense_w = window_tradeoff._make_dense_grid(windows, density=8)
@@ -268,7 +289,7 @@ def main() -> None:
         windows,
         fidelity,
         c=false_pct,
-        cmap="Reds",
+        cmap="cividis",
         norm=Normalize(vmin=float(np.min(false_pct)), vmax=float(np.max(false_pct) + 0.1)),
         s=34.0,
         edgecolors="white",
@@ -276,7 +297,7 @@ def main() -> None:
         zorder=3,
     )
     ax2.plot(dense_w, fidelity_s, color=PALETTE["fidelity"], lw=2.1, label=r"$F_t$")
-    ax2.plot(dense_w, pt11_s, color="#7C3AED", lw=1.8, ls="-.", label=r"$p_{t|11}$")
+    ax2.plot(dense_w, pt11_s, color=PALETTE["conditional"], lw=1.8, ls="-.", label=r"$p_{t|11}$")
     ax2.scatter(
         [windows[work_idx]],
         [fidelity[work_idx]],
@@ -294,18 +315,19 @@ def main() -> None:
     ax2.set_title("窗口扫描工作区", pad=5.0)
 
     ax2r.plot(dense_w, 1e6 * p_true_s, color=PALETTE["true"], lw=1.9, label=r"$p_t$")
-    ax2r.plot(dense_w, false_pct_s, color="#B91C1C", lw=1.6, ls="--", label="假成功占比 (%)")
+    ax2r.plot(dense_w, false_pct_s, color=PALETTE["false"], lw=1.6, ls="--", label="假成功占比 (%)")
     ax2r.scatter(windows, 1e6 * p_true, s=9, color=PALETTE["true"], alpha=0.20, linewidths=0, zorder=2)
-    ax2r.scatter(windows, false_pct, s=9, color="#B91C1C", alpha=0.20, linewidths=0, zorder=2)
+    ax2r.scatter(windows, false_pct, s=9, color=PALETTE["false"], alpha=0.20, linewidths=0, zorder=2)
     ax2r.set_ylabel(r"$p_t$ ($\times 10^{-6}$) 与假成功占比 (%)")
     ax2r.text(
         float(windows[work_idx]) + 1.2,
         float(fidelity[work_idx]) + 0.035,
-        f"推荐口径\n{acceptance_window_ns:.0f} ns",
+        f"推荐/实验口径\n{acceptance_window_ns:.0f} ns",
         fontsize=8.2,
         color="#374151",
         ha="left",
         va="bottom",
+        bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.86, "pad": 2.0},
     )
     handles0, labels0 = ax2.get_legend_handles_labels()
     handles1, labels1 = ax2r.get_legend_handles_labels()
@@ -317,7 +339,7 @@ def main() -> None:
     fig.suptitle(
         (
             "窗口选择的三联诊断图  "
-            f"（切片 window_ns={WINDOW_NS_SLICE:g}, dt={dt_ns:g} ns, rows={rows_in_slice}）"
+            f"（统计切片 {WINDOW_NS_SLICE:g} ns，Δt={dt_ns:g} ns，接收窗 {acceptance_window_ns:g} ns，样本行 {rows_in_slice}）"
         ),
         fontsize=12.3,
         fontweight="bold",

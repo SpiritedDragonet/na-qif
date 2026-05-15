@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 EXPORT_PNG = True
+EXP_HOM_VISIBILITY = 0.955
+EXP_HOM_VISIBILITY_ERR = 0.007
 
 
 def _default_summary_csv() -> pathlib.Path:
@@ -98,7 +100,7 @@ def _normalize_to_far_delay(tau: np.ndarray, p2: np.ndarray, sem: np.ndarray) ->
     return p2 / ref, sem / ref
 
 
-def _fit_hom_curve_least_squares(tau: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _fit_hom_curve_least_squares(tau: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray, dict[str, float]]:
     # Model: y = b - a * exp(-((tau - tau0) / sigma)^2)
     tau0_grid = np.linspace(-10.0, 10.0, 161)
     sigma_grid = np.linspace(0.5, 40.0, 260)
@@ -124,14 +126,22 @@ def _fit_hom_curve_least_squares(tau: np.ndarray, y: np.ndarray) -> tuple[np.nda
     tau0, sigma, b, a = best_params
     tau_dense = np.linspace(float(np.min(tau)), float(np.max(tau)), 800)
     y_dense = b - a * np.exp(-((tau_dense - tau0) / sigma) ** 2)
-    return tau_dense, y_dense
+    fit_params = {
+        "tau0": float(tau0),
+        "sigma": float(sigma),
+        "baseline": float(b),
+        "depth": float(a),
+        "visibility": float(np.clip(a / max(b, np.finfo(float).tiny), 0.0, 1.0)),
+    }
+    return tau_dense, y_dense, fit_params
 
 
 def main() -> None:
     summary_csv = _default_summary_csv()
     tau, p2, p2_sem = _load_g2_from_double_clicks(summary_csv)
     g2, g2_sem = _normalize_to_far_delay(tau, p2, p2_sem)
-    tau_dense, g2_fit = _fit_hom_curve_least_squares(tau, g2)
+    tau_dense, g2_fit, fit_params = _fit_hom_curve_least_squares(tau, g2)
+    hom_visibility = float(fit_params["visibility"])
 
     plt.rcParams.update(
         {
@@ -170,6 +180,7 @@ def main() -> None:
     else:
         plt.scatter(tau, g2, s=18, color="#1f77b4", label="双点击统计")
     plt.plot(tau_dense, g2_fit, color="#d62728", lw=2.0, label="最小二乘拟合")
+    plt.axvline(0.0, color="#9ca3af", lw=1.0, ls=":")
 
     y_all = np.concatenate([g2, g2_fit])
     y_min = float(np.min(y_all))
@@ -178,6 +189,12 @@ def main() -> None:
     plt.ylim(y_min - y_pad, y_max + y_pad)
     plt.xlabel(r"相对时延 $\tau$ (ns)")
     plt.ylabel(r"二阶关联 $g^{(2)}_{HH,VV}(\tau)$")
+    plt.title(
+        "HOM 可见度："
+        + rf"仿真 $V={hom_visibility:.3f}$，公开实验 $V={EXP_HOM_VISIBILITY:.3f}\pm{EXP_HOM_VISIBILITY_ERR:.3f}$",
+        fontsize=10.2,
+        pad=8.0,
+    )
     plt.legend(frameon=False, loc="best")
     plt.tight_layout()
 

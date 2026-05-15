@@ -7,6 +7,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 EXPORT_PNG = True
+EXP_DISTANCE_LENGTH_KM = np.asarray([6.0, 11.0, 23.0, 33.0], dtype=float)
+EXP_DISTANCE_FIDELITY = np.asarray([0.830, 0.799, 0.719, 0.622], dtype=float)
+EXP_DISTANCE_FIDELITY_ERR = np.asarray([0.010, 0.011, 0.012, 0.015], dtype=float)
+EXP_DISTANCE_SUCCESS_33KM = 1.22e-6
 
 
 def _repo_root() -> pathlib.Path:
@@ -152,6 +156,10 @@ def _fit_true_component(length_km: np.ndarray, p_t: np.ndarray) -> tuple[np.ndar
     return pred, slope
 
 
+def _nearest_index(x_target: float, x: np.ndarray) -> int:
+    return int(np.argmin(np.abs(np.asarray(x, dtype=float) - float(x_target))))
+
+
 def _panel_label(ax: plt.Axes, label: str) -> None:
     ax.text(
         -0.12,
@@ -215,10 +223,24 @@ def main() -> None:
         fit_label = r"$p_t$ 的对数线性拟合"
         ax0.semilogy(length_km, p_t_fit, color="#0ea5e9", lw=1.5, ls="--", alpha=0.95, label=fit_label)
     ax0.axvline(33.0, lw=1.1, color="#9ca3af", ls=":")
+    if float(np.min(length_km)) <= 33.0 <= float(np.max(length_km)):
+        ax0.errorbar(
+            [33.0],
+            [EXP_DISTANCE_SUCCESS_33KM],
+            fmt="D",
+            ms=5.0,
+            mfc="white",
+            mec="#111827",
+            ecolor="#111827",
+            elinewidth=0.9,
+            capsize=2.0,
+            zorder=7,
+            label="公开实验 $p_s$（33 km）",
+        )
     ax0.set_xlabel("总光纤长度 (km)")
     ax0.set_ylabel("每次尝试概率")
     ax0.set_title("宣告分量随距离变化")
-    ax0.legend(frameon=False, fontsize=8.5, loc="upper right")
+    ax0.legend(frameon=False, fontsize=8.2, loc="upper right")
     _panel_label(ax0, "(a)")
     if np.isfinite(slope):
         ax0.text(
@@ -231,6 +253,24 @@ def main() -> None:
         )
 
     ax1.plot(length_km, f_t, color="#059669", lw=2.4, marker="o", ms=3.6, label=r"$F_t$")
+    exp_mask = (EXP_DISTANCE_LENGTH_KM >= float(np.min(length_km)) - 1e-9) & (
+        EXP_DISTANCE_LENGTH_KM <= float(np.max(length_km)) + 1e-9
+    )
+    if np.any(exp_mask):
+        ax1.errorbar(
+            EXP_DISTANCE_LENGTH_KM[exp_mask],
+            EXP_DISTANCE_FIDELITY[exp_mask],
+            yerr=EXP_DISTANCE_FIDELITY_ERR[exp_mask],
+            fmt="D",
+            ms=5.0,
+            mfc="white",
+            mec="#111827",
+            ecolor="#111827",
+            elinewidth=0.9,
+            capsize=2.2,
+            zorder=7,
+            label="公开实验 $F$",
+        )
     ax1.fill_between(
         length_km,
         np.clip(f_t - ci95_f_t, 0.0, 1.0),
@@ -242,7 +282,12 @@ def main() -> None:
     ax1.set_xlabel("总光纤长度 (km)")
     ax1.set_ylabel(r"条件保真度 $F_t$", color="#047857")
     ax1.tick_params(axis="y", colors="#047857")
-    ax1.set_ylim(max(0.0, float(np.min(f_t - ci95_f_t)) - 0.03), min(1.0, float(np.max(f_t + ci95_f_t)) + 0.03))
+    y_low = max(0.0, float(np.min(f_t - ci95_f_t)) - 0.03)
+    y_high = float(np.max(f_t + ci95_f_t)) + 0.03
+    if np.any(exp_mask):
+        y_low = min(y_low, float(np.min(EXP_DISTANCE_FIDELITY[exp_mask] - EXP_DISTANCE_FIDELITY_ERR[exp_mask])) - 0.03)
+        y_high = max(y_high, float(np.max(EXP_DISTANCE_FIDELITY[exp_mask] + EXP_DISTANCE_FIDELITY_ERR[exp_mask])) + 0.03)
+    ax1.set_ylim(max(0.0, y_low), min(1.0, y_high))
 
     ax1_r = ax1.twinx()
     ax1_r.plot(length_km, false_frac_pct, color="#b91c1c", lw=2.0, marker="D", ms=3.0, label="假成功占比")
@@ -266,7 +311,7 @@ def main() -> None:
         axis_lines, axis_labels = axis.get_legend_handles_labels()
         lines.extend(axis_lines)
         labels.extend(axis_labels)
-    ax1.legend(lines, labels, frameon=False, fontsize=8.5, loc="upper left")
+    ax1.legend(lines, labels, frameon=False, fontsize=8.5, loc="upper right")
     ax1.set_title("质量-可靠性权衡")
     _panel_label(ax1, "(b)")
 

@@ -24,6 +24,7 @@ class PandocRunnerTests(unittest.TestCase):
             self.assertIn("thesis.tex", command)
             self.assertIn("--from=latex", command)
             self.assertIn("--to=docx", command)
+            self.assertIn("--citeproc", command)
+            self.assertTrue(any(item.startswith("--csl=") and item.endswith("gbt7714-numeric.csl") for item in command))
             self.assertTrue(any(item.startswith("--resource-path=") for item in command))
             self.assertTrue(any(item.startswith("--output=") for item in command))
-
