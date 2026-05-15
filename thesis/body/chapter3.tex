@@ -579,19 +579,23 @@ T_{\text{总用时}}=T_{\text{物理链路}}+T_{\text{探测阶段}}+T_{\text{�
 \centering
 \caption{模型中的主要近似、控制参数及其影响范围}
 \label{tab:ch3_model_boundaries}
-\renewcommand{\arraystretch}{1.15}
-\begin{tabular}{p{2.5cm}p{4.8cm}p{2.2cm}p{5.0cm}}
+\renewcommand{\arraystretch}{1.05}
+\begingroup
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{p{2.4cm}p{4.8cm}p{2.5cm}p{5.2cm}}
 \toprule
 环节 & 近似或截断 & 控制参数 & 主要影响 \\
 \midrule
 发射阶段 & 原子取四能级、腔场取单光子三维截断 & $\Delta t$，$\kappa$，$\gamma$，$g$ & 改变波包形状、发射概率和双臂到达事件权重 \\
 时间站点 & 每个时间分箱取 5 维局域空间 & 分箱数 $N$，窗口宽度 $W$ & 限定可追踪的时序分辨率和尾部时间分箱保留程度 \\
-QFC & 采用强泵近似下的分束器型局域幺正 & $\eta_H,\eta_V,\phi_H,\phi_V$ & 决定 780\,nm 与 1517\,nm 模式的幅度再分配和相位偏置 \\
+QFC & 采用强泵近似下的分束器型局域幺正 & $\eta_H,\eta_V$；$\phi_H,\phi_V$ & 决定 780\,nm 与 1517\,nm 模式的幅度再分配和相位偏置 \\
 滤波记忆 & 每臂仅保留一个 3 维记忆模 & $\Delta\nu$，$\delta$ & 决定跨分箱相关、波包重整形和 HOM 可见度退化 \\
 测量侧推回 & 光纤、分束器和探测器均在测量侧处理 & Jones 参数，PDL，$\eta_j$，$d_j$ & 决定声明记录的概率与真假成功分解 \\
 残余可分辨性 & 未显式展开的模式失配吸收到 $v_{\mathrm{res}}$ & $v_{\mathrm{res}}$ & 直接影响干涉对比度和贝尔态投影质量 \\
 \bottomrule
 \end{tabular}
+\endgroup
 
 \vspace{0.5em}
 \begin{minipage}{0.94\linewidth}

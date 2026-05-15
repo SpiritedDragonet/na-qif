@@ -44,17 +44,17 @@
 \contentsline {section}{\numberline {3.5}数值口径与模型边界}{37}{section.3.5}%
 \contentsline {subsection}{\numberline {3.5.1}参数换算与时间口径}{37}{subsection.3.5.1}%
 \contentsline {subsection}{\numberline {3.5.2}复杂度与误差来源}{37}{subsection.3.5.2}%
-\contentsline {section}{\numberline {3.6}小结}{40}{section.3.6}%
-\contentsline {chapter}{\numberline {第4章}量子接口噪声建模下的保真度损失量化分析}{41}{chapter.4}%
-\contentsline {section}{\numberline {4.1}实验口径下的参数锚定}{41}{section.4.1}%
-\contentsline {subsection}{\numberline {4.1.1}指标口径参数锚定}{41}{subsection.4.1.1}%
-\contentsline {section}{\numberline {4.2}分层噪声标定流程}{42}{section.4.2}%
-\contentsline {section}{\numberline {4.3}关键噪声来源归因}{43}{section.4.3}%
-\contentsline {subsection}{\numberline {4.3.1}关键结果与物理解释}{43}{subsection.4.3.1}%
-\contentsline {section}{\numberline {4.4}保真度损失量化结果}{46}{section.4.4}%
-\contentsline {section}{\numberline {4.5}单轨迹仿真开销测算}{49}{section.4.5}%
-\contentsline {section}{\numberline {4.6}小结}{51}{section.4.6}%
-\contentsline {chapter}{结论}{52}{section.4.6}%
-\contentsline {chapter}{参考文献}{54}{section*.8}%
-\contentsline {chapter}{致谢}{61}{section*.8}%
-\contentsline {chapter}{攻读硕士学位期间发表的论文及其他成果}{63}{section*.8}%
+\contentsline {section}{\numberline {3.6}小结}{39}{section.3.6}%
+\contentsline {chapter}{\numberline {第4章}量子接口噪声建模下的保真度损失量化分析}{40}{chapter.4}%
+\contentsline {section}{\numberline {4.1}实验口径下的参数锚定}{40}{section.4.1}%
+\contentsline {subsection}{\numberline {4.1.1}指标口径参数锚定}{40}{subsection.4.1.1}%
+\contentsline {section}{\numberline {4.2}分层噪声标定流程}{41}{section.4.2}%
+\contentsline {section}{\numberline {4.3}关键噪声来源归因}{42}{section.4.3}%
+\contentsline {subsection}{\numberline {4.3.1}关键结果与物理解释}{42}{subsection.4.3.1}%
+\contentsline {section}{\numberline {4.4}保真度损失量化结果}{45}{section.4.4}%
+\contentsline {section}{\numberline {4.5}单轨迹仿真开销测算}{48}{section.4.5}%
+\contentsline {section}{\numberline {4.6}小结}{50}{section.4.6}%
+\contentsline {chapter}{结论}{51}{section.4.6}%
+\contentsline {chapter}{参考文献}{53}{section*.8}%
+\contentsline {chapter}{致谢}{60}{section*.8}%
+\contentsline {chapter}{攻读硕士学位期间发表的论文及其他成果}{62}{section*.8}%
