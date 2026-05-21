@@ -1,0 +1,729 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/2x4nap4r",
+    "id": "2x4nap4r",
+    "slide": 2,
+    "layoutId": "/ppt/slideLayouts/slideLayout7.xml",
+    "layoutName": "Blank",
+    "layoutType": "blank",
+    "masterLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1279.97,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "Office",
+    "colors": {
+      "accent1": "#4F81BD",
+      "accent2": "#C0504D",
+      "accent3": "#9BBB59",
+      "accent4": "#8064A2",
+      "accent5": "#4BACC6",
+      "accent6": "#F79646",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#1F497D",
+      "lt2": "#EEECE1",
+      "hlink": "#0000FF",
+      "folHlink": "#800080"
+    },
+    "typefaces": [
+      "+mn-lt",
+      "Arial",
+      "Microsoft YaHei"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "/ppt/slideLayouts/slideLayout7.xml",
+      "name": "Blank",
+      "type": "blank",
+      "parentLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+      "elements": [
+        {
+          "order": 1,
+          "kind": "shape",
+          "scope": "layout",
+          "aid": "template/layout//ppt/slideLayouts/slideLayout7.xml/2",
+          "id": "2",
+          "name": "Date Placeholder 1",
+          "bbox": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "order": 2,
+          "kind": "shape",
+          "scope": "layout",
+          "aid": "template/layout//ppt/slideLayouts/slideLayout7.xml/3",
+          "id": "3",
+          "name": "Footer Placeholder 2",
+          "bbox": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "scope": "master",
+      "id": "/ppt/slideMasters/slideMaster1.xml",
+      "type": "master",
+      "elements": [
+        {
+          "order": 1,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/2",
+          "id": "2",
+          "name": "Title Placeholder 1",
+          "bbox": [
+            48,
+            28.83,
+            864,
+            120
+          ],
+          "geometry": "rect"
+        },
+        {
+          "order": 2,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/3",
+          "id": "3",
+          "name": "Text Placeholder 2",
+          "bbox": [
+            48,
+            168,
+            864,
+            475.17
+          ],
+          "geometry": "rect"
+        },
+        {
+          "order": 3,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/4",
+          "id": "4",
+          "name": "Date Placeholder 3",
+          "bbox": [
+            48,
+            667.33,
+            224,
+            38.33
+          ],
+          "geometry": "rect"
+        },
+        {
+          "order": 4,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/5",
+          "id": "5",
+          "name": "Footer Placeholder 4",
+          "bbox": [
+            328,
+            667.33,
+            304,
+            38.33
+          ],
+          "geometry": "rect"
+        },
+        {
+          "order": 5,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/6",
+          "id": "6",
+          "name": "Slide Number Placeholder 5",
+          "bbox": [
+            688,
+            667.33,
+            224,
+            38.33
+          ],
+          "geometry": "rect"
+        }
+      ]
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/cvixczed",
+      "id": "2",
+      "name": "Rectangle 1",
+      "bbox": [
+        0,
+        0,
+        1279.97,
+        720
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#F7F7F2"
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/5gbq1ory",
+      "id": "3",
+      "name": "Rectangle 2",
+      "bbox": [
+        69.12,
+        76.8,
+        7.68,
+        139.2
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#14577A"
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/udg7adsj",
+      "id": "4",
+      "name": "TextBox 3",
+      "bbox": [
+        100.8,
+        78.72,
+        835.2,
+        40.32
+      ],
+      "geometry": "rect",
+      "text": "中性原子量子计算体系的",
+      "textPreview": "中性原子量子计算体系的",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "中性原子量子计算体系的"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "中性原子量子计算体系的",
+          "runs": [
+            {
+              "index": 1,
+              "text": "中性原子量子计算体系的",
+              "fontSize": 34.67,
+              "typeface": "Microsoft YaHei",
+              "color": "#1E242B",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/nyd0z610",
+      "id": "5",
+      "name": "TextBox 4",
+      "bbox": [
+        100.8,
+        120.96,
+        892.8,
+        59.52
+      ],
+      "geometry": "rect",
+      "text": "光子—原子量子接口仿真研究",
+      "textPreview": "光子—原子量子接口仿真研究",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "光子—原子量子接口仿真研究"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "光子—原子量子接口仿真研究",
+          "runs": [
+            {
+              "index": 1,
+              "text": "光子—原子量子接口仿真研究",
+              "fontSize": 42.67,
+              "typeface": "Microsoft YaHei",
+              "color": "#1E242B",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/cj6tovah",
+      "id": "6",
+      "name": "TextBox 5",
+      "bbox": [
+        100.8,
+        190.08,
+        864,
+        30.72
+      ],
+      "geometry": "rect",
+      "text": "基于时间分箱离散化与 MPS 张量网络的端到端建模",
+      "textPreview": "基于时间分箱离散化与 MPS 张量网络的端到端建模",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "基于时间分箱离散化与 MPS 张量网络的端到端建模"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "基于时间分箱离散化与 MPS 张量网络的端到端建模",
+          "runs": [
+            {
+              "index": 1,
+              "text": "基于时间分箱离散化与 MPS 张量网络的端到端建模",
+              "fontSize": 24,
+              "typeface": "Microsoft YaHei",
+              "color": "#14577A",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/54zidony",
+      "id": "7",
+      "name": "TextBox 6",
+      "bbox": [
+        100.8,
+        238.08,
+        816,
+        26.88
+      ],
+      "geometry": "rect",
+      "text": "硕士学位论文答辩  |  光学工程  |  李铀",
+      "textPreview": "硕士学位论文答辩  |  光学工程  |  李铀",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "硕士学位论文答辩  |  光学工程  |  李铀"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "硕士学位论文答辩  |  光学工程  |  李铀",
+          "runs": [
+            {
+              "index": 1,
+              "text": "硕士学位论文答辩  |  光学工程  |  李铀",
+              "fontSize": 18,
+              "typeface": "Microsoft YaHei",
+              "color": "#68727D"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/u9knih4b",
+      "id": "8",
+      "name": "Rectangle 7",
+      "bbox": [
+        97.92,
+        303.36,
+        1052.16,
+        254.4
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#FFFFFF",
+      "lineColor": "#D9DED9",
+      "lineWidth": 1.33
+    },
+    {
+      "order": 8,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/u18jqh0f",
+      "id": "16",
+      "name": "Picture 8",
+      "bbox": [
+        220.61,
+        303.36,
+        806.78,
+        254.4
+      ],
+      "contentType": "image/png",
+      "asset": {
+        "assetId": "/ppt/media/image1.png",
+        "contentType": "image/png",
+        "byteLength": 708321
+      },
+      "fillImage": {
+        "assetId": "/ppt/media/image1.png",
+        "contentType": "image/png",
+        "byteLength": 708321
+      }
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/nyd0z610",
+      "id": "10",
+      "name": "Rectangle 9",
+      "bbox": [
+        97.92,
+        583.68,
+        1052.16,
+        69.12
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#FFFFFF",
+      "lineColor": "#D9DED9",
+      "lineWidth": 1.33
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/udg7adsj",
+      "id": "11",
+      "name": "Rectangle 10",
+      "bbox": [
+        97.92,
+        583.68,
+        4.8,
+        69.12
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#14577A"
+    },
+    {
+      "order": 11,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/54zidony",
+      "id": "12",
+      "name": "TextBox 11",
+      "bbox": [
+        117.12,
+        597.12,
+        1019.52,
+        26.88
+      ],
+      "geometry": "rect",
+      "text": "答辩主线",
+      "textPreview": "答辩主线",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "答辩主线"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "答辩主线",
+          "runs": [
+            {
+              "index": 1,
+              "text": "答辩主线",
+              "fontSize": 19.33,
+              "typeface": "Microsoft YaHei",
+              "color": "#14577A",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/cj6tovah",
+      "id": "13",
+      "name": "TextBox 12",
+      "bbox": [
+        117.12,
+        631.68,
+        1019.52,
+        9.6
+      ],
+      "geometry": "rect",
+      "text": "把远程原子纠缠链路做成可解释的误差预算：模型同时给出末端指标和物理环节级定位。",
+      "textPreview": "把远程原子纠缠链路做成可解释的误差预算：模型同时给出末端指标和物理环节级定位。",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "把远程原子纠缠链路做成可解释的误差预算：模型同时给出末端指标和物理环节级定位。"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "把远程原子纠缠链路做成可解释的误差预算：模型同时给出末端指标和物理环节级定位。",
+          "runs": [
+            {
+              "index": 1,
+              "text": "把远程原子纠缠链路做成可解释的误差预算：模型同时给出末端指标和物理环节级定位。",
+              "fontSize": 17.33,
+              "typeface": "Microsoft YaHei",
+              "color": "#1E242B"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 13,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/nap4r65w",
+      "id": "14",
+      "name": "TextBox 13",
+      "bbox": [
+        55.68,
+        685.44,
+        787.2,
+        17.28
+      ],
+      "geometry": "rect",
+      "text": "Harbin Engineering University, 2026",
+      "textPreview": "Harbin Engineering University, 2026",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Harbin Engineering University, 2026"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Harbin Engineering University, 2026",
+          "runs": [
+            {
+              "index": 1,
+              "text": "Harbin Engineering University, 2026",
+              "fontSize": 10,
+              "typeface": "Arial",
+              "color": "#68727D"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 14,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/upwb2hwf",
+      "id": "15",
+      "name": "TextBox 14",
+      "bbox": [
+        1185.6,
+        682.56,
+        38.4,
+        21.12
+      ],
+      "geometry": "rect",
+      "text": "01",
+      "textPreview": "01",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "01"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "01",
+          "runs": [
+            {
+              "index": 1,
+              "text": "01",
+              "fontSize": 10.67,
+              "typeface": "Arial",
+              "color": "#68727D"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "composeRuns": []
+}

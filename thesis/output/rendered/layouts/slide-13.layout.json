@@ -1,0 +1,1023 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/lwval87e",
+    "id": "lwval87e",
+    "slide": 14,
+    "layoutId": "/ppt/slideLayouts/slideLayout7.xml",
+    "layoutName": "Blank",
+    "layoutType": "blank",
+    "masterLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1279.97,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "Office",
+    "colors": {
+      "accent1": "#4F81BD",
+      "accent2": "#C0504D",
+      "accent3": "#9BBB59",
+      "accent4": "#8064A2",
+      "accent5": "#4BACC6",
+      "accent6": "#F79646",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#1F497D",
+      "lt2": "#EEECE1",
+      "hlink": "#0000FF",
+      "folHlink": "#800080"
+    },
+    "typefaces": [
+      "+mn-lt",
+      "Arial",
+      "Microsoft YaHei"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "/ppt/slideLayouts/slideLayout7.xml",
+      "name": "Blank",
+      "type": "blank",
+      "parentLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+      "elements": [
+        {
+          "order": 1,
+          "kind": "shape",
+          "scope": "layout",
+          "aid": "template/layout//ppt/slideLayouts/slideLayout7.xml/2",
+          "id": "2",
+          "name": "Date Placeholder 1",
+          "bbox": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "order": 2,
+          "kind": "shape",
+          "scope": "layout",
+          "aid": "template/layout//ppt/slideLayouts/slideLayout7.xml/3",
+          "id": "3",
+          "name": "Footer Placeholder 2",
+          "bbox": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "scope": "master",
+      "id": "/ppt/slideMasters/slideMaster1.xml",
+      "type": "master",
+      "elements": [
+        {
+          "order": 1,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/2",
+          "id": "2",
+          "name": "Title Placeholder 1",
+          "bbox": [
+            48,
+            28.83,
+            864,
+            120
+          ],
+          "geometry": "rect"
+        },
+        {
+          "order": 2,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/3",
+          "id": "3",
+          "name": "Text Placeholder 2",
+          "bbox": [
+            48,
+            168,
+            864,
+            475.17
+          ],
+          "geometry": "rect"
+        },
+        {
+          "order": 3,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/4",
+          "id": "4",
+          "name": "Date Placeholder 3",
+          "bbox": [
+            48,
+            667.33,
+            224,
+            38.33
+          ],
+          "geometry": "rect"
+        },
+        {
+          "order": 4,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/5",
+          "id": "5",
+          "name": "Footer Placeholder 4",
+          "bbox": [
+            328,
+            667.33,
+            304,
+            38.33
+          ],
+          "geometry": "rect"
+        },
+        {
+          "order": 5,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/6",
+          "id": "6",
+          "name": "Slide Number Placeholder 5",
+          "bbox": [
+            688,
+            667.33,
+            224,
+            38.33
+          ],
+          "geometry": "rect"
+        }
+      ]
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/l0rqd4vm",
+      "id": "2",
+      "name": "Rectangle 1",
+      "bbox": [
+        0,
+        0,
+        1279.97,
+        720
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#F7F7F2"
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/wfyxobm5",
+      "id": "3",
+      "name": "Rectangle 2",
+      "bbox": [
+        55.68,
+        48,
+        40.32,
+        4.8
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#14577A"
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/36hcrmhk",
+      "id": "4",
+      "name": "TextBox 3",
+      "bbox": [
+        107.52,
+        37.44,
+        268.8,
+        26.88
+      ],
+      "geometry": "rect",
+      "text": "DISTANCE",
+      "textPreview": "DISTANCE",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "DISTANCE"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "DISTANCE",
+          "runs": [
+            {
+              "index": 1,
+              "text": "DISTANCE",
+              "fontSize": 12.67,
+              "typeface": "Arial",
+              "color": "#14577A",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/eloj2t83",
+      "id": "5",
+      "name": "TextBox 4",
+      "bbox": [
+        55.68,
+        67.2,
+        1142.4,
+        48
+      ],
+      "geometry": "rect",
+      "text": "距离扩展中，可用事件率比条件态结构更早成为瓶颈",
+      "textPreview": "距离扩展中，可用事件率比条件态结构更早成为瓶颈",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "距离扩展中，可用事件率比条件态结构更早成为瓶颈"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "距离扩展中，可用事件率比条件态结构更早成为瓶颈",
+          "runs": [
+            {
+              "index": 1,
+              "text": "距离扩展中，可用事件率比条件态结构更早成为瓶颈",
+              "fontSize": 30.67,
+              "typeface": "Microsoft YaHei",
+              "color": "#1E242B",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/lc7u54zi",
+      "id": "6",
+      "name": "Rectangle 5",
+      "bbox": [
+        55.68,
+        130.56,
+        1156.8,
+        1.15
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#D9DED9"
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/wra5gbq1",
+      "id": "7",
+      "name": "TextBox 6",
+      "bbox": [
+        55.68,
+        685.44,
+        787.2,
+        17.28
+      ],
+      "geometry": "rect",
+      "text": "Source: Fig. 4.8 distance scaling",
+      "textPreview": "Source: Fig. 4.8 distance scaling",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Source: Fig. 4.8 distance scaling"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Source: Fig. 4.8 distance scaling",
+          "runs": [
+            {
+              "index": 1,
+              "text": "Source: Fig. 4.8 distance scaling",
+              "fontSize": 10,
+              "typeface": "Arial",
+              "color": "#68727D"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/7adsji5s",
+      "id": "8",
+      "name": "TextBox 7",
+      "bbox": [
+        1185.6,
+        682.56,
+        38.4,
+        21.12
+      ],
+      "geometry": "rect",
+      "text": "13",
+      "textPreview": "13",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "13"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "13",
+          "runs": [
+            {
+              "index": 1,
+              "text": "13",
+              "fontSize": 10.67,
+              "typeface": "Arial",
+              "color": "#68727D"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/epkzupwb",
+      "id": "9",
+      "name": "Rectangle 8",
+      "bbox": [
+        69.12,
+        155.52,
+        835.2,
+        451.2
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#FFFFFF",
+      "lineColor": "#D9DED9",
+      "lineWidth": 1.33
+    },
+    {
+      "order": 9,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/xczed8v6",
+      "id": "23",
+      "name": "Picture 9",
+      "bbox": [
+        69.12,
+        184.37,
+        835.2,
+        393.51
+      ],
+      "contentType": "image/png",
+      "asset": {
+        "assetId": "/ppt/media/image11.png",
+        "contentType": "image/png",
+        "byteLength": 269675
+      },
+      "fillImage": {
+        "assetId": "/ppt/media/image11.png",
+        "contentType": "image/png",
+        "byteLength": 269675
+      }
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/x4nap4r6",
+      "id": "11",
+      "name": "Rectangle 10",
+      "bbox": [
+        933.12,
+        174.72,
+        270.72,
+        129.6
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#FFFFFF",
+      "lineColor": "#D9DED9",
+      "lineWidth": 1.33
+    },
+    {
+      "order": 11,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/qd4vmtwr",
+      "id": "12",
+      "name": "Rectangle 11",
+      "bbox": [
+        933.12,
+        174.72,
+        4.8,
+        129.6
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#14577A"
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/fyxobm58",
+      "id": "13",
+      "name": "TextBox 12",
+      "bbox": [
+        952.32,
+        188.16,
+        238.08,
+        26.88
+      ],
+      "geometry": "rect",
+      "text": "速率标度",
+      "textPreview": "速率标度",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "速率标度"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "速率标度",
+          "runs": [
+            {
+              "index": 1,
+              "text": "速率标度",
+              "fontSize": 19.33,
+              "typeface": "Microsoft YaHei",
+              "color": "#14577A",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 13,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/8v6psfil",
+      "id": "14",
+      "name": "TextBox 13",
+      "bbox": [
+        952.32,
+        222.72,
+        238.08,
+        70.08
+      ],
+      "geometry": "rect",
+      "text": "p_s(L) proportional to 10^(-alpha_f L / 5)\n两臂等长时，光纤损耗先按距离指数压低成功率。",
+      "textPreview": "p_s(L) proportional to 10^(-alpha_f L / 5) | 两臂等长时，光纤损耗先按距离指数压低成功率。",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 4,
+        "lines": [
+          {
+            "index": 1,
+            "text": "p_s(L) proportional to"
+          },
+          {
+            "index": 2,
+            "text": "10^(-alpha_f L / 5)"
+          },
+          {
+            "index": 3,
+            "text": "两臂等长时，光纤损耗先按距离指"
+          },
+          {
+            "index": 4,
+            "text": "数压低成功率。"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "p_s(L) proportional to 10^(-alpha_f L / 5)\n两臂等长时，光纤损耗先按距离指数压低成功率。",
+          "runs": [
+            {
+              "index": 1,
+              "text": "p_s(L) proportional to 10^(-alpha_f L / 5)",
+              "fontSize": 15.33,
+              "typeface": "Microsoft YaHei",
+              "color": "#1E242B"
+            },
+            {
+              "index": 2,
+              "text": "\n",
+              "alignment": "left"
+            },
+            {
+              "index": 3,
+              "text": "两臂等长时，光纤损耗先按距离指数压低成功率。",
+              "fontSize": 15.33,
+              "typeface": "Microsoft YaHei",
+              "color": "#1E242B"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 14,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/xczed8v6",
+      "id": "15",
+      "name": "Rectangle 14",
+      "bbox": [
+        933.12,
+        334.08,
+        270.72,
+        122.88
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#FFFFFF",
+      "lineColor": "#D9DED9",
+      "lineWidth": 1.33
+    },
+    {
+      "order": 15,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/qpg3ex0n",
+      "id": "16",
+      "name": "Rectangle 15",
+      "bbox": [
+        933.12,
+        334.08,
+        4.8,
+        122.88
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#2F7C63"
+    },
+    {
+      "order": 16,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/fa9w3m94",
+      "id": "17",
+      "name": "TextBox 16",
+      "bbox": [
+        952.32,
+        347.52,
+        238.08,
+        26.88
+      ],
+      "geometry": "rect",
+      "text": "质量退化",
+      "textPreview": "质量退化",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "质量退化"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "质量退化",
+          "runs": [
+            {
+              "index": 1,
+              "text": "质量退化",
+              "fontSize": 19.33,
+              "typeface": "Microsoft YaHei",
+              "color": "#2F7C63",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 17,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/8z25kb6x",
+      "id": "18",
+      "name": "TextBox 17",
+      "bbox": [
+        952.32,
+        382.08,
+        238.08,
+        63.36
+      ],
+      "geometry": "rect",
+      "text": "条件态质量更多受背景和暗计数相对占比控制，明显退化通常滞后于速率下降。",
+      "textPreview": "条件态质量更多受背景和暗计数相对占比控制，明显退化通常滞后于速率下降。",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 3,
+        "lines": [
+          {
+            "index": 1,
+            "text": "条件态质量更多受背景和暗计"
+          },
+          {
+            "index": 2,
+            "text": "数相对占比控制，明显退化通"
+          },
+          {
+            "index": 3,
+            "text": "常滞后于速率下降。"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "条件态质量更多受背景和暗计数相对占比控制，明显退化通常滞后于速率下降。",
+          "runs": [
+            {
+              "index": 1,
+              "text": "条件态质量更多受背景和暗计数相对占比控制，明显退化通常滞后于速率下降。",
+              "fontSize": 18,
+              "typeface": "Microsoft YaHei",
+              "color": "#1E242B"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 18,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/1gvy90je",
+      "id": "19",
+      "name": "Rectangle 18",
+      "bbox": [
+        933.12,
+        484.8,
+        270.72,
+        113.28
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#FFFFFF",
+      "lineColor": "#D9DED9",
+      "lineWidth": 1.33
+    },
+    {
+      "order": 19,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/loj2t83i",
+      "id": "20",
+      "name": "Rectangle 19",
+      "bbox": [
+        933.12,
+        484.8,
+        4.8,
+        113.28
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#B86B2D"
+    },
+    {
+      "order": 20,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/w3m94fu1",
+      "id": "21",
+      "name": "TextBox 20",
+      "bbox": [
+        952.32,
+        498.24,
+        238.08,
+        26.88
+      ],
+      "geometry": "rect",
+      "text": "部署优先级",
+      "textPreview": "部署优先级",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "部署优先级"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "部署优先级",
+          "runs": [
+            {
+              "index": 1,
+              "text": "部署优先级",
+              "fontSize": 19.33,
+              "typeface": "Microsoft YaHei",
+              "color": "#B86B2D",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 21,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/3itgfmlk",
+      "id": "22",
+      "name": "TextBox 21",
+      "bbox": [
+        952.32,
+        532.8,
+        238.08,
+        53.76
+      ],
+      "geometry": "rect",
+      "text": "长链路实验先保障有效宣告事件数，再讨论更高目标保真度下的相位与频域噪声控制。",
+      "textPreview": "长链路实验先保障有效宣告事件数，再讨论更高目标保真度下的相位与频域噪声控制。",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 3,
+        "lines": [
+          {
+            "index": 1,
+            "text": "长链路实验先保障有效宣告事"
+          },
+          {
+            "index": 2,
+            "text": "件数，再讨论更高目标保真度"
+          },
+          {
+            "index": 3,
+            "text": "下的相位与频域噪声控制。"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "长链路实验先保障有效宣告事件数，再讨论更高目标保真度下的相位与频域噪声控制。",
+          "runs": [
+            {
+              "index": 1,
+              "text": "长链路实验先保障有效宣告事件数，再讨论更高目标保真度下的相位与频域噪声控制。",
+              "fontSize": 18,
+              "typeface": "Microsoft YaHei",
+              "color": "#1E242B"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "composeRuns": []
+}

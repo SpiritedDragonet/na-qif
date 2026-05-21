@@ -33,7 +33,6 @@ def convert_pdf_to_png(figures_dir: pathlib.Path, stem: str) -> None:
 def main() -> None:
     figures_dir = pathlib.Path(__file__).resolve().parent
     scripts = [
-        "fig_calibration_pipeline.py",
         "fig_wavepacket.py",
         "fig_accept_hist.py",
         "fig_hom.py",
@@ -46,6 +45,7 @@ def main() -> None:
         "fig_cost_scaling.py",
     ]
     static_pdf_figures = [
+        "fig_calibration_pipeline",
         "fig_ch2_timebin_mps_tebd",
         "fig_ch1_system_pressure",
         "fig_ch1_modular_network",

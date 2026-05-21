@@ -1,0 +1,87 @@
+{
+  "pptx": "G:\\BProj\\Quantum_simulation\\thesis\\output\\final_presentation_cn.pptx",
+  "slideCount": 16,
+  "scale": 1,
+  "records": [
+    {
+      "slide": 1,
+      "pngPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\source-slides\\slide-01.png",
+      "layoutPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\layouts\\slide-01.layout.json"
+    },
+    {
+      "slide": 2,
+      "pngPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\source-slides\\slide-02.png",
+      "layoutPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\layouts\\slide-02.layout.json"
+    },
+    {
+      "slide": 3,
+      "pngPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\source-slides\\slide-03.png",
+      "layoutPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\layouts\\slide-03.layout.json"
+    },
+    {
+      "slide": 4,
+      "pngPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\source-slides\\slide-04.png",
+      "layoutPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\layouts\\slide-04.layout.json"
+    },
+    {
+      "slide": 5,
+      "pngPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\source-slides\\slide-05.png",
+      "layoutPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\layouts\\slide-05.layout.json"
+    },
+    {
+      "slide": 6,
+      "pngPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\source-slides\\slide-06.png",
+      "layoutPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\layouts\\slide-06.layout.json"
+    },
+    {
+      "slide": 7,
+      "pngPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\source-slides\\slide-07.png",
+      "layoutPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\layouts\\slide-07.layout.json"
+    },
+    {
+      "slide": 8,
+      "pngPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\source-slides\\slide-08.png",
+      "layoutPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\layouts\\slide-08.layout.json"
+    },
+    {
+      "slide": 9,
+      "pngPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\source-slides\\slide-09.png",
+      "layoutPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\layouts\\slide-09.layout.json"
+    },
+    {
+      "slide": 10,
+      "pngPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\source-slides\\slide-10.png",
+      "layoutPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\layouts\\slide-10.layout.json"
+    },
+    {
+      "slide": 11,
+      "pngPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\source-slides\\slide-11.png",
+      "layoutPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\layouts\\slide-11.layout.json"
+    },
+    {
+      "slide": 12,
+      "pngPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\source-slides\\slide-12.png",
+      "layoutPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\layouts\\slide-12.layout.json"
+    },
+    {
+      "slide": 13,
+      "pngPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\source-slides\\slide-13.png",
+      "layoutPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\layouts\\slide-13.layout.json"
+    },
+    {
+      "slide": 14,
+      "pngPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\source-slides\\slide-14.png",
+      "layoutPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\layouts\\slide-14.layout.json"
+    },
+    {
+      "slide": 15,
+      "pngPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\source-slides\\slide-15.png",
+      "layoutPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\layouts\\slide-15.layout.json"
+    },
+    {
+      "slide": 16,
+      "pngPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\source-slides\\slide-16.png",
+      "layoutPath": "G:\\BProj\\Quantum_simulation\\thesis\\output\\rendered\\layouts\\slide-16.layout.json"
+    }
+  ]
+}

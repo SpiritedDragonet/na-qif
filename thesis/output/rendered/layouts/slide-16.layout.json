@@ -1,0 +1,1332 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/8z25kb6x",
+    "id": "8z25kb6x",
+    "slide": 17,
+    "layoutId": "/ppt/slideLayouts/slideLayout7.xml",
+    "layoutName": "Blank",
+    "layoutType": "blank",
+    "masterLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1279.97,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "Office",
+    "colors": {
+      "accent1": "#4F81BD",
+      "accent2": "#C0504D",
+      "accent3": "#9BBB59",
+      "accent4": "#8064A2",
+      "accent5": "#4BACC6",
+      "accent6": "#F79646",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#1F497D",
+      "lt2": "#EEECE1",
+      "hlink": "#0000FF",
+      "folHlink": "#800080"
+    },
+    "typefaces": [
+      "+mn-lt",
+      "Arial",
+      "Microsoft YaHei"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "/ppt/slideLayouts/slideLayout7.xml",
+      "name": "Blank",
+      "type": "blank",
+      "parentLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+      "elements": [
+        {
+          "order": 1,
+          "kind": "shape",
+          "scope": "layout",
+          "aid": "template/layout//ppt/slideLayouts/slideLayout7.xml/2",
+          "id": "2",
+          "name": "Date Placeholder 1",
+          "bbox": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "order": 2,
+          "kind": "shape",
+          "scope": "layout",
+          "aid": "template/layout//ppt/slideLayouts/slideLayout7.xml/3",
+          "id": "3",
+          "name": "Footer Placeholder 2",
+          "bbox": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "scope": "master",
+      "id": "/ppt/slideMasters/slideMaster1.xml",
+      "type": "master",
+      "elements": [
+        {
+          "order": 1,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/2",
+          "id": "2",
+          "name": "Title Placeholder 1",
+          "bbox": [
+            48,
+            28.83,
+            864,
+            120
+          ],
+          "geometry": "rect"
+        },
+        {
+          "order": 2,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/3",
+          "id": "3",
+          "name": "Text Placeholder 2",
+          "bbox": [
+            48,
+            168,
+            864,
+            475.17
+          ],
+          "geometry": "rect"
+        },
+        {
+          "order": 3,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/4",
+          "id": "4",
+          "name": "Date Placeholder 3",
+          "bbox": [
+            48,
+            667.33,
+            224,
+            38.33
+          ],
+          "geometry": "rect"
+        },
+        {
+          "order": 4,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/5",
+          "id": "5",
+          "name": "Footer Placeholder 4",
+          "bbox": [
+            328,
+            667.33,
+            304,
+            38.33
+          ],
+          "geometry": "rect"
+        },
+        {
+          "order": 5,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/6",
+          "id": "6",
+          "name": "Slide Number Placeholder 5",
+          "bbox": [
+            688,
+            667.33,
+            224,
+            38.33
+          ],
+          "geometry": "rect"
+        }
+      ]
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/pg3ex0nu",
+      "id": "2",
+      "name": "Rectangle 1",
+      "bbox": [
+        0,
+        0,
+        1279.97,
+        720
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#F7F7F2"
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/wval87ed",
+      "id": "3",
+      "name": "Rectangle 2",
+      "bbox": [
+        55.68,
+        48,
+        40.32,
+        4.8
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#14577A"
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/7mp0bi9s",
+      "id": "4",
+      "name": "TextBox 3",
+      "bbox": [
+        107.52,
+        37.44,
+        268.8,
+        26.88
+      ],
+      "geometry": "rect",
+      "text": "CONCLUSION",
+      "textPreview": "CONCLUSION",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "CONCLUSION"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "CONCLUSION",
+          "runs": [
+            {
+              "index": 1,
+              "text": "CONCLUSION",
+              "fontSize": 12.67,
+              "typeface": "Arial",
+              "color": "#14577A",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/e1w7mp0b",
+      "id": "5",
+      "name": "TextBox 4",
+      "bbox": [
+        55.68,
+        67.2,
+        1142.4,
+        48
+      ],
+      "geometry": "rect",
+      "text": "最终洞见指向清晰的调参顺序",
+      "textPreview": "最终洞见指向清晰的调参顺序",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "最终洞见指向清晰的调参顺序"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "最终洞见指向清晰的调参顺序",
+          "runs": [
+            {
+              "index": 1,
+              "text": "最终洞见指向清晰的调参顺序",
+              "fontSize": 30.67,
+              "typeface": "Microsoft YaHei",
+              "color": "#1E242B",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/psfil0rq",
+      "id": "6",
+      "name": "Rectangle 5",
+      "bbox": [
+        55.68,
+        130.56,
+        1156.8,
+        1.15
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#D9DED9"
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/w7mp0bi9",
+      "id": "7",
+      "name": "TextBox 6",
+      "bbox": [
+        55.68,
+        685.44,
+        787.2,
+        17.28
+      ],
+      "geometry": "rect",
+      "text": "整理自 thesis.pdf 与 LaTeX 正文",
+      "textPreview": "整理自 thesis.pdf 与 LaTeX 正文",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "整理自 thesis.pdf 与 LaTeX 正文"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "整理自 thesis.pdf 与 LaTeX 正文",
+          "runs": [
+            {
+              "index": 1,
+              "text": "整理自 thesis.pdf 与 LaTeX 正文",
+              "fontSize": 10,
+              "typeface": "Arial",
+              "color": "#68727D"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/7u54zido",
+      "id": "8",
+      "name": "TextBox 7",
+      "bbox": [
+        1185.6,
+        682.56,
+        38.4,
+        21.12
+      ],
+      "geometry": "rect",
+      "text": "16",
+      "textPreview": "16",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "16"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "16",
+          "runs": [
+            {
+              "index": 1,
+              "text": "16",
+              "fontSize": 10.67,
+              "typeface": "Arial",
+              "color": "#68727D"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ed8bat47",
+      "id": "9",
+      "name": "Rectangle 8",
+      "bbox": [
+        94.08,
+        176.64,
+        225.6,
+        107.52
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#FFFFFF",
+      "lineColor": "#14577A",
+      "lineWidth": 1.33
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/onyd0z61",
+      "id": "10",
+      "name": "TextBox 9",
+      "bbox": [
+        106.56,
+        188.16,
+        201.6,
+        26.88
+      ],
+      "geometry": "rect",
+      "text": "先稳源端",
+      "textPreview": "先稳源端",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "先稳源端"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "先稳源端",
+          "runs": [
+            {
+              "index": 1,
+              "text": "先稳源端",
+              "fontSize": 18,
+              "typeface": "Microsoft YaHei",
+              "color": "#14577A",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/d8v6psfi",
+      "id": "11",
+      "name": "TextBox 10",
+      "bbox": [
+        106.56,
+        223.68,
+        201.6,
+        51.84
+      ],
+      "geometry": "rect",
+      "text": "波包主瓣、尾部\n和 HOM 可见度",
+      "textPreview": "波包主瓣、尾部 | 和 HOM 可见度",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "波包主瓣、尾部"
+          },
+          {
+            "index": 2,
+            "text": "和 HOM 可见度"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "波包主瓣、尾部\n和 HOM 可见度",
+          "runs": [
+            {
+              "index": 1,
+              "text": "波包主瓣、尾部",
+              "fontSize": 15.33,
+              "typeface": "Microsoft YaHei",
+              "color": "#68727D"
+            },
+            {
+              "index": 2,
+              "text": "\n",
+              "alignment": "left"
+            },
+            {
+              "index": 3,
+              "text": "和 HOM 可见度",
+              "fontSize": 15.33,
+              "typeface": "Microsoft YaHei",
+              "color": "#68727D"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 11,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/6hcrmhk3",
+      "id": "12",
+      "name": "Rectangle 11",
+      "bbox": [
+        343.68,
+        228.48,
+        59.52,
+        2.4
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#14577A"
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/z25kb6xk",
+      "id": "13",
+      "name": "TextBox 12",
+      "bbox": [
+        395.52,
+        218.88,
+        24,
+        19.2
+      ],
+      "geometry": "rect",
+      "text": "▶",
+      "textPreview": "▶",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "▶"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "▶",
+          "runs": [
+            {
+              "index": 1,
+              "text": "▶",
+              "fontSize": 16,
+              "typeface": "Arial",
+              "color": "#14577A"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 13,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ovahoza1",
+      "id": "14",
+      "name": "Rectangle 13",
+      "bbox": [
+        432,
+        176.64,
+        244.8,
+        107.52
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#FFFFFF",
+      "lineColor": "#B86B2D",
+      "lineWidth": 1.33
+    },
+    {
+      "order": 14,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/dg7adsji",
+      "id": "15",
+      "name": "TextBox 14",
+      "bbox": [
+        444.48,
+        188.16,
+        220.8,
+        26.88
+      ],
+      "geometry": "rect",
+      "text": "再定窗口",
+      "textPreview": "再定窗口",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "再定窗口"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "再定窗口",
+          "runs": [
+            {
+              "index": 1,
+              "text": "再定窗口",
+              "fontSize": 18,
+              "typeface": "Microsoft YaHei",
+              "color": "#B86B2D",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 15,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/6tovahoz",
+      "id": "16",
+      "name": "TextBox 15",
+      "bbox": [
+        444.48,
+        223.68,
+        220.8,
+        51.84
+      ],
+      "geometry": "rect",
+      "text": "70 ns 附近平衡\np_t 与 p_f/p_s",
+      "textPreview": "70 ns 附近平衡 | p_t 与 p_f/p_s",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "70 ns 附近平衡"
+          },
+          {
+            "index": 2,
+            "text": "p_t 与 p_f/p_s"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "70 ns 附近平衡\np_t 与 p_f/p_s",
+          "runs": [
+            {
+              "index": 1,
+              "text": "70 ns 附近平衡",
+              "fontSize": 15.33,
+              "typeface": "Microsoft YaHei",
+              "color": "#68727D"
+            },
+            {
+              "index": 2,
+              "text": "\n",
+              "alignment": "left"
+            },
+            {
+              "index": 3,
+              "text": "p_t 与 p_f/p_s",
+              "fontSize": 15.33,
+              "typeface": "Microsoft YaHei",
+              "color": "#68727D"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 16,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/vahoza1g",
+      "id": "17",
+      "name": "Rectangle 16",
+      "bbox": [
+        700.8,
+        228.48,
+        59.52,
+        2.4
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#B86B2D"
+    },
+    {
+      "order": 17,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/o7qpg3ex",
+      "id": "18",
+      "name": "TextBox 17",
+      "bbox": [
+        752.64,
+        218.88,
+        24,
+        19.2
+      ],
+      "geometry": "rect",
+      "text": "▶",
+      "textPreview": "▶",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "▶"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "▶",
+          "runs": [
+            {
+              "index": 1,
+              "text": "▶",
+              "fontSize": 16,
+              "typeface": "Arial",
+              "color": "#B86B2D"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 18,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/dsji5sne",
+      "id": "19",
+      "name": "Rectangle 18",
+      "bbox": [
+        789.12,
+        176.64,
+        254.4,
+        107.52
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#FFFFFF",
+      "lineColor": "#2F7C63",
+      "lineWidth": 1.33
+    },
+    {
+      "order": 19,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/hk3q5o7q",
+      "id": "20",
+      "name": "TextBox 19",
+      "bbox": [
+        801.6,
+        188.16,
+        230.4,
+        26.88
+      ],
+      "geometry": "rect",
+      "text": "最后核查任务层",
+      "textPreview": "最后核查任务层",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "最后核查任务层"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "最后核查任务层",
+          "runs": [
+            {
+              "index": 1,
+              "text": "最后核查任务层",
+              "fontSize": 18,
+              "typeface": "Microsoft YaHei",
+              "color": "#2F7C63",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 20,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/oza1gvy9",
+      "id": "21",
+      "name": "TextBox 20",
+      "bbox": [
+        801.6,
+        223.68,
+        230.4,
+        51.84
+      ],
+      "geometry": "rect",
+      "text": "Bell 保真度、CHSH\n和距离扩展",
+      "textPreview": "Bell 保真度、CHSH | 和距离扩展",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Bell 保真度、CHSH"
+          },
+          {
+            "index": 2,
+            "text": "和距离扩展"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Bell 保真度、CHSH\n和距离扩展",
+          "runs": [
+            {
+              "index": 1,
+              "text": "Bell 保真度、CHSH",
+              "fontSize": 15.33,
+              "typeface": "Microsoft YaHei",
+              "color": "#68727D"
+            },
+            {
+              "index": 2,
+              "text": "\n",
+              "alignment": "left"
+            },
+            {
+              "index": 3,
+              "text": "和距离扩展",
+              "fontSize": 15.33,
+              "typeface": "Microsoft YaHei",
+              "color": "#68727D"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 21,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/zed8v6ps",
+      "id": "22",
+      "name": "Rectangle 21",
+      "bbox": [
+        94.08,
+        355.2,
+        1051.2,
+        107.52
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#FAFBF8",
+      "lineColor": "#D9DED9",
+      "lineWidth": 1.33
+    },
+    {
+      "order": 22,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/6xkf6dcb",
+      "id": "23",
+      "name": "TextBox 22",
+      "bbox": [
+        120,
+        385.92,
+        984,
+        36.48
+      ],
+      "geometry": "rect",
+      "text": "本论文形成了一个可复现的端到端仿真框架：用 MPS/TEBD 保留相干历史，用 POVM 推回处理宣告统计，并用 p_s、p_t、p_f、F_B、S_max 解释误差来源。",
+      "textPreview": "本论文形成了一个可复现的端到端仿真框架：用 MPS/TEBD 保留相干历史，用 POVM 推回处理宣告统计，并用 p_s、p_t、p_f、F_B、S_max 解释误差来源。",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "本论文形成了一个可复现的端到端仿真框架：用 MPS/TEBD 保留相干历史，用 POVM"
+          },
+          {
+            "index": 2,
+            "text": "推回处理宣告统计，并用 p_s、p_t、p_f、F_B、S_max 解释误差来源。"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "本论文形成了一个可复现的端到端仿真框架：用 MPS/TEBD 保留相干历史，用 POVM 推回处理宣告统计，并用 p_s、p_t、p_f、F_B、S_max 解释误差来源。",
+          "runs": [
+            {
+              "index": 1,
+              "text": "本论文形成了一个可复现的端到端仿真框架：用 MPS/TEBD 保留相干历史，用 POVM 推回处理宣告统计，并用 p_s、p_t、p_f、F_B、S_max 解释误差来源。",
+              "fontSize": 22.67,
+              "typeface": "Microsoft YaHei",
+              "color": "#1E242B",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 23,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/hwfyxobm",
+      "id": "24",
+      "name": "Rectangle 23",
+      "bbox": [
+        115.2,
+        513.6,
+        998.4,
+        84.48
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#FFFFFF",
+      "lineColor": "#D9DED9",
+      "lineWidth": 1.33
+    },
+    {
+      "order": 24,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/obm58z25",
+      "id": "25",
+      "name": "Rectangle 24",
+      "bbox": [
+        115.2,
+        513.6,
+        4.8,
+        84.48
+      ],
+      "geometry": "rect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#14577A"
+    },
+    {
+      "order": 25,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/zqtcj6to",
+      "id": "26",
+      "name": "TextBox 25",
+      "bbox": [
+        134.4,
+        527.04,
+        965.76,
+        26.88
+      ],
+      "geometry": "rect",
+      "text": "局限与展望",
+      "textPreview": "局限与展望",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "局限与展望"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "局限与展望",
+          "runs": [
+            {
+              "index": 1,
+              "text": "局限与展望",
+              "fontSize": 19.33,
+              "typeface": "Microsoft YaHei",
+              "color": "#14577A",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 26,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/65wjudg7",
+      "id": "27",
+      "name": "TextBox 26",
+      "bbox": [
+        134.4,
+        561.6,
+        965.76,
+        24.96
+      ],
+      "geometry": "rect",
+      "text": "当前模型仍依赖有限局域空间、有限模式数和独立测量侧信道假设。后续可接入更显式的多模传播、实验闭环标定和资源调度层分析。",
+      "textPreview": "当前模型仍依赖有限局域空间、有限模式数和独立测量侧信道假设。后续可接入更显式的多模传播、实验闭环标定和资源调度层分析。",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "当前模型仍依赖有限局域空间、有限模式数和独立测量侧信道假设。后续可接入更显式的多模传播、实验闭环标定和资源调度"
+          },
+          {
+            "index": 2,
+            "text": "层分析。"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "当前模型仍依赖有限局域空间、有限模式数和独立测量侧信道假设。后续可接入更显式的多模传播、实验闭环标定和资源调度层分析。",
+          "runs": [
+            {
+              "index": 1,
+              "text": "当前模型仍依赖有限局域空间、有限模式数和独立测量侧信道假设。后续可接入更显式的多模传播、实验闭环标定和资源调度层分析。",
+              "fontSize": 17.33,
+              "typeface": "Microsoft YaHei",
+              "color": "#1E242B"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 27,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/h0fepkzu",
+      "id": "28",
+      "name": "TextBox 27",
+      "bbox": [
+        408,
+        628.8,
+        460.8,
+        36.48
+      ],
+      "geometry": "rect",
+      "text": "谢谢各位老师，欢迎批评指正。",
+      "textPreview": "谢谢各位老师，欢迎批评指正。",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "谢谢各位老师，欢迎批评指正。"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "谢谢各位老师，欢迎批评指正。",
+          "runs": [
+            {
+              "index": 1,
+              "text": "谢谢各位老师，欢迎批评指正。",
+              "fontSize": 25.33,
+              "typeface": "Microsoft YaHei",
+              "color": "#14577A",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "composeRuns": []
+}
