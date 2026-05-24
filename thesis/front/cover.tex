@@ -1,4 +1,4 @@
-﻿% !Mode:: "TeX:UTF-8"
+% !Mode:: "TeX:UTF-8"
 
 \heusetup{
   statesecrets={公开},
@@ -7,7 +7,7 @@
   intclassifiedindex={62-5},
   ctitlecover={中性原子量子计算体系的\\光子—原子量子接口仿真研究},
   ctitle={中性原子量子计算体系的光子—原子量子接口仿真研究},
-  csubtitle={基于时间分箱离散化与MPS张量网络的端到端建模},
+  csubtitle={基于时间分箱离散化与MPS张量网络的链路建模},
   cxueke={工学},
   csubject={光学工程},
   caffil={物理与光电工程学院},
@@ -17,7 +17,7 @@
   csubmitdate={2026年3月},
   cstudentid={S322250055},
   etitle={Simulation of Photon--Atom Quantum Interfaces for Neutral-Atom Quantum Computing Systems},
-  esubtitle={End-to-End Modeling Based on Time-Bin Discretization and MPS Tensor Networks},
+  esubtitle={Link Modeling Based on Time-Bin Discretization and MPS Tensor Networks},
   exueke={Engineering},
   esubject={Optical Engineering},
   eaffil={School of Physics and Optoelectronic Engineering},
@@ -25,14 +25,18 @@
   esupervisor={Professor Ren Jing},
   esubmitdate={March, 2026},
   estudenttype={Master of Engineering},
-  ckeywords={量子接口, 中性原子, 量子网络, 矩阵乘积态, 时间分箱离散化, 量子频率转换, 远程纠缠},
-  ekeywords={Quantum Interface, Neutral Atom, Quantum Network, Matrix Product State, Time-Bin Discretization, Quantum Frequency Conversion, Remote Entanglement},
+  ckeywords={量子接口, 中性原子, 远程纠缠, 矩阵乘积态, 量子频率转换},
+  ekeywords={Quantum Interface, Neutral Atom, Remote Entanglement, Matrix Product State, Quantum Frequency Conversion},
 }
 
 \begin{cabstract}
-针对中性原子量子计算体系的光子—原子量子接口，基于时间分箱离散化与矩阵乘积态（MPS）张量网络建立第一性原理端到端仿真框架。在量子网络与分布式量子计算中，远程纠缠建立的成功率与条件态保真度受到链路中多种非理想因素的耦合影响，传统经验参数模型难以给出可追溯的定量预测。整条接口链路包括原子发射与偏振映射、量子频率转换（QFC）及其噪声、光纤偏振演化与色散、分束干涉与贝尔态测量，以及探测器响应，可统一表示为时间分箱序列上的量子线路演化与测量条件化过程。在数值实现上，采用 MPS 表示联合量子态，通过时间演化块解耦算法（TEBD）实现逐分箱的局域门演化与交换门（SWAP）传送带调度，并以量子轨迹采样与 Kraus 算符投影完成探测器响应仿真。在给定成功探测记录集合后，重建原子约化密度矩阵，并据此评估保真度与纠缠度量。该框架能够在可控计算资源下处理数百量级时间分箱的脉冲演化与条件化统计，为接口参数优化、误差来源分解以及不同方案的系统级比较提供可解释、可复现的第一性原理工具。\end{cabstract}
+在量子网络与分布式量子计算中，远程纠缠是连接空间分离量子寄存器并支撑跨节点门操作、资源注入和网络协议的基础资源。中性原子节点兼具可编程原子寄存器和光学接口潜力，是研究远程纠缠链路的代表性平台。实际光子—原子接口链路同时受到原子发射波包、量子频率转换噪声、光纤损耗与偏振演化、两光子干涉、背景光子和探测器暗计数等因素影响，成功率与条件态保真度的损失来源难以仅由经验参数判断。围绕 Rb 原子、光学腔、量子频率转换、电信光纤和中心站 Bell 态测量构成的典型链路，建立可追溯的链路仿真与误差预算方法，有助于把器件参数、测量记录和末端纠缠质量放在统一评价口径下分析。
+
+研究首先基于时间分箱离散化和矩阵乘积态（MPS）张量网络，把原子发射与偏振映射、量子频率转换（QFC）及滤波记忆效应、光纤传播、分束干涉、Bell 态测量和探测器响应统一表示为离散时间序列上的量子演化与条件化测量过程；随后采用时间演化块解耦算法（TEBD）实现局域门演化与交换门（SWAP）传送带调度，并结合量子轨迹采样和 Kraus 算符投影枚举成功探测记录，重建成功条件下的原子约化密度矩阵，计算宣告成功概率、真/假成功分量、条件保真度和 CHSH 指标。基于公开实验参数完成波包、窗口、HOM 干涉、QFC/探测器工作平面和距离扩展分析后，结果表明：$70\,\mathrm{ns}$ 数据接收窗口给出较均衡的速率—质量工作点；推荐分束器参数约位于 $\theta_{\mathrm{BS}}\approx0.75\,\mathrm{rad}$；假成功主要由背景光子和探测器暗计数共同贡献，其中背景辅助略占主导；真成功事件更集中于小时间差记录；链路距离增加时成功率先于条件态质量退化，长距离场景首先受到有效宣告事件数限制。上述结果把末端保真度损失拆解为窗口选择、干涉质量、背景噪声和暗计数等可操作因素，为接口参数筛选和误差预算提供了依据。\end{cabstract}
 
 \begin{eabstract}
-A first-principles, end-to-end simulation framework is developed for photon--atom quantum interfaces in neutral-atom quantum computing systems, based on time-bin discretization and matrix product state (MPS) tensor network methods. In quantum networks and distributed quantum computing, the success rate and conditional-state fidelity of remote entanglement generation are jointly affected by multiple non-ideal factors along the interface link, which are difficult to predict quantitatively using traditional empirical models. The full interface link, including atomic emission and polarization mapping, quantum frequency conversion (QFC) with associated noise, fiber polarization evolution and dispersion, beam-splitter interference and Bell-state measurement, and detector response, is formulated as a quantum circuit evolution over a time-bin sequence combined with measurement conditioning. Numerically, the joint quantum state is represented as an MPS, evolved via the time-evolving block decimation (TEBD) algorithm with per-bin local gates and a swap gate (SWAP) conveyor-belt scheduling scheme; detector response is simulated through quantum trajectory sampling and Kraus operator projection. For a given successful detection-record set, the atomic reduced density matrix is reconstructed and used to evaluate fidelity and entanglement metrics. This framework can handle pulse evolution and conditional statistics over hundreds of time bins within manageable computational resources, providing an interpretable and reproducible first-principles tool for interface parameter optimization, error-source decomposition, and system-level comparison of different schemes.
+In quantum networks and distributed quantum computing, remote entanglement is a basic resource for connecting spatially separated quantum registers and supporting inter-node gates, resource injection, and network protocols. Neutral-atom nodes combine programmable atomic registers with optical-interface capabilities, making them a representative platform for studying remote-entanglement links. In practical photon--atom interface links, the success probability and conditional-state fidelity are jointly affected by atomic wave-packet emission, quantum-frequency-conversion noise, fiber loss and polarization evolution, two-photon interference, background photons, and detector dark counts. These coupled factors make it difficult to identify fidelity-loss mechanisms from empirical parameters alone. This work focuses on a representative link consisting of Rb atoms, an optical cavity, quantum frequency conversion, telecom fiber, and central-station Bell-state measurement, and develops a traceable link-simulation and error-budgeting method that evaluates device parameters, detection records, and final entanglement quality within one consistent framework.
+
+The study first formulates atomic emission and polarization mapping, quantum frequency conversion (QFC) with filtering memory, fiber propagation, beam-splitter interference, Bell-state measurement, and detector response as quantum evolution and conditioned measurement over a time-bin sequence using matrix product state (MPS) tensor networks. The time-evolving block decimation (TEBD) algorithm is then used for local-gate evolution and swap-gate (SWAP) conveyor-belt scheduling, while quantum trajectory sampling and Kraus-operator projection enumerate successful detection records. For each successful record set, the atomic reduced density matrix is reconstructed to evaluate the heralding success probability, true- and false-success components, conditional fidelity, and CHSH parameter. Parameter anchoring, window scanning, HOM-interference fitting, QFC/detector working-plane analysis, and distance-scaling simulations based on published experimental parameters show that a $70\,\mathrm{ns}$ data-acceptance window gives a balanced rate--quality operating point; the recommended beam-splitter setting is near $\theta_{\mathrm{BS}}\approx0.75\,\mathrm{rad}$; false successes are mainly caused by background photons and detector dark counts, with the background-assisted component slightly dominant; true successes concentrate more strongly in small time-difference records; and, as link distance increases, the success rate degrades before the conditional-state quality, so long-distance operation is first limited by the number of usable heralded events. These results decompose the final fidelity loss into operable factors including window selection, interference quality, background noise, and dark counts, providing a basis for interface-parameter screening and error budgeting.
 \end{eabstract}
 

@@ -1,8 +1,8 @@
 ﻿% !Mode:: "TeX:UTF-8"
 
-\chapter{端到端量子接口仿真的张量网络方法}[Tensor-Network Methods for End-to-End Quantum Interface Simulation]
+\chapter{量子接口链路仿真的张量网络方法}[Tensor-Network Methods for Quantum Interface Link Simulation]
 
-端到端量子接口链路同时包含连续时间量子光场、离散内部能级、有限带宽记忆以及条件测量。若直接在连续场与全密度矩阵层面处理，状态空间会随时间分辨率和链路长度迅速膨胀，数值规模很快失去控制。该类链路能够抽象为矩阵乘积态（matrix product state, MPS）与时间演化块消元（time-evolving block decimation, TEBD）框架，关键在于三点：第一，输入输出理论允许把连续时间输出场离散为一串按时间顺序排列的时间分箱 \cite{GardinerCollett1985,Pichler2016TimeDelaysMPS}。第二，原子、时间分箱与滤波记忆模之间的相互作用可以组织为一维链上的局域门序列 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems,ArranzRegidor2021WaveguideQED}。第三，中间站线性光学网络和探测器响应能够通过 Heisenberg 对偶映射推回为输入端的等效测量算符，从而把“态演化”和“测量统计”分到两条互相兼容的计算通道中 \cite{Kraus1983StatesEffectsOperations,NielsenChuang2010QCQI}。
+量子接口链路同时包含连续时间量子光场、离散内部能级、有限带宽记忆以及条件测量。若直接在连续场与全密度矩阵层面处理，状态空间会随时间分辨率和链路长度迅速膨胀，数值规模很快失去控制。该类链路能够抽象为矩阵乘积态（matrix product state, MPS）与时间演化块消元（time-evolving block decimation, TEBD）框架，关键在于三点：第一，输入输出理论允许把连续时间输出场离散为一串按时间顺序排列的时间分箱 \cite{GardinerCollett1985,Pichler2016TimeDelaysMPS}。第二，原子、时间分箱与滤波记忆模之间的相互作用可以组织为一维链上的局域门序列 \cite{Pichler2016TimeDelaysMPS,Guimond2017DelayedCoherentFeedbackMPS,ArranzRegidor2021WaveguideQED}。第三，中间站线性光学网络和探测器响应能够通过 Heisenberg 对偶映射推回为输入端的等效测量算符，从而把“态演化”和“测量统计”分到两条互相兼容的计算通道中 \cite{Kraus1983StatesEffectsOperations,NielsenChuang2010QCQI}。
 
 \section{连续时间链路的离散表示}[Discretizing the Continuous-Time Link]
 
@@ -47,7 +47,7 @@
   
 \includegraphics[width=0.98\textwidth]{fig_ch2_timebin_mps_tebd.pdf}
   
-\caption{连续时间链路到 MPS/TEBD 计算对象的映射。连续输出场在时间步长 $\Delta t$ 下离散为时间分箱。两臂发射体、时间分箱和滤波记忆模随后排列成一维 MPS 链。每个时间步由发射门、QFC 门、滤波记忆门、SWAP 调度和 SVD 回写组成。该结构把连续时间光场、有限带宽记忆和局域门更新统一到可收缩的张量网络表示中\cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems,ArranzRegidor2021WaveguideQED,Vidal2004TEBD,Schollwoeck2011MPS,Paeckel2019TimeEvolutionMPS}。}
+\caption{连续时间链路到 MPS/TEBD 计算对象的映射。连续输出场在时间步长 $\Delta t$ 下离散为时间分箱。两臂发射体、时间分箱和滤波记忆模随后排列成一维 MPS 链。每个时间步由发射门、QFC 门、滤波记忆门、SWAP 调度和 SVD 回写组成。该结构把连续时间光场、有限带宽记忆和局域门更新统一到可收缩的张量网络表示中\cite{Pichler2016TimeDelaysMPS,Guimond2017DelayedCoherentFeedbackMPS,ArranzRegidor2021WaveguideQED,Vidal2004TEBD,Schollwoeck2011MPS,Paeckel2019TimeEvolutionMPS}。}
   
 \label{fig:ch2_timebin_mps_tebd}
 \end{figure}
@@ -68,7 +68,7 @@
 \label{eq:ch2-chain-space}
 \end{equation}
 
-在后续实现里，发射体站点采用 12 维局域空间，时间分箱采用 5 维局域空间，滤波记忆模采用 3 维局域空间。这一局域维度选择有明确的物理对应关系：12 维发射体用于同时容纳原子内部态和腔偏振自由度，5 维时间分箱用于表示 $|\varnothing\rangle$、$|H_{780}\rangle$、$|V_{780}\rangle$、$|H_{1517}\rangle$ 与 $|V_{1517}\rangle$，3 维记忆模用于表示真空、单激发以及有限带宽滤波保留下来的主要相干记忆。局域维度一旦确定，门算符的维度和张量收缩路径也随之固定下来。这一映射最重要的物理依据是因果顺序。对于发射阶段，系统在时间步 $k$ 只需要和第 $k$ 个时间分箱相互作用。对于 QFC 与滤波阶段，当前时间分箱只与本地记忆模相互作用。对于中间站之前的光纤和线性光学网络，传播效应则可以在测量端通过等效测量算符的推回处理 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems,ArranzRegidor2021WaveguideQED}。这种“每一步只接触有限邻域”的结构，使链路能够写成局域门序列，不必构造全局演化算符。在离散时间步长足够小的情况下，发射体与当前时间分箱的一次短时相互作用可写为
+在后续实现里，发射体站点采用 12 维局域空间，时间分箱采用 5 维局域空间，滤波记忆模采用 3 维局域空间。这一局域维度选择有明确的物理对应关系：12 维发射体用于同时容纳原子内部态和腔偏振自由度，5 维时间分箱用于表示 $|\varnothing\rangle$、$|H_{780}\rangle$、$|V_{780}\rangle$、$|H_{1517}\rangle$ 与 $|V_{1517}\rangle$，3 维记忆模用于表示真空、单激发以及有限带宽滤波保留下来的主要相干记忆。局域维度一旦确定，门算符的维度和张量收缩路径也随之固定下来。这一映射最重要的物理依据是因果顺序。对于发射阶段，系统在时间步 $k$ 只需要和第 $k$ 个时间分箱相互作用。对于 QFC 与滤波阶段，当前时间分箱只与本地记忆模相互作用。对于中间站之前的光纤和线性光学网络，传播效应则可以在测量端通过等效测量算符的推回处理 \cite{Pichler2016TimeDelaysMPS,Guimond2017DelayedCoherentFeedbackMPS,ArranzRegidor2021WaveguideQED}。这种“每一步只接触有限邻域”的结构，使链路能够写成局域门序列，不必构造全局演化算符。在离散时间步长足够小的情况下，发射体与当前时间分箱的一次短时相互作用可写为
 \begin{equation}
 U_k^{\mathrm{(em)}}\approx
 \exp\!\left[
@@ -125,7 +125,7 @@ S_n=-\sum_{\alpha}(\lambda_{\alpha}^{(n)})^2\log (\lambda_{\alpha}^{(n)})^2.
 \label{eq:ch2-truncerr}
 \end{equation}
 
-式 \eqref{eq:ch2-truncerr} 给出“丢弃权重”的定义。对应的数值操作是保留当前动力学中贡献最大的纠缠通道，并把权重很小的 Schmidt 分量从数值表示中截去。上述结构也解释了为什么 MPS 在一维问题上特别有效。对一维有能隙体系的基态，面积律表明纠缠熵不会随着系统长度线性增长，因此存在高效的 MPS 逼近 \cite{Hastings2007AreaLaw}。端到端接口链路属于非平衡动力学问题，严格的面积律不能直接搬用。但发射、QFC 和记忆核都属于有限时间内的顺序相互作用，纠缠增长主要沿着因果锥逐步传播，因此在有限时间窗和有限带宽条件下，真正需要保留的键维通常仍远小于形式上的指数上界 \cite{Vidal2003SlightlyEntangled,Vidal2004TEBD,Pichler2016TimeDelaysMPS}。时间分箱方法因此能够在量子光学延迟链路中保持可计算性。
+式 \eqref{eq:ch2-truncerr} 给出“丢弃权重”的定义。对应的数值操作是保留当前动力学中贡献最大的纠缠通道，并把权重很小的 Schmidt 分量从数值表示中截去。上述结构也解释了为什么 MPS 在一维问题上特别有效。对一维有能隙体系的基态，面积律表明纠缠熵不会随着系统长度线性增长，因此存在高效的 MPS 逼近 \cite{Hastings2007AreaLaw}。量子接口链路属于非平衡动力学问题，严格的面积律不能直接搬用。但发射、QFC 和记忆核都属于有限时间内的顺序相互作用，纠缠增长主要沿着因果锥逐步传播，因此在有限时间窗和有限带宽条件下，真正需要保留的键维通常仍远小于形式上的指数上界 \cite{Vidal2003SlightlyEntangled,Vidal2004TEBD,Pichler2016TimeDelaysMPS}。时间分箱方法因此能够在量子光学延迟链路中保持可计算性。
 
 \subsection{规范形式和可观测量收缩}[Canonical Forms and Observable Contraction]
 
@@ -156,11 +156,11 @@ A^{[n+1]} &\rightarrow X^{-1}A^{[n+1]},
 \label{eq:ch2-onebody-expectation}
 \end{equation}
 
-它可通过左环境与右环境的逐步收缩得到。两点关联函数的计算完全类似，只是在对应位置插入两个算符核。对端到端量子接口问题而言，后续真正需要的量并不局限于普通期望值，还包括成功事件概率、Bell 态保真度和条件后的原子态密度矩阵。它们的共同点，是最终都能归约为“在 MPS 链上插入有限个局域算符，再做一次可控收缩”。因此，MPS 在这里不只是压缩存储工具，也是整个概率计算接口的底层结构。若完全在态端维护密度矩阵，局域维数会进一步平方，计算成本显著上升。对开放系统而言，矩阵乘积密度算符（matrix product density operator, MPDO）和超算符 TEBD 是一条标准路线 \cite{Verstraete2004MPDO,Zwolak2004MixedStateDynamics}。接口链路把必须显式保留的相干历史尽量留在纯态 MPS 中，把线性光学和探测噪声统计放到测量侧处理。这一选择首先有利于控制算力开销，同时也贴合链路本身的物理结构：主要相干历史集中在发射与有限带宽记忆之中，探测端更适合表述为条件概率与广义测量问题。
+它可通过左环境与右环境的逐步收缩得到。两点关联函数的计算完全类似，只是在对应位置插入两个算符核。对量子接口链路问题而言，后续真正需要的量并不局限于普通期望值，还包括成功事件概率、Bell 态保真度和条件后的原子态密度矩阵。它们的共同点，是最终都能归约为“在 MPS 链上插入有限个局域算符，再做一次可控收缩”。因此，MPS 在这里不只是压缩存储工具，也是整个概率计算接口的底层结构。若完全在态端维护密度矩阵，局域维数会进一步平方，计算成本显著上升。对开放系统而言，矩阵乘积密度算符（matrix product density operator, MPDO）和超算符 TEBD 是一条标准路线 \cite{Verstraete2004MPDO,Zwolak2004MixedStateDynamics}。接口链路把必须显式保留的相干历史尽量留在纯态 MPS 中，把线性光学和探测噪声统计放到测量侧处理。这一选择首先有利于控制算力开销，同时也贴合链路本身的物理结构：主要相干历史集中在发射与有限带宽记忆之中，探测端更适合表述为条件概率与广义测量问题。
 
 \section{TEBD 时间推进}[Time-Evolving Block Decimation]
 
-MPS 解决的是“如何表示态”，TEBD 解决的是“如何更新态” \cite{Vidal2004TEBD,Paeckel2019TimeEvolutionMPS}。在端到端链路里，时间推进通过发射门、QFC 门、滤波记忆门和必要的 SWAP 门组成的局域门时间表来实现，并在每一步后恢复适合收缩的规范形式。图~\ref{fig:ch2_timebin_mps_tebd} 的右侧面板概括了单时间步内的局部窗口、局部门作用和 SVD 回写。每一个数值操作都对应一个明确的物理步骤，因果顺序和误差来源也因此更容易检查 \cite{Vidal2004TEBD,Paeckel2019TimeEvolutionMPS}。
+MPS 解决的是“如何表示态”，TEBD 解决的是“如何更新态” \cite{Vidal2004TEBD,Paeckel2019TimeEvolutionMPS}。在完整链路里，时间推进通过发射门、QFC 门、滤波记忆门和必要的 SWAP 门组成的局域门时间表来实现，并在每一步后恢复适合收缩的规范形式。图~\ref{fig:ch2_timebin_mps_tebd} 的右侧面板概括了单时间步内的局部窗口、局部门作用和 SVD 回写。每一个数值操作都对应一个明确的物理步骤，因果顺序和误差来源也因此更容易检查 \cite{Vidal2004TEBD,Paeckel2019TimeEvolutionMPS}。
 
 \subsection{局域门更新}[Local Gate Updates]
 
@@ -182,7 +182,7 @@ MPS 解决的是“如何表示态”，TEBD 解决的是“如何更新态” \
 \label{eq:ch2-two-site-update}
 \end{equation}
 
-然后按式 \eqref{eq:ch2-truncerr} 对过小奇异值进行截断。这个步骤之所以重要，是因为“施加局域门”和“恢复低秩表示”是两件不同的事。前者反映物理相互作用，后者负责把更新后的态重新压回可计算流形。若没有第二步，键维会随着时间步迅速失控。若第二步做得过于激进，又会把小概率通道系统性低估掉。对端到端链路而言，式 \eqref{eq:ch2-two-site-update} 对应每一类局域物理过程的统一模板。发射阶段使用“发射体 $+$ 当前时间分箱”两站点门。QFC 阶段使用“当前时间分箱内不同频率模式”形成的单站点或嵌入式局域门。滤波阶段使用“当前时间分箱 $+$ 记忆模”两站点门。为了让后续时间分箱与记忆模相邻，还需要插入 SWAP 门。不同物理过程虽然矩阵元素不同，数值骨架却保持一致，整个算法始终围绕局域门更新、局域 SVD 和局域重规范三件事情展开。
+然后按式 \eqref{eq:ch2-truncerr} 对过小奇异值进行截断。这个步骤之所以重要，是因为“施加局域门”和“恢复低秩表示”是两件不同的事。前者反映物理相互作用，后者负责把更新后的态重新压回可计算流形。若没有第二步，键维会随着时间步迅速失控。若第二步做得过于激进，又会把小概率通道系统性低估掉。对完整链路而言，式 \eqref{eq:ch2-two-site-update} 对应每一类局域物理过程的统一模板。发射阶段使用“发射体 $+$ 当前时间分箱”两站点门。QFC 阶段使用“当前时间分箱内不同频率模式”形成的单站点或嵌入式局域门。滤波阶段使用“当前时间分箱 $+$ 记忆模”两站点门。为了让后续时间分箱与记忆模相邻，还需要插入 SWAP 门。不同物理过程虽然矩阵元素不同，数值骨架却保持一致，整个算法始终围绕局域门更新、局域 SVD 和局域重规范三件事情展开。
 
 \subsection{时间推进调度}[Time-Evolution Schedule]
 
@@ -197,7 +197,7 @@ e^{-iH_{\mathrm{o}}\Delta t/2}
 \label{eq:ch2-trotter2}
 \end{equation}
 
-从总演化时间 $T$ 来看，二阶 Trotter 误差通常按 $O(T\Delta t^2)$ 累积 \cite{Vidal2004TEBD,Paeckel2019TimeEvolutionMPS}。步长足够小时，Trotter 误差会减小。不过实际总误差还会叠加每一步的 Schmidt 截断和局域维度截断。因此，步长 $\Delta t$、最大键维 $\chi_{\max}$ 和局域空间截断需要联合做收敛检查，不能分别凭经验设定。在端到端链路里，TEBD 的实际调度比式 \eqref{eq:ch2-trotter2} 稍微复杂一些，但思想完全相同：
+从总演化时间 $T$ 来看，二阶 Trotter 误差通常按 $O(T\Delta t^2)$ 累积 \cite{Vidal2004TEBD,Paeckel2019TimeEvolutionMPS}。步长足够小时，Trotter 误差会减小。不过实际总误差还会叠加每一步的 Schmidt 截断和局域维度截断。因此，步长 $\Delta t$、最大键维 $\chi_{\max}$ 和局域空间截断需要联合做收敛检查，不能分别凭经验设定。在完整链路里，TEBD 的实际调度比式 \eqref{eq:ch2-trotter2} 稍微复杂一些，但思想完全相同：
 \begin{enumerate}
   \item 在发射阶段，发射体按时间顺序依次与各个时间分箱发生局域相互作用。\item 在 QFC 阶段，对每个时间分箱施加频率转换门，并把转换后的频谱信息保留在时间分箱的局域基中。\item 在滤波阶段，让当前时间分箱与记忆模相互作用，再用 SWAP 门把记忆模移动到下一个待作用位置附近。\item 在测量阶段，计算流程从态端门更新切换到测量算符收缩。
 \end{enumerate}
@@ -256,7 +256,7 @@ p_{\mu}=\|K_{\mu}|\psi\rangle\|^2.
 \label{eq:ch2-trajectory-prob}
 \end{equation}
 
-对所有轨迹做统计平均后，又会回到式 \eqref{eq:ch2-kraus} 的密度矩阵描述。这种“单条轨迹是纯态、平均后是开放系统”的双重表述，在量子光学里尤其自然，因为实验记录本来就以点击事件或跃迁事件的形式出现 \cite{DalibardCastinMolmer1992QuantumJumps,Daley2014QuantumTrajectories}。在端到端链路中，发射体与时间分箱的相互作用、自由空间泄漏与部分器件损耗都可以在这一框架中得到统一描述。
+对所有轨迹做统计平均后，又会回到式 \eqref{eq:ch2-kraus} 的密度矩阵描述。这种“单条轨迹是纯态、平均后是开放系统”的双重表述，在量子光学里尤其自然，因为实验记录本来就以点击事件或跃迁事件的形式出现 \cite{DalibardCastinMolmer1992QuantumJumps,Daley2014QuantumTrajectories}。在完整链路中，发射体与时间分箱的相互作用、自由空间泄漏与部分器件损耗都可以在这一框架中得到统一描述。
 
 \subsection{POVM 对偶映射}[POVM and Adjoint Mapping]
 
@@ -316,7 +316,7 @@ Bell 态保真度、成功率、真假成功分解以及 Clauser--Horne--Shimony
 
 \section{观测量定义及误差控制}[Observables and Error Control]
 
-在端到端接口仿真中，观测量定义和误差判据需要与演化方程同时给出。在完成 MPS/TEBD 与算符框架之后，还需要把链路中核心观测量和收敛检查方法明确下来：一是固定概率与条件态的符号和口径。二是区分“可计算”与“结果可信”对应的误差边界。
+在量子接口链路仿真中，观测量定义和误差判据需要与演化方程同时给出。在完成 MPS/TEBD 与算符框架之后，还需要把链路中核心观测量和收敛检查方法明确下来：一是固定概率与条件态的符号和口径。二是区分“可计算”与“结果可信”对应的误差边界。
 
 \subsection{主要观测量}[Primary Observables]
 
@@ -366,7 +366,7 @@ V_{\mathrm{HOM}}=\frac{C_{\perp}-C_{\parallel}}{C_{\perp}}.
 \label{eq:ch2-hom-visibility}
 \end{equation}
 
-该量并不直接等于最终远程原子纠缠保真度，但它对时间抖动、频率失配和多模污染高度敏感，因此在接口标定中具有前置诊断价值 \cite{HongOuMandel1987,vanleent2022entangling}。表 \ref{tab:ch2-observables} 汇总了后续数值结果中反复使用的主要观测量。概率类指标用于描述宣告事件的组成，态质量指标用于描述条件后远程原子态的可用性，HOM 可见度则作为进入端到端任务量之前的干涉质量诊断。
+该量并不直接等于最终远程原子纠缠保真度，但它对时间抖动、频率失配和多模污染高度敏感，因此在接口标定中具有前置诊断价值 \cite{HongOuMandel1987,vanleent2022entangling}。表 \ref{tab:ch2-observables} 汇总了后续数值结果中反复使用的主要观测量。概率类指标用于描述宣告事件的组成，态质量指标用于描述条件后远程原子态的可用性，HOM 可见度则作为进入任务级指标之前的干涉质量诊断。
 \begin{table}[htbp]
   
 \centering
@@ -402,12 +402,12 @@ V_{\mathrm{HOM}}=\frac{C_{\perp}-C_{\parallel}}{C_{\perp}}.
 
 \subsection{误差来源}[Error Sources]
 
-端到端接口仿真的误差来源并不只有一类。最容易想到的是 Trotter 误差和 Schmidt 截断误差，但对当前问题来说，至少还应额外看清楚三件事：连续时间离散化本身带来的时间分箱误差。局域基空间有限维近似带来的模型截断。以及把光纤和探测网络推到测量侧之后所对应的适用边界。若这些边界没有被明确写出，数值结果即便收敛，也很难说清“究竟收敛到了哪个模型”。首先是时间分箱误差。离散化之后，动力学中的关键无量纲组合通常以 $g\sqrt{\Delta t}$、$\kappa\Delta t$、$\gamma\Delta t$ 这类形式出现。若 $\Delta t$ 过大，短时近似会失效，波包形状、到达概率和 HOM 曲线都会出现明显的网格依赖。判断这一误差时，需要同时比较波包包络、成功率和保真度在 $\Delta t\to \Delta t/2$ 时是否稳定，并综合这些量的变化趋势。只有当多种指标同时趋于稳定时，离散时间步长才算真正收敛。其次是 Schmidt 截断与局域维度截断。前者反映“保留多少纠缠通道”，后者反映“每个站点允许出现哪些局域物理状态”。在当前实现中，时间分箱被截断到真空加单光子子空间，滤波记忆模也只保留有限维数。这一做法的前提，是多光子占据和更高阶记忆激发在目标参数区间内确实可以忽略。若背景噪声、泵浦泄漏或强驱动使这些高阶占据升高到不可忽略的量级，那么即便 $\chi$ 已经收敛，模型本身仍可能需要扩充局域基。换言之，“键维收敛”和“局域空间足够大”对应两类不同问题，需要分别检查 \cite{Schollwoeck2011MPS,Paeckel2019TimeEvolutionMPS}。再次是测量侧推回的模型边界。把分束器、光纤损耗和探测器响应统一压缩成输入端等效测量算符的前提，是这些过程不会反向影响上游的发射和记忆动力学，也不会在传播途中引入必须显式保存在态端的额外相干历史。对线性损耗、静态相位、探测效率和暗计数而言，这一处理是自然的。但若传播过程本身产生显著的多模混合、反馈或与上游强相关的记忆效应，就需要把更多传播物理显式纳入状态侧，而不能全部交给测量侧吸收 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems,ArranzRegidor2021WaveguideQED}。表 \ref{tab:ch2-errors} 将这些误差来源整理为可检查的控制参数和诊断量。后续仿真收敛性不只看单个末端指标，还需要同时观察时间步长、键维、局域空间和测量侧边界是否稳定。
+量子接口链路仿真的误差来源并不只有一类。最容易想到的是 Trotter 误差和 Schmidt 截断误差，但对当前问题来说，至少还应额外看清楚三件事：连续时间离散化本身带来的时间分箱误差。局域基空间有限维近似带来的模型截断。以及把光纤和探测网络推到测量侧之后所对应的适用边界。若这些边界没有被明确写出，数值结果即便收敛，也很难说清“究竟收敛到了哪个模型”。首先是时间分箱误差。离散化之后，动力学中的关键无量纲组合通常以 $g\sqrt{\Delta t}$、$\kappa\Delta t$、$\gamma\Delta t$ 这类形式出现。若 $\Delta t$ 过大，短时近似会失效，波包形状、到达概率和 HOM 曲线都会出现明显的网格依赖。判断这一误差时，需要同时比较波包包络、成功率和保真度在 $\Delta t\to \Delta t/2$ 时是否稳定，并综合这些量的变化趋势。只有当多种指标同时趋于稳定时，离散时间步长才算真正收敛。其次是 Schmidt 截断与局域维度截断。前者反映“保留多少纠缠通道”，后者反映“每个站点允许出现哪些局域物理状态”。在当前实现中，时间分箱被截断到真空加单光子子空间，滤波记忆模也只保留有限维数。这一做法的前提，是多光子占据和更高阶记忆激发在目标参数区间内确实可以忽略。若背景噪声、泵浦泄漏或强驱动使这些高阶占据升高到不可忽略的量级，那么即便 $\chi$ 已经收敛，模型本身仍可能需要扩充局域基。换言之，“键维收敛”和“局域空间足够大”对应两类不同问题，需要分别检查 \cite{Schollwoeck2011MPS,Paeckel2019TimeEvolutionMPS}。再次是测量侧推回的模型边界。把分束器、光纤损耗和探测器响应统一压缩成输入端等效测量算符的前提，是这些过程不会反向影响上游的发射和记忆动力学，也不会在传播途中引入必须显式保存在态端的额外相干历史。对线性损耗、静态相位、探测效率和暗计数而言，这一处理是自然的。但若传播过程本身产生显著的多模混合、反馈或与上游强相关的记忆效应，就需要把更多传播物理显式纳入状态侧，而不能全部交给测量侧吸收 \cite{Pichler2016TimeDelaysMPS,Guimond2017DelayedCoherentFeedbackMPS,ArranzRegidor2021WaveguideQED}。表 \ref{tab:ch2-errors} 将这些误差来源整理为可检查的控制参数和诊断量。后续仿真收敛性不只看单个末端指标，还需要同时观察时间步长、键维、局域空间和测量侧边界是否稳定。
 \begin{table}[htbp]
   
 \centering
   
-\caption{端到端量子接口仿真的主要误差来源和控制参数}
+\caption{量子接口链路仿真的主要误差来源和控制参数}
   
 \label{tab:ch2-errors}
   
@@ -429,13 +429,13 @@ V_{\mathrm{HOM}}=\frac{C_{\perp}-C_{\parallel}}{C_{\perp}}.
 \end{tabular}
   
 \begin{minipage}{0.94\textwidth}
-    \footnotesize 注：表中误差分类综合了 MPS/TEBD 时间推进、开放系统量子轨迹以及时间延迟光子线路的常见误差口径，参见 \cite{Vidal2004TEBD,Schollwoeck2011MPS,Paeckel2019TimeEvolutionMPS,Daley2014QuantumTrajectories,Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems}。
+    \footnotesize 注：表中误差分类综合了 MPS/TEBD 时间推进、开放系统量子轨迹以及时间延迟光子线路的常见误差口径，参见 \cite{Vidal2004TEBD,Schollwoeck2011MPS,Paeckel2019TimeEvolutionMPS,Daley2014QuantumTrajectories,Pichler2016TimeDelaysMPS,Guimond2017DelayedCoherentFeedbackMPS}。
 \end{minipage}
 \end{table}
 
 
-对端到端链路而言，更实用的收敛顺序通常如下：先用波包与 HOM 诊断确定 $\Delta t$ 已足够小，再检查核心观测量对 $\chi_{\max}$ 的依赖，随后确认局域维度截断与窗口设定不会改变成功口径，最后再讨论更细的探测统计与抽样误差。原因很直接。若离散时间步长本身还没有稳定下来，继续提高键维通常只是更精确地逼近一个尚未收敛的离散模型。若时间网格已经可靠，而关键观测量仍然随 $\chi_{\max}$ 漂移，问题多半出在纠缠压缩，而非物理参数本身。
+对完整链路而言，更实用的收敛顺序通常如下：先用波包与 HOM 诊断确定 $\Delta t$ 已足够小，再检查核心观测量对 $\chi_{\max}$ 的依赖，随后确认局域维度截断与窗口设定不会改变成功口径，最后再讨论更细的探测统计与抽样误差。原因很直接。若离散时间步长本身还没有稳定下来，继续提高键维通常只是更精确地逼近一个尚未收敛的离散模型。若时间网格已经可靠，而关键观测量仍然随 $\chi_{\max}$ 漂移，问题多半出在纠缠压缩，而非物理参数本身。
 
 \section{小结}[Chapter Summary]
 
-端到端量子接口链路的方法框架可概括为：连续时间光场离散为时间分箱后形成一维链式排布。利用 Schmidt 分解与 MPS 规范形式将指数复杂度压缩到由键维控制的低秩流形。利用 TEBD 将发射、QFC、滤波记忆和 SWAP 调度统一为局域门序列。借助 Kraus 表示、POVM 与对偶映射把开放系统噪声和条件测量组织到同一条概率链中。该框架中，状态侧显式保留发射与有限带宽记忆，测量侧负责线性光学与探测统计。成功率、真假成功分解、Bell 态保真度、CHSH 指标与 HOM 可见度在统一算符框架下定义，时间分箱误差、Trotter 误差、Schmidt 截断和测量侧模型边界共同构成收敛检查。
+量子接口链路的方法框架可概括为：连续时间光场离散为时间分箱后形成一维链式排布。利用 Schmidt 分解与 MPS 规范形式将指数复杂度压缩到由键维控制的低秩流形。利用 TEBD 将发射、QFC、滤波记忆和 SWAP 调度统一为局域门序列。借助 Kraus 表示、POVM 与对偶映射把开放系统噪声和条件测量组织到同一条概率链中。该框架中，状态侧显式保留发射与有限带宽记忆，测量侧负责线性光学与探测统计。成功率、真假成功分解、Bell 态保真度、CHSH 指标与 HOM 可见度在统一算符框架下定义，时间分箱误差、Trotter 误差、Schmidt 截断和测量侧模型边界共同构成收敛检查。

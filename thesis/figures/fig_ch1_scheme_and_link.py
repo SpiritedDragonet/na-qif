@@ -169,7 +169,7 @@ def _top_panel(ax) -> None:
 
 
 def _bottom_panel(ax) -> None:
-    _section(ax, 0.035, 0.090, 0.930, 0.515, "本文端到端链路对象", "#f8fbff")
+    _section(ax, 0.035, 0.090, 0.930, 0.515, "本文链路对象", "#f8fbff")
 
     ax.text(0.110, 0.548, "节点 A", ha="center", va="center", fontsize=8.6, color=TEXT)
     ax.text(0.890, 0.548, "节点 B", ha="center", va="center", fontsize=8.6, color=TEXT)

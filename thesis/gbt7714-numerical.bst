@@ -70,7 +70,7 @@ FUNCTION {load.config}
   #1 'title.in.journal :=
   #1 'show.mark :=
   #0 'space.before.mark :=
-  #1 'show.medium.type :=
+  #0 'show.medium.type :=
   #1 'slash.for.extraction :=
   #0 'in.booktitle :=
   #0 'short.journal :=
@@ -1051,11 +1051,7 @@ FUNCTION {format.mark}
       show.medium.type
         { medium empty$ not
             { "/" * medium * }
-            { entry.is.electronic
-                { "/OL" * }
-                'skip$
-              if$
-            }
+            'skip$
           if$
         }
         'skip$

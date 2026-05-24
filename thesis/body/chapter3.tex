@@ -1,15 +1,15 @@
 ﻿
 
-\chapter{量子接口的端到端仿真模型与实现}[End-to-End Simulation Model and Implementation for Quantum Interfaces]
+\chapter{量子接口链路仿真模型与实现}[Simulation Model and Implementation for Quantum Interface Links]
 
-沿用前两章已经建立的时间分箱表示和条件测量框架，端到端链路可落实为一组直接进入数值计算的局域空间、局部门和测量侧效应算符。状态侧显式保留四能级原子-腔发射、量子频率转换（QFC）和有限带宽滤波带来的跨分箱记忆。光纤传输、分束器干涉以及探测器响应则在测量侧通过对偶映射推回输入端效应算符。这一分工保留了会在链上积累相关性的物理过程，并把线性光学网络集中写入测量端效应算符 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems}。同一组实验参数同时进入哈密顿量、塌缩通道、QFC 子块、滤波记忆核和中间站探测效应算符，并最终汇入宣告成功率、真成功率、假成功率、条件保真度和 CHSH 指标。物理链路到可观测量的映射关系由这些对象逐步确定。
+沿用前两章已经建立的时间分箱表示和条件测量框架，完整链路可落实为一组直接进入数值计算的局域空间、局部门和测量侧效应算符。状态侧显式保留四能级原子-腔发射、量子频率转换（QFC）和有限带宽滤波带来的跨分箱记忆。光纤传输、分束器干涉以及探测器响应则在测量侧通过对偶映射推回输入端效应算符。这一分工保留了会在链上积累相关性的物理过程，并把线性光学网络集中写入测量端效应算符 \cite{Pichler2016TimeDelaysMPS,Guimond2017DelayedCoherentFeedbackMPS}。同一组实验参数同时进入哈密顿量、塌缩通道、QFC 子块、滤波记忆核和中间站探测效应算符，并最终汇入宣告成功率、真成功率、假成功率、条件保真度和 CHSH 指标。物理链路到可观测量的映射关系由这些对象逐步确定。
 
 \section{建模对象与局域空间}[Modeled System and Local Hilbert Spaces]
 
-端到端链路包含两臂单原子-腔节点、780\,nm 到 1517\,nm 的频率转换、两段长光纤传输以及中间站部分 BSM。单原子-腔节点的网络角色与腔量子电动力学接口的一般工作方式，可由单原子网络节点综述和中性原子远程纠缠实验来把握 \cite{ReisererRempe2015CavityNetworks,vanleent2022entangling}。数值模型把链路拆成状态侧自由度和测量侧效应算符：状态侧显式写出通信原子的 Zeeman--光学四能级截断、腔内 H/V 偏振单光子、同时容纳 780\,nm 与 1517\,nm 标签的时间分箱，以及记录有限带宽滤波尾迹的记忆模。光纤传输、偏振旋转、分束器干涉和探测器响应汇入测量侧效应算符。这样的拆分使发射、QFC 和滤波记忆在 MPS 链上产生时间相关性，同时把中继站线性光学网络落实为后续的条件测量。表 \ref{tab:ch3_local_spaces} 给出状态侧和测量侧进入计算的局域对象。该表的作用是固定后续哈密顿量、局部门和效应算符的空间口径，使“4 维原子、3 维腔模、5 维时间分箱、3 维滤波记忆模”与代码中的张量维度一一对应。
+完整链路包含两臂单原子-腔节点、780\,nm 到 1517\,nm 的频率转换、两段长光纤传输以及中间站部分 BSM。单原子-腔节点的网络角色与腔量子电动力学接口的一般工作方式，可由单原子网络节点综述和中性原子远程纠缠实验来把握 \cite{ReisererRempe2015CavityNetworks,vanleent2022entangling}。数值模型把链路拆成状态侧自由度和测量侧效应算符：状态侧显式写出通信原子的 Zeeman--光学四能级截断、腔内 H/V 偏振单光子、同时容纳 780\,nm 与 1517\,nm 标签的时间分箱，以及记录有限带宽滤波尾迹的记忆模。光纤传输、偏振旋转、分束器干涉和探测器响应汇入测量侧效应算符。这样的拆分使发射、QFC 和滤波记忆在 MPS 链上产生时间相关性，同时把中继站线性光学网络落实为后续的条件测量。表 \ref{tab:ch3_local_spaces} 给出状态侧和测量侧进入计算的局域对象。该表的作用是固定后续哈密顿量、局部门和效应算符的空间口径，使“4 维原子、3 维腔模、5 维时间分箱、3 维滤波记忆模”与代码中的张量维度一一对应。
 \begin{table}[htbp]
 \centering
-\caption{端到端模型中显式保留的局域空间与物理含义}
+\caption{链路模型中显式保留的局域空间与物理含义}
 \label{tab:ch3_local_spaces}
 \renewcommand{\arraystretch}{1.15}
 \begin{tabular}{p{2.7cm}p{5.8cm}p{1.2cm}p{4.6cm}}
@@ -27,12 +27,12 @@
 \vspace{0.5em}
 \begin{minipage}{0.94\linewidth}
 \footnotesize
-资料来源：根据 $^{87}$Rb 单原子腔网络节点、时间分箱 MPS、QFC 和波导/记忆核离散建模的相关工作整理，并结合端到端链路的局域截断方式给出 \cite{Ritter2012ElementaryQuantumNetwork,vanleent2022entangling,ReisererRempe2015CavityNetworks,Pichler2016TimeDelaysMPS,Ikuta2018PolarizationInsensitiveQFC,ArranzRegidor2021WaveguideQED}。
+资料来源：根据 $^{87}$Rb 单原子腔网络节点、时间分箱 MPS、QFC 和波导/记忆核离散建模的相关工作整理，并结合完整链路的局域截断方式给出 \cite{Ritter2012ElementaryQuantumNetwork,vanleent2022entangling,ReisererRempe2015CavityNetworks,Pichler2016TimeDelaysMPS,Ikuta2018PolarizationInsensitiveQFC,ArranzRegidor2021WaveguideQED}。
 \end{minipage}
 \end{table}
 
 
-5 维时间分箱和 3 维记忆模还承担实现统一作用。5 维时间分箱把发射阶段的 780\,nm 模式与 QFC 后的 1517\,nm 模式放在同一站点类型中，QFC 局部门负责在两个波长子空间之间转移振幅。3 维 memory 将有限带宽滤波的尾迹保存到相邻步进中。这个口径把“波长转换发生在单个时间分箱内”“滤波记忆在相邻分箱间传播”分别落在 5 维时间站点和 3 维记忆模上，链上站点类型始终固定，门序列也因此保持清晰。这组自由度遵循同一条建模边界：会在时间链上生成或积累相关性的过程进入状态侧，例如发射、QFC 和滤波记忆。线性光学和探测响应通过对偶映射合并到测量侧效应算符。这个安排直接对应代码主路径，也对应时间分箱 MPS 处理延迟和记忆核时的常见写法 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems,ArranzRegidor2021WaveguideQED}。
+5 维时间分箱和 3 维记忆模还承担实现统一作用。5 维时间分箱把发射阶段的 780\,nm 模式与 QFC 后的 1517\,nm 模式放在同一站点类型中，QFC 局部门负责在两个波长子空间之间转移振幅。3 维 memory 将有限带宽滤波的尾迹保存到相邻步进中。这个口径把“波长转换发生在单个时间分箱内”“滤波记忆在相邻分箱间传播”分别落在 5 维时间站点和 3 维记忆模上，链上站点类型始终固定，门序列也因此保持清晰。这组自由度遵循同一条建模边界：会在时间链上生成或积累相关性的过程进入状态侧，例如发射、QFC 和滤波记忆。线性光学和探测响应通过对偶映射合并到测量侧效应算符。这个安排直接对应代码主路径，也对应时间分箱 MPS 处理延迟和记忆核时的常见写法 \cite{Pichler2016TimeDelaysMPS,Guimond2017DelayedCoherentFeedbackMPS,ArranzRegidor2021WaveguideQED}。
 
 \section{发射过程的离散化模型}[Discrete Model for the Emission Stage]
 
@@ -221,7 +221,7 @@ U_{36}^{(n)}=\exp\!\bigl(G_{36}^{(n)}\bigr)
 \label{eq:u36-emission}
 \end{equation}
 
-严格幺正 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems}。该链路中的单个时间分箱需要同时容纳发射前后的两种波长，于是局域基序取为
+严格幺正 \cite{Pichler2016TimeDelaysMPS,Guimond2017DelayedCoherentFeedbackMPS}。该链路中的单个时间分箱需要同时容纳发射前后的两种波长，于是局域基序取为
 \begin{equation}
 \{|{\rm vac}\rangle,\;|H_{780}\rangle,\;|V_{780}\rangle,\;|H_{1517}\rangle,\;|V_{1517}\rangle\}.
 \label{eq:bin5d-basis}
@@ -600,16 +600,16 @@ QFC & 采用强泵近似下的分束器型局域幺正 & $\eta_H,\eta_V$；$\phi
 \vspace{0.5em}
 \begin{minipage}{0.94\linewidth}
 \footnotesize
-资料来源：根据延迟时间分箱 MPS、滤波记忆离散化、QFC 与中间站部分 BSM 的相关文献，并结合端到端链路的实现口径整理 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems,Ikuta2018PolarizationInsensitiveQFC,ArranzRegidor2021WaveguideQED,CalsamigliaLutkenhaus2001BellAnalyzer}。
+资料来源：根据延迟时间分箱 MPS、滤波记忆离散化、QFC 与中间站部分 BSM 的相关文献，并结合完整链路的实现口径整理 \cite{Pichler2016TimeDelaysMPS,Guimond2017DelayedCoherentFeedbackMPS,Ikuta2018PolarizationInsensitiveQFC,ArranzRegidor2021WaveguideQED,CalsamigliaLutkenhaus2001BellAnalyzer}。
 \end{minipage}
 \end{table}
 
 
-表 \ref{tab:ch3_model_boundaries} 给出的局域截断、控制参数和误差入口共同进入一次端到端仿真任务。执行路径可以分为状态侧和测量侧两条数据流：状态侧按时间分箱生成保留相干历史的 $\rho_{\mathrm{in}}$，测量侧按成功记录生成推回后的 $E_m^{\mathrm{in}}$ 与成功集合，二者在条件化收缩中汇合并输出第四章使用的概率、条件态和指标入口。
+表 \ref{tab:ch3_model_boundaries} 给出的局域截断、控制参数和误差入口共同进入一次链路仿真任务。执行路径可以分为状态侧和测量侧两条数据流：状态侧按时间分箱生成保留相干历史的 $\rho_{\mathrm{in}}$，测量侧按成功记录生成推回后的 $E_m^{\mathrm{in}}$ 与成功集合，二者在条件化收缩中汇合并输出第四章使用的概率、条件态和指标入口。
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.96\linewidth]{fig_sim_pipeline.pdf}
-\caption{端到端单次任务仿真流程图。状态侧负责发射 TEBD、QFC、滤波记忆和原子退相干，并生成切分面输入态 $\rho_{\mathrm{in}}$。测量侧负责光纤、分束器、探测器 POVM、背景事件、成功模式枚举和输入端效应 $E_m^{\mathrm{in}}$ 构造。两条数据流在条件化收缩中合并，输出宣告概率、条件态和第四章指标入口 \cite{Pichler2016TimeDelaysMPS,Wang2017MPSCascadedQuantumSystems}.}
+\caption{单次链路仿真任务流程图。状态侧负责发射 TEBD、QFC、滤波记忆和原子退相干，并生成切分面输入态 $\rho_{\mathrm{in}}$。测量侧负责光纤、分束器、探测器 POVM、背景事件、成功模式枚举和输入端效应 $E_m^{\mathrm{in}}$ 构造。两条数据流在条件化收缩中合并，输出宣告概率、条件态和第四章指标入口 \cite{Pichler2016TimeDelaysMPS,Guimond2017DelayedCoherentFeedbackMPS}.}
 \label{fig:sim_pipeline}
 \end{figure}
 
@@ -618,4 +618,4 @@ QFC & 采用强泵近似下的分束器型局域幺正 & $\eta_H,\eta_V$；$\phi
 
 \section{小结}[Summary]
 
-前两章建立的方法框架由此落实到量子接口链路上。原子-腔发射阶段由四能级原子、三维腔场和 5 维时间分箱的局部门给出。QFC 在单个时间分箱内完成波长转换。滤波记忆模把有限带宽导致的跨分箱相关显式保留在链上。中间站的光纤、分束器和探测器响应则通过对偶映射推回输入端效应算符，并进一步给出部分 BSM 的成功模式判据以及真假成功分解。由此得到的端到端模型既保留了实验上最关键的物理环节，也保持了和数值实现一一对应的局域结构，为实验对照、参数扫描和误差预算提供了统一基线。
+前两章建立的方法框架由此落实到量子接口链路上。原子-腔发射阶段由四能级原子、三维腔场和 5 维时间分箱的局部门给出。QFC 在单个时间分箱内完成波长转换。滤波记忆模把有限带宽导致的跨分箱相关显式保留在链上。中间站的光纤、分束器和探测器响应则通过对偶映射推回输入端效应算符，并进一步给出部分 BSM 的成功模式判据以及真假成功分解。由此得到的链路模型既保留了实验上最关键的物理环节，也保持了和数值实现一一对应的局域结构，为实验对照、参数扫描和误差预算提供了统一基线。
