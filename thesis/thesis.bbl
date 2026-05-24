@@ -241,39 +241,6 @@ NORTHUP T~E, BLATT R.
 \newblock Nature Photonics, 2014, 8: 356-363.
 \newblock DOI: \doi{10.1038/nphoton.2014.53}.
 
-\bibitem[Sinclair et~al.(2025)Sinclair, Liang, Lv, Liu, Lee, Yao, Sipahigil,
-  and Lukin]{Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
-SINCLAIR N~J, LIANG Y, LV D, et~al.
-\newblock Fault-tolerant optical interconnects for neutral-atom
-  arrays\allowbreak[J].
-\newblock Physical Review Research, 2025, 7: 013313.
-\newblock DOI: \doi{10.1103/PhysRevResearch.7.013313}.
-
-\bibitem[van Leent et~al.(2020)van Leent, Bock, Garthoff, Redeker, Zhang,
-  Bauer, Rosenfeld, Becher, and Weinfurter]{vanleent2020longdistance}
-VAN LEENT T, BOCK M, GARTHOFF R, et~al.
-\newblock Long-distance distribution of atom-photon entanglement at telecom
-  wavelength\allowbreak[J].
-\newblock Physical Review Letters, 2020, 124\allowbreak (1): 010510.
-\newblock DOI: \doi{10.1103/PhysRevLett.124.010510}.
-
-\bibitem[Zhou et~al.(2024)Zhou, Malik, Fertig, Bock, Bauer, van Leent, Zhang,
-  Becher, and Weinfurter]{zhou2024longlived}
-ZHOU Y, MALIK P, FERTIG F, et~al.
-\newblock Long-lived quantum memory enabling atom-photon entanglement over 101
-  km of telecom fiber\allowbreak[J].
-\newblock PRX Quantum, 2024, 5\allowbreak (2): 020307.
-\newblock DOI: \doi{10.1103/PRXQuantum.5.020307}.
-
-\bibitem[Hartung et~al.(2024)Hartung, Reitz, Ullrich, K{\"u}bler, Rempe, Li,
-  Northup, da~Silva, S{\"o}llner, and other
-  contributors]{Hartung2024QuantumNetworkRegisterTweezerCavity}
-HARTUNG L, REITZ D, ULLRICH P, et~al.
-\newblock A quantum-network register assembled with optical tweezers in an
-  optical cavity\allowbreak[J].
-\newblock Science, 2024, 385\allowbreak (6705): 179-183.
-\newblock DOI: \doi{10.1126/science.ado6471}.
-
 \bibitem[Chen et~al.(2021)Chen, Zhang, Chen, Cai, Liao, Zhang, Chen, Yin, Ren,
   Chen, et~al.]{Chen2021SpaceGroundQuantumNetwork}
 CHEN Y~A, ZHANG Q, CHEN T~Y, et~al.
@@ -297,13 +264,22 @@ LIU J~L, et~al.
 \newblock Nature, 2024, 629\allowbreak (8012): 579-585.
 \newblock DOI: \doi{10.1038/s41586-024-07308-0}.
 
-\bibitem[Zhang et~al.(2024)Zhang, Wang, Li,
-  et~al.]{Zhang2024HeraldedAtomPhoton12km}
-ZHANG W~Z, WANG Y, LI T, et~al.
-\newblock Fast delivery of heralded atom-photon quantum correlation over 12 km
-  fiber through multiplexing enhancement\allowbreak[J].
-\newblock Nature Communications, 2024, 15: 10306.
-\newblock DOI: \doi{10.1038/s41467-024-54691-3}.
+\bibitem[Sinclair et~al.(2025)Sinclair, Liang, Lv, Liu, Lee, Yao, Sipahigil,
+  and Lukin]{Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
+SINCLAIR N~J, LIANG Y, LV D, et~al.
+\newblock Fault-tolerant optical interconnects for neutral-atom
+  arrays\allowbreak[J].
+\newblock Physical Review Research, 2025, 7: 013313.
+\newblock DOI: \doi{10.1103/PhysRevResearch.7.013313}.
+
+\bibitem[Hartung et~al.(2024)Hartung, Reitz, Ullrich, K{\"u}bler, Rempe, Li,
+  Northup, da~Silva, S{\"o}llner, and other
+  contributors]{Hartung2024QuantumNetworkRegisterTweezerCavity}
+HARTUNG L, REITZ D, ULLRICH P, et~al.
+\newblock A quantum-network register assembled with optical tweezers in an
+  optical cavity\allowbreak[J].
+\newblock Science, 2024, 385\allowbreak (6705): 179-183.
+\newblock DOI: \doi{10.1126/science.ado6471}.
 
 \bibitem[Li et~al.(2025)Li, Hou, Wang, Wang, He, Zhou, Wang, Liu, Wang, Xu, and
   Zhan]{Li2025FiberArrayArchitectureAtomQC}
@@ -311,6 +287,22 @@ LI X, HOU J~Y, WANG J~C, et~al.
 \newblock A fiber array architecture for atom quantum computing\allowbreak[J].
 \newblock Nature Communications, 2025, 16: 9728.
 \newblock DOI: \doi{10.1038/s41467-025-64738-8}.
+
+\bibitem[van Leent et~al.(2020)van Leent, Bock, Garthoff, Redeker, Zhang,
+  Bauer, Rosenfeld, Becher, and Weinfurter]{vanleent2020longdistance}
+VAN LEENT T, BOCK M, GARTHOFF R, et~al.
+\newblock Long-distance distribution of atom-photon entanglement at telecom
+  wavelength\allowbreak[J].
+\newblock Physical Review Letters, 2020, 124\allowbreak (1): 010510.
+\newblock DOI: \doi{10.1103/PhysRevLett.124.010510}.
+
+\bibitem[Zhou et~al.(2024)Zhou, Malik, Fertig, Bock, Bauer, van Leent, Zhang,
+  Becher, and Weinfurter]{zhou2024longlived}
+ZHOU Y, MALIK P, FERTIG F, et~al.
+\newblock Long-lived quantum memory enabling atom-photon entanglement over 101
+  km of telecom fiber\allowbreak[J].
+\newblock PRX Quantum, 2024, 5\allowbreak (2): 020307.
+\newblock DOI: \doi{10.1103/PRXQuantum.5.020307}.
 
 \bibitem[Ritter et~al.(2012)Ritter, N{\"o}lleke, Hahn, Reiserer, Neuzner,
   Uphoff, M{\"u}cke, Figueroa, Bochmann, and
@@ -320,6 +312,14 @@ RITTER S, N{\"O}LLEKE C, HAHN C, et~al.
   cavities\allowbreak[J].
 \newblock Nature, 2012, 484\allowbreak (7393): 195-200.
 \newblock DOI: \doi{10.1038/nature11023}.
+
+\bibitem[Zhang et~al.(2024)Zhang, Wang, Li,
+  et~al.]{Zhang2024HeraldedAtomPhoton12km}
+ZHANG W~Z, WANG Y, LI T, et~al.
+\newblock Fast delivery of heralded atom-photon quantum correlation over 12 km
+  fiber through multiplexing enhancement\allowbreak[J].
+\newblock Nature Communications, 2024, 15: 10306.
+\newblock DOI: \doi{10.1038/s41467-024-54691-3}.
 
 \bibitem[Simon et~al.(2003)Simon and
   Irvine]{SimonIrvine2003RobustLongDistanceEntanglement}

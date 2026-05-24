@@ -23,9 +23,9 @@
 \@writefile{lot}{\addvspace {10.0pt}}
 \@writefile{loa}{\addvspace {10\p@ }}
 \@writefile{toe}{\contentsline {chapter}{\bfseries  \relax Chapter 1\hspace  {0.5em}\ignorespaces Introduction}{1}{chapter.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {1.1}量子计算简介}{1}{section.1.1}\protected@file@percent }
-\@writefile{toe}{\contentsline {section}{\numberline {1.1}\ignorespaces Introduction to quantum computing}{1}{section.1.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.1.1}量子计算基本概念与模型}{1}{subsection.1.1.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {1.1}量子计算研究背景}{1}{section.1.1}\protected@file@percent }
+\@writefile{toe}{\contentsline {section}{\numberline {1.1}\ignorespaces Research background of quantum computing}{1}{section.1.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.1.1}量子计算基本概念及计算模型}{1}{subsection.1.1.1}\protected@file@percent }
 \citation{Preskill2018NISQ,NationalAcademies2019QC}
 \citation{Preskill2018NISQ,Cao2019QuantumChemistry}
 \citation{Cao2019QuantumChemistry,Shor1994Algorithms}
@@ -40,13 +40,13 @@
 \citation{NationalAcademies2019QC,Awschalom2021QuIC}
 \citation{Ahmad2022ScalableCryoelectronics,Zhao2024RowColumnAddressing,Dai2021FluxCrosstalk,Caune2024LowLatencyQEC,GoogleQuantumAI2025BelowThreshold}
 \citation{Wehner2018QuantumInternetVision,Vepsalainen2022ClosedLoopFeedback}
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.1.2}工程化价值与应用牵引}{2}{subsection.1.1.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.1.2}量子计算的工程化应用}{2}{subsection.1.1.2}\protected@file@percent }
 \citation{Gottesman1997Stabilizer,Fowler2012SurfaceCode,NationalAcademies2019QC}
 \citation{NationalAcademies2019QC}
 \citation{Jiang2007DistributedQC,Monroe2014ModularQC}
 \citation{Monroe2014ModularQC,Covey2023QuantumNetworksNeutralAtomNodes,Main2025DistributedQuantumComputing}
 \citation{kimble2008quantum,Wehner2018QuantumInternetVision,Awschalom2021QuIC,Covey2023QuantumNetworksNeutralAtomNodes}
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.1.3}可扩展性压力与模块化思路}{3}{subsection.1.1.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.1.3}可扩展量子计算体系结构需求}{3}{subsection.1.1.3}\protected@file@percent }
 \@writefile{lof}{\contentsline {figure}{\numberline {1.1}{\ignorespaces 可扩展量子计算的规模化运行压力。物理比特扩容、并行读出反馈、长时纠错运行和标定闭环维护共同把问题从单器件性能推向体系结构设计。控制扇出、综合征吞吐、逻辑寿命预算和漂移追踪分别对应可观察的工程瓶颈。}}{3}{figure.1.1}\protected@file@percent }
 \newlabel{fig:ch1_system_pressure}{{1.1}{3}{可扩展量子计算的规模化运行压力。物理比特扩容、并行读出反馈、长时纠错运行和标定闭环维护共同把问题从单器件性能推向体系结构设计。控制扇出、综合征吞吐、逻辑寿命预算和漂移追踪分别对应可观察的工程瓶颈。}{figure.1.1}{}}
 \citation{kimble2008quantum,Wehner2018QuantumInternetVision}
@@ -56,30 +56,35 @@
 \citation{Wehner2018QuantumInternetVision,Awschalom2021QuIC,NorthupBlatt2014QuantumInfoTransfer,Covey2023QuantumNetworksNeutralAtomNodes,Reiserer2022CavityEnhancedNetworkNodes}
 \@writefile{lof}{\contentsline {figure}{\numberline {1.2}{\ignorespaces 模块化量子处理网络的资源架构。多个 QPU 节点通过可宣告远程 Bell 对形成网络边。节点内部由承担本地门、存储、读出和综合征循环的数据比特，以及承担原子--光子接口的通信比特共同组成。远程 Bell 对带有保真度、建立速率、宣告延迟和成功记录等资源指标，并可经纯化、纠缠交换和门传送进入跨模块门或逻辑操作。}}{4}{figure.1.2}\protected@file@percent }
 \newlabel{fig:ch1_modular_network}{{1.2}{4}{模块化量子处理网络的资源架构。多个 QPU 节点通过可宣告远程 Bell 对形成网络边。节点内部由承担本地门、存储、读出和综合征循环的数据比特，以及承担原子--光子接口的通信比特共同组成。远程 Bell 对带有保真度、建立速率、宣告延迟和成功记录等资源指标，并可经纯化、纠缠交换和门传送进入跨模块门或逻辑操作。}{figure.1.2}{}}
-\citation{Ahmad2022ScalableCryoelectronics,Zhao2024RowColumnAddressing,Dai2021FluxCrosstalk,Caune2024LowLatencyQEC,GoogleQuantumAI2025BelowThreshold,Vepsalainen2022ClosedLoopFeedback}
-\citation{Jiang2007DistributedQC,Monroe2014ModularQC,Wehner2018QuantumInternetVision}
-\citation{Main2025DistributedQuantumComputing}
-\citation{Covey2023QuantumNetworksNeutralAtomNodes,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
-\citation{Reiserer2022CavityEnhancedNetworkNodes,vanleent2020longdistance,vanleent2022entangling}
-\citation{vanleent2022entangling,zhou2024longlived}
-\citation{Hartung2024QuantumNetworkRegisterTweezerCavity}
-\citation{Li2025QIT,Li2023QNS}
-\citation{Chen2021SpaceGroundQuantumNetwork}
-\citation{Yu2020EntanglementQuantumMemoriesFiber,Liu2024MemoryMemoryEntanglementMetropolitanNetwork}
-\citation{Zhang2024HeraldedAtomPhoton12km}
-\citation{Li2025FiberArrayArchitectureAtomQC}
 \@writefile{lot}{\contentsline {table}{\numberline {1.1}{\ignorespaces 量子接口 primitive 的输入输出与主要约束}}{5}{table.1.1}\protected@file@percent }
 \newlabel{tab:interface_primitives}{{1.1}{5}{量子接口 primitive 的输入输出与主要约束}{table.1.1}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {1.2}{\ignorespaces 典型量子接口平台的系统级比较}}{5}{table.1.2}\protected@file@percent }
 \newlabel{tab:platform_compare}{{1.2}{5}{典型量子接口平台的系统级比较}{table.1.2}{}}
+\citation{Ahmad2022ScalableCryoelectronics,Zhao2024RowColumnAddressing,Dai2021FluxCrosstalk,Caune2024LowLatencyQEC,GoogleQuantumAI2025BelowThreshold,Vepsalainen2022ClosedLoopFeedback}
+\citation{Jiang2007DistributedQC,Monroe2014ModularQC,Wehner2018QuantumInternetVision}
+\citation{Main2025DistributedQuantumComputing}
+\citation{Li2025QIT,Li2023QNS}
+\citation{Wehner2018QuantumInternetVision,Awschalom2021QuIC,NorthupBlatt2014QuantumInfoTransfer,Covey2023QuantumNetworksNeutralAtomNodes,Reiserer2022CavityEnhancedNetworkNodes}
+\citation{Chen2021SpaceGroundQuantumNetwork}
+\citation{Yu2020EntanglementQuantumMemoriesFiber,Liu2024MemoryMemoryEntanglementMetropolitanNetwork}
+\citation{Covey2023QuantumNetworksNeutralAtomNodes,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
 \citation{Covey2023QuantumNetworksNeutralAtomNodes}
 \citation{Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
 \citation{Monroe2014ModularQC,Covey2023QuantumNetworksNeutralAtomNodes,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
+\citation{Hartung2024QuantumNetworkRegisterTweezerCavity}
+\citation{Li2025FiberArrayArchitectureAtomQC}
+\@writefile{toc}{\contentsline {section}{\numberline {1.2}国内外研究现状}{6}{section.1.2}\protected@file@percent }
+\@writefile{toe}{\contentsline {section}{\numberline {1.2}\ignorespaces Domestic and international research status}{6}{section.1.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2.1}可扩展量子计算体系结构研究进展}{6}{subsection.1.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2.2}量子接口平台研究进展}{6}{subsection.1.2.2}\protected@file@percent }
+\citation{Reiserer2022CavityEnhancedNetworkNodes,vanleent2020longdistance,vanleent2022entangling}
+\citation{vanleent2022entangling,zhou2024longlived}
 \citation{vanleent2020longdistance,vanleent2022entangling,Reiserer2022CavityEnhancedNetworkNodes}
 \citation{Ritter2012ElementaryQuantumNetwork}
 \citation{Reiserer2022CavityEnhancedNetworkNodes,Hartung2024QuantumNetworkRegisterTweezerCavity}
 \citation{Reiserer2022CavityEnhancedNetworkNodes}
 \citation{Reiserer2022CavityEnhancedNetworkNodes,vanleent2022entangling}
+\citation{Zhang2024HeraldedAtomPhoton12km}
 \citation{Ikuta2018PolarizationInsensitiveQFC,vanleent2022entangling}
 \citation{Ikuta2018PolarizationInsensitiveQFC,zhou2024longlived}
 \citation{Ikuta2018PolarizationInsensitiveQFC,vanleent2022entangling,zhou2024longlived}
@@ -89,11 +94,8 @@
 \citation{Cabrillo1999CreationEntangledStates,SimonIrvine2003RobustLongDistanceEntanglement,BarrettKok2005EfficientHighFidelityQC}
 \citation{vanleent2020longdistance,vanleent2022entangling,Ikuta2018PolarizationInsensitiveQFC,zhou2024longlived,Hartung2024QuantumNetworkRegisterTweezerCavity}
 \citation{vanleent2020longdistance,vanleent2022entangling,Ikuta2018PolarizationInsensitiveQFC,zhou2024longlived,Hartung2024QuantumNetworkRegisterTweezerCavity}
-\@writefile{toc}{\contentsline {section}{\numberline {1.2}国内外研究现状}{6}{section.1.2}\protected@file@percent }
-\@writefile{toe}{\contentsline {section}{\numberline {1.2}\ignorespaces Domestic and international research status}{6}{section.1.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {1.3}中性原子量子接口链路}{7}{section.1.3}\protected@file@percent }
-\@writefile{toe}{\contentsline {section}{\numberline {1.3}\ignorespaces Chosen neutral-atom interface link}{7}{section.1.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.3.1}链路概述与选型依据}{7}{subsection.1.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2.3}中性原子处理节点研究进展}{7}{subsection.1.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2.4}长距离原子--光子纠缠链路研究进展}{7}{subsection.1.2.4}\protected@file@percent }
 \citation{Ikuta2018PolarizationInsensitiveQFC,vanleent2022entangling,zhou2024longlived}
 \citation{Reiserer2022CavityEnhancedNetworkNodes,zhou2024longlived}
 \citation{vanleent2020longdistance,vanleent2022entangling,zhou2024longlived}
@@ -126,29 +128,26 @@
 \citation{Pichler2016TimeDelaysMPS}
 \citation{zhou2024longlived}
 \citation{zhou2024longlived}
-\@writefile{toc}{\contentsline {section}{\numberline {1.4}链路级性能瓶颈分析}{9}{section.1.4}\protected@file@percent }
-\@writefile{toe}{\contentsline {section}{\numberline {1.4}\ignorespaces Link-level performance bottlenecks}{9}{section.1.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.4.1}成功率与距离代价}{9}{subsection.1.4.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.4.2}保真度退化与噪声受限机制}{9}{subsection.1.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2.5}链路性能建模研究进展}{9}{subsection.1.2.5}\protected@file@percent }
+\citation{vanleent2020longdistance,vanleent2022entangling,Ikuta2018PolarizationInsensitiveQFC}
+\citation{Wehner2018QuantumInternetVision}
+\citation{Azuma2023QuantumRepeatersReview,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
+\@writefile{lof}{\contentsline {figure}{\numberline {1.4}{\ignorespaces 链路长度增加时信号与噪声相对变化的示意图。图片引自 Zhou 等关于处理节点量子网络链路噪声分析的工作\cite  {zhou2024longlived}。}}{10}{figure.1.4}\protected@file@percent }
+\newlabel{fig:noise_vs_distance}{{1.4}{10}{链路长度增加时信号与噪声相对变化的示意图。图片引自 Zhou 等关于处理节点量子网络链路噪声分析的工作\cite {zhou2024longlived}。}{figure.1.4}{}}
 \citation{GardinerCollett1985,Pichler2016TimeDelaysMPS}
 \citation{Pichler2016TimeDelaysMPS,Guimond2017DelayedCoherentFeedbackMPS,ArranzRegidor2021WaveguideQED,Yanagimoto2021UltrafastQuantumNonlinearOptics}
 \citation{Pichler2016TimeDelaysMPS,Guimond2017DelayedCoherentFeedbackMPS}
 \citation{vanleent2022entangling,zhou2024longlived}
 \citation{NielsenChuang2010QCQI}
 \citation{Pichler2016TimeDelaysMPS,ArranzRegidor2021WaveguideQED}
-\@writefile{lof}{\contentsline {figure}{\numberline {1.4}{\ignorespaces 链路长度增加时信号与噪声相对变化的示意图。图片引自 Zhou 等关于处理节点量子网络链路噪声分析的工作\cite  {zhou2024longlived}。}}{10}{figure.1.4}\protected@file@percent }
-\newlabel{fig:noise_vs_distance}{{1.4}{10}{链路长度增加时信号与噪声相对变化的示意图。图片引自 Zhou 等关于处理节点量子网络链路噪声分析的工作\cite {zhou2024longlived}。}{figure.1.4}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {1.5}主要研究内容与结构安排}{10}{section.1.5}\protected@file@percent }
-\@writefile{toe}{\contentsline {section}{\numberline {1.5}\ignorespaces Main contributions and organization}{10}{section.1.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.5.1}链路建模方法概述}{10}{subsection.1.5.1}\protected@file@percent }
-\citation{vanleent2020longdistance,vanleent2022entangling,Ikuta2018PolarizationInsensitiveQFC}
 \citation{zhou2024longlived,Reiserer2022CavityEnhancedNetworkNodes}
-\citation{Covey2023QuantumNetworksNeutralAtomNodes,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
-\citation{Wehner2018QuantumInternetVision}
-\citation{Azuma2023QuantumRepeatersReview,Sinclair2024FaultTolerantOpticalInterconnectsNeutralAtoms}
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.5.2}研究内容与章节安排}{11}{subsection.1.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {1.3}本文研究内容}{11}{section.1.3}\protected@file@percent }
+\@writefile{toe}{\contentsline {section}{\numberline {1.3}\ignorespaces Research contents of this thesis}{11}{section.1.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.3.1}研究对象}{11}{subsection.1.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.3.2}建模方法}{11}{subsection.1.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.3.3}章节安排}{12}{subsection.1.3.3}\protected@file@percent }
 \@setckpt{body/chapter1}{
-\setcounter{page}{12}
+\setcounter{page}{13}
 \setcounter{equation}{0}
 \setcounter{enumi}{0}
 \setcounter{enumii}{0}
@@ -158,8 +157,8 @@
 \setcounter{mpfootnote}{0}
 \setcounter{part}{0}
 \setcounter{chapter}{1}
-\setcounter{section}{5}
-\setcounter{subsection}{2}
+\setcounter{section}{3}
+\setcounter{subsection}{3}
 \setcounter{subsubsection}{0}
 \setcounter{paragraph}{0}
 \setcounter{subparagraph}{0}
@@ -176,7 +175,7 @@
 \setcounter{Item}{0}
 \setcounter{Hfootnote}{0}
 \setcounter{Hy@AnnotLevel}{0}
-\setcounter{bookmark@seq@number}{17}
+\setcounter{bookmark@seq@number}{18}
 \setcounter{NAT@ctr}{0}
 \setcounter{cp@cntr}{0}
 \setcounter{subfigure}{0}
