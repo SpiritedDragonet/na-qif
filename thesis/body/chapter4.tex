@@ -101,15 +101,15 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.98\linewidth]{fig_accept_hist.pdf}
-\caption{窗口选择的三联诊断图：（a）A/B 两臂绝对点击时间分布；（b）相对双点击时间差分布，其中淡黄色阴影为 $\pm 70\,\mathrm{ns}$ 的时间差接收窗口，并标注公开实验中的 $70\,\mathrm{ns}$ 数据窗口、$208\,\mathrm{ns}$ 硬件符合窗口和约 $65\%$ 接受比例；（c）窗口扫描下的工作区，同时给出 $F_t$、$p_{t|11}$、$p_t$ 与假成功占比 \cite{vanleent2022entangling}。}
+\caption{窗口选择的三联诊断图：（a）A/B 两臂绝对点击时间分布；（b）相对双点击时间差分布，其中淡黄色阴影为 $\pm 70\,\mathrm{ns}$ 的时间差接收窗口，并标注 $70\,\mathrm{ns}$ 数据窗口、$208\,\mathrm{ns}$ 硬件符合窗口和约 $65\%$ 接受比例；（c）窗口扫描下的工作区，同时给出 $F_t$、$p_{t|11}$、$p_t$ 与假成功占比。}
 \label{fig:accept_hist}
 \end{figure}
 
-图 \ref{fig:accept_hist} 的前两幅子图给出两臂点击主密度区以及相对时差集中区间。第三幅子图把同一窗口口径下的真成功率、条件保真度、到达条件真成功概率与假成功占比并列起来。图中公开实验窗口参数给出时间筛选的外部基准，使候选窗口可先由时序统计锁定，再在候选区内选择兼顾速率与质量的工作点。干涉质量与模式分解结果如下。图 \ref{fig:hom} 与图 \ref{fig:bsm_patterns} 共同给出两光子干涉质量。前者约束不可分辨性与时延噪声，后者把推荐工作点下的点击模式、记录真实性和时差分布放到同一张诊断图中。二者与末端条件保真度相互对应。
+图 \ref{fig:accept_hist} 的前两幅子图给出两臂点击主密度区以及相对时差集中区间。第三幅子图把同一窗口口径下的真成功率、条件保真度、到达条件真成功概率与假成功占比并列起来。图中标注的 $70\,\mathrm{ns}$ 数据窗口、$208\,\mathrm{ns}$ 硬件符合窗口和约 $65\%$ 接受比例来自公开实验报道\cite{vanleent2022entangling}，用于给出时间筛选的外部基准。候选窗口可先由时序统计锁定，再在候选区内选择兼顾速率与质量的工作点。干涉质量与模式分解结果如下。图 \ref{fig:hom} 与图 \ref{fig:bsm_patterns} 共同给出两光子干涉质量。前者约束不可分辨性与时延噪声，后者把推荐工作点下的点击模式、记录真实性和时差分布放到同一张诊断图中。二者与末端条件保真度相互对应。
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.88\linewidth]{fig_hom.pdf}
-\caption{基于同偏振跨端口双点击统计的 HOM 二阶关联曲线及最小二乘拟合。标题同时给出链路仿真拟合得到的 HOM 可见度和公开实验可见度 $0.955(7)$ \cite{vanleent2022entangling}。}
+\caption{基于同偏振跨端口双点击统计的 HOM 二阶关联曲线及最小二乘拟合。标题同时给出链路仿真拟合得到的 HOM 可见度和对照可见度 $0.955(7)$。}
 \label{fig:hom}
 \end{figure}
 
@@ -128,7 +128,7 @@ $C_2(\tau)$ 表示时延为 $\tau$ 时同偏振跨端口双点击计数（$H1$-$
 g^{(2)}(\tau)=b-a\exp\!\left[-\left(\frac{\tau-\tau_0}{\sigma}\right)^2\right]
 \end{equation}
 
-进行最小二乘拟合。谷深 $a$、中心偏移 $\tau_0$ 与宽度 $\sigma$ 分别对应可分辨性退化、时延偏置与有效干涉时间尺度。由 $a/b$ 得到的可见度用于把两光子不可分辨性单独约束在中间层，再传递到后续 BSM 与贝尔指标计算。
+进行最小二乘拟合。谷深 $a$、中心偏移 $\tau_0$ 与宽度 $\sigma$ 分别对应可分辨性退化、时延偏置与有效干涉时间尺度。公开实验报道的 HOM 可见度为 $0.955(7)$\cite{vanleent2022entangling}，图中拟合值用于把两光子不可分辨性单独约束在中间层，再传递到后续 BSM 与贝尔指标计算。
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.9\linewidth]{fig_bsm_patterns.pdf}
@@ -152,11 +152,11 @@ g^{(2)}(\tau)=b-a\exp\!\left[-\left(\frac{\tau-\tau_0}{\sigma}\right)^2\right]
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.82\linewidth]{fig_chsh.pdf}
-\caption{CHSH 参数趋势（虚线为经典界 $S=2$）。空心菱形为公开实验在 $6\,\mathrm{km}$ 全窗口口径下的 $S=2.244(63)$ 对照点 \cite{vanleent2022entangling}。}
+\caption{CHSH 参数趋势（虚线为经典界 $S=2$）。空心菱形为 $6\,\mathrm{km}$ 全窗口口径下的 $S=2.244(63)$ 对照点。}
 \label{fig:chsh}
 \end{figure}
 
-图 \ref{fig:chsh} 直接回答“纠缠是否仍具非经典可用性”。与单一保真度相比，$S$ 对测量基选择和相关矩阵结构更敏感。公开实验点提供任务层非定域关联基准，图中仿真曲线则给出同一模型下随距离变化的可用性趋势。距离扩展把成功率与条件态质量放到链路尺度上比较。在两臂等长 $L$ 且单臂衰减系数为 $\alpha_f$ 时，成功率满足
+图 \ref{fig:chsh} 直接回答“纠缠是否仍具非经典可用性”。与单一保真度相比，$S$ 对测量基选择和相关矩阵结构更敏感。公开实验在 $6\,\mathrm{km}$ 全窗口口径下给出的 $S=2.244(63)$ 作为任务层非定域关联基准\cite{vanleent2022entangling}，图中仿真曲线则给出同一模型下随距离变化的可用性趋势。距离扩展把成功率与条件态质量放到链路尺度上比较。在两臂等长 $L$ 且单臂衰减系数为 $\alpha_f$ 时，成功率满足
 \begin{equation}
 p_s(L)\propto 10^{-\alpha_f L/5},
 \end{equation}
@@ -165,19 +165,19 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.9\linewidth]{fig_distance.pdf}
-\caption{成功率与保真度随链路长度变化。空心菱形为公开实验对照值，其中右图为 $6/11/23/33\,\mathrm{km}$ 的原子--原子纠缠保真度，左图为 $33\,\mathrm{km}$ 处宣告成功概率 $1.22\times10^{-6}$ \cite{vanleent2022entangling}。}
+\caption{成功率与保真度随链路长度变化。空心菱形为对照值，其中右图为 $6/11/23/33\,\mathrm{km}$ 的原子--原子纠缠保真度，左图为 $33\,\mathrm{km}$ 处宣告成功概率 $1.22\times10^{-6}$。}
 \label{fig:distance}
 \end{figure}
 
-图 \ref{fig:distance} 体现了距离扩展中的双重退化机制：成功率主要受指数损耗控制，而条件态质量更多受噪声相对占比控制。公开实验点用于检验距离标度的一致性，仿真曲线与文献点之间的偏差保留了窗口口径、读出流程和背景模型差异。
+图 \ref{fig:distance} 体现了距离扩展中的双重退化机制：成功率主要受指数损耗控制，而条件态质量更多受噪声相对占比控制。公开实验中 $6/11/23/33\,\mathrm{km}$ 的原子--原子纠缠保真度以及 $33\,\mathrm{km}$ 处 $1.22\times10^{-6}$ 的宣告成功概率用于检验距离标度的一致性\cite{vanleent2022entangling}。仿真曲线与文献点之间的偏差保留了窗口口径、读出流程和背景模型差异。
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.98\linewidth]{fig_qfc_noise.pdf}
-\caption{器件参数工作平面：（a）QFC 效率与背景噪声对应的条件保真度热图；（b）同一 QFC 参数平面上的宣告概率热图；（c）探测效率与背景计数对应的条件保真度热图。金色圆点表示由公开实验器件参数给出的基线锚点，包含 $\eta_q=0.57$、$\eta_d\gtrsim0.85$ 和 $R_{\mathrm{bg}}\sim160$--$170\,\mathrm{s^{-1}}$ 的量级 \cite{vanleent2022entangling,Ikuta2018PolarizationInsensitiveQFC}。}
+\caption{器件参数工作平面：（a）QFC 效率与背景噪声对应的条件保真度热图；（b）同一 QFC 参数平面上的宣告概率热图；（c）探测效率与背景计数对应的条件保真度热图。金色圆点表示基线锚点，包含 $\eta_q=0.57$、$\eta_d\gtrsim0.85$ 和 $R_{\mathrm{bg}}\sim160$--$170\,\mathrm{s^{-1}}$ 的量级。}
 \label{fig:qfc_noise}
 \end{figure}
 
-图 \ref{fig:qfc_noise} 把转换端和探测端两类器件约束并列到同一层级。前两幅子图显示 QFC 背景升高会同时压低条件保真度与宣告概率，且高效率只有在低噪声区才能充分转化为链路收益。第三幅子图表明探测效率提升在低背景区更直接转化为质量改进，而在高背景区更早出现饱和。金色基线点把公开实验器件参数投影到工作平面上，为系统级误差预算提供器件层入口。最后给出误差归因与部署判据。误差预算采用分组边际法。设 $g$ 表示噪声组（源端、QFC+滤波、光纤、探测），定义
+图 \ref{fig:qfc_noise} 把转换端和探测端两类器件约束并列到同一层级。前两幅子图显示 QFC 背景升高会同时压低条件保真度与宣告概率，且高效率只有在低噪声区才能充分转化为链路收益。第三幅子图表明探测效率提升在低背景区更直接转化为质量改进，而在高背景区更早出现饱和。金色基线点对应公开实验中的 QFC 外部效率、探测效率和中心站背景计数量级\cite{vanleent2022entangling,Ikuta2018PolarizationInsensitiveQFC}，用于把器件参数投影到工作平面上。最后给出误差归因与部署判据。误差预算采用分组边际法。设 $g$ 表示噪声组（源端、QFC+滤波、光纤、探测），定义
 \begin{align}
 \Delta F_g &= F_{\mathrm{ideal}}-F_{g\ \mathrm{only}},\\
 \Delta p_g &= p_{\mathrm{ideal}}-p_{g\ \mathrm{only}}.

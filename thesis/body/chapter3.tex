@@ -126,7 +126,7 @@ a_V&=
 \label{eq:basis-12d-emitter}
 \end{equation}
 
-在 atom-major 编码下，发射体哈密顿量写为
+在原子优先索引下，发射体哈密顿量写为
 \begin{align}
 H_{\mathrm{em}}(t)=&
 H_{\mathrm{atom}}(t)\otimes I_3 + I_4\otimes \mathrm{diag}(0,\delta_{c,H},\delta_{c,V})\notag\\
@@ -153,13 +153,13 @@ L_{{\rm out},V} &= \sqrt{\kappa_{{\rm ex},V}}\,I_4\otimes a_V,
 \label{eq:emitter-collapse-set}
 \end{equation}
 
-这组算符分别对应腔外耦合输出、腔内损耗和自由空间辐射。其物理含义与 cavity-QED 条件演化和量子跳跃表述保持一致 \cite{Carmichael1993OpenSystemsQuantumOptics,PlenioKnight1998QuantumJumps}。实现中同时保留 atom-major 和 cavity-major 两种索引视角。若 $i_a\in\{0,1,2,3\}$ 表示原子态，$i_c\in\{0,1,2\}$ 表示腔模态，则 atom-major 线性索引为
+这组算符分别对应腔外耦合输出、腔内损耗和自由空间辐射。其物理含义与腔量子电动力学（cavity QED）中的条件演化和量子跳跃表述保持一致 \cite{Carmichael1993OpenSystemsQuantumOptics,PlenioKnight1998QuantumJumps}。实现中同时保留原子优先索引和腔模优先索引两种排列方式。若 $i_a\in\{0,1,2,3\}$ 表示原子态，$i_c\in\{0,1,2\}$ 表示腔模态，则原子优先线性索引为
 \begin{equation}
 p=3i_a+i_c,
 \label{eq:app-index-atom-major}
 \end{equation}
 
-cavity-major 线性索引为
+腔模优先线性索引为
 \begin{equation}
 q=4i_c+i_a.
 \label{eq:app-index-cavity-major}
@@ -476,11 +476,11 @@ E_m^{\mathrm{in}} &= \Phi^\dagger(F_m),\\
 \label{eq:composed-dual-map}
 \end{align}
 
-其中 $\mathcal{V}(\rho)=V\rho V^\dagger$ 表示等距嵌入，$\mathcal{L}$ 表示损耗信道，$\mathcal{M}_{\mathrm{det}}$ 表示探测器响应信道。图 \ref{fig:ch3_effect_pushback} 将上述对偶映射写成测量侧流水线。它强调探测记录先在探测端定义，再依次经过探测器、分束器、光纤和模式嵌入的对偶映射回到输入端，最终与状态侧给出的 $\rho_{\mathrm{in}}$ 做概率收缩。
+其中 $\mathcal{V}(\rho)=V\rho V^\dagger$ 表示等距嵌入，$\mathcal{L}$ 表示损耗信道，$\mathcal{M}_{\mathrm{det}}$ 表示探测器响应信道。上述推回过程采用开放系统中的对偶信道表述\cite{Kraus1983StatesEffectsOperations,Lindblad1976Semigroups,GoriniKossakowskiSudarshan1976}。图 \ref{fig:ch3_effect_pushback} 将对偶映射写成测量侧流水线。它强调探测记录先在探测端定义，再依次经过探测器、分束器、光纤和模式嵌入的对偶映射回到输入端，最终与状态侧给出的 $\rho_{\mathrm{in}}$ 做概率收缩。
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.98\textwidth]{fig_ch3_effect_pushback.pdf}
-\caption{中间站测量侧的效应算符推回关系。探测端先构造点击记录 $F_m$，再按探测器响应、分束器、光纤信道和模式嵌入的对偶顺序推回输入端，得到用于收缩的 $E_m^{\mathrm{in}}$。状态侧输出 $\rho_{\mathrm{in}}$ 与该效应算符共同进入概率收缩。该处理与开放系统中的对偶信道表述一致 \cite{Kraus1983StatesEffectsOperations,Lindblad1976Semigroups,GoriniKossakowskiSudarshan1976}。}
+\caption{中间站测量侧的效应算符推回关系。探测端先构造点击记录 $F_m$，再按探测器响应、分束器、光纤信道和模式嵌入的对偶顺序推回输入端，得到用于收缩的 $E_m^{\mathrm{in}}$。状态侧输出 $\rho_{\mathrm{in}}$ 与该效应算符共同进入概率收缩。}
 \label{fig:ch3_effect_pushback}
 \end{figure}
 
@@ -605,11 +605,11 @@ QFC & 采用强泵近似下的分束器型局域幺正 & $\eta_H,\eta_V$；$\phi
 \end{table}
 
 
-表 \ref{tab:ch3_model_boundaries} 给出的局域截断、控制参数和误差入口共同进入一次链路仿真任务。执行路径可以分为状态侧和测量侧两条数据流：状态侧按时间分箱生成保留相干历史的 $\rho_{\mathrm{in}}$，测量侧按成功记录生成推回后的 $E_m^{\mathrm{in}}$ 与成功集合，二者在条件化收缩中汇合并输出第四章使用的概率、条件态和指标入口。
+表 \ref{tab:ch3_model_boundaries} 给出的局域截断、控制参数和误差入口共同进入一次链路仿真任务。执行路径可以分为状态侧和测量侧两条数据流：状态侧按时间分箱生成保留相干历史的 $\rho_{\mathrm{in}}$，测量侧按成功记录生成推回后的 $E_m^{\mathrm{in}}$ 与成功集合，二者在条件化收缩中汇合并输出第四章使用的概率、条件态和指标入口。状态侧的时间分箱演化和测量侧的记忆核处理沿用延迟反馈 MPS 与波导 QED 离散建模中的基本思路\cite{Pichler2016TimeDelaysMPS,Guimond2017DelayedCoherentFeedbackMPS}。
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.96\linewidth]{fig_sim_pipeline.pdf}
-\caption{单次链路仿真任务流程图。状态侧负责发射 TEBD、QFC、滤波记忆和原子退相干，并生成切分面输入态 $\rho_{\mathrm{in}}$。测量侧负责光纤、分束器、探测器 POVM、背景事件、成功模式枚举和输入端效应 $E_m^{\mathrm{in}}$ 构造。两条数据流在条件化收缩中合并，输出宣告概率、条件态和第四章指标入口 \cite{Pichler2016TimeDelaysMPS,Guimond2017DelayedCoherentFeedbackMPS}.}
+\caption{单次链路仿真任务流程图。状态侧负责发射 TEBD、QFC、滤波记忆和原子退相干，并生成切分面输入态 $\rho_{\mathrm{in}}$。测量侧负责光纤、分束器、探测器 POVM、背景事件、成功模式枚举和输入端效应 $E_m^{\mathrm{in}}$ 构造。两条数据流在条件化收缩中合并，输出宣告概率、条件态和第四章指标入口。}
 \label{fig:sim_pipeline}
 \end{figure}
 
