@@ -16,47 +16,47 @@
 
 \subsection{可扩展量子计算体系结构需求}
 
-当研究目标从“展示一次性量子态制备”推进到“持续运行的逻辑比特”时，系统瓶颈往往集中在控制与读出吞吐、长期稳定性、标定成本、误差传播，以及不同功能区之间的互连效率等方面\cite{NationalAcademies2019QC,Awschalom2021QuIC}。比特数增加会带来控制线与校准参数的大幅增长。并行度提高会加剧时序同步与串扰管理难度。电路深度增加会放大误差累积。而为了抑制误差又需要更频繁的测量与反馈，从而进一步挤压有效吞吐\cite{Ahmad2022ScalableCryoelectronics,Zhao2024RowColumnAddressing,Dai2021FluxCrosstalk,Caune2024LowLatencyQEC,GoogleQuantumAI2025BelowThreshold}。因此，可扩展量子计算在很大程度上表现为体系结构问题：需要硬件、控制、互连与算法在系统层面协同设计\cite{Wehner2018QuantumInternetVision,Vepsalainen2022ClosedLoopFeedback}。
+当研究目标从“展示一次性量子态制备”推进到“持续运行的逻辑比特”时，系统瓶颈往往集中在控制与读出吞吐、长期稳定性、标定成本、误差传播，以及不同功能区之间的互连效率等方面\cite{NationalAcademies2019QC,Awschalom2021QuIC}。比特数增加会带来控制线与校准参数的大幅增长。并行度提高会加剧时序同步与串扰管理难度。电路深度增加会放大误差累积。而为了抑制误差又需要更频繁的测量与反馈，从而进一步挤压有效吞吐\cite{Ahmad2022ScalableCryoelectronics,Zhao2024RowColumnAddressing,Dai2021FluxCrosstalk,Caune2024LowLatencyQEC,GoogleQuantumAI2025BelowThreshold}。在量子纠错语境中，错误综合征是由校验算符、稳定子或辅助比特测量得到的经典校验结果，用于判断可能的错误类型、触发反馈并为解码器提供输入。本文后续提到的错误综合征数据、错误综合征吞吐和错误综合征循环均指这类错误检测记录的产生、传输和更新过程。因此，可扩展量子计算在很大程度上表现为体系结构问题：需要硬件、控制、互连与算法在系统层面协同设计\cite{Wehner2018QuantumInternetVision,Vepsalainen2022ClosedLoopFeedback}。
 \begin{figure}[htbp]
   
 \centering
   
 \includegraphics[width=0.94\textwidth]{fig_ch1_system_pressure.pdf}
   
-\caption{可扩展量子计算的规模化运行压力。物理比特扩容、并行读出反馈、长时纠错运行和标定闭环维护共同把问题从单器件性能推向体系结构设计。控制扇出、综合征吞吐、逻辑寿命预算和漂移追踪分别对应可观察的工程瓶颈。}
+\caption{可扩展量子计算的规模化运行压力。物理比特扩容、并行读出反馈、长时纠错运行和标定闭环维护共同把问题从单器件性能推向体系结构设计。控制扇出、错误综合征吞吐、逻辑寿命预算和漂移追踪分别对应可观察的工程瓶颈。}
   
 \label{fig:ch1_system_pressure}
 \end{figure}
 
 
-图~\ref{fig:ch1_system_pressure} 把这些压力压缩到四个系统维度。物理比特扩容要求更多寻址、读出与耦合通道进入同一误差预算。并行读出反馈要求综合征数据、经典处理和反馈时钟形成稳定吞吐。长时纠错运行要求逻辑寿命预算覆盖相关噪声尾部。标定闭环维护要求频率、相位、功率和耦合点持续回写到控制模型。这些约束共同推动处理器从单块扩展走向模块化组织。量子纠错为“持续运行的逻辑比特”提供了明确的理论路径。其基本思路是用多个物理比特编码一个逻辑比特，通过反复测量校验算符（稳定子）来探测并校正错误。当物理门误差率低于阈值时，逻辑误差率可随码距增大而指数下降\cite{Gottesman1997Stabilizer,Fowler2012SurfaceCode,NationalAcademies2019QC}。然而，纠错带来的测量吞吐与经典反馈开销非常显著，使“可扩展”的评价同时覆盖单个门的平均保真度、长期大规模并行测量、快速经典处理与反馈控制能力\cite{NationalAcademies2019QC}。模块化与分布式体系结构为缓解上述压力提供了一条具有普适性的思路\cite{Jiang2007DistributedQC,Monroe2014ModularQC}。其核心思想是把大规模处理器拆分为多个可局域维护与标定的模块。模块内部完成高保真门操作、逻辑编码与错误检测。跨模块互连则通过光子信道建立可宣告的远程纠缠资源，并将其注入到更高层的纠错与计算流程\cite{Monroe2014ModularQC,Covey2023QuantumNetworksNeutralAtomNodes,Main2025DistributedQuantumComputing}。在这种架构下，“远程贝尔对”的质量与建立速率直接影响分布式门、纠错码注入与网络协议的总体性能。图~\ref{fig:ch1_modular_network} 将这一结构表示为 QPU 网络、节点内部角色分工和远程资源调用链\cite{kimble2008quantum,Wehner2018QuantumInternetVision,Awschalom2021QuIC,Covey2023QuantumNetworksNeutralAtomNodes}。
+图~\ref{fig:ch1_system_pressure} 把这些压力压缩到四个系统维度。物理比特扩容要求更多寻址、读出与耦合通道进入同一误差预算。并行读出反馈要求错误综合征数据、经典处理和反馈时钟形成稳定吞吐。长时纠错运行要求逻辑寿命预算覆盖相关噪声尾部。标定闭环维护要求频率、相位、功率和耦合点持续回写到控制模型。这些约束共同推动处理器从单块扩展走向模块化组织。量子纠错为“持续运行的逻辑比特”提供了明确的理论路径。其基本思路是用多个物理比特编码一个逻辑比特，通过反复测量校验算符（稳定子）来探测并校正错误。当物理门误差率低于阈值时，逻辑误差率可随码距增大而指数下降\cite{Gottesman1997Stabilizer,Fowler2012SurfaceCode,NationalAcademies2019QC}。然而，纠错带来的测量吞吐与经典反馈开销非常显著，使“可扩展”的评价同时覆盖单个门的平均保真度、长期大规模并行测量、快速经典处理与反馈控制能力\cite{NationalAcademies2019QC}。模块化与分布式体系结构为缓解上述压力提供了一条具有普适性的思路\cite{Jiang2007DistributedQC,Monroe2014ModularQC}。其核心思想是把大规模处理器拆分为多个可局域维护与标定的模块。模块内部完成高保真门操作、逻辑编码与错误检测。跨模块互连则通过光子信道建立可宣告的远程纠缠资源，并将其注入到更高层的纠错与计算流程\cite{Monroe2014ModularQC,Covey2023QuantumNetworksNeutralAtomNodes,Main2025DistributedQuantumComputing}。在这种架构下，“远程贝尔对”的质量与建立速率直接影响分布式门、纠错码注入与网络协议的总体性能。图~\ref{fig:ch1_modular_network} 将这一结构表示为 QPU 网络、节点内部角色分工和远程资源调用链\cite{kimble2008quantum,Wehner2018QuantumInternetVision,Awschalom2021QuIC,Covey2023QuantumNetworksNeutralAtomNodes}。
 \begin{figure}[htbp]
   
 \centering
   
 \includegraphics[width=0.98\textwidth]{fig_ch1_modular_network.pdf}
   
-\caption{模块化量子处理网络的资源架构。多个 QPU 节点通过可宣告远程 Bell 对形成网络边。节点内部由承担本地门、存储、读出和综合征循环的数据比特，以及承担原子--光子接口的通信比特共同组成。远程 Bell 对带有保真度、建立速率、宣告延迟和成功记录等资源指标，并可经纯化、纠缠交换和门传送进入跨模块门或逻辑操作。}
+\caption{模块化量子处理网络的资源架构。多个 QPU 节点通过可宣告远程 Bell 对形成网络边。节点内部由承担本地门、存储、读出和错误综合征循环的数据比特，以及承担原子--光子接口的通信比特共同组成。远程 Bell 对带有保真度、建立速率、宣告延迟和成功记录等资源指标，并可经纯化、纠缠交换和门传送进入跨模块门或逻辑操作。}
   
 \label{fig:ch1_modular_network}
 \end{figure}
 
 
-在图~\ref{fig:ch1_modular_network} 所示资源架构中，量子接口层承担一组围绕“静止物质比特”和“飞行光子模式”的 primitive。不同 primitive 交付的资源形态不同：远程纠缠产生交付可宣告 Bell 对，态转移与量子存储交付量子缓存和时间同步，远程门与门传送交付跨模块操作，错误探测与资源注入交付可进入纠错流程的记录或筛选资源。表~\ref{tab:interface_primitives} 按输入对象、关键过程、输出资源和主要约束归纳这些任务。
+在图~\ref{fig:ch1_modular_network} 所示资源架构中，量子接口层承担一组围绕“静止物质比特”和“飞行光子模式”的接口功能单元。不同接口功能单元交付的资源形态不同：远程纠缠产生交付可宣告 Bell 对，态转移与量子存储交付量子缓存和时间同步，远程门与门传送交付跨模块操作，错误探测与资源注入交付可进入纠错流程的记录或筛选资源。表~\ref{tab:interface_primitives} 按输入对象、关键过程、输出资源和主要约束归纳这些任务。
 \begin{table}[htbp]
 \centering
 \footnotesize
 \renewcommand{\arraystretch}{1.25}
-\caption{量子接口 primitive 的输入输出与主要约束}
+\caption{量子接口功能单元的输入输出与主要约束}
 \label{tab:interface_primitives}
 \begin{tabularx}{0.98\linewidth}{>{\raggedright\arraybackslash}p{2.2cm}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{3.5cm}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}X}
 \toprule
-接口 primitive & 输入对象 & 关键过程 & 输出资源 & 主要约束 \\
+接口功能单元 & 输入对象 & 关键过程 & 输出资源 & 主要约束 \\
 \midrule
 远程纠缠产生 & 两端物质比特与发射光子 & 原子--光子纠缠、两光子干涉、BSM & 可宣告远程 Bell 对 & 收集效率、模式匹配、暗计数 \\
 态转移 / 量子存储 & 飞行光子态或本地物质态 & 吸收、映射、缓存、读出 & 存储态或再发射光子 & 读写效率、寿命、带宽 \\
 远程门 / 门传送 & 本地数据比特与远程 Bell 对 & 局域门、测量、经典前馈 & 跨模块门或等效逻辑操作 & Bell 对保真度、前馈延迟 \\
-错误探测 / 资源注入 & 辅助比特、光子记录、综合征 & 泄漏探测、擦除标记、筛选 & syndrome 更新或可用资源 & 读出保真度、误报率、轮次同步 \\
+错误探测 / 资源注入 & 辅助比特、光子记录、错误综合征 & 泄漏探测、擦除标记、筛选 & 更新后的错误综合征记录或可用资源 & 读出保真度、误报率、轮次同步 \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -97,7 +97,7 @@
 
 \subsection{量子接口平台研究进展}
 
-量子接口研究围绕静止物质比特与飞行光子之间的相干连接展开，典型平台包括原子系综/量子存储、离子模块、固态缺陷/量子点以及单原子/中性原子节点\cite{Wehner2018QuantumInternetVision,Awschalom2021QuIC,NorthupBlatt2014QuantumInfoTransfer,Covey2023QuantumNetworksNeutralAtomNodes,Reiserer2022CavityEnhancedNetworkNodes}。相关综述从量子互联网、量子互连和物质--光量子态转移等不同角度概括了量子接口的功能边界，使平台差异可以围绕存储寿命、本地处理能力、光子收集效率、谱线稳定性和工程集成难度展开比较\cite{Wehner2018QuantumInternetVision,Awschalom2021QuIC,NorthupBlatt2014QuantumInfoTransfer}。存储型和中继型接口更强调长距离网络中的缓存、多模复用和同步等待，离子与中性原子平台更容易与模块化处理节点和远程门传送语境结合，固态缺陷和量子点则在芯片级集成与纳米光子耦合方面具有优势。国内量子通信网络已经形成实地运行基础，空天地一体量子通信网络覆盖数千公里尺度，为长距离光纤链路、可信中继和卫星链路协同提供了工程参照\cite{Chen2021SpaceGroundQuantumNetwork}。在量子存储网络方向，国内实验实现了相隔数十公里光纤的量子存储器纠缠，并进一步在城域量子网络中建立多节点 memory--memory entanglement\cite{Yu2020EntanglementQuantumMemoriesFiber,Liu2024MemoryMemoryEntanglementMetropolitanNetwork}。这些研究说明，量子接口已经从单器件演示逐步进入网络链路、节点互连和系统运行条件下的联合评估阶段。
+量子接口研究围绕静止物质比特与飞行光子之间的相干连接展开，典型平台包括原子系综/量子存储、离子模块、固态缺陷/量子点以及单原子/中性原子节点\cite{Wehner2018QuantumInternetVision,Awschalom2021QuIC,NorthupBlatt2014QuantumInfoTransfer,Covey2023QuantumNetworksNeutralAtomNodes,Reiserer2022CavityEnhancedNetworkNodes}。相关综述从量子互联网、量子互连和物质--光量子态转移等不同角度概括了量子接口的功能边界，使平台差异可以围绕存储寿命、本地处理能力、光子收集效率、谱线稳定性和工程集成难度展开比较\cite{Wehner2018QuantumInternetVision,Awschalom2021QuIC,NorthupBlatt2014QuantumInfoTransfer}。存储型和中继型接口更强调长距离网络中的缓存、多模复用和同步等待，离子与中性原子平台更容易与模块化处理节点和远程门传送语境结合，固态缺陷和量子点则在芯片级集成与纳米光子耦合方面具有优势。国内量子通信网络已经形成实地运行基础，空天地一体量子通信网络覆盖数千公里尺度，为长距离光纤链路、可信中继和卫星链路协同提供了工程参照\cite{Chen2021SpaceGroundQuantumNetwork}。在量子存储网络方向，国内实验实现了相隔数十公里光纤的量子存储器纠缠，并进一步在城域量子网络中建立多节点量子存储器间纠缠\cite{Yu2020EntanglementQuantumMemoriesFiber,Liu2024MemoryMemoryEntanglementMetropolitanNetwork}。这些研究说明，量子接口已经从单器件演示逐步进入网络链路、节点互连和系统运行条件下的联合评估阶段。
 
 \subsection{中性原子处理节点研究进展}
 
@@ -111,7 +111,7 @@
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.98\linewidth]{fig_link_overview_cn.png}
-\caption{中性原子远程纠缠链路。节点 A 和节点 B 通过读出、激发与原子--光子接口产生链路光子，QFC 模块将原子波段光子转换到电信波段并经 $L_1,L_2\le 16.5\,\mathrm{km}$ 光纤送入中继站。中继站利用沃拉斯顿棱镜、光谱滤波、分束器、偏振分析和 SNSPD 完成部分 BSM，并向两端返回成功宣告。图中“宣告成功信号”表示 heralding signal。BS 为分束器，PBS 为偏振分束器，HWP/QWP 为半波片/四分之一波片，PPLN 为周期极化铌酸锂波导，SNSPD 为超导纳米线单光子探测器\cite{vanleent2020longdistance,vanleent2022entangling,Ikuta2018PolarizationInsensitiveQFC,zhou2024longlived,Hartung2024QuantumNetworkRegisterTweezerCavity}。}
+\caption{中性原子远程纠缠链路。节点 A 和节点 B 通过读出、激发与原子--光子接口产生链路光子，QFC 模块将原子波段光子转换到电信波段并经 $L_1,L_2\le 16.5\,\mathrm{km}$ 光纤送入中继站。中继站利用沃拉斯顿棱镜、光谱滤波、分束器、偏振分析和 SNSPD 完成部分 BSM，并向两端返回成功宣告。图中“宣告成功信号”表示中继站返回两端节点的经典宣告信号。BS 为分束器，PBS 为偏振分束器，HWP/QWP 为半波片/四分之一波片，PPLN 为周期极化铌酸锂波导，SNSPD 为超导纳米线单光子探测器\cite{vanleent2020longdistance,vanleent2022entangling,Ikuta2018PolarizationInsensitiveQFC,zhou2024longlived,Hartung2024QuantumNetworkRegisterTweezerCavity}。}
 \label{fig:link_overview}
 \end{figure}
 

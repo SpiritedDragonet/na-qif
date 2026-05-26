@@ -66,14 +66,18 @@ $v_{\mathrm{HOM}}$ & 两光子干涉可见度 & $0.955(7)$ & 标定拟合 & \cit
 \end{equation}
 
 其中 $r$ 依次对应波包、窗口、HOM、BSM 与贝尔指标层。与一次性整体拟合相比，式 \eqref{eq:calibration-objective} 可显著降低参数退化，并提供可审计的误差来源。
-\begin{figure}[htbp]
+
+\newpage
+
+图 \ref{fig:calibration_pipeline} 将抽象的“层”改写为具体装置环节与观测量对应关系：上行给出物理环节，下行给出该环节直接约束的观测量与参数组。该图用于明确每一步标定所依赖的实验数据类型，以及应在该步被冻结的参数集合。
+
+\begin{figure}[!htbp]
 \centering
 \includegraphics[width=0.98\linewidth]{fig_calibration_pipeline.pdf}
 \caption{按装置环节组织的分层标定图：从源端发射、时间窗、HOM 干涉到 BSM 与条件态，每一层只用本层观测量锚定对应参数，并把约束传递到下一层。}
 \label{fig:calibration_pipeline}
 \end{figure}
-
-图 \ref{fig:calibration_pipeline} 将抽象的“层”改写为具体装置环节与观测量对应关系：上行给出物理环节，下行给出该环节直接约束的观测量与参数组。该图用于明确每一步标定所依赖的实验数据类型，以及应在该步被冻结的参数集合。
+\FloatBarrier
 
 \section{关键噪声来源归因}[Attribution of Key Noise Sources]
 
@@ -195,7 +199,7 @@ p_s(L)\propto 10^{-\alpha_f L/5},
 \FloatBarrier
 \section{单轨迹仿真开销测算}[Single-Trajectory Simulation Cost Profiling]
 
-测试硬件为 Intel(R) Xeon(R) E-2176M CPU，标称主频 $2.70$ GHz（系统可见 12 逻辑线程）。本次单跑按单核、单并发任务执行（1 个工作线程）。在基线参数 $N=100,\ \Delta t=1$ ns，窗口 $70$ ns，$\chi_{\max}=50$，单次任务（1 shot）下，时间量定义与代表性运行结果统一列于表 \ref{tab:timing-breakdown}。
+测试硬件为 Intel(R) Xeon(R) E-2176M CPU，标称主频 $2.70$ GHz（系统可见 12 逻辑线程）。本次单跑按单核、单并发任务执行（1 个工作线程）。在基线参数 $N=100,\ \Delta t=1$ ns，窗口 $70$ ns，$\chi_{\max}=50$，单次任务（1 次轨迹采样）下，时间量定义与代表性运行结果统一列于表 \ref{tab:timing-breakdown}。
 \begin{table}[htbp]
 \centering
 \caption{时间量定义与代表性运行结果}

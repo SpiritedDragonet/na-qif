@@ -48,6 +48,7 @@ tmpclaude-*
 
 # Project specific
 *.log
+output/
 outputs/
 queue/
 thesis/data/
@@ -71,3 +72,32 @@ thesis/AGENT.md
 # Local scratch output, except saved figure-generation prompts
 thesis/.codex_tmp/*
 !thesis/.codex_tmp/*_prompt_cn.txt
+
+# Thesis local outputs and review/admin scratch files
+thesis/output/
+thesis/outputs/
+thesis/temp2/
+thesis/thesis_nool.pdf
+thesis/thesis.zip
+thesis/阅*.pdf
+thesis/硕士毕业论文参考模板.docx
+thesis/评阅意见修改建议汇总.md
+thesis/答辩委员会*.md
+
+# Thesis build intermediates
+thesis/thesis.aux
+thesis/thesis.bbl
+thesis/thesis.blg
+thesis/thesis.glo
+thesis/thesis.idx
+thesis/thesis.ist
+thesis/thesis.out
+thesis/thesis.thm
+thesis/thesis.toc
+thesis/thesis.xdv
+thesis/body/*.aux
+thesis/back/*.aux
+thesis/front/*.aux
+thesis/*.fls
+thesis/*.fdb_latexmk
+thesis/*.synctex.gz

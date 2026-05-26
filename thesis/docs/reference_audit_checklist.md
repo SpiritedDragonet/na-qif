@@ -84,8 +84,8 @@
 
 ## 关键修正记录
 
-- [x] 73hao2024RowColumnAddressing` 与 `Caune2024LowLatencyQEC` 已从 `@misc` 改为 `@online`，避免输出未知文献类型，最终按学院口径输出为 `[EB]`。
-- [x] 74 DOI、题名或 arXiv 编号不匹配的旧条目，并在正文引用中同步替换为真实文献。
-- [x] 75oogleQuantumAI2025BelowThreshold` 已补齐 Nature 期号 `8052`。
-- [x] 76期刊条目已补充 `language = {zh}`，避免中英文著录规则混用。
-- [x] 77bt7714-numerical.bst` 已关闭载体后缀输出，`thesis.bbl` 中仅保留 `[J]`、`[C]`、`[M]`、`[D]` 和 `[EB]` 等标志码。
+- [x] `Zhao2024RowColumnAddressing` 与 `Caune2024LowLatencyQEC` 已从 `@misc` 改为 `@online`，避免输出未知文献类型，最终按学院口径输出为 `[EB]`。
+- [x] DOI、题名或 arXiv 编号不匹配的旧条目已替换为真实文献，并在正文引用中同步更新。
+- [x] `GoogleQuantumAI2025BelowThreshold` 已补齐 Nature 期号 `8052`。
+- [x] 中文期刊条目已补充 `language = {zh}`，避免中英文著录规则混用。
+- [x] `gbt7714-numerical.bst` 已关闭载体后缀输出，`thesis.bbl` 中仅保留 `[J]`、`[C]`、`[M]`、`[D]` 和 `[EB]` 等标志码。
