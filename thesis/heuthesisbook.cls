@@ -237,9 +237,9 @@
 \RequirePackage{diagbox}
 \RequirePackage{longtable}
 \RequirePackage{booktabs}
-\heavyrulewidth=1.5pt
-\lightrulewidth=1pt
-\cmidrulewidth=0.5pt
+\heavyrulewidth=0.8pt
+\lightrulewidth=0.5pt
+\cmidrulewidth=0.3pt
 \RequirePackage{hyperref}
 \hypersetup{%
   CJKbookmarks=true,
@@ -414,7 +414,7 @@
     \ifheu@doctor
       \fancyhead[CO]{\songti\wuhao[0]\leftmark}
       \ifheu@harbin
-        \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@cdegree\heu@cthesisname}
+        \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@cxuewei\heu@cthesisname}
       \fi
       \ifheu@qingdao
         \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@qingdaocampus\heu@cdegree\heu@cthesisname}
@@ -429,10 +429,10 @@
         \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@cdegree\heu@cthesisname}
       \fi
       \ifheu@qingdao
-        \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@qingdaocampus\heu@cthesisname}
+        \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@qingdaocampus\heu@cxuewei\heu@cthesisname}
       \fi
       \ifheu@yantai
-        \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@yantaicampus\heu@cdegree\heu@cthesisname}
+        \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@yantaicampus\heu@cxuewei\heu@cthesisname}
       \fi
     \fi
     \ifheu@bachelor
@@ -466,7 +466,7 @@
   \fi
   \ifheu@doctor
     \ifheu@harbin
-      \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@cdegree\heu@cthesisname}
+      \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@cxuewei\heu@cthesisname}
     \fi
     \ifheu@qingdao
       \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@qingdaocampus\heu@cdegree\heu@cthesisname}
@@ -480,10 +480,10 @@
       \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@cdegree\heu@cthesisname}
     \fi
     \ifheu@qingdao
-      \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@qingdaocampus\heu@cthesisname}
+      \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@qingdaocampus\heu@cxuewei\heu@cthesisname}
     \fi
     \ifheu@yantai
-      \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@yantaicampus\heu@cdegree\heu@cthesisname}
+      \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@yantaicampus\heu@cxuewei\heu@cthesisname}
     \fi
   \fi
   \ifheu@bachelor

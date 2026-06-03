@@ -12,31 +12,31 @@
 
 设输出场算符为 $b_{\mu}(t)$，其中标记 $\mu$ 用来区分偏振或频率等模式自由度。连续场满足等时对易关系
 \begin{equation}
-[b_{\mu}(t),b_{\nu}^{\dagger}(t')]=\delta_{\mu\nu}\,\delta(t-t').
+[b_{\mu}(t),b_{\nu}^{\dagger}(t')]=\delta_{\mu\nu}\,\delta(t-t')
 \label{eq:ch2-continuum-comm}
 \end{equation}
 
 把时间轴划分为 $t_k=k\Delta t$ 之后，可定义第 $k$ 个时间分箱的离散化场算符
 \begin{equation}
-\Delta B_{k,\mu}=\frac{1}{\sqrt{\Delta t}}\int_{t_k}^{t_{k+1}} b_{\mu}(t)\,\mathrm d t,
+\Delta B_{k,\mu}=\frac{1}{\sqrt{\Delta t}}\int_{t_k}^{t_{k+1}} b_{\mu}(t)\,\mathrm d t
 \label{eq:ch2-bin-operator}
 \end{equation}
 
 于是有
 \begin{equation}
-[\Delta B_{k,\mu},\Delta B_{l,\nu}^{\dagger}]=\delta_{kl}\,\delta_{\mu\nu}.
+[\Delta B_{k,\mu},\Delta B_{l,\nu}^{\dagger}]=\delta_{kl}\,\delta_{\mu\nu}
 \label{eq:ch2-bin-comm}
 \end{equation}
 
 式 \eqref{eq:ch2-bin-comm} 的意义是：离散后不同时间窗的场模互相对易，可以视为按时间顺序排列的独立站点 \cite{Pichler2016TimeDelaysMPS,ArranzRegidor2021WaveguideQED}。单光子波包在离散化后也有清晰表达 \cite{Pichler2016TimeDelaysMPS}。若连续时间包络为 $\xi_{\mu}(t)$，则单光子态可写为
 \begin{equation}
-|1_{\xi}\rangle=\sum_{k,\mu}\sqrt{\Delta t}\,\xi_{\mu}(t_k)\,\Delta B_{k,\mu}^{\dagger}|\mathrm{vac}\rangle,
+|1_{\xi}\rangle=\sum_{k,\mu}\sqrt{\Delta t}\,\xi_{\mu}(t_k)\,\Delta B_{k,\mu}^{\dagger}|\mathrm{vac}\rangle
 \label{eq:ch2-wavepacket-discrete}
 \end{equation}
 
 其归一化条件变为
 \begin{equation}
-\sum_{k,\mu}\Delta t\,|\xi_{\mu}(t_k)|^2=1.
+\sum_{k,\mu}\Delta t\,|\xi_{\mu}(t_k)|^2=1
 \label{eq:ch2-wavepacket-norm}
 \end{equation}
 
@@ -45,7 +45,7 @@
   
 \centering
   
-\includegraphics[width=0.98\textwidth]{fig_ch2_timebin_mps_tebd.pdf}
+\includegraphics{fig_ch2_timebin_mps_tebd.pdf}
   
 \caption{连续时间链路到 MPS/TEBD 计算对象的映射。连续输出场在时间步长 $\Delta t$ 下离散为时间分箱。两臂发射体、时间分箱和滤波记忆模随后排列成一维 MPS 链。每个时间步由发射门、QFC 门、滤波记忆门、SWAP 调度和 SVD 回写组成。该结构把连续时间光场、有限带宽记忆和局域门更新统一到可收缩的张量网络表示中\cite{Pichler2016TimeDelaysMPS,Guimond2017DelayedCoherentFeedbackMPS,ArranzRegidor2021WaveguideQED,Vidal2004TEBD,Schollwoeck2011MPS,Paeckel2019TimeEvolutionMPS}。}
   
@@ -64,7 +64,7 @@
 \mathcal H_{\mathrm{mem}}^{(A)}\otimes
 \mathcal H_{\mathrm{em}}^{(B)}\otimes
 \Bigl(\bigotimes_{k=1}^{N_t}\mathcal H_{k}^{(B)}\Bigr)\otimes
-\mathcal H_{\mathrm{mem}}^{(B)}.
+\mathcal H_{\mathrm{mem}}^{(B)}
 \label{eq:ch2-chain-space}
 \end{equation}
 
@@ -81,7 +81,7 @@ L_{\mu}\,\Delta B_{k,\mu}^{\dagger}
 -
 L_{\mu}^{\dagger}\,\Delta B_{k,\mu}
 \bigr)
-\right],
+\right]
 \label{eq:ch2-emission-gate}
 \end{equation}
 
@@ -94,7 +94,7 @@ L_{\mu}^{\dagger}\,\Delta B_{k,\mu}
 |\psi\rangle=
 \sum_{s_1,\ldots,s_N=1}^{d}
 C_{s_1\cdots s_N}
-|s_1\rangle\otimes\cdots\otimes|s_N\rangle,
+|s_1\rangle\otimes\cdots\otimes|s_N\rangle
 \label{eq:ch2-full-state}
 \end{equation}
 
@@ -109,19 +109,19 @@ C_{s_1\cdots s_N}
 \lambda_{\alpha}^{(n)}
 |\alpha\rangle_{[1:n]}
 \otimes
-|\alpha\rangle_{[n+1:N]},
+|\alpha\rangle_{[n+1:N]}
 \label{eq:ch2-schmidt}
 \end{equation}
 
 其中 $r_n=\mathrm{rank}(M^{(n)})$，$\lambda_{\alpha}^{(n)}\ge 0$，且 Schmidt 系数按从大到小排序。相应的二分纠缠熵为
 \begin{equation}
-S_n=-\sum_{\alpha}(\lambda_{\alpha}^{(n)})^2\log (\lambda_{\alpha}^{(n)})^2.
+S_n=-\sum_{\alpha}(\lambda_{\alpha}^{(n)})^2\log (\lambda_{\alpha}^{(n)})^2
 \label{eq:ch2-entanglement-entropy}
 \end{equation}
 
 若奇异值谱在较小的 $\alpha$ 处已经明显衰减，只保留前 $\chi_n$ 个主分量就能得到一条低秩近似，其截断误差为
 \begin{equation}
-\varepsilon_n^2=\sum_{\alpha>\chi_n}(\lambda_{\alpha}^{(n)})^2.
+\varepsilon_n^2=\sum_{\alpha>\chi_n}(\lambda_{\alpha}^{(n)})^2
 \label{eq:ch2-truncerr}
 \end{equation}
 
@@ -137,14 +137,14 @@ C_{s_1\cdots s_N}
 A^{[1]s_1}_{\alpha_1}
 A^{[2]s_2}_{\alpha_1\alpha_2}
 \cdots
-A^{[N]s_N}_{\alpha_{N-1}},
+A^{[N]s_N}_{\alpha_{N-1}}
 \label{eq:ch2-mps}
 \end{equation}
 
 其中 $\alpha_k=1,\ldots,\chi_k$ 是虚拟指标，$\chi=\max_k\chi_k$ 为键维上界。MPS 的参数量由 $d^N$ 降为 $O(Nd\chi^2)$，指数复杂度被压缩成对键维的多项式复杂度 \cite{Schollwoeck2011MPS,Orus2014TensorNetworks}。MPS 最重要的一个直觉解释，是把虚拟指标看成“相关信息在链上的输运通道”。若某条键上的 Schmidt 谱很窄，那么该处真正需要承载的信息就不多。若某条键上的 Schmidt 谱突然变宽，通常说明相互作用在该处生成了更强的关联。于是键维成为当前动力学复杂度的一种直接刻画。这个解释对理解后续参数扫描很有帮助：当窗口加宽、滤波记忆增强或时间分箱数增多时，计算成本上升往往首先反映为某几条键上的谱变宽，链上其他位置未必同步变复杂。同一个物理态对应无穷多组 MPS 张量，因此还需要利用规范自由度把表示整理成数值上更稳定的形式。相邻张量之间的规范变换写成
 \begin{align}
-A^{[n]} &\rightarrow A^{[n]}X,\\
-A^{[n+1]} &\rightarrow X^{-1}A^{[n+1]},
+A^{[n]} &\rightarrow A^{[n]}X\\
+A^{[n+1]} &\rightarrow X^{-1}A^{[n+1]}
 \label{eq:ch2-gauge-transform}
 \end{align}
 
@@ -152,7 +152,7 @@ A^{[n+1]} &\rightarrow X^{-1}A^{[n+1]},
 \begin{equation}
 \langle \hat O_n \rangle
 =
-\frac{\langle \psi|\hat O_n|\psi\rangle}{\langle \psi|\psi\rangle},
+\frac{\langle \psi|\hat O_n|\psi\rangle}{\langle \psi|\psi\rangle}
 \label{eq:ch2-onebody-expectation}
 \end{equation}
 
@@ -168,7 +168,7 @@ MPS 解决的是“如何表示态”，TEBD 解决的是“如何更新态” \
 \begin{equation}
 \tilde A^{[n]s'}_{\alpha\beta}
 =
-\sum_s U^{[n]}_{s's}\,A^{[n]s}_{\alpha\beta}.
+\sum_s U^{[n]}_{s's}\,A^{[n]s}_{\alpha\beta}
 \label{eq:ch2-one-site-update}
 \end{equation}
 
@@ -178,7 +178,7 @@ MPS 解决的是“如何表示态”，TEBD 解决的是“如何更新态” \
 \xrightarrow{\,U^{[n,n+1]}\,}
 \tilde\Theta
 \xrightarrow{\mathrm{SVD}}
-\tilde A^{[n]}\tilde\Lambda^{[n]}\tilde A^{[n+1]},
+\tilde A^{[n]}\tilde\Lambda^{[n]}\tilde A^{[n+1]}
 \label{eq:ch2-two-site-update}
 \end{equation}
 
@@ -193,7 +193,7 @@ e^{-iH\Delta t}
 e^{-iH_{\mathrm{o}}\Delta t/2}
 e^{-iH_{\mathrm{e}}\Delta t}
 e^{-iH_{\mathrm{o}}\Delta t/2}
-+O(\Delta t^3).
++O(\Delta t^3)
 \label{eq:ch2-trotter2}
 \end{equation}
 
@@ -203,7 +203,7 @@ e^{-iH_{\mathrm{o}}\Delta t/2}
 \end{enumerate}
 这种调度方式看上去比“统一哈密顿量时间推进”更工程化，但它更接近真实实验链路的操作顺序，也更容易和代码中的门矩阵一一对应起来。从复杂度角度看，在局域维数近似均匀时，双站点更新的主开销来自局域 SVD，单步成本可估计为
 \begin{equation}
-O(Nd^3\chi^3),
+O(Nd^3\chi^3)
 \label{eq:ch2-single-step-cost}
 \end{equation}
 
@@ -211,48 +211,48 @@ O(Nd^3\chi^3),
 
 \section{条件测量的算符方法}[Operator Method for Conditional Measurements]
 
-量子接口链路末端给出的结果是一份带条件的实验记录：某个时间窗里哪些探测器点击了、点击模式是否属于成功集合、成功后两个远端原子处于什么条件态。只用态矢量演化并不能直接回答这些问题，因此需要把开放系统和广义测量接到同一条概率链上。Kraus 表示给出开放系统信道的离散表述，POVM 给出广义测量的记录空间，Heisenberg 对偶映射则把二者连接起来，使线性光学和探测端能够在测量侧统一处理 \cite{Kraus1983StatesEffectsOperations,Lindblad1976Semigroups,GoriniKossakowskiSudarshan1976,NielsenChuang2010QCQI}。
+量子接口链路末端给出的结果是一份带条件的实验记录：某个时间窗里哪些探测器点击了、点击模式是否属于成功集合、成功后两个远端原子处于什么条件态。只用态矢量演化并不能直接回答这些问题，因此需要把开放系统和广义测量接到同一条概率链上。Kraus 表示给出开放系统信道的离散表述，正算符值测量（positive operator-valued measure, POVM）给出广义测量的记录空间，Heisenberg 对偶映射则把二者连接起来，使线性光学和探测端能够在测量侧统一处理 \cite{Kraus1983StatesEffectsOperations,Lindblad1976Semigroups,GoriniKossakowskiSudarshan1976,NielsenChuang2010QCQI}。
 
 \subsection{Kraus 表示}[Kraus Representation]
 
 Markov 近似下的开放系统动力学通常由 GKSL 主方程描述：
 \begin{equation}
-\dot\rho=-i[H,\rho]+\sum_{\mu}\left(L_{\mu}\rho L_{\mu}^{\dagger}-\frac{1}{2}\{L_{\mu}^{\dagger}L_{\mu},\rho\}\right),
+\dot\rho=-i[H,\rho]+\sum_{\mu}\left(L_{\mu}\rho L_{\mu}^{\dagger}-\frac{1}{2}\{L_{\mu}^{\dagger}L_{\mu},\rho\}\right)
 \label{eq:ch2-gksl}
 \end{equation}
 
 其中 $H$ 负责相干演化，$L_{\mu}$ 是各个耗散通道的跃迁算符。对一个足够短的时间步长 $\Delta t$，式 \eqref{eq:ch2-gksl} 可以写成完全正且保持迹映射
 \begin{equation}
-\mathcal E(\rho)=\sum_{\mu}K_{\mu}\rho K_{\mu}^{\dagger},
+\mathcal E(\rho)=\sum_{\mu}K_{\mu}\rho K_{\mu}^{\dagger}
 \label{eq:ch2-kraus}
 \end{equation}
 
 并满足
 \begin{equation}
-\sum_{\mu}K_{\mu}^{\dagger}K_{\mu}=I.
+\sum_{\mu}K_{\mu}^{\dagger}K_{\mu}=I
 \label{eq:ch2-kraus-complete}
 \end{equation}
 
 Kraus 表示的价值在于把“开放系统演化”写成一族可与测量记录对应的分支过程。对短时间步，常用的一组近似 Kraus 算符可写为
 \begin{equation}
-K_0=I-iH_{\mathrm{eff}}\Delta t+O(\Delta t^2),
+K_0=I-iH_{\mathrm{eff}}\Delta t+O(\Delta t^2)
 \label{eq:ch2-short-time-kraus-0}
 \end{equation}
 
 \begin{equation}
-K_{\mu}=\sqrt{\Delta t}\,L_{\mu}.
+K_{\mu}=\sqrt{\Delta t}\,L_{\mu}
 \label{eq:ch2-short-time-kraus-mu}
 \end{equation}
 
 其中 $H_{\mathrm{eff}}=H-\frac{i}{2}\sum_{\mu}L_{\mu}^{\dagger}L_{\mu}$ 是非厄米有效哈密顿量。于是“无跳跃”与“发生某一跃迁”便自然对应到不同的分支。若把单次演化看成一条随机轨迹，则纯态在第 $\mu$ 个分支上的更新为
 \begin{equation}
 |\psi\rangle\rightarrow |\psi_{\mu}\rangle=
-\frac{K_{\mu}|\psi\rangle}{\|K_{\mu}|\psi\rangle\|}.
+\frac{K_{\mu}|\psi\rangle}{\|K_{\mu}|\psi\rangle\|}
 \label{eq:ch2-trajectory-state}
 \end{equation}
 
 \begin{equation}
-p_{\mu}=\|K_{\mu}|\psi\rangle\|^2.
+p_{\mu}=\|K_{\mu}|\psi\rangle\|^2
 \label{eq:ch2-trajectory-prob}
 \end{equation}
 
@@ -262,19 +262,19 @@ p_{\mu}=\|K_{\mu}|\psi\rangle\|^2.
 
 广义测量由一组正算符 $\{\Pi_m\}$ 描述，其中 $m$ 标记可能的测量记录。每个 POVM 元满足半正定条件，所有记录对应的 POVM 元在测量空间上完备：
 \begin{equation}
-\Pi_m \succeq 0,\qquad \sum_m \Pi_m = I.
+\Pi_m \succeq 0,\qquad \sum_m \Pi_m = I
 \label{eq:ch2-povm-complete}
 \end{equation}
 
 其中 $I$ 是测量对象所在希尔伯特空间上的单位算符。给定输入态 $\rho$ 后，记录 $m$ 出现的概率为
 \begin{equation}
-p_m=\mathrm{Tr}(\Pi_m\rho).
+p_m=\mathrm{Tr}(\Pi_m\rho)
 \label{eq:ch2-povm-prob}
 \end{equation}
 
 式中 $p_m$ 是记录 $m$ 的发生概率，$\rho$ 是测量前状态。若写成测量算符形式 $\Pi_m=M_m^{\dagger}M_m$，则条件后的后验态为
 \begin{equation}
-\rho_m=\frac{M_m\rho M_m^{\dagger}}{\mathrm{Tr}(M_m\rho M_m^{\dagger})}.
+\rho_m=\frac{M_m\rho M_m^{\dagger}}{\mathrm{Tr}(M_m\rho M_m^{\dagger})}
 \label{eq:ch2-posterior-single}
 \end{equation}
 
@@ -282,13 +282,13 @@ p_m=\mathrm{Tr}(\Pi_m\rho).
 \begin{equation}
 \mathrm{Tr}[\Lambda(\rho)E]
 =
-\mathrm{Tr}[\rho\,\Lambda^{\dagger}(E)],
+\mathrm{Tr}[\rho\,\Lambda^{\dagger}(E)]
 \label{eq:ch2-adjoint}
 \end{equation}
 
 其中
 \begin{equation}
-\Lambda^{\dagger}(E)=\sum_k K_k^{\dagger}EK_k.
+\Lambda^{\dagger}(E)=\sum_k K_k^{\dagger}EK_k
 \label{eq:ch2-adjoint-kraus}
 \end{equation}
 
@@ -296,19 +296,19 @@ p_m=\mathrm{Tr}(\Pi_m\rho).
 \begin{equation}
 \mathrm{Tr}\!\left[F_m(\Phi_n\circ\cdots\circ\Phi_1)(\rho_{\mathrm{in}})\right]
 =
-\mathrm{Tr}\!\left[\bigl((\Phi_1^{\dagger}\circ\cdots\circ\Phi_n^{\dagger})(F_m)\bigr)\rho_{\mathrm{in}}\right].
+\mathrm{Tr}\!\left[\bigl((\Phi_1^{\dagger}\circ\cdots\circ\Phi_n^{\dagger})(F_m)\bigr)\rho_{\mathrm{in}}\right]
 \label{eq:ch2-op-impl-consistency}
 \end{equation}
 
 式 \eqref{eq:ch2-op-impl-consistency} 对应一个固定的计算切分面。$\rho_{\mathrm{in}}$ 表示状态侧演化到该切分面后的输入态，$\Phi=\Phi_n\circ\cdots\circ\Phi_1$ 表示从切分面到探测记录的下游测量侧信道，$F_m$ 表示探测端记录 $m$ 的效应算符。推回后的输入端效应 $E_m^{\mathrm{in}}=\Phi^{\dagger}(F_m)$ 被直接放入 MPS 收缩中计算概率。该等效写法成立的条件是：下游过程能够写成独立信道，并且该信道对上游发射、QFC 和滤波记忆动力学没有反馈。在该链路中，这给出了“发射与滤波记忆保留在状态侧，光纤、分束器和探测器放到测量侧”的理论依据。对于成功事件集合 $\mathcal S$，条件概率和条件态可写为
 \begin{equation}
-p_{\mathcal S}=\sum_{m\in\mathcal S}p_m,
+p_{\mathcal S}=\sum_{m\in\mathcal S}p_m
 \label{eq:ch2-success-prob}
 \end{equation}
 
 \begin{equation}
 \rho_{\mathcal S}=
-\frac{1}{p_{\mathcal S}}\sum_{m\in\mathcal S}M_m\rho M_m^{\dagger}.
+\frac{1}{p_{\mathcal S}}\sum_{m\in\mathcal S}M_m\rho M_m^{\dagger}
 \label{eq:ch2-success-state}
 \end{equation}
 
@@ -322,47 +322,47 @@ Bell 态保真度、成功率、真假成功分解以及 Clauser--Horne--Shimony
 
 在中间站 Bell 测量链路中，最先需要区分的是“到达了什么”和“宣告了什么”。前者由输入端光子占据情况刻画，例如 $p_{11}$ 表示两臂各有一个光子到达中间站的概率。后者由成功记录集合 $\mathcal S$ 决定，例如 $p_s$ 表示所有成功点击模式的总概率。若再把成功效应算符分解为真成功与假成功两部分，就可进一步定义
 \begin{equation}
-p_s = \sum_{m\in\mathcal S}\mathrm{Tr}(E_m\rho),
+p_s = \sum_{m\in\mathcal S}\mathrm{Tr}(E_m\rho)
 \label{eq:ch2-success-total}
 \end{equation}
 
 \begin{equation}
-p_t = \sum_{m\in\mathcal S}\mathrm{Tr}(E_m^{\mathrm{true}}\rho),
+p_t = \sum_{m\in\mathcal S}\mathrm{Tr}(E_m^{\mathrm{true}}\rho)
 \label{eq:ch2-success-true}
 \end{equation}
 
 \begin{equation}
-p_f = p_s-p_t.
+p_f = p_s-p_t
 \label{eq:ch2-success-false}
 \end{equation}
 
 以及在双臂单光子真正到达条件下的真成功率
 \begin{equation}
-p_{t|11}=\frac{p_t}{p_{11}}.
+p_{t|11}=\frac{p_t}{p_{11}}
 \label{eq:ch2-conditional-true}
 \end{equation}
 
 这里 $E_m^{\mathrm{true}}$ 表示那些确实由目标物理过程引发的成功效应算符，$E_m^{\mathrm{false}}=E_m-E_m^{\mathrm{true}}$ 则吸收由多光子、背景、暗计数等造成的假宣告成分。这一分解对实验解释很重要，因为总成功率变高并不必然意味着接口质量变好，增加的也可能主要是假成功通道。条件态质量通常用目标 Bell 态保真度来衡量。若目标态记为 $|\mathcal B\rangle$，则有
 \begin{equation}
-F_{\mathcal B}=\langle \mathcal B|\rho_{\mathcal S}|\mathcal B\rangle.
+F_{\mathcal B}=\langle \mathcal B|\rho_{\mathcal S}|\mathcal B\rangle
 \label{eq:ch2-bell-fidelity}
 \end{equation}
 
 当 $\rho_{\mathcal S}$ 已被压缩到两原子子空间后，还可以引入相关张量
 \begin{equation}
-T_{ij}=\mathrm{Tr}\left[\rho_{\mathcal S}(\sigma_i\otimes\sigma_j)\right].
+T_{ij}=\mathrm{Tr}\left[\rho_{\mathcal S}(\sigma_i\otimes\sigma_j)\right]
 \label{eq:ch2-correlation-tensor}
 \end{equation}
 
 其中 $i,j\in\{x,y,z\}$。并用 Horodecki 判据给出 CHSH 最大值
 \begin{equation}
-S_{\max}=2\sqrt{\lambda_1+\lambda_2},
+S_{\max}=2\sqrt{\lambda_1+\lambda_2}
 \label{eq:ch2-chsh-max}
 \end{equation}
 
 其中 $\lambda_1,\lambda_2$ 为矩阵 $T^{\mathsf T}T$ 的最大两个特征值 \cite{Horodecki1995CHSH}。于是，保真度回答“条件态离目标 Bell 态有多近”，$S_{\max}$ 回答“该条件态是否仍能支持非定域关联”。二者并不冗余：同一保真度下，不同的噪声结构可能给出不同的 CHSH 表现。两光子不可区分性则常用 Hong--Ou--Mandel（HOM）可见度表征。若平行偏振与正交偏振配置下的符合计数分别记为 $C_{\parallel}$ 与 $C_{\perp}$，则
 \begin{equation}
-V_{\mathrm{HOM}}=\frac{C_{\perp}-C_{\parallel}}{C_{\perp}}.
+V_{\mathrm{HOM}}=\frac{C_{\perp}-C_{\parallel}}{C_{\perp}}
 \label{eq:ch2-hom-visibility}
 \end{equation}
 
