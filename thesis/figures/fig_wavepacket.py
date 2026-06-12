@@ -481,18 +481,7 @@ def main() -> None:
         y=0.985,
         fontweight="bold",
     )
-    fig.text(
-        0.5,
-        0.02,
-        (
-            f"坐标约定：所有时域面板使用物理时间 t (ns)。"
-            f"单个时间仓宽度为 Δt={dt_ns:g} ns。"
-        ),
-        ha="center",
-        va="bottom",
-        fontsize=9.0,
-    )
-    fig.subplots_adjust(left=0.06, right=0.985, top=0.94, bottom=0.10)
+    fig.subplots_adjust(left=0.06, right=0.985, top=0.94, bottom=0.075)
 
     out_pdf = pathlib.Path(__file__).with_suffix(".pdf")
     frame_all_axes(fig)

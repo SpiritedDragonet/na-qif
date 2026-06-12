@@ -62,7 +62,7 @@
 \end{table}
 
 
-表~\ref{tab:interface_primitives} 中的远程纠缠产生与链路建模关系最紧密。模块化计算中的跨模块门、纠错资源注入和网络协议都要消耗远程 Bell 对，因此接口链路的关键问题可以进一步收束为：在给定损耗、模式失配和噪声背景下，系统能够以怎样的速率和条件态质量提供可宣告纠缠资源。从物理实现上看，光子是最自然的远程载体：它与环境耦合弱，易于在光纤或自由空间中长距离传输，并且便于在中继站进行干涉与测量\cite{kimble2008quantum,Wehner2018QuantumInternetVision}。尤其在电信波段，标准光纤的传输损耗处于较低窗口，使得十公里到百公里尺度的链路预算在工程上更可控\cite{Wehner2018QuantumInternetVision}。然而，许多高质量物质比特的本征光学跃迁常偏离电信窗口。同时，单光子源的方向性、谱线稳定性以及与光纤单模的耦合效率会直接限制可用链路预算\cite{Reiserer2022CavityEnhancedNetworkNodes,Awschalom2021QuIC}。这使得腔增强收集、量子频率转换（quantum frequency conversion，QFC）与低噪声探测成为量子接口工程中反复出现的关键技术点\cite{Ikuta2018PolarizationInsensitiveQFC,vanleent2022entangling}。从功能与接口形态出发，量子接口平台可概括为存储型/中继、处理型离子模块、固态缺陷/量子点以及单原子/中性原子四类。
+表~\ref{tab:interface_primitives} 中的远程纠缠产生与链路建模关系最紧密。模块化计算中的跨模块门、纠错资源注入和网络协议都要消耗远程 Bell 对，因此接口链路的关键问题可以进一步收束为：在给定损耗、模式失配和噪声背景下，系统能够以怎样的速率和条件态质量提供可宣告纠缠资源。从物理实现上看，光子是最自然的远程载体：它与环境耦合弱，易于在光纤或自由空间中长距离传输，并且便于在中继站进行干涉与测量\cite{kimble2008quantum,Wehner2018QuantumInternetVision}。尤其在电信波段，标准光纤的传输损耗处于较低窗口，使得十公里到百公里尺度的链路预算在工程上更可控\cite{Wehner2018QuantumInternetVision}。然而，许多高质量物质比特的本征光学跃迁常偏离电信窗口。同时，单光子源的方向性、谱线稳定性以及与光纤单模的耦合效率会直接限制可用链路预算\cite{Reiserer2022CavityEnhancedNetworkNodes,Awschalom2021QuIC}。这使得腔增强收集、量子频率转换（quantum frequency conversion，QFC）与低噪声探测成为量子接口工程中反复出现的关键技术点\cite{Ikuta2018PolarizationInsensitiveQFC,vanleent2022entangling}。结合量子网络\cite{Wehner2018QuantumInternetVision}、量子接口综述\cite{Awschalom2021QuIC,NorthupBlatt2014QuantumInfoTransfer}和典型实验进展\cite{Covey2023QuantumNetworksNeutralAtomNodes,Reiserer2022CavityEnhancedNetworkNodes}中的平台讨论，量子接口平台可从功能与接口形态上概括为存储型/中继、处理型离子模块、固态缺陷/量子点以及单原子/中性原子四类。
 \begin{table}[htbp]
 \centering
 \small
@@ -79,11 +79,6 @@
 单原子/中性原子 & 光镊阵列、本地门、腔/波导接口 & 可在同一平台上结合本地处理能力与网络接口潜力 & 需同时解决高效收集、频率转换、链路噪声与系统集成 \\
 \bottomrule
 \end{tabular}
-
-\vspace{0.3em}
-\begin{minipage}{0.98\linewidth}\footnotesize
-注：表中“优势/挑战”的归纳主要参考量子网络与量子接口综述文献中的讨论，并结合典型实验进展整理\cite{Wehner2018QuantumInternetVision,Awschalom2021QuIC,NorthupBlatt2014QuantumInfoTransfer,Covey2023QuantumNetworksNeutralAtomNodes,Reiserer2022CavityEnhancedNetworkNodes}。
-\end{minipage}
 \end{table}
 
 

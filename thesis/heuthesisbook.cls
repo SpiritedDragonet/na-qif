@@ -417,16 +417,16 @@
         \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@cxuewei\heu@cthesisname}
       \fi
       \ifheu@qingdao
-        \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@qingdaocampus\heu@cdegree\heu@cthesisname}
+        \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@qingdaocampus\heu@cxuewei\heu@cthesisname}
       \fi
       \ifheu@yantai
-        \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@yantaicampus\heu@cdegree\heu@cthesisname}
+        \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@yantaicampus\heu@cxuewei\heu@cthesisname}
       \fi
     \fi
     \ifheu@master
       \fancyhead[CO]{\songti\wuhao[0]\leftmark}
       \ifheu@harbin
-        \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@cdegree\heu@cthesisname}
+        \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@cxuewei\heu@cthesisname}
       \fi
       \ifheu@qingdao
         \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@qingdaocampus\heu@cxuewei\heu@cthesisname}
@@ -469,15 +469,15 @@
       \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@cxuewei\heu@cthesisname}
     \fi
     \ifheu@qingdao
-      \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@qingdaocampus\heu@cdegree\heu@cthesisname}
+      \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@qingdaocampus\heu@cxuewei\heu@cthesisname}
     \fi
     \ifheu@yantai
-      \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@yantaicampus\heu@cdegree\heu@cthesisname}
+      \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@yantaicampus\heu@cxuewei\heu@cthesisname}
     \fi
   \fi
   \ifheu@master
     \ifheu@harbin
-      \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@cdegree\heu@cthesisname}
+      \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@cxuewei\heu@cthesisname}
     \fi
     \ifheu@qingdao
       \fancyhead[CE]{\songti\wuhao[0]\heu@cschoolname\heu@qingdaocampus\heu@cxuewei\heu@cthesisname}
@@ -1467,6 +1467,8 @@
   \fi
   \pagestyle{heu@titleheadings}
   \pagenumbering{Roman}
+  \phantomsection
+  \addcontentsline{toc}{chapter}{\cabstractcname}
   \begin{center}
     ~\\
     \xiaoer\heiti\cabstractcname
@@ -1476,6 +1478,8 @@
   \heu@put@keywords{\ifheu@postdoc\bfseries\fi\heiti\heu@ckeywords@title}{\heu@ckeywords}
   \ifheu@openright\cleardoublepage\else\clearpage\fi
   \clearpage
+  \phantomsection
+  \addcontentsline{toc}{chapter}{\eabstractcname}
   \begin{center}
     ~\\
     \xiaoer\textbf{\eabstractcname}
@@ -1519,6 +1523,7 @@
 \renewcommand\tableofcontents{%
 \ifheu@openright\cleardoublepage\else\clearpage\fi
 \phantomsection
+\addcontentsline{toc}{chapter}{\contentsname}
 \markboth{\contentsname}{ccontent}
 \begin{center}
   ~\\
